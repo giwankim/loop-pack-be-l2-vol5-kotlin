@@ -55,9 +55,11 @@ class ContractClassificationTest(
         private const val ERROR_CODE_NOT_FOUND = "Not Found"
     }
 
-    // 클라이언트는 Spring 기본값(4xx/5xx 에서 예외)을 유지한다. 에러 허용은 get() 호출 단위로 선언한다.
+    // 4xx/5xx 응답의 status 와 body 자체가 관찰 대상이므로 이 클라이언트는 오류 status 에서 예외를 던지지 않는다.
+    // TestRestTemplate 의 NoOpResponseErrorHandler 와 같은 효과다. 도구 선택 이유는 docs/week1/contract-test-decisions.md 3장.
     private val restClient: RestClient = restClientBuilder
         .baseUrl("http://localhost:$port")
+        .defaultStatusHandler(HttpStatusCode::isError) { _, _ -> }
         .build()
 
     // JsonContent.convertTo() 가 JsonPath 값을 원하는 타입으로 바꿀 때 쓰는 converter. 앱과 같은 ObjectMapper 를 사용한다.
@@ -69,17 +71,13 @@ class ContractClassificationTest(
         databaseCleanUp.truncateAllTables()
     }
 
-    /**
-     * 이 테스트는 에러 응답의 status 와 body 자체를 관찰 대상으로 삼으므로,
-     * 이 호출에 한해 4xx/5xx 를 예외로 바꾸지 않고 항상 ResponseEntity 로 돌려받는다.
-     */
+    /** body 를 String 으로 받아 Jackson 이 개입하지 않은 wire 그대로를 관찰한다. */
     private fun get(path: String): ResponseEntity<String> =
-        restClient.get().uri(path).retrieve()
-            .onStatus(HttpStatusCode::isError) { _, _ -> }
-            .toEntity<String>()
+        restClient.get().uri(path).retrieve().toEntity<String>()
 
+    /** body 가 없으면 "{}" 로 대체하지 않고 그 자리에서 실패시킨다. "body 없음" 도 관찰해야 할 계약 변화이기 때문이다. */
     private fun jsonOf(response: ResponseEntity<String>): JsonContent =
-        JsonContent(response.body ?: "{}", jsonConverter)
+        JsonContent(requireNotNull(response.body) { "응답 body가 비어 있다 (status=${response.statusCode})" }, jsonConverter)
 
     @DisplayName("GET /api/v1/examples/{id} 계약 분류")
     @Nested
