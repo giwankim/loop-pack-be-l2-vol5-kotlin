@@ -1,3 +1,5 @@
 # Enable auto-env through the sdkman_auto_env config
 # Add key=value pairs of SDKs to use below
+# toolchain 용이 아니다(build.gradle.kts 의 jvmToolchain(21) 이 그 일을 한다). Gradle daemon 이 뜨는 JVM 을 21 로 맞추는 pin 이다.
+# Gradle 8.13 은 daemon 실행을 Java 23 까지만 지원한다. 다른 vendor 의 JDK 21 을 쓰면 값을 자기 것으로 바꾸거나 이 파일을 무시해도 된다.
 java=21.0.12+1.1-librca
