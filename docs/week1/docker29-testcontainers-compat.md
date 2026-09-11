@@ -2,7 +2,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 작성일 | 2026-09-09 |
+| 작성일 | 2026-09-09. PR 검토 반영 2026-09-11 (5장 대안 표와 upstream 상태) |
 | 증상 | 모든 `@SpringBootTest` 가 컨텍스트 로드 단계에서 실패. 데몬 응답: `client version 1.32 is too old. Minimum supported API version is 1.40` |
 | 확인한 환경 | Docker Desktop 4.90.0 (Engine 29.7.2, API 1.55, 최소 허용 1.40), Spring Boot 3.4.4, Testcontainers 1.20.6, docker-java 3.4.1 (Testcontainers jar 안에 shaded), Gradle 8.13 |
 | 원인 | Testcontainers 1.20.6 은 API 버전을 따로 정해 주지 않으면 1.32 로 고정하고 Docker Engine 29 는 1.40 미만을 거부한다 |
@@ -157,20 +157,22 @@ docker-java 3.4.1 의 `DefaultDockerClientConfig.createDefaultConfigBuilder()` �
 | 방법 | 저장소 변경 | 효과 범위 | 비고 |
 | --- | --- | --- | --- |
 | `~/.docker-java.properties` (현재) | 없음 | 이 머신 | 팀원과 CI 는 각자 같은 파일이 필요하다 |
-| 테스트 리소스에 `docker-java.properties` 추가 (예: `modules/jpa/src/testFixtures/resources/`) | 파일 1개, 빌드 파일 아님 | 저장소를 받은 모두 | 4.2 의 순서상 홈 파일과 공존할 수 있다. 과제 조건에 맞는지는 별도로 판단한다 |
-| Testcontainers 1.21.4 이상 또는 Spring Boot 3.5.9 이상으로 올림 | 빌드 파일 | 근본 해결 | 이번 과제 조건에서는 불가 |
+| 테스트 리소스에 `docker-java.properties` 추가 (예: `modules/jpa/src/testFixtures/resources/`) | 파일 1개, 빌드 파일 아님 | 저장소를 받은 모두 | 4.2 의 순서상 홈 파일과 공존할 수 있다. Spring Boot 3.4.12 / 3.5.8 이 upstream 에서 택한 방법과 같다(아래). 과제 조건에 맞는지는 별도로 판단한다 |
+| Testcontainers 1.21.4 이상으로 올림 | `gradle.properties` 한 줄 (`testcontainers.version=1.21.4`). 빌드 스크립트는 그대로다. dependency-management plugin 이 BOM 의 버전 속성을 Gradle property 로 노출하므로 `-Ptestcontainers.version=1.21.4` 로 `dependencyInsight` 를 돌리면 1.21.4 가 선택되는 것을 확인했다 | 저장소를 받은 모두 | 근본 해결. 다만 의존성 버전이 바뀌므로 이번 과제 조건(의존성 변경 금지)에서는 불가 |
+| Spring Boot 3.4.12 이상으로 올림 | `gradle.properties` 한 줄 (`springBootVersion`) | 저장소를 받은 모두 | Boot jar 안의 `docker-java.properties` 로 해결된다(아래). Boot 와 BOM 전체가 바뀌므로 과제 조건에서는 불가 |
 
 upstream 쪽 상황은 이렇다.
 
 - Testcontainers 1.21.4 (2025-12-15) 가 1.x 계열의 수정판이다. release note 는 "This release makes version 1.21.x works with recent Docker Engine changes" 한 줄뿐이다.
 - Testcontainers 2.x 는 2.0.5 에서 fallback 이 `VERSION_1_44` 인 것을 바이트코드로 확인했다.
-- Spring Boot 3.5.9 가 Testcontainers 1.21.4 로 올렸다 (spring-boot issue #48542, milestone 3.5.9).
-- Spring Boot 3.4.x 가 수정판을 받은 기록은 찾지 못했다. 이 저장소가 쓰는 3.4.4 는 1.20.6 을 고르므로 Docker Engine 29 머신에서는 항상 이 문제를 만난다.
+- Spring Boot 3.4.12 와 3.5.8 (둘 다 2025-11-20 Maven Central 배포, spring-boot #48104 / #48192) 이 Testcontainers 를 올리지 않고 `spring-boot-testcontainers` / `spring-boot-test` jar 안에 `docker-java.properties`(`api.version=1.44`) 를 넣는 방식으로 이 문제를 고쳤다. 네 jar 를 Maven Central 에서 받아 확인했다. 3.4.11 의 두 jar 에는 그 파일이 없고 3.4.12 의 두 jar 에는 `api.version=1.44` 한 줄이 들어 있다. 이 저장소가 쓰는 3.4.4 는 그 전 버전이라 1.20.6 + API 1.32 조합을 그대로 만난다.
+- Spring Boot 3.5.9 가 Testcontainers 를 1.21.4 로 올렸다 (spring-boot #48542, milestone 3.5.9). Testcontainers 자체를 올린 첫 Boot 릴리스이고 Docker 29 대응은 한 릴리스 앞인 3.5.8 에서 이미 끝났다. 검토 전 문서는 이 두 사실을 "3.5.9 이상", "3.4.x 는 수정판 없음" 으로 잘못 적었다.
 
 ## 6. 참고
 
 - Docker Engine 29 release notes: https://docs.docker.com/engine/release-notes/29/
 - Testcontainers 1.21.4 release: https://github.com/testcontainers/testcontainers-java/releases/tag/1.21.4
 - testcontainers-java issue #11235 (Docker engine 29 is no longer compatible): https://github.com/testcontainers/testcontainers-java/issues/11235
-- spring-boot issue #48104 (Docker 29.0.0 breaks Testcontainers integration): https://github.com/spring-projects/spring-boot/issues/48104
+- spring-boot issue #48104 (Docker 29.0.0 breaks Testcontainers integration, milestone 3.4.12): https://github.com/spring-projects/spring-boot/issues/48104
+- spring-boot issue #48192 (같은 내용의 3.5.x forward-port, milestone 3.5.8): https://github.com/spring-projects/spring-boot/issues/48192
 - spring-boot issue #48542 (Upgrade to Testcontainers 1.21.4, milestone 3.5.9): https://github.com/spring-projects/spring-boot/issues/48542

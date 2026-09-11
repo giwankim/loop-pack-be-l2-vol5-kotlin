@@ -7,6 +7,7 @@
 | 제품 코드 변경 | 없음 (`git diff --name-only -- apps/commerce-api/src/main` 출력 없음) |
 | 이번 주 변경 범위 | 이 문서, `ContractClassificationTest`, 기술 글 |
 | 4장 검토 | 2026-09-10. 고쳐 쓴 항목은 4.5, 코드 관찰은 5.3에 있다. 검토 전 문서는 commit `3e7918a` |
+| PR 검토 | 2026-09-11. PR #2의 자동 코드 리뷰 10건을 하나씩 확인해 고쳐 쓴 항목은 4.6에 있다. 검토 전 문서는 commit `9aae0e6` |
 
 ## 1. 기준 문장과 출처
 
@@ -86,7 +87,7 @@
 | INV-002 확정 전 보유 쿠폰 한 장 | 확정되지 않은 주문에 기록된 할인은 0건 또는 1건이다. 1건일 때 그 쿠폰의 소유자는 주문 소유자와 같다. | 실습 조건 C-1 (한 장). "보유"와 "확정 전"은 제품 약속 F-1 | U1이 자신의 주문 #10에 U2 보유 쿠폰 C-U2로 요청한다. 두 번째 반례: C-A 적용에 성공한 뒤 같은 소유자가 C-B로 다시 요청한다. | 첫 반례는 거절되고 할인 기록은 0건이다. 두 번째 반례에서는 할인 기록이 여전히 1건이다. 그 1건이 C-A(거절)인지 C-B(교체)인지는 Q-4의 답 전까지 미정이고 이번 주 임시 처리는 거절이다(T-2 보류). | 할인 자리가 하나뿐인 `Order`가 두 번째 적용을 거부하는 도메인. 동시 요청의 방어선은 저장 모양에 따라 `Order`의 `@Version`이나 별도 행의 `unique(order_id)`다(D-2에서 선택). 쿠폰 소유자 검사는 `Coupon` 또는 use case. | Q-4, Q-5 |
 | INV-003 금액 경계 | 할인이 기록된 모든 주문에서 `finalAmount = originalAmount − discountAmount`이고 `0 ≤ discountAmount ≤ originalAmount`이다. 전액 할인(등호)은 허용하고 최종 금액이 음수인 상태는 없다. | 실습 조건 C-2 | 원금 10,000원 주문에 정액 15,000원 쿠폰으로 요청한다. 경계 확인용 두 번째 입력: 정액 10,000원 쿠폰. | 15,000원이 할인액으로 기록된 상태는 남지 않는다. 남는 상태는 "거절, 할인 0건" 또는 "상한 적용, 할인 10,000원과 최종 0원" 중 하나이며 이번 주 임시 처리는 거절이다(T-5 보류). 10,000원 쿠폰은 성공하고 최종 금액은 0원이다. | 금액 값 객체와 `Order.applyDiscount`의 계산을 맡는 도메인. DB의 CHECK 제약은 방어선. | 없음. 배송비나 부가세가 원금에 드는지는 W2 구현 질문 |
 | INV-004 확정 결과 보존 | 확정된 주문의 `(discountAmount, finalAmount)`는 확정 이후 언제 읽어도 같다. 쿠폰 정책, 상품 가격, 쿠폰 상태가 바뀌어도 변하지 않는다. | 제품 약속 F-2 | 10% 쿠폰으로 10,000원 주문을 확정한다(할인 1,000원, 최종 9,000원). 그 뒤 쿠폰 정책을 20%로 바꾸고 주문을 다시 조회한다. | 조회 결과는 여전히 할인 1,000원, 최종 9,000원이다. 확정 주문에는 재계산 경로 자체가 없다. | 적용 시점의 금액을 자기 필드에 snapshot으로 보관하는 `Order`와 그 저장소. 조회 모델이 쿠폰 정책을 join해 계산하지 않도록 막는 것은 application의 조회 경계. | Q-3 |
-| INV-005 중복 요청 | 같은 요청자가 같은 `(orderId, couponId)`로 n번 요청한 뒤의 주문 상태와 응답 본문은 1번 요청한 뒤와 같다. 할인 기록 수와 쿠폰 사용 횟수는 늘지 않는다. | 실습 조건 C-3 | `POST /api/v1/orders/10/discount {couponId: C-A}`가 성공한 뒤 클라이언트 timeout 재시도로 같은 요청이 다시 도착한다. | 두 번째 응답은 첫 응답과 같다(주문, 원금, 할인, 최종 금액 모두 동일, 성공). 할인 기록은 1건, 쿠폰 사용은 1회로 유지된다. | 이미 같은 쿠폰이 적용된 `Order`가 저장된 결과를 그대로 돌려주는 도메인. 동시 도착 경합의 방어선은 D-2의 저장 모양이 정한다. | Q-4 (다른 couponId 재요청은 이 규칙 밖) |
+| INV-005 중복 요청 | 같은 요청자가 같은 `(orderId, couponId)`로 n번 요청한 뒤의 주문 상태와 응답 본문은 1번 요청한 뒤와 같다. 할인 기록 수는 늘지 않는다. 그 사이 주문이 확정됐어도 같다(4.1 재요청 규칙). 쿠폰 상태는 Q-5 전까지 확인하지 않는다. | 실습 조건 C-3 | `POST /api/v1/orders/10/discount {couponId: C-A}`가 성공한 뒤 클라이언트 timeout 재시도로 같은 요청이 다시 도착한다. | 두 번째 응답은 첫 응답과 같다(주문, 원금, 할인, 최종 금액 모두 동일, 성공). 할인 기록은 1건으로 유지된다. 쿠폰 상태는 확인하지 않는다(Q-5). | 이미 같은 쿠폰이 적용된 `Order`가 저장된 결과를 그대로 돌려주는 도메인. 동시 도착 경합의 방어선은 D-2의 저장 모양이 정한다. | Q-4 (다른 couponId 재요청은 이 규칙 밖) |
 | INV-006 만료 경계 | 만료 판단은 요청 도착 시각 `t0` 하나로 정해지고 처리 종료 시각과 무관하다. 기록된 할인은 모두 "`t0`에 만료되지 않은 쿠폰"으로 만들어진 것이다. | 실습 조건 C-4 | 쿠폰 만료 시각이 `2026-09-30T23:59:59.999`이다. 요청이 `23:59:59.990`에 도착하고 처리 중 자정을 넘긴다. 거울 반례: `00:00:00.010`에 도착한다. | 첫 반례는 성공한다. 거울 반례는 거절되고 할인 기록은 0건이다. `t0`와 만료 시각이 정확히 같은 경우는 T-6 보류이며 반례로 쓰지 않는다. | `t0`는 요청 진입점(controller 또는 use case)에서 한 번만 얻는다. 판단은 `Coupon.usableBy(owner, t0)` 같은 도메인 규칙이 전달받은 시각으로만 하고 시계를 직접 읽지 않는다. | Q-2 (만료를 별도 실패로 보여 줄지) |
 
 ### 3.2 반례를 고르며 고쳐 쓴 문장
@@ -130,7 +131,9 @@ W2에서는 테스트 이름 앞에 규칙 ID를 붙인다(예: `INV-005 같은 
 
 status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청자에게 대상이 보이지 않으면 404, 주문의 상태가 행동을 막으면 409, 쿠폰을 이 주문에 쓸 수 없으면 422다. method와 Content-Type 오류는 HTTP가 정한 405와 415를 그대로 쓴다(E-11, E-12). Q-2의 답은 이 규칙 안에서 코드를 나누거나 합칠 뿐 status 규칙을 바꾸지 않는다.
 
-여러 조건이 동시에 참일 때의 판정 순서도 계약이다. 소유권(E-4, E-5) → 같은 쿠폰 재요청(200, INV-005) → 확정 여부(E-6) → 다른 쿠폰(E-7) → 쿠폰 사용 가능(E-8) → 금액 경계(E-8) 순이다. 소유자가 아니면 쿠폰 상태와 무관하게 404다. 같은 쿠폰 재요청을 확정 여부보다 먼저 두는 이유는 4.5 #4에 있다.
+**재요청 규칙** (INV-005의 상태 술어). 요청의 `couponId`가 주문에 저장된 snapshot의 `couponId`와 같으면 주문의 확정 여부와 무관하게 저장된 결과를 200으로 돌려준다. 재요청은 snapshot을 읽기만 하므로 INV-004(확정 결과 보존)와 충돌하지 않는다(4.5 #4). 이 규칙은 여기에 한 번만 적고 E-6과 4.3의 INV-004, INV-005 행은 이 규칙을 참조한다(4.6 #1).
+
+여러 조건이 동시에 참일 때의 판정 순서도 계약이며 재요청 규칙의 결과다. 소유권(E-4, E-5) → 재요청 규칙(200) → 확정 여부(E-6) → 다른 쿠폰(E-7) → 쿠폰 사용 가능(E-8) → 금액 경계(E-8) 순이다. 소유자가 아니면 쿠폰 상태와 무관하게 404다.
 
 상태 열은 네 가지로 나눈다. **관찰 확정**은 5장에서 실제 HTTP로 본 값이다. **설계 확정**은 설계자가 정했고 열린 질문에 걸려 있지 않은 값이다. **잠정**은 열린 질문이나 보류한 도구 제안에 걸려 있는 값이다. **신규**는 현재 코드에 처리기가 없어 W2가 만들어야 하는 경로다.
 
@@ -138,15 +141,15 @@ status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청�
 | --- | --- | --- | --- | --- | --- | --- |
 | E-1 | `orderId`가 숫자가 아니다 | 400 | `Bad Request` (기존) | 입력 수정 | – | 관찰 확정. 5.1 #2, 5.3 #14 |
 | E-2 | body가 없거나 `couponId`가 누락됐거나 값이 정수로 읽히지 않는다 | 400 | `Bad Request` (기존) | 입력 수정 | – | 잠정 (T-8). 누락, null, 숫자 아닌 문자열, 깨진 JSON, body 없음은 400으로 관찰했다(5.3 #4~#6, #10, #11). 숫자 문자열과 소수와 지수는 정수로 강제 변환되어 통과한다(5.3 #7~#9) |
-| E-3 | `X-USER-ID` 헤더가 없다 | 400 | `Bad Request` | 헤더 추가 | INV-001 | 신규, status는 잠정 (T-7). 현재 코드에는 헤더 누락 처리기가 없어 500으로 관찰했다(5.3 #1). W2가 `MissingRequestHeaderException` 처리기를 더해야 한다. 헤더가 있지만 정수가 아니면 E-1의 처리기로 400이다(5.3 #2, #3) |
+| E-3 | `X-USER-ID` 헤더가 없다 | 400 | `Bad Request` | 헤더 추가 | INV-001 | 신규, status는 잠정 (T-7). 현재 코드에는 헤더 누락 처리기가 없어 500으로 관찰했다(5.3 #1). W2는 `MissingRequestHeaderException` 전용 처리기가 아니라 아래 "Spring MVC 예외의 공통 처리"로 푼다. 헤더가 있지만 정수가 아니면 E-1의 처리기로 400이다(5.3 #2, #3) |
 | E-4 | 주문이 없다 | 404 | `ORDER_NOT_FOUND` | 주문 목록 재조회 | – | 설계 확정 |
 | E-5 | 주문 소유자가 요청자와 다르다 | 404 | `ORDER_NOT_FOUND` | E-4와 구분되지 않는다 | INV-001 | 잠정 (T-1, Q-1). 주문 존재를 숨기는 쪽을 임시 기본값으로 둔다 |
-| E-6 | 주문이 이미 확정됐다 | 409 | `ORDER_ALREADY_CONFIRMED` | 주문 상세 재조회, 할인 불가 안내 | INV-002, INV-004 | 설계 확정. F-1의 "확정 전" |
+| E-6 | 주문이 이미 확정됐고 재요청 규칙에 해당하지 않는다(요청 `couponId`가 저장된 쿠폰과 다르거나 저장된 할인이 없다) | 409 | `ORDER_ALREADY_CONFIRMED` | 주문 상세 재조회, 할인 불가 안내 | INV-002, INV-004 | 설계 확정. F-1의 "확정 전". 저장된 쿠폰과 같은 `couponId`는 이 행이 아니라 재요청 규칙으로 200이다 |
 | E-7 | 이미 다른 쿠폰이 적용된 주문에 다른 `couponId`로 요청했다 | 409 | `DISCOUNT_ALREADY_APPLIED` | 기존 할인 확인 | INV-002 | 잠정 (T-2, Q-4) |
 | E-8 | 쿠폰이 없다 / 소유자가 다르다 / `t0`에 만료됐다 / 이미 사용됐다 / 원금을 넘는다 | 422 | `COUPON_NOT_USABLE` | 다른 쿠폰 선택 | INV-002, INV-003, INV-006 | 잠정 (Q-2, T-3, T-5, T-6). 외부에는 한 코드로 합치고 내부 사유는 구분해 로그에 남긴다 |
 | E-9 | 연결된 handler가 없는 URL | 404 | `Not Found` (기존) | 경로 수정 | – | 관찰 확정. 5.1 #4 |
 | E-10 | 그 외 예상하지 못한 오류 | 500 | `Internal Server Error` (기존) | 재시도 후 문의 | – | 관찰 확정. 기존 `Throwable` 처리기(5.3 #1, #12, #13). 예상할 수 있는 실패는 여기로 보내지 않고 E-11~E-13처럼 행을 따로 둔다 |
-| E-11 | 매핑된 경로에 허용되지 않은 method로 요청했다(예: GET) | 405 | `Method Not Allowed` | method 수정 | – | 신규. 현재는 `Throwable` 처리기가 잡아 500이다(5.3 #13). 할인 API만의 문제가 아니므로 `ApiControllerAdvice` 수정은 팀 결정 사항으로 남긴다 |
+| E-11 | 매핑된 경로에 허용되지 않은 method로 요청했다(예: GET) | 405 | `Method Not Allowed` | method 수정 | – | 신규. 현재는 `Throwable` 처리기가 잡아 500이다(5.3 #13). E-3과 같은 공통 처리로 W2에서 함께 푼다. Example API에도 미치는 변경이므로 5.1의 관찰 값을 `ContractClassificationTest`로 지킨다 |
 | E-12 | Content-Type이 JSON이 아니다 | 415 | `Unsupported Media Type` | Content-Type 수정 | – | 신규. 현재는 500이다(5.3 #12). E-11과 같은 처리 |
 | E-13 | 같은 주문에 동시에 도착한 중복 요청 중 잠금 충돌로 진 요청 | 200 (같은 쿠폰) / 409 (다른 쿠폰) | (없음) / `DISCOUNT_ALREADY_APPLIED` | INV-005와 E-7을 그대로 따른다 | INV-005 | 잠정 (T-12). 지금 체계에서는 잠금 충돌 예외에 처리기가 없어 E-10의 500이 될 것이다. 관찰이 아니라 코드 읽기로 추정한 값이다 |
 
@@ -154,17 +157,32 @@ status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청�
 
 코드 표기는 두 가지가 섞인다. 기존 코드는 `Bad Request`처럼 공백이 있는 reason phrase이고 새 코드는 `ORDER_NOT_FOUND`처럼 대문자 snake case다. 같은 404가 `Not Found`와 `ORDER_NOT_FOUND`를 나른다. 호환을 위해 기존 코드는 그대로 두되 새 코드는 reason phrase 스타일을 쓰지 않는다. 클라이언트는 두 스타일을 모두 문자열 그대로 비교한다.
 
+**Spring MVC 예외의 공통 처리** (W2 인계, 4.6 #5). E-3, E-11, E-12의 원인은 하나다(5.3 드러난 점 1). Spring MVC가 status를 알고 던지는 예외(`MissingRequestHeaderException`, `HttpRequestMethodNotSupportedException`, `HttpMediaTypeNotSupportedException`, `NoResourceFoundException` 등)는 Spring 6.2에서 모두 `org.springframework.web.ErrorResponse`를 구현하고 `statusCode`를 갖는다(spring-web 6.2.5 jar를 `javap`로 확인). 예외 class마다 처리기를 하나씩 더하면 다음 클라이언트 실수는 또 500이 된다. W2는 `handle(Throwable)` 안에서 `e is ErrorResponse`이면 `e.statusCode`와 그 reason phrase를 (status, `errorCode`)로 쓰게 하거나 `ResponseEntityExceptionHandler`를 상속한다. `@ExceptionHandler(ErrorResponse::class)`는 쓸 수 없다. `value`의 타입이 `Class<? extends Throwable>[]`이고 `ErrorResponse`는 interface라 컴파일되지 않으며, 처리기 선택도 superclass 사슬로만 깊이를 잰다(`ExceptionDepthComparator.getDepth`). E-1의 `MethodArgumentTypeMismatchException`은 `TypeMismatchException` 계열이라 `ErrorResponse`가 아니므로 기존 전용 처리기가 그대로 남는다. 이 변경은 Example API의 경로에도 미치므로 5.1의 관찰 값이 바뀌지 않는지 `ContractClassificationTest`로 확인한다.
+
 ### 4.2 세 결정과 버린 대안
 
 #### D-1 오류를 구분하는 방식
 
-- **선택**: 업무 오류 코드를 `meta.errorCode`에 싣고 코드에서 HTTP status로 가는 변환표는 `ApiControllerAdvice` 한 곳에 둔다. 도메인은 실패 사유만 표현하고 HTTP를 모른다. 기존 네 개 코드(`Bad Request`, `Not Found`, `Conflict`, `Internal Server Error`)는 호환을 위해 그대로 둔다.
+- **선택**: 업무 오류 코드를 `meta.errorCode`에 싣고 코드에서 HTTP status로 가는 변환은 한 곳에만 둔다. 기존 네 개 코드(`Bad Request`, `Not Found`, `Conflict`, `Internal Server Error`)와 Example API의 관찰 값(5.1)은 호환을 위해 그대로 둔다. 코드를 나르는 메커니즘은 M2, 즉 기존 `ErrorType`에 할인 행을 더하는 길이다(아래 표, 4.6 #4).
 - **버린 대안**: 지금처럼 `ErrorType`의 HTTP reason phrase만 코드로 쓰고 실패 종류는 `message`로 구분한다.
 - **이유**: 5.1과 5.2에서 확인했듯이 요청자는 `message`를 파싱하지 않고는 다음 행동을 정할 수 없다. `message`는 계약이 아니다. 타입 표기가 `long`으로 새는 것처럼 구현 세부가 문구에 섞인다. 코드는 문구나 언어에 묶이지 않는다. Q-2의 답에 따라 코드를 합치거나 나누는 비용도 변환표 한 줄이면 된다.
 - **함께 버린 것**: 불변식마다 예외 class를 하나씩 두는 1:1 구성. 규칙 여섯 개에 class 여섯 개가 생기고 HTTP 변환이 class에 묶인다. 보조 자료가 경고한 폭증이다.
-- **버린 대안 둘째 (검토 후 추가)**: `ErrorType`을 확장해 할인 실패를 넣는다. `CoreException(ErrorType)`은 `HttpStatus`를 품고 있어 이 길을 택하면 도메인이 HTTP status를 고른다. 지금 `ExampleService`가 `NOT_FOUND`를 고르는 방식이 그 예이며 "도메인은 HTTP를 모른다"와 어긋난다. 변환표도 advice가 아니라 enum 자체가 된다.
-- **내부 사유와 외부 코드의 관계 (검토 후 추가)**: 내부 사유는 외부 코드보다 잘게 둔다. E-4(주문 없음)와 E-5(소유자 다름)는 도메인에서 다른 사유이고 변환표에서 같은 404 `ORDER_NOT_FOUND`로 합쳐진다. E-8의 다섯 사유도 같다. T-1이 뒤집혀 E-5를 403으로 바꾸는 일이 "변환표 한 줄"인 이유는 도메인이 두 사유를 이미 구분하기 때문이다.
-- **W2 영향**: HTTP status를 갖지 않는 할인 전용 실패 사유 열거형을 도메인에 두고 사유에서 (status, `errorCode`)로 가는 변환표를 `ApiControllerAdvice`에 더한다. 기존 `ErrorType`과 Example API의 관찰 값(5.1)은 바뀌지 않아야 한다.
+- **내부 사유와 외부 코드의 관계 (검토 후 추가)**: 내부 사유는 외부 코드보다 잘게 둔다. E-4(주문 없음)와 E-5(소유자 다름)는 도메인에서 다른 사유이고 변환 지점에서 같은 404 `ORDER_NOT_FOUND`로 합쳐진다. E-8의 다섯 사유도 같다. T-1이 뒤집혀 E-5를 403으로 바꾸는 일이 "한 줄"인 이유는 도메인이 두 사유를 이미 구분하기 때문이다. 이 성질은 아래 세 메커니즘 어디에서나 성립한다.
+- **W2 영향**: `ErrorType`에 할인 행을 더한다. 외부 코드는 4.1의 네 개(`ORDER_NOT_FOUND` 404, `ORDER_ALREADY_CONFIRMED` 409, `DISCOUNT_ALREADY_APPLIED` 409, `COUPON_NOT_USABLE` 422)이고, 내부 사유가 갈리는 곳(E-5의 소유자 다름, E-8의 다섯 사유)은 상수를 따로 두되 `code` 문자열은 외부 코드를 공유한다. 그래야 T-1이나 Q-2가 뒤집힐 때 행 하나만 바꾸면 된다. 도메인은 지금 `ExampleService`처럼 `CoreException(ErrorType, customMessage)`를 던지고 advice는 손대지 않는다. 기존 `ErrorType` 네 행과 5.1의 관찰 값은 바뀌지 않아야 하며 `ContractClassificationTest`가 이를 지킨다.
+
+**코드를 나르는 메커니즘** (PR 검토 후 다시 정한 항목, 4.6 #4). 4.5 #11은 "도메인은 HTTP를 모른다"를 이유로 M1(할인 전용 실패 사유 열거형 + advice 변환표)을 골랐다. PR 검토는 두 가지를 지적했다. 첫째, 그 규칙은 현재 코드 어디에서도 강제되지 않는다. `ExampleService`가 `CoreException(ErrorType.NOT_FOUND)`로 status를 직접 고른다. 둘째, M1은 같은 advice를 지나는 예외 파이프라인을 둘로 만들고 같은 `meta.errorCode` 위에 두 표기를 얹으며 이후 모든 API가 둘 중 하나를 골라야 한다. `ErrorType`은 이미 (status, `code` 문자열, message) 열거형이고 `code`는 자유 문자열이며 소비자는 `ApiControllerAdvice.failureResponse` 한 곳이다. 세 길을 같은 무게로 비교한다.
+
+| 축 | M1 전용 열거형 + advice 변환표 (4.5 #11) | M2 `ErrorType`에 할인 행 추가 | M3 `CoreException`이 HTTP 없는 코드를 들고 advice에 코드→status 표 하나 |
+| --- | --- | --- | --- |
+| advice를 지나는 파이프라인 | 2개 (`CoreException`, 새 예외) | 1개 | 1개 |
+| 변환 지점 | advice의 `when` 하나 (새 예외만) | `ErrorType` 행 자체 | advice의 표 하나 (모든 예외) |
+| 도메인이 `HttpStatus`를 아는가 | 모른다 | 안다 (`ExampleService`와 같은 기존 관례) | 모른다 |
+| T-1 뒤집기 (E-5를 403으로) | `when` 한 줄 | 행 하나 (E-4와 E-5를 별도 상수로 두고 같은 `code` 문자열을 준다) | 표 한 줄 |
+| Example API 관찰 값(5.1) | 불변 | 불변 | 기존 네 행의 wire 문자열을 유지하면 불변. `ContractClassificationTest`로 확인 |
+| W2 `src/main` 변경 범위 | 새 열거형, 새 예외, advice 처리기 1개 | `ErrorType` 행 4개 (내부 사유까지 상수로 나누면 더) | `ErrorType`, `CoreException`, advice, `ExampleService` (공유 코드) |
+| 코드 표기 | 두 가지 (reason phrase / snake) | 두 가지 | 두 가지 |
+
+코드 표기가 두 가지인 것은 어느 길에서도 같다. 기존 문자열을 바꾸면 5.1이 바뀌기 때문이다. M1의 남은 장점은 "도메인이 HTTP를 모른다"뿐인데 그것을 팀 규칙으로 삼을 것이라면 M3이 그 규칙을 실제로 강제하는 길이고, 삼지 않는다면 M2가 가장 작은 변경이다. **M2를 골랐다.** 쿠폰 한 장 장면에서 아직 없는 규칙을 위해 파이프라인을 하나 더 만들지 않는다(YAGNI). 그 규칙을 팀이 채택하는 날 M3으로 옮기면 되고 그때도 4.1의 코드와 status는 바뀌지 않는다. 4.5 #11의 M1 선택은 이 결정으로 대체된다.
 
 #### D-2 snapshot과 재계산
 
@@ -194,8 +212,8 @@ status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청�
 | INV-001 | `Order.applyDiscount`의 소유자 검사 (도메인) | – | 404 `ORDER_NOT_FOUND` (잠정, T-1) | U2가 U1의 주문 #10에 요청. 할인 0건 |
 | INV-002 | `Order`의 할인 자리 하나, `Coupon.usableBy(owner, t0)`의 소유자 검사 (도메인) | `Order`의 `@Version` 낙관적 잠금 (D-2) | 422 `COUPON_NOT_USABLE` (남의 쿠폰), 409 `DISCOUNT_ALREADY_APPLIED` (두 번째 쿠폰, 잠정 T-2) | U1 주문에 C-U2. C-A 뒤 C-B |
 | INV-003 | `Order.applyDiscount`의 금액 계산 (도메인, 금액 값 객체) | DB CHECK (선택 사항) | 422 `COUPON_NOT_USABLE` (원금 초과, 잠정 T-5) | 10,000원 주문에 15,000원 쿠폰. 10,000원 쿠폰은 성공, 최종 0원 |
-| INV-004 | `Order`의 snapshot 필드. 확정 뒤 변경 메서드 없음 (도메인) | 조회 모델이 저장값만 읽음 | 409 `ORDER_ALREADY_CONFIRMED` (확정 뒤 요청) | 정책 10%에서 20%로 바꾼 뒤 조회. 1,000원과 9,000원 유지. 조회 API가 없으므로(T-10) 저장소로 읽는다 |
-| INV-005 | 같은 `couponId`면 저장 결과를 돌려주는 `Order` (도메인) | `Order`의 `@Version` 낙관적 잠금 (D-2). 진 요청은 E-13 | 200, 첫 응답과 같은 body | 같은 요청 2회. 할인 1건, 응답 body 동일. 쿠폰 상태는 확인하지 않는다(Q-5) |
+| INV-004 | `Order`의 snapshot 필드. 확정 뒤 변경 메서드 없음 (도메인) | 조회 모델이 저장값만 읽음 | 409 `ORDER_ALREADY_CONFIRMED` (확정 뒤 다른 쿠폰 요청. 저장된 쿠폰과 같은 `couponId`는 4.1 재요청 규칙으로 200, INV-005 행) | 정책 10%에서 20%로 바꾼 뒤 조회. 1,000원과 9,000원 유지. 조회 API가 없으므로(T-10) 저장소로 읽는다. 확정 뒤 다른 쿠폰 C-B 요청은 409 |
+| INV-005 | 같은 `couponId`면 저장 결과를 돌려주는 `Order` (도메인) | `Order`의 `@Version` 낙관적 잠금 (D-2). 진 요청은 E-13 | 200, 첫 응답과 같은 body (주문 확정 여부와 무관, 4.1 재요청 규칙) | 같은 요청 2회. 할인 1건, 응답 body 동일. 주문을 확정한 뒤 같은 요청 1회 더: 여전히 200, 같은 body. 쿠폰 상태는 확인하지 않는다(Q-5) |
 | INV-006 | use case가 `Clock`에서 `t0`를 얻고, `Coupon.usableBy(owner, t0)`가 판단 (application + 도메인) | `appliedAt` 저장 | 422 `COUPON_NOT_USABLE` (만료) | `23:59:59.990` 도착은 성공, `00:00:00.010` 도착은 거절 |
 
 "조회"는 이번 주 계약에 HTTP 경로가 없다. INV-004의 반례와 E-6, E-7의 "재조회"는 W2 테스트에서 저장소 읽기로 대신한다(T-10).
@@ -224,7 +242,7 @@ status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청�
 | 3 | 상태 열의 "확정" 하나 | E-1과 E-9는 5.1에서 관찰했고 E-4와 E-6은 설계자가 정했는데 표기가 같아 어느 행을 검증했는지 알 수 없다. | 관찰 확정 / 설계 확정 / 잠정 / 신규로 나눴다. | 4.1 범례 |
 | 4 | D-3 순서: 소유권 → 확정 여부 → 할인 자리 | 확정 뒤에 같은 쿠폰으로 재요청하면 409(E-6)가 되어 INV-005의 "n번째 응답은 1번째와 같다"와 어긋난다. 같은 쿠폰 재요청은 snapshot을 읽기만 하므로 INV-004와도 충돌하지 않는다. | 같은 쿠폰 재요청을 확정 여부보다 먼저 판정한다. 판정 순서를 4.1에 적었다. | 4.1, D-3 |
 | 5 | 방어선: 저장소 `unique(order_id)` | D-2는 할인을 `Order` 필드로 두므로 `order_id`는 PK이고 unique 제약이 성립하지 않는다. | 방어선은 `Order`의 `@Version` 낙관적 잠금. 진 요청의 응답은 E-13. | D-2, 3.1, 4.3 |
-| 6 | INV-005 확인 항목: 쿠폰 사용 1회 | D-3의 `applyDiscount`는 `Coupon`을 바꾸지 않고 Q-5가 쿠폰 상태의 존재 여부를 미룬다. 확인할 대상이 없다. | "쿠폰 상태는 확인하지 않는다(Q-5)". | 4.3 INV-005, D-3 |
+| 6 | INV-005 확인 항목: 쿠폰 사용 1회 | D-3의 `applyDiscount`는 `Coupon`을 바꾸지 않고 Q-5가 쿠폰 상태의 존재 여부를 미룬다. 확인할 대상이 없다. | "쿠폰 상태는 확인하지 않는다(Q-5)". | 4.3 INV-005, D-3. 3.1 INV-005는 빠뜨렸다가 4.6 #3에서 고쳤다 |
 | 7 | 재요청 근거: INV-005가 본문 동일을 요구하므로 201/200으로 나누지 않는다 | INV-005는 body만 제약하고 status는 제약하지 않는다. | 나누지 않는 이유는 단순함이다. | 4.1 재요청 성공 |
 | 8 | `Coupon.usableAt(t0)`와 `usableBy(owner, t0)` 혼용 | 3.1과 4.2, 4.3의 이름이 다르다. W2 테스트 이름이 갈린다. | `usableBy(owner, t0)`로 통일했다. | 3.1 INV-006 |
 | 9 | E-10: 그 외 예상하지 못한 오류 | 5.3 #12, #13. 잘못된 method와 Content-Type도 500이다. 예상할 수 있는 클라이언트 실수인데 E-10의 다음 행동은 "재시도 후 문의"다. | E-11, E-12 행을 신규로 추가했다. 처리기 수정은 팀 결정 사항. | 4.1 E-11, E-12 |
@@ -233,13 +251,25 @@ status를 고르는 규칙은 하나다. 요청 형식이 틀리면 400, 요청�
 | 12 | 동시 중복 요청은 방어선이 막는다 | 방어선이 막은 뒤 진 요청에 무엇을 돌려줄지가 없다. 지금 체계에서는 500이다. | E-13 행을 잠정으로 추가했다(T-12). | 4.1 E-13 |
 | 13 | (status 배정 규칙 없음) | 404, 409, 422가 행마다 따로 정해져 있어 Q-2의 답이 오면 행을 하나씩 다시 정해야 한다. | status 규칙 한 문장을 4.1에 적었다. | 4.1 |
 
+### 4.6 PR 검토로 고쳐 쓴 항목 (2026-09-11)
+
+PR #2에 남긴 자동 코드 리뷰 10건을 하나씩 코드와 jar로 확인한 뒤 고친 기록이다. 형식은 4.5와 같다. 고치기 전 문장은 commit `9aae0e6`의 이 문서에 있다. 테스트 코드와 다른 두 문서의 변경은 각 파일에 있다.
+
+| # | 처음 문장 | 깨뜨린 근거 | 고쳐 쓴 문장 | 위치 |
+| --- | --- | --- | --- | --- |
+| 1 | 재요청 예외는 4.1의 판정 순서 문장과 4.5 #4, D-3에만 있었다 | E-6과 4.3 INV-004는 "확정 뒤 요청은 409"라고만 적혀 있어 확정된 주문 + 같은 쿠폰 입력에서 INV-004 테스트(409)와 INV-005 테스트(200)가 동시에 통과할 수 없다 | 재요청 규칙을 상태 술어로 4.1에 한 번 적고 E-6, 4.3 INV-004, 4.3 INV-005가 그 규칙을 참조한다. 판정 순서는 규칙의 결과다 | 4.1 재요청 규칙, E-6, 4.3 INV-004, INV-005, 3.1 INV-005 |
+| 2 | 5장 관찰 방법: `TestRestTemplate`, JSON tree | 테스트는 `RestClient`와 `JsonContent`(JsonPath)를 쓴다. `contract-test-decisions.md`와도 모순이었다 | `RestClient`, raw JSON + JsonPath로 고쳤다 | 5장 관찰 방법 |
+| 3 | 3.1 INV-005: "쿠폰 사용 횟수는 늘지 않는다", "쿠폰 사용은 1회로 유지된다" | 4.5 #6이 4.3과 D-3만 고치고 3.1을 빠뜨렸다. Q-5 전까지 쿠폰 상태는 확인 대상이 아니다 | 두 구절을 지우고 "쿠폰 상태는 Q-5 전까지 확인하지 않는다"로 바꿨다 | 3.1 INV-005, 4.5 #6 위치 열 |
+| 4 | D-1: `ErrorType` 확장은 도메인이 HTTP status를 고르므로 버린다 | 그 규칙은 현재 코드에서 강제되지 않고(`ExampleService`), 전용 열거형은 advice를 지나는 파이프라인을 둘로 만든다 | 코드 기반 구분(D-1의 선택)은 유지하고 메커니즘 M1/M2/M3을 같은 무게로 비교한 뒤 M2(`ErrorType` 확장)로 바꿨다. 4.5 #11을 대체한다 | D-1 |
+| 5 | E-3: W2가 `MissingRequestHeaderException` 처리기를 더한다 | 5.3 드러난 점 1의 원인은 `Throwable` 처리기이고, status를 아는 Spring MVC 예외는 모두 `ErrorResponse`를 구현한다. 예외마다 처리기를 더하면 다음 실수는 또 500이다 | `ErrorResponse` 공통 처리로 E-3, E-11, E-12를 W2에서 한 번에 푼다. E-11, E-12의 "팀 결정 사항" 보류(4.5 #9)는 거둔다. 방법과 제약(`@ExceptionHandler`에 interface 불가)은 4.1 끝에 있다 | 4.1 E-3, E-11, 공통 처리 문단 |
+
 ## 5. 기존 동작 관찰: `GET /api/v1/examples/{id}`
 
 새 기능을 만들기 전에 이미 있는 Example API가 네 종류의 입력에 어떤 외부 계약을 돌려주는지 실제 HTTP로 관찰했다.
 W2의 할인 API는 같은 `ApiResponse` 모양과 같은 `ApiControllerAdvice`를 타므로 여기서 본 오류 의미가 그대로 출발점이 된다.
 
 - 관찰 방법: `apps/commerce-api/src/test/kotlin/com/loopers/interfaces/api/ContractClassificationTest.kt`
-  (`RANDOM_PORT` + `TestRestTemplate`, 응답 body는 `ApiResponse`로 역직렬화하지 않고 JSON tree로 읽음)
+  (`RANDOM_PORT` + `RestClient`, 응답 body는 `ApiResponse`로 역직렬화하지 않고 raw JSON을 JsonPath(`JsonContent`)로 읽음. 도구 선택 이유는 `contract-test-decisions.md`)
 - 실행 명령: `./gradlew :apps:commerce-api:test --tests 'com.loopers.interfaces.api.ContractClassificationTest'`
 - 실행 결과 (2026-09-08): 4 tests, 0 skipped, 0 failed, exit code 0
 - 기존 `ExampleV1ApiE2ETest`(3 cases)도 같은 날 3 tests, 0 skipped, 0 failed로 통과
@@ -338,3 +368,15 @@ Guide의 "확인 방법" 순서대로 2026-09-08에 실행한 결과다. 명령�
 | 2 | Guide 고정 commit과 src/main 동일 | `git diff --name-only 807c3f8 HEAD -- apps/commerce-api/src/main` | 출력 없음 |
 | 3 | probe 삭제 후 제품 코드 무변경 | `git diff --name-only -- apps/commerce-api/src/main` | 출력 없음 |
 | 4 | probe 삭제 후 작업 트리 | `git status --short` | 이 문서만 |
+
+### 6.2 PR 검토 반영 후 확인 (2026-09-11)
+
+4.6의 항목과 `ContractClassificationTest`의 두 변경(builder 단위 `defaultStatusHandler`, `requireNotNull(response.body)`)을 적용한 뒤 확인한 결과다.
+
+| 순서 | 확인 항목 | 명령 | 결과 |
+| --- | --- | --- | --- |
+| 1 | 관찰 테스트 | `./gradlew :apps:commerce-api:test --tests 'com.loopers.interfaces.api.ContractClassificationTest' --rerun` | 4 tests, 0 skipped, 0 failed |
+| 2 | 전체 회귀 | `./gradlew :apps:commerce-api:test --rerun` | 15 tests, 0 skipped, 0 failed |
+| 3 | 테스트 소스 lint | `./gradlew :apps:commerce-api:ktlintTestSourceSetCheck` | exit 0 |
+| 4 | 제품 코드 무변경 | `git diff --name-only -- apps/commerce-api/src/main` | 출력 없음 |
+| 5 | 바뀐 파일 | `git status --short` | 이 문서, `contract-test-decisions.md`, `docker29-testcontainers-compat.md`, `ContractClassificationTest.kt`, `.sdkmanrc` |

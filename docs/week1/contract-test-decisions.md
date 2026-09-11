@@ -2,7 +2,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 작성일 | 2026-09-09 |
+| 작성일 | 2026-09-09. PR 검토 반영 2026-09-11 (2.5, 3.2, 3.3, 3.5, 3.6, 3.7) |
 | 대상 파일 | `apps/commerce-api/src/test/kotlin/com/loopers/interfaces/api/ContractClassificationTest.kt` |
 | 관련 문서 | `docs/week1/order-discount-contract.md` 5장 (관찰 표) |
 | 확인한 버전 | Spring Boot 3.4.4, Spring Framework 6.2.5, spring-test 6.2.5, Jackson 2.18.3, AssertJ 3.26.3 (모두 `testRuntimeClasspath` 에서 확인) |
@@ -114,6 +114,8 @@ assertThat(json).extractingPath("$.data.id").convertTo(Long::class.java).isEqual
 
 `HttpMessageContentConverter.of(MappingJackson2HttpMessageConverter(objectMapper))` 는 JsonPath 로 **이미 꺼낸 leaf 값**을 원하는 타입으로 바꿀 때만 쓴다. 이 시점에는 `$.data.id` 가 있다는 사실을 이미 확인한 뒤다. 구조는 raw JSON 으로, 값 비교는 앱과 같은 mapper 로 한다. 왕복 손실 없이 두 가지를 모두 얻는다.
 
+body 가 없거나 비어 있으면 `DefaultRestClient` 는 `null` 을 돌려주고(`readWithMessageConverters`, 6.2.5 sources 217~220행) `JsonContent` 생성자는 `Assert.notNull` 로 null 을 거부한다. 처음에는 `response.body ?: "{}"` 로 생성자 검사만 피했는데, PR 검토가 지적했듯 그러면 "body 없음" 이 "빈 객체" 로 합쳐져 `doesNotHavePath("$.data")` 같은 부정 assertion 네 곳이 공허하게 통과하고 실패 메시지도 실제 관찰값 대신 대체값 `{}` 를 보여 준다. 이 테스트가 raw JSON 을 쓰는 이유(2.2)와 같은 종류의 합침이다. 지금은 `requireNotNull(response.body) { "응답 body가 비어 있다 (status=...)" }` 로 body 없음을 그 자리에서 실패로 드러낸다.
+
 ### 2.6 기존 E2E 테스트와의 대비: 역할이 다르다
 
 `ExampleV1ApiE2ETest` 는 `ApiResponse<ExampleV1Dto.ExampleResponse>` 로 역직렬화한다. 그 테스트는 알려진 endpoint 에서 **값**을 검증하므로 맞는 선택이다. 다만 그 테스트의 오류 케이스 두 개를 보면 status 만 검사하고 `meta.result`, `meta.errorCode`, `data` 유무는 검사하지 않는다. 타입을 정한 순간 "data 가 없다"를 표현할 수 없게 되었기 때문이다. `ContractClassificationTest` 는 바로 그 빈자리를 채우려고 만든 테스트다. 두 테스트는 같은 endpoint 를 다른 축에서 본다.
@@ -149,31 +151,37 @@ assertThat(json).extractingPath("$.data.id").convertTo(Long::class.java).isEqual
 | Spring Framework 6.2.5 `RestTemplate` Javadoc | "As of 6.1, `RestClient` offers a more modern API for synchronous HTTP access. … `RestClient` is the focus for new higher-level features." `RestTemplate` 은 없어지지 않지만 새 기능의 중심이 아니다. |
 | Spring Framework 7.0 `spring-test` | `org.springframework.test.web.servlet.client.RestTestClient` 가 새로 들어왔다. `RestClient` 와 같은 fluent 모양의 테스트 클라이언트다. |
 
-`TestRestTemplate` 은 `RestTemplate` 을 감싼 테스트용 클래스다. `RestTemplate` 은 유지 보수 단계에 있고 `RestClient` 가 현재 방향이다. 여기까지는 배경일 뿐 결정의 이유는 아니다. 이유는 아래 세 가지다.
+`TestRestTemplate` 은 `RestTemplate` 을 감싼 테스트용 클래스다. `RestTemplate` 은 유지 보수 단계에 있고 `RestClient` 가 현재 방향이다. 여기까지는 배경일 뿐 결정의 이유는 아니다. 처음 적은 이유는 아래 세 가지였다. PR 검토 뒤 A 와 B 는 약해졌고 C 만 남았다(3.7).
 
-### 3.2 이유 A: 오류 허용이 호출 단위로 드러난다
+### 3.2 이유 A (PR 검토 후 고쳐 씀): 오류 허용을 builder 에서 한 번 선언한다
 
-`TestRestTemplate` 은 생성 시점에 `NoOpResponseErrorHandler` 를 전역으로 건다 (3.4.4 sources 152행). 그래서 4xx/5xx 가 와도 절대 예외를 던지지 않는다. 편리하지만 테스트 코드만 읽어서는 어느 호출이 오류를 기대하는지 알 수 없다.
+처음 문장은 "오류 허용이 호출 단위로 드러난다" 였다. `get()` 안에서만 `onStatus(HttpStatusCode::isError) { _, _ -> }` 를 걸어 "이 호출에 한해 4xx/5xx 를 허용한다" 고 적고, 나중에 성공만 기대하는 호출을 추가하면 기본값대로 예외를 던져 준다는 점을 장점으로 들었다.
 
-`RestClient` 는 Spring 기본값대로 4xx/5xx 에서 예외를 던진다. 이 테스트는 그 기본값을 유지하고 오류 응답 자체가 관찰 대상인 `get()` 한 곳에서만 허용을 선언한다.
+PR 검토가 이 문장을 깼다. 네 테스트가 모두 `get()` 하나를 거치고 다른 요청 경로가 없으므로 실제 효과는 `TestRestTemplate` 이 생성 시점에 거는 전역 `NoOpResponseErrorHandler`(3.4.4 sources 152행) 와 같고, 헬퍼 한 겹과 주석만 더 붙은 것이었다. 코드가 갖지 않은 성질로 논증한 셈이다.
 
-```kotlin
-restClient.get().uri(path).retrieve()
-    .onStatus(HttpStatusCode::isError) { _, _ -> }   // 이 호출에 한해 4xx/5xx 를 ResponseEntity 로 받는다
-    .toEntity<String>()
-```
-
-"이 테스트는 오류 응답을 관찰한다"는 의도가 코드에 적힌다. 나중에 같은 클래스에 성공만 기대하는 호출을 추가하면 그 호출은 기본값대로 예외를 던져 준다.
-
-### 3.3 이유 B: Kotlin 에서 타입 지정이 짧고 `String` 으로 받는 의도가 드러난다
-
-spring-web 6.2.5 는 `RestClient` 용 Kotlin 확장 함수(`RestClientExtensionsKt`)를 제공한다. `toEntity<String>()` 은 reified 타입 인자 하나로 끝난다. `TestRestTemplate` 로 같은 일을 하려면 다음처럼 써야 한다.
+그래서 선언을 builder 로 옮기고 `get()` 을 한 줄로 줄였다.
 
 ```kotlin
-testRestTemplate.exchange(url, HttpMethod.GET, HttpEntity<Any>(Unit), String::class.java)
+private val restClient: RestClient = restClientBuilder
+    .baseUrl("http://localhost:$port")
+    .defaultStatusHandler(HttpStatusCode::isError) { _, _ -> }   // 이 클라이언트는 4xx/5xx 를 예외로 바꾸지 않는다
+    .build()
+
+private fun get(path: String): ResponseEntity<String> =
+    restClient.get().uri(path).retrieve().toEntity<String>()
 ```
 
-`String` 을 넘기는 이유(2.5)가 코드 한 줄에 드러나는 쪽이 이 테스트의 KDoc 과 맞는다.
+남는 차이는 하나뿐이다. `TestRestTemplate` 은 생성자 안에서 오류 무시를 거는 반면 여기서는 테스트 클래스 안에 그 선언이 한 줄 보인다. 가독성 차이이지 기능 차이가 아니다. 이유 A 만으로는 `RestClient` 를 고를 근거가 되지 않는다.
+
+### 3.3 이유 B (PR 검토 후 고쳐 씀): Kotlin 에서 `String` 으로 받는 의도가 드러난다
+
+spring-web 6.2.5 는 `RestClient` 용 Kotlin 확장 함수(`RestClientExtensionsKt`)를 제공한다. `toEntity<String>()` 은 reified 타입 인자 하나로 끝난다. 처음 문장은 이를 `TestRestTemplate` 의 `exchange(url, HttpMethod.GET, HttpEntity<Any>(Unit), String::class.java)` 와 비교했는데 공정한 비교가 아니었다. GET 에는 다음 한 줄이 있다.
+
+```kotlin
+testRestTemplate.getForEntity(path, String::class.java)
+```
+
+길이 차이는 거의 없다. 남는 차이는 타입 인자가 reified 라는 점과 fluent 모양뿐이다. 이유 B 도 약하다.
 
 ### 3.4 이유 C: 추가 의존성 없이 프로젝트가 옮겨갈 API 모양에 맞춘다
 
@@ -188,15 +196,26 @@ testRestTemplate.exchange(url, HttpMethod.GET, HttpEntity<Any>(Unit), String::cl
 | base URL 을 직접 만들어야 한다. `TestRestTemplate` 은 `RANDOM_PORT` 를 자동으로 붙여 준다. | `@LocalServerPort` 를 주입받아 `baseUrl("http://localhost:$port")` 한 줄로 해결했다. |
 | 기존 `ExampleV1ApiE2ETest` 와 클라이언트가 다르다. | 기존 테스트는 이번 주 제약상 손대지 않는다. 두 테스트는 목적이 다르므로(2.6) 도구가 달라도 각자의 이유가 있다. 나중에 두 테스트를 `RestTestClient` 로 옮기는 시점에 통일하면 된다. |
 | 과제 안내는 `TestRestTemplate` 을 예시로 들었다. | 안내가 요구한 것은 네 입력의 status / `meta.result` / errorCode / `data` 유무 관찰이다. 도구는 수단이고 관찰 값은 관련 문서 5.1 표와 같다. |
+| `RestClient.Builder` bean 은 prototype scope 이고 이 클래스는 PER_METHOD + `@Nested` 라서 테스트 메서드마다 `RestClient` 가 하나씩 만들어진다(4개, close 하지 않는다). `TestRestTemplate` 은 컨텍스트에 이미 있는 bean 하나다 (PR 검토 지적). | 요청 4개 규모에서는 무시할 비용이다. 테스트가 늘면 `@TestInstance(PER_CLASS)` 로 하나만 만들거나 `TestRestTemplate` 으로 옮긴다. |
 
 ### 3.6 버린 대안
 
 | 대안 | 버린 이유 |
 | --- | --- |
-| `TestRestTemplate` | 3.2 에서 말한 전역 오류 무시가 이 테스트의 의도를 코드에서 지운다. 3.3 의 boilerplate 와 3.4 의 방향도 이유다. |
+| `TestRestTemplate` | 처음 이유는 "3.2 의 전역 오류 무시가 의도를 지운다" 였는데 PR 검토 뒤 이 테스트도 같은 효과임을 인정했고(3.2), 3.3 의 boilerplate 차이도 작다. 남은 이유는 3.4 뿐이다. 그 근거만으로 계속 둘지는 3.7 에 적었다. |
 | `MockMvc` / `MockMvcTester` | 서블릿 컨테이너 없이 `DispatcherServlet` 만 돈다. `ControllerAdvice` 와 message converter 는 타지만 Tomcat 의 error page 전달이나 컨테이너 수준 필터 같은 실제 서버 경로는 거치지 않는다. "요청자가 보는 것"을 고정하려면 `RANDOM_PORT` 의 실제 서버가 필요하다. |
 | `WebTestClient` | `spring-webflux` 의존성이 필요하다. 이번 주 제약에 걸린다. |
 | `RestTestClient` | Spring Framework 7 / Boot 4 에만 있다. 이 프로젝트는 Boot 3.4.4 다. |
+
+### 3.7 PR 검토 뒤 남은 상태 (2026-09-11)
+
+| 이유 | 검토 전 | 검토 후 |
+| --- | --- | --- |
+| A 오류 허용 선언 | 호출 단위 | builder 단위. `TestRestTemplate` 과 기능 차이 없음 |
+| B 타입 지정 | `exchange(...)` 와 비교해 짧다 | `getForEntity(path, String::class.java)` 와 비교하면 차이가 거의 없다 |
+| C 방향과 의존성 | 새 의존성 없음. `RestTestClient` 와 같은 모양 | 그대로 |
+
+결정 2 는 이제 이유 C 하나에 기대고 있다. 그래도 `RestClient` 를 유지하기로 했다(2026-09-11). 오류 처리는 두 클라이언트가 같아졌고 코드 길이 차이도 작으므로 남는 근거는 `RestTestClient` 와 같은 호출 모양이라는 방향성뿐이라는 점을 인정한 채로 둔 결정이다. 마음이 바뀌면 `getForEntity(path, String::class.java)` 한 줄로 옮길 수 있고 2장의 raw JSON 결정은 그대로 유지된다. 두 결정은 독립이다.
 
 ## 4. 확인 기록
 
@@ -212,5 +231,8 @@ testRestTemplate.exchange(url, HttpMethod.GET, HttpEntity<Any>(Unit), String::cl
 | `RestTemplate` Javadoc 의 `RestClient` 안내 | `spring-web-6.2.5-sources.jar` 의 `RestTemplate.java` 95~106행 |
 | `RestClient.Builder` 자동 구성과 converter 연결 | `spring-boot-autoconfigure-3.4.4-sources.jar` 의 `RestClientAutoConfiguration.java` |
 | Kotlin 확장 `toEntity` | `spring-web-6.2.5.jar` 의 `org/springframework/web/client/RestClientExtensionsKt.class` |
+| `RestClient.Builder.defaultStatusHandler(Predicate, ErrorHandler)` | `spring-web-6.2.5-sources.jar` 의 `RestClient.java` 352행 |
+| 빈 body 는 `null` 로 돌아온다 | `spring-web-6.2.5-sources.jar` 의 `DefaultRestClient.java` 209~220행 (`readWithMessageConverters`) |
+| `JsonContent` 생성자의 null 거부 | `spring-test-6.2.5-sources.jar` 의 `JsonContent.java` 47~48행 |
 | `JsonContent`, `HttpMessageContentConverter` | `spring-test-6.2.5.jar` |
 | `RestTestClient` | `spring-test-7.0.8.jar`, `spring-test-7.0.9.jar` |
