@@ -17,4 +17,5 @@ ktlint_standard_import-ordering = disabled
 ktlint_standard_indent = disabled
 
 [*Test.kt]
-max_line_length = off
+# ktlint only allows backtick names in files importing org.junit etc., not com.tngtech.archunit.junit
+ktlint_function_naming_ignore_when_annotated_with = ArchTest
