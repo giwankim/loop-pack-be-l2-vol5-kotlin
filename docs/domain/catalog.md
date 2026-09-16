@@ -35,7 +35,7 @@
 
 ### 협력
 
-- 등록: `BrandService.register` → 이름 중복 조회 → `Brand(name)` → 저장.
+- 등록: `BrandService.register` → `Brand(name)`(이름 규칙 검사와 trim) → 뗀 이름으로 중복 조회 → 저장. 중복 조회가 trim된 이름을 봐야 하므로 이름 규칙이 먼저다.
 - 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장.
 
 ## 상품 (Product)

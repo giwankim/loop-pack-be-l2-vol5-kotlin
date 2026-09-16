@@ -42,6 +42,7 @@ C4Component
 | application | 유스케이스 순서, 교차 검사(브랜드 삭제 조건, 이름 중복, 브랜드 존재), 응답 모델 조합 | domain | interfaces, infrastructure |
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
+| config | Spring 설정(관리자 경계 `AdminBoundaryConfig`) | 프레임워크 설정 API | 없음. 대신 다른 모든 계층이 config에 의존하면 안 된다 |
 
 패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. 버전은 패키지가 아니라 클래스 이름에 붙인다(`BrandV1Controller`, `BrandAdminV1Controller`). 그래야 ArchUnit의 슬라이스 규칙이 개념 단위로 순환을 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓴다(`BrandService`). starter의 Example 코드가 쓰는 `Facade`와 domain의 `ExampleService`는 이 프로젝트의 이름 지침이 아니고, Example은 프로젝트가 자리를 잡으면 지운다.
 
@@ -254,6 +255,19 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.9 카탈로그 조회의 식별
 
 브랜드·상품 조회는 요청자 없이 된다. 과제의 "자신의 좋아요·포인트·주문만" 문장이 식별이 필요한 곳을 정확히 셋으로 적고 있고, 조회 계약은 누가 부르는지에 의존하지 않는다.
+
+### 5.10 설정 클래스의 계층
+
+- 문제: `LayeredArchitectureTest`는 모든 클래스가 어느 계층에 속하기를 요구한다. 과제가 준 `com.loopers.config.AdminBoundaryConfig`는 어느 계층에도 속하지 않아 규칙을 어긴다.
+- 대안 A: 설정을 `interfaces`나 `support` 아래로 옮긴다. 규칙은 그대로지만 과제와 `modules/jpa`(`com.loopers.config.jpa`)가 쓰는 패키지 이름과 어긋난다.
+- 대안 B: `com.loopers.config..`를 `config` 계층으로 정의하고 어떤 계층도 그것에 의존하지 못하게 한다.
+- 선택: B (2026-09-16, #2 구현 중). 규칙을 풀지 않고 계층을 하나 더 이름 붙인다. 설정은 프레임워크가 읽을 뿐 코드가 부르지 않는다.
+- 다시 볼 조건: 설정 클래스가 도메인이나 application의 타입을 알아야 할 때.
+
+### 5.11 브랜드 등록의 검사 순서
+
+- `docs/domain/catalog.md`의 첫 안은 "이름 중복 조회 → `Brand(name)`"이었다. 구현(#2)에서는 `Brand(name)`을 먼저 만든다.
+- 이유: 중복은 trim된 이름끼리 비교해야 한다(`" 루퍼스 "`와 `"루퍼스"`는 같은 이름). 또 공백뿐인 이름은 조회 없이 400으로 끝난다. 두 검사가 모두 걸리면 400이 409보다 먼저다.
 
 ## 6. 테스트 경계
 
