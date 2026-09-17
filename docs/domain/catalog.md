@@ -2,9 +2,9 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 이 문서는 각 개념이 무엇을 가지고, 무엇을 지키고, 무엇을 할 수 있는지를 적는다. 구조와 API는 [`docs/design/catalog.md`](../design/catalog.md)에 있다.
 
-표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain`)의 하위 예외로 나타내고, 인터페이스 계층이 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType, message)`로 나타낸다.
+표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain`)의 하위 예외로 나타내고, 인터페이스 계층이 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
-이름 규칙: application 계층의 유스케이스 컴포넌트는 `Service` 접미사를 쓴다(`BrandService`, `ProductService`, `LikeService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. starter의 Example 코드(`ExampleFacade`, domain의 `ExampleService`, `ExampleModel`)가 쓰는 이름은 이 프로젝트의 지침이 아니며, 프로젝트가 자리를 잡으면 Example은 지운다.
+이름 규칙: application 계층의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`, `ProductService`, `LikeService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ## 브랜드 (Brand)
 

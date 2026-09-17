@@ -43,7 +43,7 @@ C4Component
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
 
-패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. ArchUnit의 슬라이스 규칙은 `interfaces.api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓴다(`BrandService`). starter의 Example 코드가 쓰는 `Facade`와 domain의 `ExampleService`는 이 프로젝트의 이름 지침이 아니고, Example은 프로젝트가 자리를 잡으면 지운다.
+패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. ArchUnit의 슬라이스 규칙은 `interfaces.api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ### 요청자와 관리자 경계
 
@@ -126,12 +126,12 @@ classDiagram
 sequenceDiagram
     autonumber
     actor Admin as 관리자
-    participant AC as ProductAdminV1Controller
+    participant AC as ProductAdminController
     participant PF as ProductService
     participant PR as ProductRepository
     participant P as Product
     actor Customer as 고객
-    participant CC as ProductV1Controller
+    participant CC as ProductController
     participant LR as LikeRepository
 
     Admin->>AC: PUT /api-admin/v1/products/{id}/stock {quantity: 0}
