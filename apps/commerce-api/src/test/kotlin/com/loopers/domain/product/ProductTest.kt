@@ -1,6 +1,7 @@
 package com.loopers.domain.product
 
 import com.loopers.domain.brand.Brand
+import com.loopers.domain.shared.InvalidNameException
 import com.loopers.domain.shared.Money
 import com.loopers.domain.shared.Name
 import org.assertj.core.api.Assertions.assertThat
@@ -22,6 +23,20 @@ class ProductTest {
         val product = product(price = Money(amount))
 
         assertThat(product.price).isEqualTo(Money(amount))
+    }
+
+    @Test
+    fun `name of 101 chars after trimming throws InvalidNameException`() {
+        assertThrows<InvalidNameException> { product(name = Name(" " + "가".repeat(101) + " ")) }
+    }
+
+    @Test
+    fun `name of 100 chars after trimming is kept`() {
+        val value = "가".repeat(100)
+
+        val product = product(name = Name("  $value\t"))
+
+        assertThat(product.name).isEqualTo(Name(value))
     }
 
     @Test
@@ -53,6 +68,9 @@ class ProductTest {
         assertThat(product.stock).isEqualTo(Stock(0))
     }
 
-    private fun product(price: Money = Money(10_000), stock: Stock = Stock(1)) =
-        Product(brand = Brand(Name("루퍼스")), name = Name("티셔츠"), price = price, stock = stock)
+    private fun product(
+        name: Name = Name("티셔츠"),
+        price: Money = Money(10_000),
+        stock: Stock = Stock(1),
+    ) = Product(brand = Brand(Name("루퍼스")), name = name, price = price, stock = stock)
 }

@@ -14,15 +14,8 @@ class NameTest {
     }
 
     @Test
-    fun `name of 101 chars after trimming throws InvalidNameException`() {
-        val value = " " + "가".repeat(101) + " "
-
-        assertThrows<InvalidNameException> { Name(value) }
-    }
-
-    @Test
-    fun `name of 100 chars after trimming keeps the trimmed value`() {
-        val value = "가".repeat(100)
+    fun `name keeps the trimmed value and leaves the length bound to its owner`() {
+        val value = "가".repeat(101)
 
         val name = Name("  $value\t")
 

@@ -2,6 +2,7 @@ package com.loopers.domain.product
 
 import com.loopers.domain.BaseEntity
 import com.loopers.domain.brand.Brand
+import com.loopers.domain.shared.InvalidNameException
 import com.loopers.domain.shared.Money
 import com.loopers.domain.shared.Name
 import jakarta.persistence.AttributeOverride
@@ -32,7 +33,7 @@ class Product(
     val brand: Brand = brand
 
     @Embedded
-    @AttributeOverride(name = "value", column = Column(name = "name", nullable = false, length = Name.MAX_LENGTH))
+    @AttributeOverride(name = "value", column = Column(name = "name", nullable = false, length = NAME_MAX_LENGTH))
     var name: Name = name
         protected set
 
@@ -47,6 +48,9 @@ class Product(
         protected set
 
     init {
+        if (name.value.length > NAME_MAX_LENGTH) {
+            throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
+        }
         if (price < MIN_PRICE || price > MAX_PRICE) {
             throw InvalidPriceException("상품 가격은 ${MIN_PRICE.amount}원 이상 ${MAX_PRICE.amount}원 이하여야 합니다.")
         }
@@ -58,6 +62,7 @@ class Product(
     }
 
     companion object {
+        const val NAME_MAX_LENGTH = 100
         val MIN_PRICE = Money(1)
         val MAX_PRICE = Money(1_000_000_000)
     }
