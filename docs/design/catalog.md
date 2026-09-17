@@ -17,7 +17,7 @@ C4Component
 
     Container_Boundary(api, "commerce-api (Spring Boot)") {
         Component(interfaces, "interfaces", "Controller, DTO, ControllerAdvice", "HTTP 입력·응답 변환, 오류의 HTTP 매핑, 요청자 식별")
-        Component(application, "application", "Service, Info", "유스케이스 순서와 객체 협력 조율, 교차 검사, 응답 모델 조합")
+        Component(application, "application", "Service, Info(필요할 때)", "유스케이스 순서와 객체 협력 조율, 교차 검사, 여러 애그리거트의 결과 조합")
         Component(domain, "domain", "Entity, Value Object, Repository 인터페이스", "상태와 규칙. 저장 약속만 선언")
         Component(infrastructure, "infrastructure", "JPA Repository 구현", "domain의 저장 약속을 JPA로 구현")
     }
@@ -154,7 +154,7 @@ sequenceDiagram
     CC-->>Customer: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
 ```
 
-같은 저장된 상품을 읽지만 응답 모델이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. 이 변환은 interfaces의 DTO가 맡고, `Product`는 두 응답의 존재를 모른다.
+같은 저장된 상품을 읽지만 응답 모델이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. 무엇을 담을지는 유스케이스를 아는 `ProductService`가 트랜잭션 안에서 `ProductInfo.Admin`·`ProductInfo.Customer`로 정하고, interfaces의 DTO는 그 값을 JSON 모양으로 옮기기만 한다. `Product`는 두 응답의 존재를 모른다. 언제 `Info`를 두는지는 5.7에 있다.
 
 ## 4. API 계약
 
@@ -246,8 +246,10 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.7 고객·관리자 응답 모델
 
-- 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어도 두 응답은 interfaces의 DTO에서 갈라진다. `Product`는 어느 응답의 존재도 모른다.
-- 반례 대입: "브랜드 응답이 바뀌면 어떤 객체까지 바뀌는가?" — 고객 상품 응답 DTO만 바뀐다. `Product`, `Brand`, application의 `Info`는 그대로다.
+- 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어도 두 응답은 application의 `ProductInfo.Customer`·`ProductInfo.Admin`에서 갈라지고, interfaces의 DTO는 각 `Info`를 JSON으로 옮긴다. `Product`는 어느 응답의 존재도 모른다.
+- `Info`를 두는 기준: Service는 연관이 없는 엔티티 하나로 답이 끝나면 그 엔티티를 돌려준다(`BrandService` → `Brand`). 연관을 건너 읽거나(`Product` → `Brand`, `@ManyToOne`) 다른 저장소의 값을 더해야 하면(좋아요 수) 트랜잭션 안에서 `Info`로 옮겨 돌려준다. `open-in-view: false`라 트랜잭션 밖의 지연 로딩은 실패하기 때문이다. 필드를 그대로 베끼기만 하는 `Info`는 두지 않는다.
+- 반례 대입: "브랜드 응답이 바뀌면 어떤 객체까지 바뀌는가?" — 고객 상품 응답 DTO와 `ProductInfo.Customer`의 브랜드 필드만 바뀐다. `Product`, `Brand`는 그대로다.
+- 다시 볼 조건: `Brand`에 지연 연관이 생기거나 브랜드 응답이 다른 저장소의 값을 필요로 할 때 `BrandInfo`를 둔다.
 
 ### 5.8 교차 검사의 위치
 
