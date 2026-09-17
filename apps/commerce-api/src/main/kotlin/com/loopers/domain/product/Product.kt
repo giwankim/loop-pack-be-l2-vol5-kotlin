@@ -47,12 +47,31 @@ class Product(
         protected set
 
     init {
-        if (this.name.isEmpty()) {
+        validateName(this.name)
+        validatePrice(price)
+    }
+
+    /** 이름과 가격을 바꾼다. 브랜드는 바뀌지 않는다. */
+    fun update(name: String, price: Money) {
+        val trimmed = name.trim()
+        validateName(trimmed)
+        validatePrice(price)
+        this.name = trimmed
+        this.price = price
+    }
+
+    /** 앞뒤 공백을 뗀 이름이 지켜야 할 규칙. 생성과 수정이 같은 규칙을 쓴다. */
+    private fun validateName(trimmed: String) {
+        if (trimmed.isEmpty()) {
             throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
         }
-        if (this.name.length > NAME_MAX_LENGTH) {
+        if (trimmed.length > NAME_MAX_LENGTH) {
             throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
         }
+    }
+
+    /** 가격이 지켜야 할 범위. 생성과 수정이 같은 규칙을 쓴다. */
+    private fun validatePrice(price: Money) {
         if (price < MIN_PRICE || price > MAX_PRICE) {
             throw InvalidPriceException("상품 가격은 ${MIN_PRICE.amount}원 이상 ${MAX_PRICE.amount}원 이하여야 합니다.")
         }

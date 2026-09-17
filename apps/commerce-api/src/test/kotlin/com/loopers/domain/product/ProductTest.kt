@@ -56,6 +56,40 @@ class ProductTest {
     }
 
     @Test
+    fun `update sets the trimmed name and the price and keeps the brand`() {
+        val brand = Brand("루퍼스")
+        val product = Product(brand = brand, name = "티셔츠", price = Money(10_000), stock = Stock(3))
+
+        product.update(name = " 후드티 ", price = Money(25_000))
+
+        assertThat(product.name).isEqualTo("후드티")
+        assertThat(product.price).isEqualTo(Money(25_000))
+        assertThat(product.brand).isSameAs(brand)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["", "   ", "\t\n"])
+    fun `update with a blank name throws InvalidNameException and keeps the name and price`(name: String) {
+        val product = product(name = "티셔츠", price = Money(10_000))
+
+        assertThrows<InvalidNameException> { product.update(name = name, price = Money(25_000)) }
+
+        assertThat(product.name).isEqualTo("티셔츠")
+        assertThat(product.price).isEqualTo(Money(10_000))
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = [0L, 1_000_000_001L])
+    fun `update with a price outside the bounds throws InvalidPriceException and keeps the name and price`(amount: Long) {
+        val product = product(name = "티셔츠", price = Money(10_000))
+
+        assertThrows<InvalidPriceException> { product.update(name = "후드티", price = Money(amount)) }
+
+        assertThat(product.name).isEqualTo("티셔츠")
+        assertThat(product.price).isEqualTo(Money(10_000))
+    }
+
+    @Test
     fun `updateStock with a negative quantity throws InvalidStockException and keeps the stock`() {
         val product = product(stock = Stock(5))
 

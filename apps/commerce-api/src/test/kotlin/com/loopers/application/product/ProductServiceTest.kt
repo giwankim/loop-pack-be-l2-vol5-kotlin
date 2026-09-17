@@ -144,6 +144,195 @@ class ProductServiceTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
+    @Test
+    fun `updating a product changes the name and price and keeps the brand`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id, name = "티셔츠", price = 12_000)
+        entityManager.flushAndClear()
+
+        productService.update(registered.id, ProductUpdateRequest(name = " 후드티 ", price = 25_000))
+        entityManager.flushAndClear()
+        val found = productService.find(registered.id)
+
+        assertAll(
+            { assertThat(found.name).isEqualTo("후드티") },
+            { assertThat(found.price).isEqualTo(25_000L) },
+            { assertThat(found.brandId).isEqualTo(brand.id) },
+        )
+    }
+
+    @Test
+    fun `updating the stock sets the final quantity, including zero`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id, stock = 7)
+        entityManager.flushAndClear()
+
+        productService.updateStock(registered.id, ProductStockUpdateRequest(quantity = 0))
+        entityManager.flushAndClear()
+        val found = productService.find(registered.id)
+
+        assertAll(
+            { assertThat(found.stock).isZero() },
+            { assertThat(found.soldOut).isTrue() },
+        )
+    }
+
+    @Test
+    fun `deleting a product makes it a product that does not exist`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id)
+        entityManager.flushAndClear()
+
+        productService.delete(registered.id)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> { productService.find(registered.id) }
+
+        assertAll(
+            { assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
+            { assertThat(countProducts()).isZero() },
+            { assertThat(deletedAtOf(registered.id)).isNotNull() },
+        )
+    }
+
+    @Test
+    fun `listing returns the live products of the chosen brand, latest registered first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        val first = register(brand.id, name = "티셔츠")
+        register(other.id, name = "운동화")
+        val second = register(brand.id, name = "후드티")
+        val deleted = register(brand.id, name = "양말")
+        productService.delete(deleted.id)
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest(brandId = brand.id))
+
+        assertAll(
+            { assertThat(slice.items.map { it.name }).containsExactly("후드티", "티셔츠") },
+            { assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id) },
+            { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
+            { assertThat(slice.page).isZero() },
+            { assertThat(slice.size).isEqualTo(20) },
+            { assertThat(slice.hasNext).isFalse() },
+        )
+    }
+
+    @Test
+    fun `updating, restocking, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
+        assertAll(
+            { assertThat(notFoundOf { productService.update(999L, ProductUpdateRequest("후드티", 25_000)) }).isTrue() },
+            { assertThat(notFoundOf { productService.updateStock(999L, ProductStockUpdateRequest(3)) }).isTrue() },
+            { assertThat(notFoundOf { productService.delete(999L) }).isTrue() },
+        )
+    }
+
+    @Test
+    fun `updating, restocking, and deleting a deleted product all throw PRODUCT_NOT_FOUND`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val deleted = register(brand.id)
+        productService.delete(deleted.id)
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(notFoundOf { productService.update(deleted.id, ProductUpdateRequest("후드티", 25_000)) }).isTrue() },
+            { assertThat(notFoundOf { productService.updateStock(deleted.id, ProductStockUpdateRequest(3)) }).isTrue() },
+            { assertThat(notFoundOf { productService.delete(deleted.id) }).isTrue() },
+        )
+    }
+
+    @Test
+    fun `an update rejected by request validation keeps the stored name and price`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id, name = "티셔츠", price = 12_000)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<ConstraintViolationException> {
+            productService.update(registered.id, ProductUpdateRequest(name = "후드티", price = 0))
+        }
+        entityManager.flushAndClear()
+        val found = productService.find(registered.id)
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.") },
+            { assertThat(found.name).isEqualTo("티셔츠") },
+            { assertThat(found.price).isEqualTo(12_000L) },
+        )
+    }
+
+    @Test
+    fun `a negative stock is rejected by request validation and keeps the stored stock`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id, stock = 7)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<ConstraintViolationException> {
+            productService.updateStock(registered.id, ProductStockUpdateRequest(quantity = -1))
+        }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.") },
+            { assertThat(productService.find(registered.id).stock).isEqualTo(7) },
+        )
+    }
+
+    @Test
+    fun `listing without a brandId spans every brand and reports the next slice`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        register(brand.id, name = "티셔츠")
+        register(other.id, name = "운동화")
+        register(brand.id, name = "후드티")
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest(page = 0, size = 2))
+
+        assertAll(
+            { assertThat(slice.items.map { it.name }).containsExactly("후드티", "운동화") },
+            { assertThat(slice.hasNext).isTrue() },
+            { assertThat(slice.size).isEqualTo(2) },
+        )
+    }
+
+    @Test
+    fun `listing outside the page and size bounds is rejected by request validation`() {
+        assertAll(
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(page = -1)) }
+                        .constraintViolations.map { it.message },
+                ).containsExactly("page는 0 이상이어야 합니다.")
+            },
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 0)) }
+                        .constraintViolations.map { it.message },
+                ).containsExactly("size는 1 이상이어야 합니다.")
+            },
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 101)) }
+                        .constraintViolations.map { it.message },
+                ).containsExactly("size는 100 이하여야 합니다.")
+            },
+        )
+    }
+
+    private fun register(brandId: Long, name: String = "티셔츠", price: Long = 12_000, stock: Int = 7): ProductInfo =
+        productService.register(ProductRegisterRequest(brandId = brandId, name = name, price = price, stock = stock))
+
+    /** 상품을 찾지 못해 거절됐는지. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
+    private fun notFoundOf(call: () -> Unit): Boolean =
+        assertThrows<CoreException> { call() }.errorType == ErrorType.PRODUCT_NOT_FOUND
+
+    /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */
+    private fun deletedAtOf(id: Long): Any? =
+        entityManager
+            .createNativeQuery("select deleted_at from product where id = :id")
+            .setParameter("id", id)
+            .singleResult
+
     /** 삭제되지 않은 상품 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
     private fun countProducts(): Long =
         entityManager
