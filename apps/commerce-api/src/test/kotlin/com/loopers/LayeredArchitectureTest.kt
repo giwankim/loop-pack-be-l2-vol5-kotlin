@@ -36,7 +36,9 @@ class LayeredArchitectureTest {
     val businessModulesAreFreeOfCycles: ArchRule = slices()
         // Capture only the module name so domain.order and application.order are one slice.
         // interfaces.* absorbs the technology segment (api, scheduler, ...) so the feature stays the slice.
-        .matching("$ROOT.[domain|application|infrastructure|interfaces.*].(*)..")
+        // interfaces.api.v* additionally absorbs the API version segment; it is listed first because
+        // alternatives are tried in order and interfaces.* alone would capture "v1" as the slice.
+        .matching("$ROOT.[domain|application|infrastructure|interfaces.api.v*|interfaces.*].(*)..")
         .should().beFreeOfCycles()
         .because("feature modules must stay acyclic so any one of them can be extracted on its own")
 }

@@ -1,4 +1,4 @@
-package com.loopers.interfaces.api.brand
+package com.loopers.interfaces.api.v1.brand
 
 import com.jayway.jsonpath.JsonPath
 import com.loopers.config.security.AdminSecurityConfig
@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional
 @AutoConfigureMockMvc
 @Import(AdminSecurityConfig::class)
 @Transactional
-class BrandAdminV1ApiMockMvcTest(
+class BrandAdminApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val brandJpaRepository: BrandJpaRepository,
 ) {
