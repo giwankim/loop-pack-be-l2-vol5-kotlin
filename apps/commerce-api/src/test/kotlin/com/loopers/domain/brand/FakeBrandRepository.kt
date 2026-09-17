@@ -13,7 +13,7 @@ class FakeBrandRepository : BrandRepository {
         return brand
     }
 
-    override fun findLiveById(id: Long): Brand? = brands[id]?.takeIf { it.deletedAt == null }
+    override fun find(id: Long): Brand? = brands[id]?.takeIf { it.deletedAt == null }
 
-    override fun existsLiveByName(name: String): Boolean = brands.values.any { it.deletedAt == null && it.name == name }
+    override fun existsByName(name: String): Boolean = brands.values.any { it.deletedAt == null && it.name == name }
 }

@@ -24,11 +24,11 @@ class BrandRepositoryTest(
     private val entityManager: TestEntityManager,
 ) {
     @Test
-    fun `findLiveById reads a saved brand back with the same values after flush and clear`() {
+    fun `find reads a saved brand back with the same values after flush and clear`() {
         val saved = brandRepository.save(Brand("루퍼스"))
         flushAndClear()
 
-        val found = assertNotNull(brandRepository.findLiveById(saved.id))
+        val found = assertNotNull(brandRepository.find(saved.id))
 
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
@@ -41,21 +41,21 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `findLiveById returns null for a deleted brand`() {
+    fun `find returns null for a deleted brand`() {
         val deleted = saveDeleted("루퍼스")
 
-        val found = brandRepository.findLiveById(deleted.id)
+        val found = brandRepository.find(deleted.id)
 
         assertThat(found).isNull()
     }
 
     @Test
-    fun `existsLiveByName is true for a name a live brand uses and false for an unused one`() {
+    fun `existsByName is true for a name a saved brand uses and false for an unused one`() {
         brandRepository.save(Brand("루퍼스"))
         flushAndClear()
 
-        val taken = brandRepository.existsLiveByName("루퍼스")
-        val free = brandRepository.existsLiveByName("다른 브랜드")
+        val taken = brandRepository.existsByName("루퍼스")
+        val free = brandRepository.existsByName("다른 브랜드")
 
         assertAll(
             { assertThat(taken).isTrue() },
@@ -64,10 +64,10 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `existsLiveByName is false when only a deleted brand uses the name`() {
+    fun `existsByName is false when only a deleted brand uses the name`() {
         saveDeleted("루퍼스")
 
-        val taken = brandRepository.existsLiveByName("루퍼스")
+        val taken = brandRepository.existsByName("루퍼스")
 
         assertThat(taken).isFalse()
     }

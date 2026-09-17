@@ -27,7 +27,7 @@ class BrandServiceTest {
     }
 
     @Test
-    fun `registering a name whose trimmed form matches a live brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
+    fun `registering a name whose trimmed form matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
         val existing = brandService.register(name = "루퍼스")
         val idTheRejectedBrandWouldGet = existing.id + 1 // fake 저장소는 id를 1씩 늘려 매긴다
 
