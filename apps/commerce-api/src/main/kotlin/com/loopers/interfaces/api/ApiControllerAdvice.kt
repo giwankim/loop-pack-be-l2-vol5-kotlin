@@ -3,6 +3,7 @@ package com.loopers.interfaces.api
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.exc.InvalidFormatException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
+import com.loopers.domain.RuleViolationException
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.slf4j.LoggerFactory
@@ -27,6 +28,12 @@ class ApiControllerAdvice {
     fun handle(e: CoreException): ResponseEntity<ApiResponse<*>> {
         log.warn("CoreException : {}", e.customMessage ?: e.message, e)
         return failureResponse(errorType = e.errorType, errorMessage = e.customMessage)
+    }
+
+    @ExceptionHandler
+    fun handleBadRequest(e: RuleViolationException): ResponseEntity<ApiResponse<*>> {
+        log.warn("RuleViolationException : {}", e.message, e)
+        return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = e.message)
     }
 
     @ExceptionHandler

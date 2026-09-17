@@ -1,7 +1,6 @@
 package com.loopers.domain.brand
 
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
+import com.loopers.domain.InvalidNameException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -11,19 +10,15 @@ import org.junit.jupiter.params.provider.ValueSource
 class BrandTest {
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
-    fun `creating with a blank name throws INVALID_NAME`(name: String) {
-        val result = assertThrows<CoreException> { Brand(name = name) }
-
-        assertThat(result.errorType).isEqualTo(ErrorType.INVALID_NAME)
+    fun `creating with a blank name throws InvalidNameException`(name: String) {
+        assertThrows<InvalidNameException> { Brand(name = name) }
     }
 
     @Test
-    fun `creating with a name of 101 chars after trimming throws INVALID_NAME`() {
+    fun `creating with a name of 101 chars after trimming throws InvalidNameException`() {
         val name = " " + "가".repeat(101) + " "
 
-        val result = assertThrows<CoreException> { Brand(name = name) }
-
-        assertThat(result.errorType).isEqualTo(ErrorType.INVALID_NAME)
+        assertThrows<InvalidNameException> { Brand(name = name) }
     }
 
     @Test
