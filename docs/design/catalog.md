@@ -366,7 +366,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - Controller 검사는 `MethodArgumentNotValidException`, Service 검사는 `ConstraintViolationException`으로 나온다. `ApiControllerAdvice`가 둘 다 400 `Bad Request`로 옮기고, 메시지는 필드 이름 순으로 이어 하나로 준다. Controller가 먼저 거르므로 HTTP 요청이 Service 검사까지 가는 일은 없다.
   - `@Validated`는 Service에 CGLIB 프록시를 하나 더 씌운다. kotlin-spring 플러그인이 `@Service`(`@Component` 메타)를 여는 덕에 `final` 문제는 없다.
   - `spring-boot-starter-validation`은 루트에 `runtimeOnly`라 commerce-api에 `implementation`으로 더했다.
-- 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들이고 API 문서는 "뗀 뒤 100자"로 둔다. 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
+- 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들인다. API 문서(`BrandAdminApiSpec`, `ProductAdminApiSpec`)는 HTTP 입구가 실제로 거는 규칙을 적는다: 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하, 뗀 값을 저장한다. (처음에는 "뗀 뒤 100자"로 두었으나 2026-09-18에 고쳤다. 문서가 API가 하지 않는 일을 말하고 있었다.) 도메인 문서(`docs/domain/catalog.md`)와 `InvalidNameException`의 KDoc은 뗀 뒤 규칙을 그대로 둔다. 그 규칙은 도메인의 것이고, HTTP 등록으로는 Controller 제약이 먼저 거절해 `InvalidNameException`에 닿지 않는다(#2·#4에 반영). 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
 - 다시 볼 조건: trim 뒤 길이를 재야 할 때(커스텀 제약이나 Request에서 trim). 필드별 오류 목록을 응답에 실어야 할 때(`meta.message` 하나가 아니라 필드 배열).
 
 ### 5.19 이름 값 객체의 철회
