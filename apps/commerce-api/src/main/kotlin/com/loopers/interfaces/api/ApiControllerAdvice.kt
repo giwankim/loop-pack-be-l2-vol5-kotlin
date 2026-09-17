@@ -3,7 +3,7 @@ package com.loopers.interfaces.api
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.exc.InvalidFormatException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
-import com.loopers.domain.RuleViolationException
+import com.loopers.domain.shared.RuleViolationException
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.slf4j.LoggerFactory

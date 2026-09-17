@@ -1,14 +1,13 @@
 package com.loopers.domain.shared
 
-import com.loopers.domain.InvalidPriceException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 class MoneyTest {
     @Test
-    fun `negative amount throws InvalidPriceException`() {
-        assertThrows<InvalidPriceException> { Money(-1) }
+    fun `negative amount throws InvalidMoneyException`() {
+        assertThrows<InvalidMoneyException> { Money(-1) }
     }
 
     @Test
@@ -22,8 +21,8 @@ class MoneyTest {
     }
 
     @Test
-    fun `plus beyond Long MAX_VALUE throws InvalidPriceException`() {
-        assertThrows<InvalidPriceException> { Money(Long.MAX_VALUE).plus(Money(1)) }
+    fun `plus beyond Long MAX_VALUE throws InvalidMoneyException`() {
+        assertThrows<InvalidMoneyException> { Money(Long.MAX_VALUE).plus(Money(1)) }
     }
 
     @Test
@@ -33,8 +32,8 @@ class MoneyTest {
     }
 
     @Test
-    fun `minus of a larger amount throws InvalidPriceException`() {
-        assertThrows<InvalidPriceException> { Money(1_000).minus(Money(1_001)) }
+    fun `minus of a larger amount throws InvalidMoneyException`() {
+        assertThrows<InvalidMoneyException> { Money(1_000).minus(Money(1_001)) }
     }
 
     @Test
@@ -43,8 +42,8 @@ class MoneyTest {
     }
 
     @Test
-    fun `times beyond Long MAX_VALUE throws InvalidPriceException`() {
-        assertThrows<InvalidPriceException> { Money(Long.MAX_VALUE / 2 + 1).times(2) }
+    fun `times beyond Long MAX_VALUE throws InvalidMoneyException`() {
+        assertThrows<InvalidMoneyException> { Money(Long.MAX_VALUE / 2 + 1).times(2) }
     }
 
     @Test

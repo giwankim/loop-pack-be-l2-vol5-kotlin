@@ -1,6 +1,5 @@
 package com.loopers.domain.shared
 
-import com.loopers.domain.InvalidNameException
 import jakarta.persistence.Column
 import jakarta.persistence.Embeddable
 

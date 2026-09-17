@@ -1,6 +1,5 @@
 package com.loopers.domain.product
 
-import com.loopers.domain.InvalidPriceException
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.shared.Money
 import com.loopers.domain.shared.Name

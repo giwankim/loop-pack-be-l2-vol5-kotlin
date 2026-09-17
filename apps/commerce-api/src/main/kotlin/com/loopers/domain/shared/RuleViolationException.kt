@@ -1,4 +1,4 @@
-package com.loopers.domain
+package com.loopers.domain.shared
 
 /**
  * 도메인 규칙을 어겨 거절됐음을 나타낸다. 상태는 바뀌지 않는다.

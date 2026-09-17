@@ -1,8 +1,8 @@
 package com.loopers.application.product
 
-import com.loopers.domain.InvalidPriceException
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.product.InvalidPriceException
 import com.loopers.domain.shared.Name
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
