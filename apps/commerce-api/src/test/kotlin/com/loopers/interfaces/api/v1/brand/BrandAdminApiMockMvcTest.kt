@@ -67,7 +67,7 @@ class BrandAdminApiMockMvcTest(
             status { isBadRequest() }
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(containsString("브랜드 이름")) }
+            jsonPath("$.meta.message") { value(containsString("이름은 공백일 수 없습니다")) }
         }
 
         assertThat(countBrands()).isZero()

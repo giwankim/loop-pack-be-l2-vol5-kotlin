@@ -2,6 +2,7 @@ package com.loopers.infrastructure.brand
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.shared.Name
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 
@@ -14,5 +15,5 @@ interface BrandJpaRepository : JpaRepository<Brand, Long>, BrandRepository {
     @Query("select b from Brand b where b.id = :id")
     override fun find(id: Long): Brand?
 
-    override fun existsByName(name: String): Boolean
+    override fun existsByName(name: Name): Boolean
 }

@@ -30,10 +30,10 @@ class BrandServiceTest(
         val found = brandService.getBrand(registered.id)
 
         assertAll(
-            { assertThat(registered.name).isEqualTo("루퍼스") },
+            { assertThat(registered.name.value).isEqualTo("루퍼스") },
             { assertThat(found).isNotSameAs(registered) },
             { assertThat(found.id).isEqualTo(registered.id) },
-            { assertThat(found.name).isEqualTo("루퍼스") },
+            { assertThat(found.name.value).isEqualTo("루퍼스") },
             { assertThat(found.createdAt).isNotNull() },
             { assertThat(found.updatedAt).isNotNull() },
         )
@@ -50,7 +50,7 @@ class BrandServiceTest(
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
             { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.getBrand(existing.id).name).isEqualTo("루퍼스") },
+            { assertThat(brandService.getBrand(existing.id).name.value).isEqualTo("루퍼스") },
         )
     }
 

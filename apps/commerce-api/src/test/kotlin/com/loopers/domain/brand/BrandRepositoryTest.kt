@@ -1,6 +1,7 @@
 package com.loopers.domain.brand
 
 import com.loopers.config.jpa.DataSourceConfig
+import com.loopers.domain.shared.Name
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -25,7 +26,7 @@ class BrandRepositoryTest(
 ) {
     @Test
     fun `find reads a saved brand back with the same values after flush and clear`() {
-        val saved = brandRepository.save(Brand("루퍼스"))
+        val saved = brandRepository.save(Brand(Name("루퍼스")))
         entityManager.flushAndClear()
 
         val found = brandRepository.find(saved.id)
@@ -33,7 +34,7 @@ class BrandRepositoryTest(
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
             { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.name).isEqualTo("루퍼스") },
+            { assertThat(found?.name).isEqualTo(Name("루퍼스")) },
             { assertThat(found?.createdAt).isNotNull() },
             { assertThat(found?.updatedAt).isNotNull() },
             { assertThat(found?.deletedAt).isNull() },
@@ -51,11 +52,11 @@ class BrandRepositoryTest(
 
     @Test
     fun `existsByName is true for a name a saved brand uses and false for an unused one`() {
-        brandRepository.save(Brand("루퍼스"))
+        brandRepository.save(Brand(Name("루퍼스")))
         entityManager.flushAndClear()
 
-        val taken = brandRepository.existsByName("루퍼스")
-        val free = brandRepository.existsByName("다른 브랜드")
+        val taken = brandRepository.existsByName(Name("루퍼스"))
+        val free = brandRepository.existsByName(Name("다른 브랜드"))
 
         assertAll(
             { assertThat(taken).isTrue() },
@@ -67,12 +68,12 @@ class BrandRepositoryTest(
     fun `existsByName is false when only a deleted brand uses the name`() {
         saveDeleted("루퍼스")
 
-        val taken = brandRepository.existsByName("루퍼스")
+        val taken = brandRepository.existsByName(Name("루퍼스"))
 
         assertThat(taken).isFalse()
     }
 
     private fun saveDeleted(name: String): Brand =
-        brandRepository.save(Brand(name).apply { delete() })
+        brandRepository.save(Brand(Name(name)).apply { delete() })
             .also { entityManager.flushAndClear() }
 }

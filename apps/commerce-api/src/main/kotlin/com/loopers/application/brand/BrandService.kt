@@ -2,6 +2,7 @@ package com.loopers.application.brand
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.shared.Name
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.springframework.stereotype.Service
@@ -13,7 +14,7 @@ class BrandService(
 ) {
     @Transactional
     fun register(name: String): Brand {
-        val brand = Brand(name)
+        val brand = Brand(Name(name))
         if (brandRepository.existsByName(brand.name)) {
             throw CoreException(ErrorType.BRAND_NAME_DUPLICATED)
         }
