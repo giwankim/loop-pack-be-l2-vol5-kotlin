@@ -12,7 +12,7 @@
 C4Component
     title commerce-api 컴포넌트 (카탈로그 조각)
 
-    Person(customer, "고객", "브랜드·상품을 보고 좋아요를 누르는 사용자")
+    Person(user, "고객", "브랜드·상품을 보고 좋아요를 누르는 사용자")
     Person(admin, "관리자", "브랜드·상품·재고를 관리하는 역할")
 
     Container_Boundary(api, "commerce-api (Spring Boot)") {
@@ -24,7 +24,7 @@ C4Component
 
     ContainerDb(db, "MySQL", "brand, product, likes 테이블")
 
-    Rel(customer, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
+    Rel(user, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
     Rel(admin, interfaces, "GET·POST·PUT·DELETE /api-admin/v1/…", "HTTPS, ADMIN 역할")
     Rel(interfaces, application, "호출")
     Rel(application, domain, "행동 호출, 저장 약속 사용")
@@ -133,7 +133,7 @@ sequenceDiagram
     participant PF as ProductService
     participant PR as ProductRepository
     participant P as Product
-    actor Customer as 고객
+    actor User as 고객
     participant CC as ProductController
     participant LR as LikeRepository
 
@@ -148,7 +148,7 @@ sequenceDiagram
     Note over AC: ProductAdminResponse가 stock과 시각을 고르고 soldOut은 버린다
     AC-->>Admin: 200 {id, brandId, name, price, stock: 0, …}
 
-    Customer->>CC: GET /api/v1/products/{id}
+    User->>CC: GET /api/v1/products/{id}
     CC->>PF: find(id)
     PF->>PR: findById(id)
     PR-->>PF: Product (+ brand, ManyToOne)
@@ -156,7 +156,7 @@ sequenceDiagram
     LR-->>PF: likeCount
     PF-->>CC: ProductInfo (soldOut = product.isSoldOut(), likeCount)
     Note over CC: ProductResponse가 soldOut과 brand{id,name}을 고르고 stock은 버린다
-    CC-->>Customer: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
+    CC-->>User: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
 ```
 
 같은 저장된 상품을 읽고 같은 `ProductInfo`를 받지만 응답 JSON이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. `ProductService`는 누가 부르는지 모르고 한 가지 `ProductInfo`만 트랜잭션 안에서 채운다. 어느 필드를 내보낼지는 역할별 컨트롤러 옆의 응답 DTO(`ProductAdminResponse`, `ProductResponse`)가 고른다. `Product`는 두 응답의 존재를 모르고 `isSoldOut()`만 안다. 언제 `Info`를 두는지는 5.7에 있다.
