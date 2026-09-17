@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 이 문서는 각 개념이 무엇을 가지고, 무엇을 지키고, 무엇을 할 수 있는지를 적는다. 구조와 API는 [`docs/design/catalog.md`](../design/catalog.md)에 있다.
 
-표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain`)의 하위 예외로 나타내고, 인터페이스 계층이 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
+표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 인터페이스 계층이 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
 이름 규칙: application 계층의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`, `ProductService`, `LikeService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
@@ -56,7 +56,7 @@
 ### 규칙
 
 - 이름은 브랜드와 같은 `Name` 규칙이다. 어기면 `InvalidNameException`.
-- 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고 `Product`가 1원 이상과 상한을 막는다. 어기면 `InvalidPriceException`.
+- 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고(`InvalidMoneyException`) `Product`가 1원 이상과 상한을 막는다(`InvalidPriceException`).
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
 - 삭제된 상품은 고객·관리자 조회, 수정, 재고 변경, 새 좋아요의 대상이 아니다. 남은 좋아요는 그대로 두고 취소만 허용한다.
@@ -128,9 +128,9 @@ TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Pro
 
 ### 규칙
 
-- 0 이상이다. 어기면 `InvalidPriceException`(이 조각에서 금액이 쓰이는 곳이 가격뿐이라서다. 포인트가 들어오면 금액 자체의 예외로 나눈다).
-- 더하기·곱하기 결과가 `Long` 범위를 넘으면 `InvalidPriceException`으로 거절한다. `Math.addExact`, `Math.multiplyExact`.
-- 가진 값보다 큰 값을 뺄 수 없다. 어기면 `InvalidPriceException`.
+- 0 이상이다. 어기면 `InvalidMoneyException`. 가격 범위는 `Product`가 따로 막고 `InvalidPriceException`을 던진다. 금액은 여러 개념이 함께 쓰므로 가격 예외를 빌리지 않는다.
+- 더하기·곱하기 결과가 `Long` 범위를 넘으면 `InvalidMoneyException`으로 거절한다. `Math.addExact`, `Math.multiplyExact`.
+- 가진 값보다 큰 값을 뺄 수 없다. 어기면 `InvalidMoneyException`.
 
 ### 행위
 
