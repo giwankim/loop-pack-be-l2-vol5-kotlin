@@ -6,4 +6,6 @@ dependencies {
     implementation("io.micrometer:micrometer-tracing-bridge-brave")
     // Slack Appender
     implementation("com.github.maricn:logback-slack-appender:${project.properties["slackAppenderVersion"]}")
+    // Kotlin Logging
+    api("io.github.oshai:kotlin-logging-jvm:${project.properties["kotlinLoggingVersion"]}")
 }
