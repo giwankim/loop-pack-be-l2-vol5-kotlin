@@ -1,24 +1,36 @@
 package com.loopers.application.brand
 
-import com.loopers.domain.brand.FakeBrandRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.transaction.annotation.Transactional
 
-class BrandServiceTest {
-    private val brandRepository = FakeBrandRepository()
-    private val brandService = BrandService(brandRepository)
-
+/**
+ * [BrandService]를 실제 MySQL 위에서 확인한다. 테스트 트랜잭션이 서비스 트랜잭션을 감싸므로 테스트마다 롤백으로 정리한다.
+ * 같은 트랜잭션 안에서는 영속성 컨텍스트가 조회를 가로채므로, 저장 뒤에 flush/clear를 해서 다음 조회가 SQL을 실제로 보내게 한다.
+ * 추가 설정이 없는 `@SpringBootTest`라 [com.loopers.CommerceApiContextTest]와 컨텍스트를 나눠 쓴다.
+ */
+@SpringBootTest
+@Transactional
+class BrandServiceTest(
+    private val brandService: BrandService,
+    private val entityManager: EntityManager,
+) {
     @Test
     fun `registering an untaken name saves a brand that can be fetched back`() {
-        val registered = brandService.register(name = "루퍼스")
+        val registered = brandService.register("루퍼스")
+        flushAndClear()
 
         val found = brandService.getBrand(registered.id)
+
         assertAll(
             { assertThat(registered.name).isEqualTo("루퍼스") },
+            { assertThat(found).isNotSameAs(registered) },
             { assertThat(found.id).isEqualTo(registered.id) },
             { assertThat(found.name).isEqualTo("루퍼스") },
             { assertThat(found.createdAt).isNotNull() },
@@ -27,16 +39,17 @@ class BrandServiceTest {
     }
 
     @Test
-    fun `registering a name whose trimmed form matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
-        val existing = brandService.register(name = "루퍼스")
-        val idTheRejectedBrandWouldGet = existing.id + 1 // fake 저장소는 id를 1씩 늘려 매긴다
+    fun `registering a name that matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
+        val existing = brandService.register("루퍼스")
+        flushAndClear()
 
-        val result = assertThrows<CoreException> { brandService.register(name = " 루퍼스 ") }
+        val result = assertThrows<CoreException> { brandService.register(" 루퍼스 ") }
+        flushAndClear()
 
         assertAll(
             { assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
+            { assertThat(countBrands()).isOne() },
             { assertThat(brandService.getBrand(existing.id).name).isEqualTo("루퍼스") },
-            { assertThrows<CoreException> { brandService.getBrand(idTheRejectedBrandWouldGet) } },
         )
     }
 
@@ -46,4 +59,16 @@ class BrandServiceTest {
 
         assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }
+
+    /** 영속성 컨텍스트를 비워 다음 조회가 DB에서 다시 읽게 한다. */
+    private fun flushAndClear() {
+        entityManager.flush()
+        entityManager.clear()
+    }
+
+    /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
+    private fun countBrands(): Long =
+        entityManager
+            .createQuery("select count(b) from Brand b", Long::class.java)
+            .singleResult
 }
