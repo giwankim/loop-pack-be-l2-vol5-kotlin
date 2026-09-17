@@ -402,6 +402,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 기본값은 `PageRequest`의 상수 하나가 들고 있다. Controller는 `@RequestParam(required = false) page: Int?`로 받아 `PageRequest.of(page, size)`에 넘긴다. `@RequestParam(defaultValue = "0")`은 기본값을 애노테이션의 문자열로 한 번 더 적게 만든다.
 - 구현: Spring Data의 `Slice<Brand>`를 돌려주는 파생 조회(`findAllByOrderByCreatedAtDescIdDesc`)가 `size + 1`개를 읽고 넘치는 하나를 버리며 count 쿼리를 보내지 않는다. `BrandRepositoryImpl`이 그 결과를 domain의 `Slice`로 옮긴다. 삭제 필터는 `Brand`의 `@SQLRestriction`이 붙인다. `PageRequest.of(page, size + 1)`로 하나 더 읽으면 offset이 `page * (size + 1)`이 되어 두 번째 조각부터 행을 건너뛴다. `BrandRepositoryTest`의 `page = 1` 사례가 이 실수를 잡는다.
 - 이름: 우리 `PageRequest`와 Spring Data의 `org.springframework.data.domain.PageRequest`는 이름이 같다. 한 파일에 둘이 함께 나오지 않으므로(저장소 구현은 Spring 것만, Controller·Service는 우리 것만 쓴다) 별칭을 두지 않는다.
+- 응답 봉투는 `interfaces/api/SliceResponse`에 둔다. `ApiResponse` 옆이고 개념 패키지 밖이다. 목록이 어느 개념의 것이든 봉투는 같고 항목만 역할별 응답 DTO로 바뀌므로(`SliceResponse.from(slice, BrandAdminResponse::from)`) 브랜드·상품 어느 조각에도 속하지 않는다. `interfaces`의 순환 검사는 `api`를 한 조각으로 보고, `brand → api` 한 방향이라 `ApiResponse`와 같다.
 - 용어집: `슬라이스`와 `페이지`는 `CONTEXT.md`에 넣지 않았다. 재고·금액과 달리 고객·관리자가 말하는 개념이 아니라 목록 응답의 모양이다. 목록의 뜻이 달라지면(예: 총 개수를 주기로 하면) 그때 다시 본다.
 - 다시 볼 조건: 커서 기반 페이지로 바꿀 때(`page` 대신 마지막 키), 또는 목록마다 다른 `size` 상한이 필요할 때. 조각을 만드는 저장소가 셋을 넘어 `Slice` 변환이 되풀이되면 공용 확장 함수로 뺀다.
 
@@ -413,6 +414,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: `Brand`의 companion에 `normalizeName(name)`을 공개한다. 앞뒤 공백을 떼고 공백·길이를 검사한 이름을 돌려주며, 생성자와 `update`도 이것을 쓴다. Service는 바꾸기 전에 이 이름으로 중복을 묻는다.
 - 선택: C (2026-09-18). 이름 규칙이 `Brand` 안에 남고, 거절이 브랜드를 건드리기 전에 끝난다. 순서는 `find(id)` → `Brand.normalizeName(request.name)` → `existsByNameAndIdNot(name, brand.id)` → `brand.update(name)`이다. 400(공백·길이)이 409(중복)보다 먼저인 것은 등록과 같다(5.11).
 - 중복 조회에 자기를 빼는 까닭: `existsByName`만으로는 브랜드가 자기 이름으로 바뀔 때 자기 행을 찾아 409가 된다. 대소문자만 바꾸는 수정(`Loopers` → `LOOPERS`)이 특히 그렇다. 이름이 같은지는 컬럼 collation이 정하므로(5.13) 코드에서 문자열을 비교해 걸러낼 수 없다. 그래서 저장 약속에 `existsByNameAndIdNot(name, id)`를 더한다.
+- 5.19의 다시 볼 조건과의 관계: 5.19는 "이름에 도메인 행위가 생길 때(정규화, 허용 문자, 표시용 변환) 개념별 타입(`BrandName`)으로 간다"고 적었다. `normalizeName`은 그 조건이 아니다. 이름에 새 행위가 생긴 것이 아니라 생성자가 이미 하던 일(trim·공백·길이)에 이름을 붙여 브랜드를 만들지 않고도 부를 수 있게 한 것이다. 규칙은 여전히 하나이고 `Brand` 안에 있다. 허용 문자나 표시용 변환처럼 규칙 자체가 늘어나면 그때 `BrandName`으로 간다.
 - 대가: `normalizeName`이 공개 API가 되어 `Brand`를 만들지 않고도 이름 규칙을 부를 수 있다. 5.19가 "타입 대신 순서가 지킨다"고 적은 보장이 여기서도 순서에 달려 있다. `BrandServiceTest`의 대소문자 사례와 중복 사례가 그 순서를 지킨다.
 - 다시 볼 조건: 이름 말고도 바꿀 것이 생겨 `update`가 여러 값을 받게 될 때. 그때는 값마다 다듬기 함수를 공개하는 대신 수정 입력을 도메인이 읽는 타입으로 올린다.
 
@@ -437,5 +439,5 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
 - 브랜드 삭제는 아직 삭제 시각만 찍는다. 살아 있는 상품이 남으면 409로 거절하는 조건은 #6에서 더한다. 4장 표의 그 칸은 이 조각의 목표이지 지금 동작이 아니다.
-- MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 요청 사이에 `flushAndClear`로 운영의 요청 경계를 흉내 낸다(`startNextRequest`). 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
+- MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 그런 자리에서는 `clearPersistenceContext`(`flushAndClear`)로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
 - `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록(#7)에서 브랜드를 읽으면 상품마다 조회가 붙으므로 fetch join으로 읽을지는 #7에서 정한다.
