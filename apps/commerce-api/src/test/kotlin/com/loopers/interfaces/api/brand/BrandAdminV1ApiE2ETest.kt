@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.brand
 
 import com.jayway.jsonpath.JsonPath
+import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.utils.DatabaseCleanUp
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
@@ -24,6 +26,7 @@ import org.springframework.test.web.servlet.post
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(AdminSecurityConfig::class)
 class BrandAdminV1ApiE2ETest @Autowired constructor(
     private val mockMvc: MockMvc,
     private val brandJpaRepository: BrandJpaRepository,

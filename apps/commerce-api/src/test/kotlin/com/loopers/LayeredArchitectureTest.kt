@@ -26,13 +26,10 @@ class LayeredArchitectureTest {
         .layer("interfaces").definedBy("$ROOT.interfaces..")
         .layer("infrastructure").definedBy("$ROOT.infrastructure..")
         .layer("support").definedBy("$ROOT.support..")
-        // Spring 설정(예: 관리자 경계 AdminBoundaryConfig). 어떤 계층도 설정 클래스에 의존하지 않는다.
-        .layer("config").definedBy("$ROOT.config..")
         .whereLayer("domain").mayOnlyBeAccessedByLayers("application", "interfaces", "infrastructure")
         .whereLayer("application").mayOnlyBeAccessedByLayers("interfaces")
         .whereLayer("interfaces").mayNotBeAccessedByAnyLayer()
         .whereLayer("infrastructure").mayNotBeAccessedByAnyLayer()
-        .whereLayer("config").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
     @ArchTest

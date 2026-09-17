@@ -42,14 +42,13 @@ C4Component
 | application | 유스케이스 순서, 교차 검사(브랜드 삭제 조건, 이름 중복, 브랜드 존재), 응답 모델 조합 | domain | interfaces, infrastructure |
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
-| config | Spring 설정(관리자 경계 `AdminBoundaryConfig`) | 프레임워크 설정 API | 없음. 대신 다른 모든 계층이 config에 의존하면 안 된다 |
 
 패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. 버전은 패키지가 아니라 클래스 이름에 붙인다(`BrandV1Controller`, `BrandAdminV1Controller`). 그래야 ArchUnit의 슬라이스 규칙이 개념 단위로 순환을 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓴다(`BrandService`). starter의 Example 코드가 쓰는 `Facade`와 domain의 `ExampleService`는 이 프로젝트의 이름 지침이 아니고, Example은 프로젝트가 자리를 잡으면 지운다.
 
 ### 요청자와 관리자 경계
 
 - 고객 요청 중 좋아요 누르기·취소·내 목록은 API 게이트웨이가 넣어 준 `X-USER-ID` 헤더로 요청자를 식별한다. 브랜드·상품 조회는 요청자가 없어도 된다.
-- 관리자 경계는 `/api-admin/**`에 ADMIN 역할을 요구한다. 로컬 실습에서는 과제가 제공하는 Spring Security 테스트 지원 설정(`com.loopers.config.AdminBoundaryConfig`)으로 이 경계를 흉내 내며, MockMvc의 `user().roles("ADMIN")`으로 실행한다. 이 설정은 테스트 목적이고 운영 인증 수단이 아니다. 관리자가 아니거나 식별이 없는 요청은 403이다.
+- 관리자 경계는 `/api-admin/**`에 ADMIN 역할을 요구한다. 이 경계는 통합 테스트에서만 존재한다. 과제가 제공하는 Spring Security 테스트 지원 설정(과제 원문 이름 `AdminBoundaryConfig`)을 `src/test`의 `@TestConfiguration` `com.loopers.config.security.AdminSecurityConfig`로 두고, 관리자 API를 부르는 테스트가 `@Import`로 명시해서 MockMvc의 `user().roles("ADMIN")`으로 실행한다. Spring Security 의존성도 test 범위에만 있으므로 운영 코드에는 인증이 없다. 관리자가 아니거나 식별이 없는 요청은 403이다(5.10).
 
 ## 2. 클래스 다이어그램
 
@@ -256,13 +255,14 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 브랜드·상품 조회는 요청자 없이 된다. 과제의 "자신의 좋아요·포인트·주문만" 문장이 식별이 필요한 곳을 정확히 셋으로 적고 있고, 조회 계약은 누가 부르는지에 의존하지 않는다.
 
-### 5.10 설정 클래스의 계층
+### 5.10 관리자 경계 설정의 위치
 
-- 문제: `LayeredArchitectureTest`는 모든 클래스가 어느 계층에 속하기를 요구한다. 과제가 준 `com.loopers.config.AdminBoundaryConfig`는 어느 계층에도 속하지 않아 규칙을 어긴다.
-- 대안 A: 설정을 `interfaces`나 `support` 아래로 옮긴다. 규칙은 그대로지만 과제와 `modules/jpa`(`com.loopers.config.jpa`)가 쓰는 패키지 이름과 어긋난다.
-- 대안 B: `com.loopers.config..`를 `config` 계층으로 정의하고 어떤 계층도 그것에 의존하지 못하게 한다.
-- 선택: B (2026-09-16, #2 구현 중). 규칙을 풀지 않고 계층을 하나 더 이름 붙인다. 설정은 프레임워크가 읽을 뿐 코드가 부르지 않는다.
-- 다시 볼 조건: 설정 클래스가 도메인이나 application의 타입을 알아야 할 때.
+- 문제: 과제는 관리자 경계 설정(`AdminBoundaryConfig`)과 Spring Security 의존성을 main에 둔다. 그러나 체인에 로그인 수단이 없어 운영 코드의 `/api-admin/**`은 누구도 통과하지 못하고, 설정은 오직 테스트를 위해 존재한다. 또 `LayeredArchitectureTest`가 이 클래스를 어느 계층에 넣을지 정해야 한다.
+- 대안 A: main에 두고 `com.loopers.config..`를 `config` 계층으로 이름 붙인다(2026-09-16 선택). 과제 원문과 같고 운영에서 관리자 경로가 닫힌 채로 남는다.
+- 대안 B: `src/test`에 평범한 `@Configuration`으로 둔다. 컴포넌트 스캔이 모든 테스트 컨텍스트에 넣어 주므로 `@Import`가 필요 없지만, 테스트 클래스패스의 빈이 암묵적으로 끼어든다.
+- 대안 C: `src/test`에 `@TestConfiguration`으로 두고 관리자 API 테스트가 `@Import`로 명시한다. 의존성도 test 범위로 내린다.
+- 선택: C (2026-09-17). 통합 테스트만을 위한 빈임을 코드에서 드러낸다. 운영 코드에서 Spring Security가 사라지므로 `config` 계층은 지운다. 대가: Spring Security가 테스트 클래스패스에 있으므로 이 빈을 import하지 않은 컨텍스트에는 Boot 기본 체인(모든 경로에 인증 요구)이 들어가고, HTTP를 보내는 고객 API 테스트가 401을 받는다.
+- 다시 볼 조건: 기본 체인이 다른 테스트 컨텍스트에서 문제를 일으킬 때(대안 B로 전환), 또는 운영 인증이 실제로 생길 때(main으로 복귀).
 
 ### 5.11 브랜드 등록의 검사 순서
 
