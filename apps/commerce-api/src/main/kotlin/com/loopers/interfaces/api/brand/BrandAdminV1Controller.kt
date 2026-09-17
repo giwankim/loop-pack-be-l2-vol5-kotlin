@@ -28,7 +28,7 @@ class BrandAdminV1Controller(
 
     @GetMapping("/{brandId}")
     override fun getBrand(
-        @PathVariable(value = "brandId") brandId: Long,
+        @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandAdminV1Dto.BrandResponse> {
         return brandService.getBrand(brandId)
             .let { BrandAdminV1Dto.BrandResponse.from(it) }

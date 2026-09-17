@@ -3,7 +3,7 @@ package com.loopers.interfaces.api.brand
 import com.loopers.application.brand.BrandInfo
 import java.time.ZonedDateTime
 
-class BrandAdminV1Dto {
+object BrandAdminV1Dto {
     data class RegisterRequest(
         val name: String,
     )
