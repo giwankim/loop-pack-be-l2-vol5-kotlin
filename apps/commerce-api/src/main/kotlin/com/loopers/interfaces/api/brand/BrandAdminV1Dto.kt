@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.brand
 
-import com.loopers.application.brand.BrandInfo
+import com.loopers.domain.brand.Brand
 import java.time.ZonedDateTime
 
 object BrandAdminV1Dto {
@@ -15,12 +15,12 @@ object BrandAdminV1Dto {
         val updatedAt: ZonedDateTime,
     ) {
         companion object {
-            fun from(info: BrandInfo): BrandResponse {
+            fun from(brand: Brand): BrandResponse {
                 return BrandResponse(
-                    id = info.id,
-                    name = info.name,
-                    createdAt = info.createdAt,
-                    updatedAt = info.updatedAt,
+                    id = brand.id,
+                    name = brand.name,
+                    createdAt = brand.createdAt,
+                    updatedAt = brand.updatedAt,
                 )
             }
         }

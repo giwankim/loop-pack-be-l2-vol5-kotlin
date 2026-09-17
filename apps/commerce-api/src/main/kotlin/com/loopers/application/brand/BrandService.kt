@@ -12,7 +12,7 @@ class BrandService(
     private val brandRepository: BrandRepository,
 ) {
     @Transactional
-    fun register(name: String): BrandInfo {
+    fun register(name: String): Brand {
         val brand = Brand(name)
         if (brandRepository.existsByName(brand.name)) {
             throw CoreException(
@@ -21,13 +21,11 @@ class BrandService(
             )
         }
         return brandRepository.save(brand)
-            .let { BrandInfo.from(it) }
     }
 
     @Transactional(readOnly = true)
-    fun getBrand(id: Long): BrandInfo {
-        val brand = brandRepository.find(id)
+    fun getBrand(id: Long): Brand {
+        return brandRepository.find(id)
             ?: throw CoreException(errorType = ErrorType.BRAND_NOT_FOUND, customMessage = "[id = $id] 브랜드를 찾을 수 없습니다.")
-        return BrandInfo.from(brand)
     }
 }
