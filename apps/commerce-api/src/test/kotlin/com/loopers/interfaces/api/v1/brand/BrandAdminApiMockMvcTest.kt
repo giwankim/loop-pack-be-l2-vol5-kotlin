@@ -39,7 +39,7 @@ class BrandAdminApiMockMvcTest(
     companion object {
         private const val ENDPOINT = "/api-admin/v1/brands"
         private val ADMIN = user("admin").roles("ADMIN")
-        private val CUSTOMER = user("customer").roles("USER")
+        private val USER = user("user").roles("USER")
     }
 
     @Test
@@ -89,8 +89,8 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `registering as a customer returns 403 and saves nothing`() {
-        postBrand(name = "루퍼스", principal = CUSTOMER).andExpect {
+    fun `registering as a user returns 403 and saves nothing`() {
+        postBrand(name = "루퍼스", principal = USER).andExpect {
             status { isForbidden() }
         }
 
@@ -118,10 +118,10 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `getting a brand as a customer returns 403`() {
+    fun `getting a brand as a user returns 403`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(CUSTOMER) }
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(USER) }
             .andExpect { status { isForbidden() } }
     }
 
