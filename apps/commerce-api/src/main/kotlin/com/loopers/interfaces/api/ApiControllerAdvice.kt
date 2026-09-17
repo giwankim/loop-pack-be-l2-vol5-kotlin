@@ -26,8 +26,8 @@ class ApiControllerAdvice {
 
     @ExceptionHandler
     fun handle(e: CoreException): ResponseEntity<ApiResponse<*>> {
-        log.warn("CoreException : {}", e.customMessage ?: e.message, e)
-        return failureResponse(errorType = e.errorType, errorMessage = e.customMessage)
+        log.warn("CoreException : {}", e.message, e)
+        return failureResponse(errorType = e.errorType, errorMessage = e.message)
     }
 
     @ExceptionHandler

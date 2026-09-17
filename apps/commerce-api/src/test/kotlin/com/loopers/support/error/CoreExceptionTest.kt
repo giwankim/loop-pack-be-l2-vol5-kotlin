@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 
 class CoreExceptionTest {
     @Test
-    fun `uses the error type message when no custom message is given`() {
+    fun `uses the error type message when no detail is given`() {
         val errorTypes = ErrorType.entries
 
         errorTypes.forEach { errorType ->
@@ -16,11 +16,9 @@ class CoreExceptionTest {
     }
 
     @Test
-    fun `uses the custom message when one is given`() {
-        val customMessage = "custom message"
+    fun `prefixes the error type message with the detail in brackets when one is given`() {
+        val exception = CoreException(ErrorType.BRAND_NOT_FOUND, "id = 999")
 
-        val exception = CoreException(ErrorType.INTERNAL_ERROR, customMessage)
-
-        assertThat(exception.message).isEqualTo(customMessage)
+        assertThat(exception.message).isEqualTo("[id = 999] ${ErrorType.BRAND_NOT_FOUND.message}")
     }
 }
