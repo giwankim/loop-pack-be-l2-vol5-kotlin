@@ -6,8 +6,6 @@ import com.loopers.utils.DatabaseCleanUp
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.context.SpringBootTest
@@ -37,77 +35,53 @@ class BrandRepositoryIntegrationTest(
         brandRepository.save(Brand(name).apply { delete() })
     }!!
 
-    @DisplayName("살아 있는 브랜드를 식별자로 조회할 때, ")
-    @Nested
-    inner class FindLiveById {
-        @DisplayName("저장한 브랜드는 flush/clear 뒤에도 같은 값으로 다시 읽힌다.")
-        @Test
-        fun returnsSavedBrand_afterFlushAndClear() {
-            transactionTemplate.executeWithoutResult {
-                // arrange
-                val saved = brandRepository.save(Brand("루퍼스"))
-                flushAndClear()
+    @Test
+    fun `findLiveById reads a saved brand back with the same values after flush and clear`() {
+        transactionTemplate.executeWithoutResult {
+            val saved = brandRepository.save(Brand("루퍼스"))
+            flushAndClear()
 
-                // act
-                val found = brandRepository.findLiveById(saved.id)
+            val found = brandRepository.findLiveById(saved.id)
 
-                // assert
-                assertAll(
-                    { assertThat(found).isNotNull().isNotSameAs(saved) },
-                    { assertThat(found?.id).isEqualTo(saved.id) },
-                    { assertThat(found?.name).isEqualTo("루퍼스") },
-                    { assertThat(found?.createdAt).isNotNull() },
-                    { assertThat(found?.updatedAt).isNotNull() },
-                    { assertThat(found?.deletedAt).isNull() },
-                )
-            }
-        }
-
-        @DisplayName("삭제된 브랜드는 없는 브랜드로 답한다.")
-        @Test
-        fun returnsNull_whenBrandIsDeleted() {
-            // arrange
-            val deleted = saveDeleted("루퍼스")
-
-            // act
-            val found = inTransaction { brandRepository.findLiveById(deleted.id) }
-
-            // assert
-            assertThat(found).isNull()
+            assertAll(
+                { assertThat(found).isNotNull().isNotSameAs(saved) },
+                { assertThat(found?.id).isEqualTo(saved.id) },
+                { assertThat(found?.name).isEqualTo("루퍼스") },
+                { assertThat(found?.createdAt).isNotNull() },
+                { assertThat(found?.updatedAt).isNotNull() },
+                { assertThat(found?.deletedAt).isNull() },
+            )
         }
     }
 
-    @DisplayName("살아 있는 브랜드의 이름을 확인할 때, ")
-    @Nested
-    inner class ExistsLiveByName {
-        @DisplayName("살아 있는 브랜드가 쓰는 이름이면 참이고, 아무도 쓰지 않는 이름이면 거짓이다.")
-        @Test
-        fun returnsWhetherLiveBrandUsesName() {
-            // arrange
-            transactionTemplate.executeWithoutResult { brandRepository.save(Brand("루퍼스")) }
+    @Test
+    fun `findLiveById returns null for a deleted brand`() {
+        val deleted = saveDeleted("루퍼스")
 
-            // act
-            val taken = inTransaction { brandRepository.existsLiveByName("루퍼스") }
-            val free = inTransaction { brandRepository.existsLiveByName("다른 브랜드") }
+        val found = inTransaction { brandRepository.findLiveById(deleted.id) }
 
-            // assert
-            assertAll(
-                { assertThat(taken).isTrue() },
-                { assertThat(free).isFalse() },
-            )
-        }
+        assertThat(found).isNull()
+    }
 
-        @DisplayName("삭제된 브랜드만 쓰는 이름이면 거짓이다.")
-        @Test
-        fun returnsFalse_whenOnlyDeletedBrandUsesName() {
-            // arrange
-            saveDeleted("루퍼스")
+    @Test
+    fun `existsLiveByName is true for a name a live brand uses and false for an unused one`() {
+        transactionTemplate.executeWithoutResult { brandRepository.save(Brand("루퍼스")) }
 
-            // act
-            val taken = inTransaction { brandRepository.existsLiveByName("루퍼스") }
+        val taken = inTransaction { brandRepository.existsLiveByName("루퍼스") }
+        val free = inTransaction { brandRepository.existsLiveByName("다른 브랜드") }
 
-            // assert
-            assertThat(taken).isFalse()
-        }
+        assertAll(
+            { assertThat(taken).isTrue() },
+            { assertThat(free).isFalse() },
+        )
+    }
+
+    @Test
+    fun `existsLiveByName is false when only a deleted brand uses the name`() {
+        saveDeleted("루퍼스")
+
+        val taken = inTransaction { brandRepository.existsLiveByName("루퍼스") }
+
+        assertThat(taken).isFalse()
     }
 }
