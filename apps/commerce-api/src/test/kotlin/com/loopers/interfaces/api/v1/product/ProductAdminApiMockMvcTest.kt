@@ -152,18 +152,27 @@ class ProductAdminApiMockMvcTest(
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, price = 12_000)
 
-        mockMvc.put("$ENDPOINT/$id") {
-            with(ADMIN)
-            with(csrf())
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name": " 후드티 ", "price": 25000}"""
-        }.andExpect {
+        putProduct(id, body = """{"name": " 후드티 ", "price": 25000}""").andExpect {
             status { isOk() }
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data.id") { value(id) }
             jsonPath("$.data.brandId") { value(brand.id) }
             jsonPath("$.data.name") { value("후드티") }
             jsonPath("$.data.price") { value(25_000) }
+        }
+    }
+
+    @Test
+    fun `a brandId in the update body is ignored and the product keeps its brand`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val other = brandService.register(BrandRegisterRequest("나이키"))
+        val id = registerProduct(brand.id)
+
+        // 수정 입력에 brandId가 없으므로 본문에 실어도 바인딩되지 않는다. Boot가 모르는 필드를 버리므로 거절도 아니다.
+        putProduct(id, body = """{"name": "후드티", "price": 25000, "brandId": ${other.id}}""").andExpect {
+            status { isOk() }
+            jsonPath("$.data.brandId") { value(brand.id) }
+            jsonPath("$.data.name") { value("후드티") }
         }
     }
 
@@ -231,10 +240,8 @@ class ProductAdminApiMockMvcTest(
         putProduct(id, body = """{"name": "후드티", "price": 25000}""").andExpect { status { isNotFound() } }
         putStock(id, quantity = 3).andExpect { status { isNotFound() } }
         deleteProduct(id).andExpect { status { isNotFound() } }
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("brandId", brand.id.toString())
-        }.andExpect { jsonPath("$.data.items") { isEmpty() } }
+        getProducts("brandId" to brand.id.toString())
+            .andExpect { jsonPath("$.data.items") { isEmpty() } }
     }
 
     @Test
@@ -255,12 +262,7 @@ class ProductAdminApiMockMvcTest(
         registerProduct(other.id, name = "운동화")
         val second = registerProduct(brand.id, name = "후드티")
 
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("brandId", brand.id.toString())
-            param("page", "0")
-            param("size", "1")
-        }.andExpect {
+        getProducts("brandId" to brand.id.toString(), "page" to "0", "size" to "1").andExpect {
             status { isOk() }
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data.items.length()") { value(1) }
@@ -272,12 +274,7 @@ class ProductAdminApiMockMvcTest(
             jsonPath("$.data.hasNext") { value(true) }
         }
 
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("brandId", brand.id.toString())
-            param("page", "1")
-            param("size", "1")
-        }.andExpect {
+        getProducts("brandId" to brand.id.toString(), "page" to "1", "size" to "1").andExpect {
             jsonPath("$.data.items[0].id") { value(first) }
             jsonPath("$.data.hasNext") { value(false) }
         }
@@ -285,19 +282,13 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `listing outside the page and size bounds returns 400`() {
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("page", "-1")
-        }.andExpect {
+        getProducts("page" to "-1").andExpect {
             status { isBadRequest() }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
             jsonPath("$.meta.message") { value(containsString("page는 0 이상이어야 합니다")) }
         }
 
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("size", "101")
-        }.andExpect {
+        getProducts("size" to "101").andExpect {
             status { isBadRequest() }
             jsonPath("$.meta.message") { value(containsString("size는 100 이하여야 합니다")) }
         }
@@ -308,10 +299,7 @@ class ProductAdminApiMockMvcTest(
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         registerProduct(brand.id)
 
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("brandId", brand.id.toString())
-        }.andExpect {
+        getProducts("brandId" to brand.id.toString()).andExpect {
             status { isOk() }
             jsonPath("$.data.page") { value(0) }
             jsonPath("$.data.size") { value(20) }
@@ -329,6 +317,12 @@ class ProductAdminApiMockMvcTest(
         putStock(id, quantity = 3, principal = USER).andExpect { status { isForbidden() } }
         deleteProduct(id, principal = USER).andExpect { status { isForbidden() } }
     }
+
+    private fun getProducts(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN) =
+        mockMvc.get(ENDPOINT) {
+            principal?.let { with(it) }
+            query.forEach { (name, value) -> param(name, value) }
+        }
 
     private fun putProduct(productId: Long, body: String, principal: RequestPostProcessor? = ADMIN) =
         mockMvc.put("$ENDPOINT/$productId") {

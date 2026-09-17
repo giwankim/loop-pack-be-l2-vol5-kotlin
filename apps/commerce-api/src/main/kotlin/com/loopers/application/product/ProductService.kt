@@ -32,9 +32,7 @@ class ProductService(
     }
 
     @Transactional(readOnly = true)
-    fun find(id: Long): ProductInfo {
-        return ProductInfo.from(product(id))
-    }
+    fun find(id: Long): ProductInfo = ProductInfo.from(product(id))
 
     @Transactional
     fun update(id: Long, @Valid request: ProductUpdateRequest): ProductInfo {

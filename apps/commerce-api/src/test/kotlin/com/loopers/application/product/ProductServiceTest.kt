@@ -221,9 +221,15 @@ class ProductServiceTest(
     @Test
     fun `updating, restocking, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
         assertAll(
-            { assertThat(notFoundOf { productService.update(999L, ProductUpdateRequest("후드티", 25_000)) }).isTrue() },
-            { assertThat(notFoundOf { productService.updateStock(999L, ProductStockUpdateRequest(3)) }).isTrue() },
-            { assertThat(notFoundOf { productService.delete(999L) }).isTrue() },
+            {
+                assertThat(errorTypeOf { productService.update(999L, ProductUpdateRequest("후드티", 25_000)) })
+                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+            },
+            {
+                assertThat(errorTypeOf { productService.updateStock(999L, ProductStockUpdateRequest(3)) })
+                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+            },
+            { assertThat(errorTypeOf { productService.delete(999L) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
         )
     }
 
@@ -235,9 +241,15 @@ class ProductServiceTest(
         entityManager.flushAndClear()
 
         assertAll(
-            { assertThat(notFoundOf { productService.update(deleted.id, ProductUpdateRequest("후드티", 25_000)) }).isTrue() },
-            { assertThat(notFoundOf { productService.updateStock(deleted.id, ProductStockUpdateRequest(3)) }).isTrue() },
-            { assertThat(notFoundOf { productService.delete(deleted.id) }).isTrue() },
+            {
+                assertThat(errorTypeOf { productService.update(deleted.id, ProductUpdateRequest("후드티", 25_000)) })
+                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+            },
+            {
+                assertThat(errorTypeOf { productService.updateStock(deleted.id, ProductStockUpdateRequest(3)) })
+                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+            },
+            { assertThat(errorTypeOf { productService.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
         )
     }
 
@@ -322,9 +334,9 @@ class ProductServiceTest(
     private fun register(brandId: Long, name: String = "티셔츠", price: Long = 12_000, stock: Int = 7): ProductInfo =
         productService.register(ProductRegisterRequest(brandId = brandId, name = name, price = price, stock = stock))
 
-    /** 상품을 찾지 못해 거절됐는지. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
-    private fun notFoundOf(call: () -> Unit): Boolean =
-        assertThrows<CoreException> { call() }.errorType == ErrorType.PRODUCT_NOT_FOUND
+    /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
+    private fun errorTypeOf(call: () -> Unit): ErrorType =
+        assertThrows<CoreException> { call() }.errorType
 
     /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */
     private fun deletedAtOf(id: Long): Any? =

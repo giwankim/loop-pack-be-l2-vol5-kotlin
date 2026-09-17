@@ -24,6 +24,7 @@ interface ProductAdminApiSpec {
     @Operation(
         summary = "상품 목록 조회",
         description = "삭제되지 않은 상품을 늦게 등록된 것부터 한 조각씩 조회합니다. brandId를 주면 그 브랜드의 상품만 봅니다. " +
+            "page는 0 이상, size는 1 이상 100 이하이며, 주지 않으면 page=0, size=20입니다. " +
             "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다.",
     )
     fun getProducts(

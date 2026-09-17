@@ -421,6 +421,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | Request 제약이 Service 입구에서 거절 | application 통합 테스트. `ConstraintViolationException`과 저장 안 됨 | 두 검증 예외의 400 변환은 `ApiControllerAdviceTest`가 advice를 직접 불러 확인 |
 | 브랜드 삭제 조건, 이름 중복, 요청자 구분 | application 통합 테스트. `@SpringBootTest` + `@Transactional`, flush/clear 후 재조회 | fake 저장소는 두지 않는다(2026-09-17). 실제 SQL을 보내고 `count()`로 "저장하지 않음"을 확인 |
 | 삭제 필터, 좋아요 수 집계, 정렬·동률, `hasNext` | repository·DB 통합 테스트, flush/clear 후 재조회 | 읽기 경로마다 "삭제된 대상은 없는 대상". `@DataJpaTest`가 `*RepositoryImpl`을 `@Import`해야 하므로 테스트는 infrastructure 패키지에 둔다(5.20). domain 패키지의 테스트는 Spring·DB 없이 끝나고 구현 클래스를 모른다 |
+| 목록 입력이 저장소까지 이어짐, `Slice` 항목이 `Info`로 옮겨짐 | application 통합 테스트 | 저장소 테스트가 삭제 필터·브랜드 필터·`hasNext`를 이미 지키므로 이 자리는 되풀이가 아니라 이어짐만 본다: 기본값(`page=0`, `size=20`)이 조각에 닿는지, `brandName`이 트랜잭션 안에서 채워지는지. HTTP 테스트는 그 위에서 쿼리 문자열이 실제로 바인딩되는지를 두 번째 조각으로 확인한다 |
 | 고객·관리자 응답 필드, 401·403·404·409 | HTTP 테스트. 관리자는 MockMvc + `user().roles("ADMIN")` + `csrf()` | 거절 시 기존 값 유지 확인 |
 
 ## 7. 남은 것
