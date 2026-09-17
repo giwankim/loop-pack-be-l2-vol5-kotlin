@@ -144,7 +144,7 @@ sequenceDiagram
     Note over P: Stock(0) 생성. 음수면 거절하고 기존 값 유지
     PF->>PR: save(product)
     PF-->>AC: ProductInfo (stock 0, soldOut true)
-    Note over AC: ProductAdminDto가 stock과 시각을 고르고 soldOut은 버린다
+    Note over AC: ProductAdminResponse가 stock과 시각을 고르고 soldOut은 버린다
     AC-->>Admin: 200 {id, brandId, name, price, stock: 0, …}
 
     Customer->>CC: GET /api/v1/products/{id}
@@ -154,11 +154,11 @@ sequenceDiagram
     PF->>LR: countByProductId(id)
     LR-->>PF: likeCount
     PF-->>CC: ProductInfo (soldOut = product.isSoldOut(), likeCount)
-    Note over CC: ProductDto가 soldOut과 brand{id,name}을 고르고 stock은 버린다
+    Note over CC: ProductResponse가 soldOut과 brand{id,name}을 고르고 stock은 버린다
     CC-->>Customer: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
 ```
 
-같은 저장된 상품을 읽고 같은 `ProductInfo`를 받지만 응답 JSON이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. `ProductService`는 누가 부르는지 모르고 한 가지 `ProductInfo`만 트랜잭션 안에서 채운다. 어느 필드를 내보낼지는 역할별 컨트롤러 옆의 응답 DTO(`ProductAdminDto`, `ProductDto`)가 고른다. `Product`는 두 응답의 존재를 모르고 `isSoldOut()`만 안다. 언제 `Info`를 두는지는 5.7에 있다.
+같은 저장된 상품을 읽고 같은 `ProductInfo`를 받지만 응답 JSON이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. `ProductService`는 누가 부르는지 모르고 한 가지 `ProductInfo`만 트랜잭션 안에서 채운다. 어느 필드를 내보낼지는 역할별 컨트롤러 옆의 응답 DTO(`ProductAdminResponse`, `ProductResponse`)가 고른다. `Product`는 두 응답의 존재를 모르고 `isSoldOut()`만 안다. 언제 `Info`를 두는지는 5.7에 있다.
 
 ## 4. API 계약
 
@@ -260,11 +260,12 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.7 고객·관리자 응답 모델
 
-- 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어 application은 역할을 모르는 하나의 `ProductInfo`(id, brandId, brandName, name, price, stock, soldOut, createdAt, updatedAt, 좋아요 티켓에서 likeCount)를 채우고, interfaces의 역할별 DTO(`ProductAdminDto`, `ProductDto`)가 각자 내보낼 필드를 고른다. `soldOut`은 `Product.isSoldOut()`에서 오고 DTO는 계산하지 않는다. `Product`는 어느 응답의 존재도 모른다.
+- 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어 application은 역할을 모르는 하나의 `ProductInfo`(id, brandId, brandName, name, price, stock, soldOut, createdAt, updatedAt, 좋아요 티켓에서 likeCount)를 채우고, interfaces의 역할별 DTO(`ProductAdminResponse`, `ProductResponse`)가 각자 내보낼 필드를 고른다. `soldOut`은 `Product.isSoldOut()`에서 오고 DTO는 계산하지 않는다. `Product`는 어느 응답의 존재도 모른다.
 - 역할 분기를 interfaces에 두는 까닭: 관리자와 고객은 이미 `/api-admin`·`/api` 컨트롤러로 갈라져 있다. Service가 역할별 `Info`를 만들면 같은 지식이 한 층 아래에 한 번 더 생긴다. Service가 아는 것은 얼마나 읽었는가(목록·상세)이지 누가 보는가가 아니다. 과제 템플릿의 `ExampleInfo` → `ExampleV1Dto.ExampleResponse`도 애그리거트당 `Info` 하나, 엔드포인트당 응답 하나다.
 - `Info`를 두는 기준: Service는 연관이 없는 엔티티 하나로 답이 끝나면 그 엔티티를 돌려준다(`BrandService` → `Brand`). 연관을 건너 읽거나(`Product` → `Brand`, `@ManyToOne`) 다른 저장소의 값을 더해야 하면(좋아요 수) 트랜잭션 안에서 `Info`로 옮겨 돌려준다. `open-in-view: false`라 트랜잭션 밖의 지연 로딩은 실패하기 때문이다. 필드를 그대로 베끼기만 하는 `Info`는 두지 않는다.
-- 받아들이는 비용: 관리자 상세도 `likeCount`를 위한 count 쿼리 한 번을 치른다. 등록 응답은 새 상품에 좋아요가 없다는 불변식으로 0을 넣는다. `ProductInfo`는 직렬화되지 않으므로 고객 JSON에서 `stock`이 빠지는 것은 `ProductDto.from`의 명시적 필드 선택과 HTTP 테스트가 지킨다. 컨트롤러가 `Info`를 그대로 돌려주지 않는다.
+- 받아들이는 비용: 관리자 상세도 `likeCount`를 위한 count 쿼리 한 번을 치른다. 등록 응답은 새 상품에 좋아요가 없다는 불변식으로 0을 넣는다. `ProductInfo`는 직렬화되지 않으므로 고객 JSON에서 `stock`이 빠지는 것은 `ProductResponse.from`의 명시적 필드 선택과 HTTP 테스트가 지킨다. 컨트롤러가 `Info`를 그대로 돌려주지 않는다.
 - 반례 대입: "브랜드 응답이 바뀌면 어떤 객체까지 바뀌는가?" — 고객 상품 응답 DTO와 `ProductInfo.brandName`만 바뀐다. `Product`, `Brand`는 그대로다.
+- 응답 타입의 꼴(2026-09-18): 템플릿의 `ExampleV1Dto.ExampleResponse`처럼 `object`로 감싸지 않고 `ProductAdminResponse`, `BrandAdminResponse`를 최상위 `data class`로 둔다. 감싸는 `object`는 요청과 응답을 한 엔드포인트 묶음으로 모으는 이름 공간이었는데, 요청이 5.17에서 application의 `ProductRegisterRequest`로 내려가 구성원이 하나만 남았다. 패키지 `interfaces.api.v1.product`가 이미 이름 공간이다. 이름은 층을 가로질러 `<애그리거트><수식어><종류>` 하나로 맞춘다(`ProductRegisterRequest`, `ProductInfo`, `ProductAdminResponse`). 목록용 요약 응답이 생기면 `ProductAdminSummaryResponse`를 같은 최상위 클래스로 두고, 한 파일에 둘 이상이 모이면 파일 이름을 `ProductAdminResponses.kt`로 바꾼다. Kotlin 코딩 컨벤션대로 여러 최상위 선언을 담는 파일은 내용을 설명하는 이름을 갖는다.
 - 다시 볼 조건: `Brand`에 지연 연관이 생기거나 브랜드 응답이 다른 저장소의 값을 필요로 할 때 `BrandInfo`를 둔다. 한쪽 역할만 쓰는 필드가 별도 조회를 필요로 하게 되면(같은 행 + 집계 하나를 넘어서면) 그 읽기 경로에 자기 조회 모델을 두고 `ProductInfo`를 다시 가른다. 선택적 필드로 버티지 않는다.
 
 ### 5.8 교차 검사의 위치
