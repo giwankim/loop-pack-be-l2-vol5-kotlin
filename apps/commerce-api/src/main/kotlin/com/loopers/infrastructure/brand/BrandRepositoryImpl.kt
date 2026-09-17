@@ -2,7 +2,6 @@ package com.loopers.infrastructure.brand
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.shared.Name
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
@@ -20,5 +19,5 @@ class BrandRepositoryImpl(
 
     override fun findById(id: Long): Brand? = brandJpaRepository.findByIdOrNull(id)
 
-    override fun existsByName(name: Name): Boolean = brandJpaRepository.existsByName(name)
+    override fun existsByName(name: String): Boolean = brandJpaRepository.existsByName(name)
 }

@@ -4,7 +4,6 @@ import com.loopers.domain.BaseEntity
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.shared.InvalidNameException
 import com.loopers.domain.shared.Money
-import com.loopers.domain.shared.Name
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
@@ -24,7 +23,7 @@ import org.hibernate.annotations.SQLRestriction
 @SQLRestriction("deleted_at is null")
 class Product(
     brand: Brand,
-    name: Name,
+    name: String,
     price: Money,
     stock: Stock,
 ) : BaseEntity() {
@@ -32,9 +31,9 @@ class Product(
     @JoinColumn(name = "brand_id", nullable = false, updatable = false)
     val brand: Brand = brand
 
-    @Embedded
-    @AttributeOverride(name = "value", column = Column(name = "name", nullable = false, length = NAME_MAX_LENGTH))
-    var name: Name = name
+    /** 앞뒤 공백을 뗀 이름. 비어 있지 않고 [NAME_MAX_LENGTH]자 이하다. */
+    @Column(nullable = false, length = NAME_MAX_LENGTH)
+    var name: String = name.trim()
         protected set
 
     @Embedded
@@ -48,7 +47,10 @@ class Product(
         protected set
 
     init {
-        if (name.value.length > NAME_MAX_LENGTH) {
+        if (this.name.isEmpty()) {
+            throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
+        }
+        if (this.name.length > NAME_MAX_LENGTH) {
             throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
         }
         if (price < MIN_PRICE || price > MAX_PRICE) {
@@ -61,7 +63,7 @@ class Product(
         stock = Stock(quantity)
     }
 
-    /** 품절: 재고가 0인 상태. 고객에게는 수량 대신 이 상태만 보인다. */
+    /** 재고가 0이면 품절이다. */
     fun isSoldOut(): Boolean = stock.quantity == 0
 
     companion object {

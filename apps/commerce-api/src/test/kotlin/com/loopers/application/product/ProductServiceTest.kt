@@ -2,7 +2,6 @@ package com.loopers.application.product
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.shared.Name
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -27,7 +26,7 @@ class ProductServiceTest(
 ) {
     @Test
     fun `registering under a live brand saves a product that can be fetched back`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
 
         val registered =
             productService.register(ProductRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7))
@@ -51,7 +50,7 @@ class ProductServiceTest(
 
     @Test
     fun `finding a product with zero stock reports it as sold out`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
         val registered =
             productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = 0))
         entityManager.flushAndClear()
@@ -79,7 +78,7 @@ class ProductServiceTest(
 
     @Test
     fun `registering under a deleted brand throws BRAND_NOT_FOUND and saves nothing`() {
-        val deleted = brandRepository.save(Brand(Name("루퍼스")).apply { delete() })
+        val deleted = brandRepository.save(Brand("루퍼스").apply { delete() })
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
@@ -95,7 +94,7 @@ class ProductServiceTest(
 
     @Test
     fun `registering a price of zero is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
 
         val exception = assertThrows<ConstraintViolationException> {
             productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 0, stock = 7))

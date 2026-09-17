@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Size
  * 값 객체와 엔티티의 검사는 그대로 남아 있어 규칙이 두 곳에 적힌다(설계 5.18).
  */
 data class BrandRegisterRequest(
-    @field:NotBlank(message = "이름은 공백일 수 없습니다.")
+    @field:NotBlank(message = "브랜드 이름은 공백일 수 없습니다.")
     @field:Size(max = Brand.NAME_MAX_LENGTH, message = "브랜드 이름은 {max}자 이하여야 합니다.")
     val name: String,
 )

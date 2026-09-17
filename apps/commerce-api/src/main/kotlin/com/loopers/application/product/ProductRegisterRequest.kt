@@ -13,7 +13,7 @@ import jakarta.validation.constraints.Size
  */
 data class ProductRegisterRequest(
     val brandId: Long,
-    @field:NotBlank(message = "이름은 공백일 수 없습니다.")
+    @field:NotBlank(message = "상품 이름은 공백일 수 없습니다.")
     @field:Size(max = Product.NAME_MAX_LENGTH, message = "상품 이름은 {max}자 이하여야 합니다.")
     val name: String,
     @field:Min(Product.MIN_PRICE_AMOUNT, message = "상품 가격은 {value}원 이상이어야 합니다.")

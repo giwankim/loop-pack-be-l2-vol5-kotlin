@@ -3,7 +3,6 @@ package com.loopers.domain.product
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.shared.InvalidNameException
 import com.loopers.domain.shared.Money
-import com.loopers.domain.shared.Name
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -25,28 +24,34 @@ class ProductTest {
         assertThat(product.price).isEqualTo(Money(amount))
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ["", "   ", "\t\n"])
+    fun `blank name throws InvalidNameException`(value: String) {
+        assertThrows<InvalidNameException> { product(name = value) }
+    }
+
     @Test
     fun `name of 101 chars after trimming throws InvalidNameException`() {
-        assertThrows<InvalidNameException> { product(name = Name(" " + "가".repeat(101) + " ")) }
+        assertThrows<InvalidNameException> { product(name = " " + "가".repeat(101) + " ") }
     }
 
     @Test
     fun `name of 100 chars after trimming is kept`() {
         val value = "가".repeat(100)
 
-        val product = product(name = Name("  $value\t"))
+        val product = product(name = "  $value\t")
 
-        assertThat(product.name).isEqualTo(Name(value))
+        assertThat(product.name).isEqualTo(value)
     }
 
     @Test
-    fun `registering keeps the brand, name, and stock it was given`() {
-        val brand = Brand(Name("루퍼스"))
+    fun `registering keeps the brand, trimmed name, and stock it was given`() {
+        val brand = Brand("루퍼스")
 
-        val product = Product(brand = brand, name = Name(" 티셔츠 "), price = Money(10_000), stock = Stock(3))
+        val product = Product(brand = brand, name = " 티셔츠 ", price = Money(10_000), stock = Stock(3))
 
         assertThat(product.brand).isSameAs(brand)
-        assertThat(product.name).isEqualTo(Name("티셔츠"))
+        assertThat(product.name).isEqualTo("티셔츠")
         assertThat(product.stock).isEqualTo(Stock(3))
     }
 
@@ -83,8 +88,8 @@ class ProductTest {
     }
 
     private fun product(
-        name: Name = Name("티셔츠"),
+        name: String = "티셔츠",
         price: Money = Money(10_000),
         stock: Stock = Stock(1),
-    ) = Product(brand = Brand(Name("루퍼스")), name = name, price = price, stock = stock)
+    ) = Product(brand = Brand("루퍼스"), name = name, price = price, stock = stock)
 }

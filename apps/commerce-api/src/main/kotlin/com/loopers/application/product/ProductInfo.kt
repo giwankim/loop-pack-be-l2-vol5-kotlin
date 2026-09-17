@@ -23,8 +23,8 @@ data class ProductInfo(
             ProductInfo(
                 id = product.id,
                 brandId = product.brand.id,
-                brandName = product.brand.name.value,
-                name = product.name.value,
+                brandName = product.brand.name,
+                name = product.name,
                 price = product.price.amount,
                 stock = product.stock.quantity,
                 soldOut = product.isSoldOut(),

@@ -34,7 +34,7 @@ class ApiControllerAdviceTest {
             { assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request") },
             {
                 assertThat(response.body?.meta?.message)
-                    .isEqualTo("이름은 공백일 수 없습니다. 상품 가격은 1원 이상이어야 합니다. 재고는 0 이상이어야 합니다.")
+                    .isEqualTo("상품 이름은 공백일 수 없습니다. 상품 가격은 1원 이상이어야 합니다. 재고는 0 이상이어야 합니다.")
             },
         )
     }

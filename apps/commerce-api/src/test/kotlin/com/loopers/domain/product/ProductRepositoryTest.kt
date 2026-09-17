@@ -4,7 +4,6 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.shared.Money
-import com.loopers.domain.shared.Name
 import com.loopers.infrastructure.brand.BrandRepositoryImpl
 import com.loopers.infrastructure.product.ProductRepositoryImpl
 import com.loopers.testcontainers.MySqlTestContainersConfig
@@ -32,7 +31,7 @@ class ProductRepositoryTest(
 ) {
     @Test
     fun `findById reads a saved product back with its brand, price, and stock after flush and clear`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
         val saved = productRepository.save(product(brand, price = 12_000, stock = 7))
         entityManager.flushAndClear()
 
@@ -42,8 +41,8 @@ class ProductRepositoryTest(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
             { assertThat(found?.id).isEqualTo(saved.id) },
             { assertThat(found?.brand?.id).isEqualTo(brand.id) },
-            { assertThat(found?.brand?.name).isEqualTo(Name("루퍼스")) },
-            { assertThat(found?.name).isEqualTo(Name("티셔츠")) },
+            { assertThat(found?.brand?.name).isEqualTo("루퍼스") },
+            { assertThat(found?.name).isEqualTo("티셔츠") },
             { assertThat(found?.price).isEqualTo(Money(12_000)) },
             { assertThat(found?.stock).isEqualTo(Stock(7)) },
             { assertThat(found?.createdAt).isNotNull() },
@@ -54,7 +53,7 @@ class ProductRepositoryTest(
 
     @Test
     fun `findById leaves the brand as an uninitialized proxy until a field other than id is read`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
         val saved = productRepository.save(product(brand))
         entityManager.flushAndClear()
 
@@ -67,13 +66,13 @@ class ProductRepositoryTest(
         assertThat(found.brand.id).isEqualTo(brand.id)
         assertThat(Hibernate.isInitialized(found.brand)).isFalse()
         // 다른 필드를 읽는 순간 브랜드를 조회한다.
-        assertThat(found.brand.name).isEqualTo(Name("루퍼스"))
+        assertThat(found.brand.name).isEqualTo("루퍼스")
         assertThat(Hibernate.isInitialized(found.brand)).isTrue()
     }
 
     @Test
     fun `save stores price and stock in the price and stock_quantity columns`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
         val saved = productRepository.save(product(brand, price = 12_000, stock = 7))
         entityManager.flushAndClear()
 
@@ -91,7 +90,7 @@ class ProductRepositoryTest(
 
     @Test
     fun `findById returns null for a deleted product`() {
-        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val brand = brandRepository.save(Brand("루퍼스"))
         val deleted = productRepository.save(product(brand).apply { delete() })
         entityManager.flushAndClear()
 
@@ -106,5 +105,5 @@ class ProductRepositoryTest(
     }
 
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
-        Product(brand = brand, name = Name("티셔츠"), price = Money(price), stock = Stock(stock))
+        Product(brand = brand, name = "티셔츠", price = Money(price), stock = Stock(stock))
 }

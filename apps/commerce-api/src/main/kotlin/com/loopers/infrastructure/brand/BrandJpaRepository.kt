@@ -1,7 +1,6 @@
 package com.loopers.infrastructure.brand
 
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.shared.Name
 import org.springframework.data.jpa.repository.JpaRepository
 
 /**
@@ -9,5 +8,5 @@ import org.springframework.data.jpa.repository.JpaRepository
  * 삭제된 행을 거르는 조건은 [Brand]의 `@SQLRestriction`이 모든 조회에 붙이므로 여기서는 적지 않는다.
  */
 interface BrandJpaRepository : JpaRepository<Brand, Long> {
-    fun existsByName(name: Name): Boolean
+    fun existsByName(name: String): Boolean
 }

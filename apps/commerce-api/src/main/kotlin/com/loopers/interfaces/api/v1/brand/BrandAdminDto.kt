@@ -14,7 +14,7 @@ object BrandAdminDto {
             fun from(brand: Brand): BrandResponse {
                 return BrandResponse(
                     id = brand.id,
-                    name = brand.name.value,
+                    name = brand.name,
                     createdAt = brand.createdAt,
                     updatedAt = brand.updatedAt,
                 )

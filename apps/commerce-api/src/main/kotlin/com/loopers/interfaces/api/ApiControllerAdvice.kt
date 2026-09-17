@@ -18,10 +18,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ServerWebInputException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 
+private val log = KotlinLogging.logger {}
+
 @RestControllerAdvice
 class ApiControllerAdvice {
-    private val log = KotlinLogging.logger {}
-
     @ExceptionHandler
     fun handleCoreException(e: CoreException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "CoreException : ${e.message}" }

@@ -31,10 +31,10 @@ class BrandServiceTest(
         val found = brandService.find(registered.id)
 
         assertAll(
-            { assertThat(registered.name.value).isEqualTo("루퍼스") },
+            { assertThat(registered.name).isEqualTo("루퍼스") },
             { assertThat(found).isNotSameAs(registered) },
             { assertThat(found.id).isEqualTo(registered.id) },
-            { assertThat(found.name.value).isEqualTo("루퍼스") },
+            { assertThat(found.name).isEqualTo("루퍼스") },
             { assertThat(found.createdAt).isNotNull() },
             { assertThat(found.updatedAt).isNotNull() },
         )
@@ -51,7 +51,7 @@ class BrandServiceTest(
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
             { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.find(existing.id).name.value).isEqualTo("루퍼스") },
+            { assertThat(brandService.find(existing.id).name).isEqualTo("루퍼스") },
         )
     }
 
@@ -75,7 +75,7 @@ class BrandServiceTest(
         entityManager.flushAndClear()
 
         assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("이름은 공백일 수 없습니다.") },
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.") },
             { assertThat(countBrands()).isZero() },
         )
     }

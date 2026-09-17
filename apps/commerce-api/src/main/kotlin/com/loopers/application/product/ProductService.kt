@@ -5,7 +5,6 @@ import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
-import com.loopers.domain.shared.Name
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -24,7 +23,7 @@ class ProductService(
         val brand = brandRepository.findById(request.brandId) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
         val product = Product(
             brand = brand,
-            name = Name(request.name),
+            name = request.name,
             price = Money(request.price),
             stock = Stock(request.stock),
         )
