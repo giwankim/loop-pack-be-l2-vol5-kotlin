@@ -10,7 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag
 interface BrandAdminApiSpec {
     @Operation(
         summary = "브랜드 등록",
-        description = "이름으로 브랜드를 등록합니다. 이름은 앞뒤 공백을 뗀 뒤 1자 이상 100자 이하이며, 삭제되지 않은 브랜드와 겹칠 수 없습니다.",
+        description = "이름으로 브랜드를 등록합니다. 이름은 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하이며 " +
+            "앞뒤 공백을 뗀 값이 저장됩니다. 삭제되지 않은 브랜드와 겹칠 수 없습니다.",
     )
     fun register(
         request: BrandRegisterRequest,
