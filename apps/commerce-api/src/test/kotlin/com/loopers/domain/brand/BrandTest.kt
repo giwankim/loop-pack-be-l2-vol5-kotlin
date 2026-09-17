@@ -69,6 +69,13 @@ class BrandTest {
     }
 
     @Test
+    fun `normalizeName leaves an already normalized name alone`() {
+        val once = Brand.normalizeName("  루퍼스\t")
+
+        assertThat(Brand.normalizeName(once)).isEqualTo(once)
+    }
+
+    @Test
     fun `normalizeName rejects a name the entity would reject`() {
         assertThrows<InvalidNameException> { Brand.normalizeName("   ") }
     }

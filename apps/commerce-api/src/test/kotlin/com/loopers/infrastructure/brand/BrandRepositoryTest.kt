@@ -29,7 +29,7 @@ class BrandRepositoryTest(
     private val entityManager: EntityManager,
 ) {
     companion object {
-        private val BASE: ZonedDateTime = ZonedDateTime.of(2026, 9, 18, 10, 0, 0, 0, ZoneOffset.UTC)
+        private val FIRST_REGISTERED_AT: ZonedDateTime = ZonedDateTime.of(2026, 9, 18, 10, 0, 0, 0, ZoneOffset.UTC)
     }
 
     @Test
@@ -83,9 +83,9 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll returns live brands with the newest registration first`() {
-        save("첫째", registeredAt = BASE)
-        save("둘째", registeredAt = BASE.plusMinutes(1))
-        save("셋째", registeredAt = BASE.plusMinutes(2))
+        save("첫째", registeredAt = FIRST_REGISTERED_AT)
+        save("둘째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
+        save("셋째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
 
         val slice = brandRepository.findAll(page = 0, size = 20)
 
@@ -94,8 +94,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll breaks a tie on registration time with the higher id first`() {
-        val first = save("첫째", registeredAt = BASE)
-        val second = save("둘째", registeredAt = BASE)
+        val first = save("첫째", registeredAt = FIRST_REGISTERED_AT)
+        val second = save("둘째", registeredAt = FIRST_REGISTERED_AT)
 
         val slice = brandRepository.findAll(page = 0, size = 20)
 
@@ -104,7 +104,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll leaves out deleted brands`() {
-        save("루퍼스", registeredAt = BASE)
+        save("루퍼스", registeredAt = FIRST_REGISTERED_AT)
         saveDeleted("무신사")
 
         val slice = brandRepository.findAll(page = 0, size = 20)
@@ -153,7 +153,7 @@ class BrandRepositoryTest(
 
     /** 최신 등록이 뒤 번호가 되도록 `브랜드 0`부터 1분 간격으로 만든다. */
     private fun saveBrands(count: Int) {
-        repeat(count) { save("브랜드 $it", registeredAt = BASE.plusMinutes(it.toLong())) }
+        repeat(count) { save("브랜드 $it", registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
     }
 
     /**

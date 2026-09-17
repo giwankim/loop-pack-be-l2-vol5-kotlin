@@ -32,7 +32,7 @@ class BrandService(private val brandRepository: BrandRepository) {
 
     /**
      * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 중복을 본다.
-     * 물어볼 이름은 저장될 이름이어야 해서 [Brand.normalizeName]으로 먼저 다듬는다(설계 5.21).
+     * 물어볼 이름은 저장될 이름이어야 해서 [Brand.normalizeName]으로 먼저 다듬는다(설계 5.22).
      */
     @Transactional
     fun update(id: Long, @Valid request: BrandUpdateRequest): Brand {

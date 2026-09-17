@@ -70,7 +70,7 @@ class BrandApiMockMvcTest(
     fun `reading a deleted brand returns 404`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
-        startNextRequest()
+        clearPersistenceContext()
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isNotFound() } }
@@ -95,9 +95,9 @@ class BrandApiMockMvcTest(
     }
 
     /**
-     * 다음 요청이 새 영속성 컨텍스트에서 시작한 것처럼 만든다. 운영에서는 요청마다 컨텍스트가 새로 열리지만
-     * MockMvc는 테스트 트랜잭션 안에서 돌아 앞선 요청이 남긴 엔티티가 1차 캐시에 그대로 있다.
-     * 그러면 ID 조회가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다.
+     * 다음 ID 조회가 1차 캐시가 아니라 SQL을 타게 한다. 앞 요청이 삭제한 브랜드가 컨텍스트에 그대로 있으면
+     * `find`가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없기 때문이다.
+     * 운영에서는 요청마다 컨텍스트가 새로 열려 저절로 되는 일이다.
      */
-    private fun startNextRequest() = entityManager.flushAndClear()
+    private fun clearPersistenceContext() = entityManager.flushAndClear()
 }

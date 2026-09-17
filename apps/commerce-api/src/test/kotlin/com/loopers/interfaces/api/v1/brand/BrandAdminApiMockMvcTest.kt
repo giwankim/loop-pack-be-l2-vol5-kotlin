@@ -11,6 +11,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.notNullValue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -183,25 +186,17 @@ class BrandAdminApiMockMvcTest(
             }
     }
 
-    @Test
-    fun `listing with a negative page returns 400`() {
+    @ParameterizedTest
+    @CsvSource("-1, 20", "0, 0", "0, 101")
+    fun `listing outside the page range returns 400`(page: Int, size: Int) {
         mockMvc.get(ENDPOINT) {
             with(ADMIN)
-            param("page", "-1")
+            param("page", page.toString())
+            param("size", size.toString())
         }.andExpect {
             status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(ErrorType.INVALID_PAGE.message) }
-        }
-    }
-
-    @Test
-    fun `listing with a size over a hundred returns 400`() {
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("size", "101")
-        }.andExpect {
-            status { isBadRequest() }
             jsonPath("$.meta.message") { value(ErrorType.INVALID_PAGE.message) }
         }
     }
@@ -255,6 +250,19 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
+    fun `renaming to a name over a hundred chars returns 400 and keeps the old name`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        putBrand(brand.id, name = "가".repeat(101)).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.message") { value(containsString("100자 이하여야")) }
+        }
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect { jsonPath("$.data.name") { value("루퍼스") } }
+    }
+
+    @Test
     fun `renaming an unknown brand returns 404`() {
         putBrand(999L, name = "루퍼스").andExpect {
             status { isNotFound() }
@@ -266,7 +274,7 @@ class BrandAdminApiMockMvcTest(
     fun `renaming a deleted brand returns 404`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
-        startNextRequest()
+        clearPersistenceContext()
 
         putBrand(brand.id, name = "무신사").andExpect { status { isNotFound() } }
     }
@@ -289,7 +297,7 @@ class BrandAdminApiMockMvcTest(
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data") { doesNotExist() }
         }
-        startNextRequest()
+        clearPersistenceContext()
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
             .andExpect { status { isNotFound() } }
@@ -299,10 +307,24 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
+    fun `deleting a brand stamps the row instead of removing it`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        deleteBrand(brand.id).andExpect { status { isOk() } }
+        clearPersistenceContext()
+
+        val deletedAt = readDeletedAt(brand.id)
+        assertAll(
+            { assertThat(deletedAt).hasSize(1) },
+            { assertThat(deletedAt.single()).isNotNull() },
+        )
+    }
+
+    @Test
     fun `deleting a brand twice returns 404 the second time`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         deleteBrand(brand.id).andExpect { status { isOk() } }
-        startNextRequest()
+        clearPersistenceContext()
 
         deleteBrand(brand.id).andExpect {
             status { isNotFound() }
@@ -347,11 +369,21 @@ class BrandAdminApiMockMvcTest(
         }
 
     /**
-     * 다음 요청이 새 영속성 컨텍스트에서 시작한 것처럼 만든다. 운영에서는 요청마다 컨텍스트가 새로 열리지만
-     * MockMvc는 테스트 트랜잭션 안에서 돌아 앞선 요청이 남긴 엔티티가 1차 캐시에 그대로 있다.
-     * 그러면 ID 조회가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다.
+     * 다음 ID 조회가 1차 캐시가 아니라 SQL을 타게 한다. 앞 요청이 삭제한 브랜드가 컨텍스트에 그대로 있으면
+     * `find`가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없기 때문이다.
+     * 운영에서는 요청마다 컨텍스트가 새로 열려 저절로 되는 일이다.
      */
-    private fun startNextRequest() = entityManager.flushAndClear()
+    private fun clearPersistenceContext() = entityManager.flushAndClear()
+
+    /**
+     * 브랜드 행의 `deleted_at`. 행이 없으면 빈 목록이다.
+     * 엔티티의 SQL 제한을 지나쳐 논리 삭제와 물리 삭제를 가르려면 네이티브 조회여야 한다.
+     */
+    private fun readDeletedAt(brandId: Long): List<*> =
+        entityManager
+            .createNativeQuery("select deleted_at from brand where id = :id")
+            .setParameter("id", brandId)
+            .resultList
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
     private fun countBrands(): Long =
