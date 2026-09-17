@@ -10,8 +10,8 @@ import org.junit.jupiter.params.provider.ValueSource
 class BrandTest {
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
-    fun `blank name throws InvalidNameException`(value: String) {
-        assertThrows<InvalidNameException> { Brand(value) }
+    fun `blank name throws InvalidNameException`(name: String) {
+        assertThrows<InvalidNameException> { Brand(name) }
     }
 
     @Test
@@ -28,10 +28,10 @@ class BrandTest {
 
     @Test
     fun `name of 100 chars after trimming is kept`() {
-        val value = "가".repeat(100)
+        val name = "가".repeat(100)
 
-        val brand = Brand("  $value\t")
+        val brand = Brand("  $name\t")
 
-        assertThat(brand.name).isEqualTo(value)
+        assertThat(brand.name).isEqualTo(name)
     }
 }

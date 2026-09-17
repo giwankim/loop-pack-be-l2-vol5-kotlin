@@ -1,7 +1,8 @@
-package com.loopers.domain.brand
+package com.loopers.infrastructure.brand
 
 import com.loopers.config.jpa.DataSourceConfig
-import com.loopers.infrastructure.brand.BrandRepositoryImpl
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.BrandRepository
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -13,9 +14,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.context.annotation.Import
 
 /**
- * [BrandRepository] 계약을 실제 MySQL에서 확인한다. 구현이 무엇인지는 보지 않고 인터페이스로만 부른다.
+ * [BrandRepositoryImpl]이 [BrandRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
  * 슬라이스는 사용자 `@Configuration`과 `@Component`를 스캔하지 않으므로 데이터소스 설정, 컨테이너 설정,
- * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 구현을 알아야 하므로 domain이 아니라 infrastructure 패키지에 둔다(설계 5.20).
+ * 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

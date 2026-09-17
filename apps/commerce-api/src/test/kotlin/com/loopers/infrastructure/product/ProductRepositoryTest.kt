@@ -1,11 +1,13 @@
-package com.loopers.domain.product
+package com.loopers.infrastructure.product
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandRepositoryImpl
-import com.loopers.infrastructure.product.ProductRepositoryImpl
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -18,8 +20,9 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.context.annotation.Import
 
 /**
- * [ProductRepository] 계약을 실제 MySQL에서 확인한다. 구현이 무엇인지는 보지 않고 인터페이스로만 부른다.
- * 설정과 정리 방식은 [com.loopers.domain.brand.BrandRepositoryTest]와 같다.
+ * [ProductRepositoryImpl]이 [ProductRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
+ * 상품이 브랜드를 참조하므로 [BrandRepositoryImpl]도 함께 등록한다. 설정과 정리 방식, 패키지 위치의 이유는
+ * [com.loopers.infrastructure.brand.BrandRepositoryTest]와 같다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

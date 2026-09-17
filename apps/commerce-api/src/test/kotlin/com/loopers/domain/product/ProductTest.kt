@@ -26,8 +26,8 @@ class ProductTest {
 
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
-    fun `blank name throws InvalidNameException`(value: String) {
-        assertThrows<InvalidNameException> { product(name = value) }
+    fun `blank name throws InvalidNameException`(name: String) {
+        assertThrows<InvalidNameException> { product(name = name) }
     }
 
     @Test
@@ -37,11 +37,11 @@ class ProductTest {
 
     @Test
     fun `name of 100 chars after trimming is kept`() {
-        val value = "가".repeat(100)
+        val name = "가".repeat(100)
 
-        val product = product(name = "  $value\t")
+        val product = product(name = "  $name\t")
 
-        assertThat(product.name).isEqualTo(value)
+        assertThat(product.name).isEqualTo(name)
     }
 
     @Test
