@@ -23,4 +23,18 @@ class StockTest {
 
         assertThat(stock.quantity).isEqualTo(5)
     }
+
+    @Test
+    fun `isEmpty is true when the quantity is zero`() {
+        val stock = Stock(0)
+
+        assertThat(stock.isEmpty()).isTrue()
+    }
+
+    @Test
+    fun `isEmpty is false when any quantity remains`() {
+        val stock = Stock(1)
+
+        assertThat(stock.isEmpty()).isFalse()
+    }
 }

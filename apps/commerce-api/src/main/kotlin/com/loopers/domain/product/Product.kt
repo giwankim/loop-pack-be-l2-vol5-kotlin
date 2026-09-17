@@ -64,7 +64,7 @@ class Product(
     }
 
     /** 재고가 0이면 품절이다. */
-    fun isSoldOut(): Boolean = stock.quantity == 0
+    fun isSoldOut(): Boolean = stock.isEmpty()
 
     companion object {
         const val NAME_MAX_LENGTH = 100
