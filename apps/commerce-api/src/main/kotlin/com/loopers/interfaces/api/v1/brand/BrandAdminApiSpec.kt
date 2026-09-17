@@ -14,7 +14,7 @@ interface BrandAdminApiSpec {
     )
     fun register(
         request: BrandRegisterRequest,
-    ): ApiResponse<BrandAdminDto.BrandResponse>
+    ): ApiResponse<BrandAdminResponse>
 
     @Operation(
         summary = "브랜드 상세 조회",
@@ -23,5 +23,5 @@ interface BrandAdminApiSpec {
     fun getBrand(
         @Schema(name = "브랜드 ID", description = "조회할 브랜드의 ID")
         brandId: Long,
-    ): ApiResponse<BrandAdminDto.BrandResponse>
+    ): ApiResponse<BrandAdminResponse>
 }

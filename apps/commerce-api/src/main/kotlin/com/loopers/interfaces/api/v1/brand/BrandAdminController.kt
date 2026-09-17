@@ -22,18 +22,18 @@ class BrandAdminController(
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
         @RequestBody @Valid request: BrandRegisterRequest,
-    ): ApiResponse<BrandAdminDto.BrandResponse> {
+    ): ApiResponse<BrandAdminResponse> {
         return brandService.register(request)
-            .let { BrandAdminDto.BrandResponse.from(it) }
+            .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
     @GetMapping("/{brandId}")
     override fun getBrand(
         @PathVariable("brandId") brandId: Long,
-    ): ApiResponse<BrandAdminDto.BrandResponse> {
+    ): ApiResponse<BrandAdminResponse> {
         return brandService.find(brandId)
-            .let { BrandAdminDto.BrandResponse.from(it) }
+            .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 }

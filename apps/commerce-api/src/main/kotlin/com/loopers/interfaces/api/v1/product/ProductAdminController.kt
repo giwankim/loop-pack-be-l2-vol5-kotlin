@@ -22,18 +22,18 @@ class ProductAdminController(
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
         @RequestBody @Valid request: ProductRegisterRequest,
-    ): ApiResponse<ProductAdminDto.ProductResponse> {
+    ): ApiResponse<ProductAdminResponse> {
         return productService.register(request)
-            .let { ProductAdminDto.ProductResponse.from(it) }
+            .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
     @GetMapping("/{productId}")
     override fun getProduct(
         @PathVariable("productId") productId: Long,
-    ): ApiResponse<ProductAdminDto.ProductResponse> {
+    ): ApiResponse<ProductAdminResponse> {
         return productService.find(productId)
-            .let { ProductAdminDto.ProductResponse.from(it) }
+            .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 }

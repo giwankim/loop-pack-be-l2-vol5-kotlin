@@ -15,7 +15,7 @@ interface ProductAdminApiSpec {
     )
     fun register(
         request: ProductRegisterRequest,
-    ): ApiResponse<ProductAdminDto.ProductResponse>
+    ): ApiResponse<ProductAdminResponse>
 
     @Operation(
         summary = "상품 상세 조회",
@@ -24,5 +24,5 @@ interface ProductAdminApiSpec {
     fun getProduct(
         @Schema(name = "상품 ID", description = "조회할 상품의 ID")
         productId: Long,
-    ): ApiResponse<ProductAdminDto.ProductResponse>
+    ): ApiResponse<ProductAdminResponse>
 }
