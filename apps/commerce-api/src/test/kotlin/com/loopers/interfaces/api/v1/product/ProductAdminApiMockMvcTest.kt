@@ -95,6 +95,34 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
+    fun `registering a blank name returns 400 and saves nothing`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        postProduct(brandId = brand.id, name = "   ").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value(containsString("상품 이름은 공백일 수 없습니다")) }
+        }
+
+        assertThat(countProducts()).isZero()
+    }
+
+    @Test
+    fun `registering a negative stock returns 400 and saves nothing`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        postProduct(brandId = brand.id, stock = -1).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value(containsString("재고는 0 이상이어야 합니다")) }
+        }
+
+        assertThat(countProducts()).isZero()
+    }
+
+    @Test
     fun `registering as a customer returns 403 and saves nothing`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
@@ -119,6 +147,7 @@ class ProductAdminApiMockMvcTest(
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
     private fun postProduct(
         brandId: Long,
+        name: String = " 티셔츠 ",
         price: Long = 12_000,
         stock: Int = 7,
         principal: RequestPostProcessor? = ADMIN,
@@ -126,7 +155,7 @@ class ProductAdminApiMockMvcTest(
         principal?.let { with(it) }
         with(csrf())
         contentType = MediaType.APPLICATION_JSON
-        content = """{"brandId": $brandId, "name": " 티셔츠 ", "price": $price, "stock": $stock}"""
+        content = """{"brandId": $brandId, "name": "$name", "price": $price, "stock": $stock}"""
     }
 
     /** 삭제되지 않은 상품 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */

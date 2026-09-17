@@ -108,6 +108,36 @@ class ProductServiceTest(
     }
 
     @Test
+    fun `registering a blank name is rejected by request validation before the domain and saves nothing`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+
+        val exception = assertThrows<ConstraintViolationException> {
+            productService.register(ProductRegisterRequest(brandId = brand.id, name = "   ", price = 12_000, stock = 7))
+        }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 이름은 공백일 수 없습니다.") },
+            { assertThat(countProducts()).isZero() },
+        )
+    }
+
+    @Test
+    fun `registering a negative stock is rejected by request validation before the domain and saves nothing`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+
+        val exception = assertThrows<ConstraintViolationException> {
+            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = -1))
+        }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.") },
+            { assertThat(countProducts()).isZero() },
+        )
+    }
+
+    @Test
     fun `getting an unknown product throws PRODUCT_NOT_FOUND`() {
         val exception = assertThrows<CoreException> { productService.find(999L) }
 
