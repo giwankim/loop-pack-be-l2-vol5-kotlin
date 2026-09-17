@@ -15,12 +15,12 @@
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
-| `name` | `Name` | 이름 |
+| `name` | `String` | 앞뒤 공백을 뗀 이름 |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각. `BaseEntity` |
 
 ### 규칙
 
-- 이름은 `Name`의 규칙을 따르고, 앞뒤 공백을 뗀 뒤 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 어기면 `InvalidNameException`.
+- 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 뗀 값을 저장한다. 어기면 `InvalidNameException`.
 - 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 대소문자를 가리지 않고 본다(`Loopers`와 `loopers`는 같은 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 어기면 `BRAND_NAME_DUPLICATED`.
 - 삭제되지 않은 상품이 하나라도 남아 있으면 삭제할 수 없다. 재고 0인 상품도 남은 상품이다. 이것도 application이 상품 저장소에 물어 확인한다. 어기면 `BRAND_HAS_PRODUCTS`.
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
@@ -29,13 +29,13 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Brand(name)` | 이름 길이 상한을 검사하고 만든다. 공백은 `Name`이 이미 검사했다 | `InvalidNameException` |
+| `Brand(name)` | 이름의 앞뒤 공백을 떼고 공백과 길이 상한을 검사하고 만든다 | `InvalidNameException` |
 | `update(name)` | 이름을 바꾼다 | `InvalidNameException` |
 | `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 삭제 조건은 호출 전에 application이 본다 |
 
 ### 협력
 
-- 등록: `BrandService.register` → `Brand(Name(name))`(`Name`이 trim과 공백 검사, `Brand`가 길이 상한 검사) → 뗀 이름으로 중복 조회 → 저장. 중복 조회가 trim된 이름을 봐야 하므로 이름 규칙이 먼저다.
+- 등록: `BrandService.register` → `Brand(name)`(trim, 공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 중복 조회가 뗀 이름을 봐야 하므로 브랜드를 먼저 만들고 그 이름으로 묻는다.
 - 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장.
 
 ## 상품 (Product)
@@ -48,14 +48,14 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
 | `brand` | `Brand` | 속한 브랜드. `@ManyToOne(fetch = LAZY)`, 읽기용 |
-| `name` | `Name` | 이름 |
+| `name` | `String` | 앞뒤 공백을 뗀 이름 |
 | `price` | `Money` | 가격 |
 | `stock` | `Stock` | 재고. `@Embedded` |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각 |
 
 ### 규칙
 
-- 이름은 `Name`의 규칙을 따르고, 앞뒤 공백을 뗀 뒤 100자(`Product.NAME_MAX_LENGTH`) 이하다. 브랜드와 상한이 같은 것은 우연이라 따로 바뀔 수 있다. 어기면 `InvalidNameException`.
+- 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자(`Product.NAME_MAX_LENGTH`) 이하다. 뗀 값을 저장한다. 브랜드와 상한이 같은 것은 우연이라 따로 바뀔 수 있다. 어기면 `InvalidNameException`.
 - 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고(`InvalidMoneyException`) `Product`가 1원 이상과 상한을 막는다(`InvalidPriceException`).
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
@@ -65,7 +65,7 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Product(brand, name, price, stock)` | 이름 길이 상한과 가격 범위를 검사하고 만든다. 이름 공백·재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
+| `Product(brand, name, price, stock)` | 이름의 앞뒤 공백을 떼고 공백·길이 상한과 가격 범위를 검사하고 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
 | `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
@@ -77,22 +77,6 @@
 
 - 관리자 재고 변경: `ProductService.updateStock` → 살아 있는 상품 조회 → `product.updateStock(quantity)` → 저장.
 - 고객 상세: `ProductService.find` → 살아 있는 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo`. `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
-
-## 이름 (Name)
-
-값 객체. `@Embeddable`, 불변. `domain/shared`에 있고 브랜드와 상품이 함께 쓴다. 쓰는 엔티티가 `name` 컬럼에 담고 길이 상한과 컬럼 길이를 정한다.
-
-### 속성
-
-| 이름 | 타입 | 뜻 |
-| --- | --- | --- |
-| `value` | `String` | 앞뒤 공백을 뗀 이름 |
-
-### 규칙
-
-- 앞뒤 공백을 뗀 뒤 비어 있지 않다. 어기면 `InvalidNameException`.
-- 길이 상한은 없다. 개념마다 다를 수 있어 쓰는 엔티티가 정한다. `Money`가 음수만 막고 `Product`가 가격 범위를 막는 것과 같은 나눔이다.
-- 뗀 값이 같으면 같은 이름이다.
 
 ## 재고 (Stock)
 

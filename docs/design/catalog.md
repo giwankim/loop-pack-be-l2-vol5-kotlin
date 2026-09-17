@@ -43,7 +43,7 @@ C4Component
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
 
-패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Name`, `Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14).
+패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14). 이름은 값 객체가 아니라 `String`이며 엔티티가 검사한다(5.19).
 
 ### 요청자와 관리자 경계
 
@@ -58,7 +58,7 @@ classDiagram
 
     class Brand {
         +Long id
-        +Name name
+        +String name
         +ZonedDateTime? deletedAt
         +update(name)
         +delete()
@@ -67,7 +67,7 @@ classDiagram
     class Product {
         +Long id
         +Brand brand
-        +Name name
+        +String name
         +Money price
         +Stock stock
         +ZonedDateTime? deletedAt
@@ -75,11 +75,6 @@ classDiagram
         +updateStock(quantity)
         +delete()
         +isSoldOut() Boolean
-    }
-
-    class Name {
-        <<value object>>
-        +String value
     }
 
     class Stock {
@@ -115,8 +110,6 @@ classDiagram
     }
 
     Product "*" --> "1" Brand : brand (읽기용 참조)
-    Brand *-- Name : name
-    Product *-- Name : name
     Product *-- Stock : stock
     Product *-- Money : price
     Like "*" ..> "1" Product : productId
@@ -324,7 +317,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: 상품에 규칙을 복사한다.
 - 선택: B (2026-09-17, #4). 이름이 검사를 거친 값이라는 사실이 타입에 남고, 규칙 테스트가 `NameTest` 한 곳에 모인다. `Name`은 `Money`와 함께 `domain/shared`에 둔다. 앞뒤 공백을 떼어 저장하므로 `data class`가 아니라 `equals`·`hashCode`를 직접 적는다.
 - 대가: 이름 규칙 메시지가 어느 개념의 이름인지 말하지 않는다("이름은 공백일 수 없습니다."). 브랜드 이름 중복 조회도 `existsByName(Name)`이 되고, 비교는 여전히 컬럼 collation을 따른다(5.13).
-- 다시 볼 조건: 개념마다 이름 규칙이 달라질 때(길이 상한 등), 또는 메시지에 개념 이름이 필요할 때. 길이 상한은 5.15에서 엔티티로 옮겼다.
+- 다시 볼 조건: 개념마다 이름 규칙이 달라질 때(길이 상한 등), 또는 메시지에 개념 이름이 필요할 때. 길이 상한은 5.15에서 엔티티로 옮겼고, 5.19에서 `Name` 자체를 지웠다.
 
 ### 5.15 이름 길이 상한의 자리
 
@@ -334,7 +327,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: `BrandName`, `ProductName`으로 타입을 나눈다. 타입이 규칙 전체를 들고 컴파일러가 섞어 쓰기를 막는다. 대신 공백 규칙이 두 벌이 되고 #4 직후라 바꿀 곳이 많다.
 - 선택: B (2026-09-17). 같은 `const val`을 `@AttributeOverride`의 컬럼 길이와 검사가 함께 써서 스키마와 규칙이 어긋나지 않는다. 길이 초과 메시지가 개념 이름을 말한다("상품 이름은 100자 이하여야 합니다."). 길이 테스트는 `NameTest`에서 `BrandTest`·`ProductTest`로 옮겼다.
 - 대가: `Name`만으로는 어느 컬럼에 들어갈 수 있는지 보장하지 않는다. 엔티티가 이름을 정하는 모든 곳(생성자, #3·#5의 `update`)에서 상한을 검사해야 한다. `String.length`는 UTF-16 단위라 이모지 한 글자를 2로 세고, MySQL `VARCHAR(100)`은 문자 수로 센다. 코드 검사가 컬럼보다 조금 엄격할 뿐 컬럼이 거절할 값을 통과시키지는 않는다.
-- 다시 볼 조건: 개념마다 이름 규칙이 길이 밖에서도 달라질 때(허용 문자, 정규화)는 C로 간다.
+- 다시 볼 조건: 개념마다 이름 규칙이 길이 밖에서도 달라질 때(허용 문자, 정규화)는 C로 간다. 5.19가 `Name`을 지우면서 trim·공백 검사도 엔티티로 왔다.
 
 ### 5.16 순환 검사의 단위
 
@@ -355,7 +348,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 A: 원시값 파라미터를 그대로 둔다. interfaces의 `RegisterRequest`가 HTTP 본문을 받고 Controller가 필드를 풀어 Service에 넘긴다.
 - 대안 B: application에 `ProductRegisterRequest`를 두고 Controller가 HTTP 본문을 이 타입으로 바로 바인딩해 Service에 넘긴다. interfaces에는 응답 DTO만 남는다. splearn의 `MemberRegisterRequest`·`CourseCreateRequest`와 같은 자리·이름이다.
 - 대안 C: application에 `ProductCommand.Register`를 두고 interfaces의 `RegisterRequest`가 이를 만들어 넘긴다. 두 계층에 같은 필드의 타입이 하나씩 생긴다.
-- 선택: B (2026-09-17). 이름은 `<개념><동사>Request`, 자리는 Service와 같은 패키지. 원시값만 들고 값 객체 변환(`Name`, `Money`, `Stock`)은 Service가 한다. 규칙 검사는 값 객체와 엔티티에 그대로 있다. HTTP 본문의 모양은 바뀌지 않는다.
+- 선택: B (2026-09-17). 이름은 `<개념><동사>Request`, 자리는 Service와 같은 패키지. 원시값만 들고 값 객체 변환(`Money`, `Stock`)은 Service가 한다. 규칙 검사는 값 객체와 엔티티에 그대로 있다. HTTP 본문의 모양은 바뀌지 않는다.
   - C의 `RegisterRequest`는 `Command`를 필드 그대로 베끼는 타입이다. 5.7이 `Info`에 두지 않기로 한 것과 같은 이유로 두지 않는다.
   - interfaces가 application의 입력 타입에 의존하는 것은 허용 방향(interfaces → application)이다. 반대 방향이 아니므로 `LayeredArchitectureTest`는 그대로다.
 - 대가: HTTP 본문의 모양이 application의 입력과 하나로 묶인다. 본문만 바꾸고 유스케이스 입력은 두어야 할 때 그때 interfaces에 요청 DTO를 다시 두고 변환한다.
@@ -374,13 +367,24 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들이고 API 문서는 "뗀 뒤 100자"로 둔다. 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
 - 다시 볼 조건: trim 뒤 길이를 재야 할 때(커스텀 제약이나 Request에서 trim). 필드별 오류 목록을 응답에 실어야 할 때(`meta.message` 하나가 아니라 필드 배열).
 
+### 5.19 이름 값 객체의 철회
+
+- 문제: 5.15 뒤 `Name`에 남은 규칙은 trim과 공백 거절뿐이다. 인터페이스(생성자, `value`, 뗀 값 기준 `equals`)가 구현과 같은 크기라 배울 값이 없다. 용어집(`CONTEXT.md`)에 재고·금액은 항목이 있지만 이름은 브랜드·상품의 속성으로만 나온다. `Name.equals`는 대소문자를 가리는데 도메인의 같은 이름은 가리지 않아(5.13) 값 객체가 맡아야 할 동일성을 DB collation이 대신 가진다. 자랄 자리도 없다. 5.15의 다시 볼 조건은 `BrandName`·`ProductName`으로 나누는 것이지 `Name`에 행위를 더하는 것이 아니다.
+- 대안 A: 그대로 둔다.
+- 대안 B: `Name`을 지우고 `Brand`·`Product`가 `String`을 받아 각자 trim·공백·길이 상한을 검사한다. 5.14의 A와 C 사이다.
+- 대안 C: `Name`에 대소문자 무시 동일성과 정규화를 넣어 깊이를 만든다. 도메인이 요구하지 않은 행위를 지어내는 것이다.
+- 선택: B (2026-09-17). trim 한 줄과 검사 두 줄이 두 엔티티에 겹치는 대신 `@Embeddable`·`@AttributeOverride`·손으로 쓴 `equals`·`NameTest`가 사라진다. 메시지가 개념 이름을 말한다("브랜드 이름은 공백일 수 없습니다."). `existsByName(String)`이 뗀 이름을 받는다는 보장은 타입 대신 순서가 지킨다. `BrandService.register`가 `Brand`를 먼저 만들고 `brand.name`으로 중복을 조회한다. `BrandServiceTest`의 `" 루퍼스 "` 중복 사례가 이 순서를 지킨다.
+- 원시값을 감싸는 기준: 용어집이 개념으로 부르거나, 생성 밖의 행위가 있거나(도메인 문서가 맡긴 것 포함), 동일성이 원시값과 다르고 타입이 그것을 맞게 구현하거나, 다시 만들 수 없는 보장을 seam 너머로 넘길 때. `Money`는 앞의 셋, `Stock`은 앞의 둘(5.3, `decrease`가 예정)을 만족한다. `Name`은 넷째만 만족했고 순서로 대신할 수 있었다.
+- 대가: 이름을 정하는 곳마다(생성자, #3·#5의 `update`) trim·공백·길이 검사를 되풀이한다. 개념이 셋 이상 이름을 가지면 공유 함수(5.14의 A)를 고려한다.
+- 다시 볼 조건: 이름에 도메인 행위가 생길 때(정규화, 허용 문자, 표시용 변환). 그때는 개념별 타입(`BrandName`)으로 간다.
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
 | --- | --- | --- |
 | `Stock`: 음수 거절과 기존 값 유지, 0 허용, 양수 저장 | domain 단위 테스트, TDD 대표 사례 | Spring·DB 없음 |
 | `Money`: 음수 거절, 넘침 거절 | domain 단위 테스트 | |
-| `Name`: 공백 거절, trim. `Brand`: 이름 길이 상한 | domain 단위 테스트 | |
+| `Brand`·`Product`: 이름 trim, 공백 거절, 길이 상한 | domain 단위 테스트 | |
 | `Product`: 이름 길이 상한·가격 범위, 브랜드 불변 | domain 단위 테스트 | |
 | Request 제약이 Service 입구에서 거절 | application 통합 테스트. `ConstraintViolationException`과 저장 안 됨 | 두 검증 예외의 400 변환은 `ApiControllerAdviceTest`가 advice를 직접 불러 확인 |
 | 브랜드 삭제 조건, 이름 중복, 요청자 구분 | application 통합 테스트. `@SpringBootTest` + `@Transactional`, flush/clear 후 재조회 | fake 저장소는 두지 않는다(2026-09-17). 실제 SQL을 보내고 `count()`로 "저장하지 않음"을 확인 |
