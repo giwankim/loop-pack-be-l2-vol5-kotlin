@@ -11,6 +11,7 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
+import org.hibernate.Hibernate
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
@@ -49,6 +50,25 @@ class ProductRepositoryTest(
             { assertThat(found?.updatedAt).isNotNull() },
             { assertThat(found?.deletedAt).isNull() },
         )
+    }
+
+    @Test
+    fun `findById leaves the brand as an uninitialized proxy until a field other than id is read`() {
+        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val saved = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+
+        val found = productRepository.findById(saved.id)!!
+
+        // 엔티티와 BaseEntity 가 allOpen 으로 열려 있어야 Hibernate 가 Brand 서브클래스 프록시를 만든다
+        // (commerce-api 와 modules/jpa 의 build.gradle.kts). 하나라도 final 이면 HHH000305 를 남기고 곧바로 조회한다.
+        assertThat(Hibernate.isInitialized(found.brand)).isFalse()
+        // 식별자는 프록시가 들고 있으므로 읽어도 초기화되지 않는다.
+        assertThat(found.brand.id).isEqualTo(brand.id)
+        assertThat(Hibernate.isInitialized(found.brand)).isFalse()
+        // 다른 필드를 읽는 순간 브랜드를 조회한다.
+        assertThat(found.brand.name).isEqualTo(Name("루퍼스"))
+        assertThat(Hibernate.isInitialized(found.brand)).isTrue()
     }
 
     @Test

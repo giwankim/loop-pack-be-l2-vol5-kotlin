@@ -4,10 +4,6 @@ import com.loopers.domain.brand.Brand
 import java.time.ZonedDateTime
 
 object BrandAdminDto {
-    data class RegisterRequest(
-        val name: String,
-    )
-
     data class BrandResponse(
         val id: Long,
         val name: String,

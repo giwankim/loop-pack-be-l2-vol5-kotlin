@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api.v1.brand
 
+import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.interfaces.api.ApiResponse
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -19,9 +21,9 @@ class BrandAdminController(
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
-        @RequestBody request: BrandAdminDto.RegisterRequest,
+        @RequestBody @Valid request: BrandRegisterRequest,
     ): ApiResponse<BrandAdminDto.BrandResponse> {
-        return brandService.register(request.name)
+        return brandService.register(request)
             .let { BrandAdminDto.BrandResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -30,7 +32,7 @@ class BrandAdminController(
     override fun getBrand(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandAdminDto.BrandResponse> {
-        return brandService.getBrand(brandId)
+        return brandService.find(brandId)
             .let { BrandAdminDto.BrandResponse.from(it) }
             .let { ApiResponse.success(it) }
     }

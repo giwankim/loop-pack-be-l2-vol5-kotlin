@@ -63,7 +63,9 @@ class Product(
 
     companion object {
         const val NAME_MAX_LENGTH = 100
-        val MIN_PRICE = Money(1)
-        val MAX_PRICE = Money(1_000_000_000)
+        const val MIN_PRICE_AMOUNT = 1L
+        const val MAX_PRICE_AMOUNT = 1_000_000_000L
+        val MIN_PRICE = Money(MIN_PRICE_AMOUNT)
+        val MAX_PRICE = Money(MAX_PRICE_AMOUNT)
     }
 }

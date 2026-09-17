@@ -6,9 +6,11 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException
 import com.loopers.domain.shared.RuleViolationException
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
+import jakarta.validation.ConstraintViolationException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -18,18 +20,38 @@ import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @RestControllerAdvice
 class ApiControllerAdvice {
-    private val log = LoggerFactory.getLogger(ApiControllerAdvice::class.java)
+    private val log = KotlinLogging.logger {}
 
     @ExceptionHandler
     fun handleCoreException(e: CoreException): ResponseEntity<ApiResponse<*>> {
-        log.warn("CoreException : {}", e.message, e)
+        log.warn(e) { "CoreException : ${e.message}" }
         return failureResponse(errorType = e.errorType)
     }
 
     @ExceptionHandler
     fun handleRuleViolation(e: RuleViolationException): ResponseEntity<ApiResponse<*>> {
-        log.warn("RuleViolationException : {}", e.message, e)
+        log.warn(e) { "RuleViolationException : ${e.message}" }
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = e.message)
+    }
+
+    /** Controller의 `@Valid @RequestBody`가 거른 입력. 필드 오류를 필드 이름 순으로 이어 한 메시지로 준다. */
+    @ExceptionHandler
+    fun handleMethodArgumentNotValid(e: MethodArgumentNotValidException): ResponseEntity<ApiResponse<*>> {
+        val message = e.bindingResult.fieldErrors
+            .sortedWith(compareBy({ it.field }, { it.defaultMessage }))
+            .joinToString(" ") { it.defaultMessage ?: "필드 '${it.field}'의 값이 잘못되었습니다." }
+        log.warn { "MethodArgumentNotValidException : $message" }
+        return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message.ifBlank { null })
+    }
+
+    /** `@Validated` Service의 메서드 검증이 거른 입력. Controller를 거치지 않은 호출에서만 여기까지 온다. */
+    @ExceptionHandler
+    fun handleConstraintViolation(e: ConstraintViolationException): ResponseEntity<ApiResponse<*>> {
+        val message = e.constraintViolations
+            .sortedWith(compareBy({ it.propertyPath.toString() }, { it.message }))
+            .joinToString(" ") { it.message }
+        log.warn { "ConstraintViolationException : $message" }
+        return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message.ifBlank { null })
     }
 
     @ExceptionHandler
@@ -109,7 +131,7 @@ class ApiControllerAdvice {
 
     @ExceptionHandler
     fun handleUnexpected(e: Exception): ResponseEntity<ApiResponse<*>> {
-        log.error("Exception : {}", e.message, e)
+        log.error(e) { "Exception : ${e.message}" }
         val errorType = ErrorType.INTERNAL_ERROR
         return failureResponse(errorType = errorType)
     }

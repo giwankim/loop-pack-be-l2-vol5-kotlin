@@ -4,6 +4,7 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
+import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -24,10 +25,10 @@ class BrandServiceTest(
 ) {
     @Test
     fun `registering an untaken name saves a brand that can be fetched back`() {
-        val registered = brandService.register("루퍼스")
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
-        val found = brandService.getBrand(registered.id)
+        val found = brandService.find(registered.id)
 
         assertAll(
             { assertThat(registered.name.value).isEqualTo("루퍼스") },
@@ -41,25 +42,25 @@ class BrandServiceTest(
 
     @Test
     fun `registering a name that matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
-        val existing = brandService.register("루퍼스")
+        val existing = brandService.register(BrandRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.register(" 루퍼스 ") }
+        val exception = assertThrows<CoreException> { brandService.register(BrandRegisterRequest(" 루퍼스 ")) }
         entityManager.flushAndClear()
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
             { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.getBrand(existing.id).name.value).isEqualTo("루퍼스") },
+            { assertThat(brandService.find(existing.id).name.value).isEqualTo("루퍼스") },
         )
     }
 
     @Test
     fun `registering a name that differs from an existing brand only in letter case throws BRAND_NAME_DUPLICATED`() {
-        brandService.register("Loopers")
+        brandService.register(BrandRegisterRequest("Loopers"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.register("LOOPERS") }
+        val exception = assertThrows<CoreException> { brandService.register(BrandRegisterRequest("LOOPERS")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -69,8 +70,19 @@ class BrandServiceTest(
     }
 
     @Test
+    fun `registering a blank name is rejected by request validation before the domain and saves nothing`() {
+        val exception = assertThrows<ConstraintViolationException> { brandService.register(BrandRegisterRequest("   ")) }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("이름은 공백일 수 없습니다.") },
+            { assertThat(countBrands()).isZero() },
+        )
+    }
+
+    @Test
     fun `getting an unknown brand throws BRAND_NOT_FOUND`() {
-        val exception = assertThrows<CoreException> { brandService.getBrand(999L) }
+        val exception = assertThrows<CoreException> { brandService.find(999L) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }

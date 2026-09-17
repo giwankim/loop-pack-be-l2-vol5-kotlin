@@ -4,13 +4,6 @@ import com.loopers.application.product.ProductInfo
 import java.time.ZonedDateTime
 
 object ProductAdminDto {
-    data class RegisterRequest(
-        val brandId: Long,
-        val name: String,
-        val price: Long,
-        val stock: Int,
-    )
-
     data class ProductResponse(
         val id: Long,
         val brandId: Long,

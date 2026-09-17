@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.v1.brand
 
 import com.jayway.jsonpath.JsonPath
+import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -75,7 +76,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `registering a name taken by a live brand returns 409 and saves nothing`() {
-        brandService.register("루퍼스")
+        brandService.register(BrandRegisterRequest("루퍼스"))
 
         postBrand(name = "루퍼스").andExpect {
             status { isConflict() }
@@ -118,7 +119,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand as a customer returns 403`() {
-        val brand = brandService.register("루퍼스")
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(CUSTOMER) }
             .andExpect { status { isForbidden() } }
@@ -126,7 +127,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand anonymously returns 403`() {
-        val brand = brandService.register("루퍼스")
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isForbidden() } }

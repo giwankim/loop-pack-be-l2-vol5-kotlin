@@ -2,12 +2,12 @@ package com.loopers.application.product
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.product.InvalidPriceException
 import com.loopers.domain.shared.Name
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
+import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -29,9 +29,10 @@ class ProductServiceTest(
     fun `registering under a live brand saves a product that can be fetched back`() {
         val brand = brandRepository.save(Brand(Name("루퍼스")))
 
-        val registered = productService.register(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7)
+        val registered =
+            productService.register(ProductRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7))
         entityManager.flushAndClear()
-        val found = productService.getAdminProduct(registered.id)
+        val found = productService.find(registered.id)
 
         assertAll(
             { assertThat(registered.brandId).isEqualTo(brand.id) },
@@ -49,7 +50,7 @@ class ProductServiceTest(
     @Test
     fun `registering under an unknown brand throws BRAND_NOT_FOUND and saves nothing`() {
         val exception = assertThrows<CoreException> {
-            productService.register(brandId = 999L, name = "티셔츠", price = 12_000, stock = 7)
+            productService.register(ProductRegisterRequest(brandId = 999L, name = "티셔츠", price = 12_000, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -65,7 +66,7 @@ class ProductServiceTest(
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
-            productService.register(brandId = deleted.id, name = "티셔츠", price = 12_000, stock = 7)
+            productService.register(ProductRegisterRequest(brandId = deleted.id, name = "티셔츠", price = 12_000, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -76,20 +77,23 @@ class ProductServiceTest(
     }
 
     @Test
-    fun `registering a price of zero throws InvalidPriceException and saves nothing`() {
+    fun `registering a price of zero is rejected by request validation before the domain and saves nothing`() {
         val brand = brandRepository.save(Brand(Name("루퍼스")))
 
-        assertThrows<InvalidPriceException> {
-            productService.register(brandId = brand.id, name = "티셔츠", price = 0, stock = 7)
+        val exception = assertThrows<ConstraintViolationException> {
+            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 0, stock = 7))
         }
         entityManager.flushAndClear()
 
-        assertThat(countProducts()).isZero()
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.") },
+            { assertThat(countProducts()).isZero() },
+        )
     }
 
     @Test
     fun `getting an unknown product throws PRODUCT_NOT_FOUND`() {
-        val exception = assertThrows<CoreException> { productService.getAdminProduct(999L) }
+        val exception = assertThrows<CoreException> { productService.find(999L) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }

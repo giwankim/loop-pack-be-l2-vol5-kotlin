@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.v1.brand
 
+import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.interfaces.api.ApiResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
@@ -12,7 +13,7 @@ interface BrandAdminApiSpec {
         description = "이름으로 브랜드를 등록합니다. 이름은 앞뒤 공백을 뗀 뒤 1자 이상 100자 이하이며, 삭제되지 않은 브랜드와 겹칠 수 없습니다.",
     )
     fun register(
-        request: BrandAdminDto.RegisterRequest,
+        request: BrandRegisterRequest,
     ): ApiResponse<BrandAdminDto.BrandResponse>
 
     @Operation(

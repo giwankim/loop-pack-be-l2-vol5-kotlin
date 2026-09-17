@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.v1.product
 
+import com.loopers.application.product.ProductRegisterRequest
 import com.loopers.interfaces.api.ApiResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
@@ -13,7 +14,7 @@ interface ProductAdminApiSpec {
             "가격은 1원 이상 1,000,000,000원 이하, 재고는 0 이상입니다.",
     )
     fun register(
-        request: ProductAdminDto.RegisterRequest,
+        request: ProductRegisterRequest,
     ): ApiResponse<ProductAdminDto.ProductResponse>
 
     @Operation(

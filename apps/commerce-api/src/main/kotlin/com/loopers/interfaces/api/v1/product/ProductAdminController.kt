@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api.v1.product
 
+import com.loopers.application.product.ProductRegisterRequest
 import com.loopers.application.product.ProductService
 import com.loopers.interfaces.api.ApiResponse
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -19,14 +21,9 @@ class ProductAdminController(
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
-        @RequestBody request: ProductAdminDto.RegisterRequest,
+        @RequestBody @Valid request: ProductRegisterRequest,
     ): ApiResponse<ProductAdminDto.ProductResponse> {
-        return productService.register(
-            brandId = request.brandId,
-            name = request.name,
-            price = request.price,
-            stock = request.stock,
-        )
+        return productService.register(request)
             .let { ProductAdminDto.ProductResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -35,7 +32,7 @@ class ProductAdminController(
     override fun getProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductAdminDto.ProductResponse> {
-        return productService.getAdminProduct(productId)
+        return productService.find(productId)
             .let { ProductAdminDto.ProductResponse.from(it) }
             .let { ApiResponse.success(it) }
     }

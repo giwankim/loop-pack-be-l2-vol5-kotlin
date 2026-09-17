@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.v1.product
 
 import com.jayway.jsonpath.JsonPath
+import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -41,7 +42,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin registers a product under a live brand and can fetch it back`() {
-        val brand = brandService.register("루퍼스")
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         val result = postProduct(brandId = brand.id, price = 12_000, stock = 7).andExpect {
             status { isCreated() }
@@ -81,7 +82,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering a price above 1_000_000_000 won returns 400 and saves nothing`() {
-        val brand = brandService.register("루퍼스")
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, price = 1_000_000_001).andExpect {
             status { isBadRequest() }
@@ -95,7 +96,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering as a customer returns 403 and saves nothing`() {
-        val brand = brandService.register("루퍼스")
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, principal = CUSTOMER).andExpect {
             status { isForbidden() }
