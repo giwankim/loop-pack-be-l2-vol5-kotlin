@@ -10,12 +10,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.transaction.support.TransactionTemplate
 
 @SpringBootTest
-class BrandRepositoryIntegrationTest @Autowired constructor(
+class BrandRepositoryIntegrationTest(
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,
     private val transactionTemplate: TransactionTemplate,
