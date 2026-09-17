@@ -21,7 +21,7 @@
 ### 규칙
 
 - 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 뗀 값을 저장한다. 어기면 `InvalidNameException`.
-- 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 대소문자를 가리지 않고 본다(`Loopers`와 `loopers`는 같은 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 어기면 `BRAND_NAME_DUPLICATED`.
+- 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 대소문자를 가리지 않고 본다(`Loopers`와 `loopers`는 같은 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 수정은 자기를 뺀 나머지 브랜드와 본다(대소문자만 바꾸는 수정이 자기 이름과 겹치지 않도록). 어기면 `BRAND_NAME_DUPLICATED`.
 - 삭제되지 않은 상품이 하나라도 남아 있으면 삭제할 수 없다. 재고 0인 상품도 남은 상품이다. 이것도 application이 상품 저장소에 물어 확인한다. 어기면 `BRAND_HAS_PRODUCTS`.
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
 
@@ -30,13 +30,16 @@
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `Brand(name)` | 이름의 앞뒤 공백을 떼고 공백과 길이 상한을 검사하고 만든다 | `InvalidNameException` |
-| `update(name)` | 이름을 바꾼다 | `InvalidNameException` |
+| `update(name)` | 이름을 바꾼다. 거절되면 기존 이름이 그대로 남는다 | `InvalidNameException` |
+| `Brand.normalizeName(name)` | 저장될 이름(앞뒤 공백을 뗀 값)을 검사해 돌려준다. 브랜드를 만들거나 바꾸지 않는다 | `InvalidNameException` |
 | `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 삭제 조건은 호출 전에 application이 본다 |
 
 ### 협력
 
 - 등록: `BrandService.register` → `Brand(name)`(trim, 공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 중복 조회가 뗀 이름을 봐야 하므로 브랜드를 먼저 만들고 그 이름으로 묻는다.
-- 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장.
+- 수정: `BrandService.update` → 살아 있는 브랜드 조회 → `Brand.normalizeName(name)`으로 저장될 이름을 얻음 → 그 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)` → 저장. 브랜드를 바꾸기 전에 거절이 끝나므로 거절된 이름은 브랜드에 닿지 않는다(설계 5.22).
+- 목록: `BrandService.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
+- 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장. 상품 조회는 #6에서 더한다.
 
 ## 상품 (Product)
 
