@@ -15,12 +15,12 @@
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
-| `name` | `String` | 이름 |
+| `name` | `Name` | 이름 |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각. `BaseEntity` |
 
 ### 규칙
 
-- 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자 이하다. 어기면 `InvalidNameException`.
+- 이름은 `Name`의 규칙을 따른다. 어기면 `InvalidNameException`.
 - 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 대소문자를 가리지 않고 본다(`Loopers`와 `loopers`는 같은 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 어기면 `BRAND_NAME_DUPLICATED`.
 - 삭제되지 않은 상품이 하나라도 남아 있으면 삭제할 수 없다. 재고 0인 상품도 남은 상품이다. 이것도 application이 상품 저장소에 물어 확인한다. 어기면 `BRAND_HAS_PRODUCTS`.
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
@@ -29,13 +29,13 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Brand(name)` | 이름 규칙을 검사하고 만든다 | `InvalidNameException` |
+| `Brand(name)` | 검사를 거친 `Name`으로 만든다 | 없음. 이름 규칙은 `Name`이 본다 |
 | `update(name)` | 이름을 바꾼다 | `InvalidNameException` |
 | `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 삭제 조건은 호출 전에 application이 본다 |
 
 ### 협력
 
-- 등록: `BrandService.register` → `Brand(name)`(이름 규칙 검사와 trim) → 뗀 이름으로 중복 조회 → 저장. 중복 조회가 trim된 이름을 봐야 하므로 이름 규칙이 먼저다.
+- 등록: `BrandService.register` → `Brand(Name(name))`(이름 규칙 검사와 trim) → 뗀 이름으로 중복 조회 → 저장. 중복 조회가 trim된 이름을 봐야 하므로 이름 규칙이 먼저다.
 - 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장.
 
 ## 상품 (Product)
@@ -48,14 +48,14 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
 | `brand` | `Brand` | 속한 브랜드. `@ManyToOne(fetch = LAZY)`, 읽기용 |
-| `name` | `String` | 이름 |
+| `name` | `Name` | 이름 |
 | `price` | `Money` | 가격 |
 | `stock` | `Stock` | 재고. `@Embedded` |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각 |
 
 ### 규칙
 
-- 이름은 브랜드와 같은 규칙이다. 어기면 `InvalidNameException`.
+- 이름은 브랜드와 같은 `Name` 규칙이다. 어기면 `InvalidNameException`.
 - 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고 `Product`가 1원 이상과 상한을 막는다. 어기면 `InvalidPriceException`.
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
@@ -65,7 +65,7 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Product(brand, name, price, stock)` | 규칙을 검사하고 만든다 | `InvalidNameException`, `InvalidPriceException`, `InvalidStockException` |
+| `Product(brand, name, price, stock)` | 가격 범위를 검사하고 만든다. 이름·재고는 값 객체가 이미 검사했다 | `InvalidPriceException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
 | `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
@@ -77,6 +77,21 @@
 
 - 관리자 재고 변경: `ProductService.updateStock` → 살아 있는 상품 조회 → `product.updateStock(quantity)` → 저장.
 - 고객 상세: `ProductService.getProduct` → 살아 있는 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo.Customer`. `soldOut`은 `product.isSoldOut()`에서 온다.
+
+## 이름 (Name)
+
+값 객체. `@Embeddable`, 불변. `domain/shared`에 있고 브랜드와 상품이 함께 쓴다. 쓰는 엔티티가 `name` 컬럼에 담는다.
+
+### 속성
+
+| 이름 | 타입 | 뜻 |
+| --- | --- | --- |
+| `value` | `String` | 앞뒤 공백을 뗀 이름 |
+
+### 규칙
+
+- 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자 이하다. 어기면 `InvalidNameException`.
+- 뗀 값이 같으면 같은 이름이다.
 
 ## 재고 (Stock)
 
@@ -103,7 +118,7 @@ TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Pro
 
 ## 금액 (Money)
 
-값 객체. `@Embeddable`, 불변. 연산은 새 값을 돌려준다.
+값 객체. `@Embeddable`, 불변. 연산은 새 값을 돌려준다. `domain/shared`에 있다.
 
 ### 속성
 
@@ -114,8 +129,8 @@ TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Pro
 ### 규칙
 
 - 0 이상이다. 어기면 `InvalidPriceException`(이 조각에서 금액이 쓰이는 곳이 가격뿐이라서다. 포인트가 들어오면 금액 자체의 예외로 나눈다).
-- 더하기·곱하기 결과가 `Long` 범위를 넘으면 거절한다. `Math.addExact`, `Math.multiplyExact`.
-- 가진 값보다 큰 값을 뺄 수 없다.
+- 더하기·곱하기 결과가 `Long` 범위를 넘으면 `InvalidPriceException`으로 거절한다. `Math.addExact`, `Math.multiplyExact`.
+- 가진 값보다 큰 값을 뺄 수 없다. 어기면 `InvalidPriceException`.
 
 ### 행위
 

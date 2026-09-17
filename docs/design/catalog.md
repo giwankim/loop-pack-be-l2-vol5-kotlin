@@ -43,7 +43,7 @@ C4Component
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
 
-패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. ArchUnit의 슬라이스 규칙은 `interfaces.api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. ArchUnit의 슬라이스 규칙은 `interfaces.api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Name`, `Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14).
 
 ### 요청자와 관리자 경계
 
@@ -58,7 +58,7 @@ classDiagram
 
     class Brand {
         +Long id
-        +String name
+        +Name name
         +ZonedDateTime? deletedAt
         +update(name)
         +delete()
@@ -67,7 +67,7 @@ classDiagram
     class Product {
         +Long id
         +Brand brand
-        +String name
+        +Name name
         +Money price
         +Stock stock
         +ZonedDateTime? deletedAt
@@ -75,6 +75,11 @@ classDiagram
         +updateStock(quantity)
         +delete()
         +isSoldOut() Boolean
+    }
+
+    class Name {
+        <<value object>>
+        +String value
     }
 
     class Stock {
@@ -87,6 +92,8 @@ classDiagram
         +Long amount
         +plus(other) Money
         +minus(other) Money
+        +times(count) Money
+        +compareTo(other) Int
     }
 
     class Like {
@@ -108,6 +115,8 @@ classDiagram
     }
 
     Product "*" --> "1" Brand : brand (읽기용 참조)
+    Brand *-- Name : name
+    Product *-- Name : name
     Product *-- Stock : stock
     Product *-- Money : price
     Like "*" ..> "1" Product : productId
@@ -229,7 +238,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.4 금액의 타입
 
 - 대안: `Long`, `BigInteger`, `BigDecimal`.
-- 선택: `@Embeddable class Money(val amount: Long)`. 원화는 정수이고 상품 가격 상한 10억 원과 이후 주문 합계는 `Long` 안에 넉넉히 든다. 더하기·곱하기는 `Math.addExact`·`multiplyExact`로 넘침을 잡아 거절한다. `BigInteger`는 메모리에서는 넘치지 않지만 DB 컬럼에서 넘치므로 범위 검사가 사라지지 않고 산술만 불편해진다. Kotlin `value class`는 Hibernate가 embeddable로 매핑하지 못한다.
+- 선택: `@Embeddable class Money(val amount: Long)`. 원화는 정수이고 상품 가격 상한 10억 원과 이후 주문 합계는 `Long` 안에 넉넉히 든다. 더하기·곱하기는 `Math.addExact`·`multiplyExact`로 넘침을 잡아 `InvalidPriceException`으로 거절한다(`ArithmeticException`을 그대로 두면 500이 된다). `BigInteger`는 메모리에서는 넘치지 않지만 DB 컬럼에서 넘치므로 범위 검사가 사라지지 않고 산술만 불편해진다. Kotlin `value class`는 Hibernate가 embeddable로 매핑하지 못한다.
 - `Money`는 0 이상, `Product.price`는 1원 이상. 값 자체의 유효성과 행동의 입력 조건을 나눈다.
 
 ### 5.5 목록 응답
@@ -292,6 +301,16 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대가: 규칙이 코드가 아니라 collation에 있다. `utf8mb4_general_ci`는 악센트도 가리지 않으므로(`é` = `e`) 그것도 같은 이름이다. 기본 프로필은 `ddl-auto: none`이라 운영 스키마가 다른 collation이면 규칙이 조용히 바뀐다. 운영 DDL을 만들 때 `brand.name`의 collation을 맞춘다.
 - 다시 볼 조건: 대소문자나 악센트만 다른 브랜드를 구분해야 할 때(대안 B), 또는 운영 스키마를 코드로 관리하게 될 때(collation을 `@Collate`나 마이그레이션에 명시).
 
+### 5.14 이름의 타입
+
+- 문제: 브랜드와 상품이 같은 이름 규칙(앞뒤 공백을 뗀 뒤 비어 있지 않고 100자 이하)을 쓴다. #2에서는 규칙이 `Brand` 안에만 있었고 메시지에 "브랜드 이름"이 박혀 있었다.
+- 대안 A: `domain`에 공유 함수를 두고 두 엔티티가 `String` 이름을 그 함수로 검사한다. 매핑이 바뀌지 않는다.
+- 대안 B: `@Embeddable` 값 객체 `Name`. 두 엔티티가 `@AttributeOverride`로 `name` 컬럼에 담는다.
+- 대안 C: 상품에 규칙을 복사한다.
+- 선택: B (2026-09-17, #4). 이름이 검사를 거친 값이라는 사실이 타입에 남고, 규칙 테스트가 `NameTest` 한 곳에 모인다. `Name`은 `Money`와 함께 `domain/shared`에 둔다. 앞뒤 공백을 떼어 저장하므로 `data class`가 아니라 `equals`·`hashCode`를 직접 적는다.
+- 대가: 이름 규칙 메시지가 어느 개념의 이름인지 말하지 않는다("이름은 공백일 수 없습니다."). 브랜드 이름 중복 조회도 `existsByName(Name)`이 되고, 비교는 여전히 컬럼 collation을 따른다(5.13).
+- 다시 볼 조건: 개념마다 이름 규칙이 달라질 때(길이 상한 등), 또는 메시지에 개념 이름이 필요할 때.
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
@@ -308,3 +327,4 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 내 좋아요 목록을 `GET /api/v1/likes`로 줄이는 것은 확인 후 결정한다. 줄이면 403 경우와 `FORBIDDEN`이 이 조각에서 사라진다.
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
+- `Product.brand`의 `LAZY`는 지금 지켜지지 않는다. 이 모듈은 `kotlin("plugin.jpa")`만 써서 엔티티가 `final`이므로 Hibernate가 `Brand` 프록시를 만들지 못하고, 상품을 읽을 때 브랜드를 곧바로 따로 조회한다(#4에서 `Hibernate.isInitialized`로 확인). 결과는 맞지만 상품 목록(#7)에서 상품마다 브랜드 조회가 붙을 수 있다. `allOpen`으로 엔티티를 열지, 목록에서 fetch join으로 읽을지는 #7에서 정한다.
