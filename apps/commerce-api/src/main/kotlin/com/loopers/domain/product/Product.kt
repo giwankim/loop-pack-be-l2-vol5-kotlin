@@ -1,0 +1,65 @@
+package com.loopers.domain.product
+
+import com.loopers.domain.BaseEntity
+import com.loopers.domain.InvalidPriceException
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.shared.Money
+import com.loopers.domain.shared.Name
+import jakarta.persistence.AttributeOverride
+import jakarta.persistence.Column
+import jakarta.persistence.Embedded
+import jakarta.persistence.Entity
+import jakarta.persistence.FetchType
+import jakarta.persistence.JoinColumn
+import jakarta.persistence.ManyToOne
+import jakarta.persistence.Table
+import org.hibernate.annotations.SQLRestriction
+
+/**
+ * 브랜드 아래 파는 상품. 브랜드는 만들 때 정해지고 바뀌지 않으며, 상품은 브랜드의 상태를 바꾸지 않는다.
+ * [brand]는 읽기용 참조이고 브랜드는 자기 저장소를 가진 별도 애그리거트다.
+ */
+@Entity
+@Table(name = "product")
+@SQLRestriction("deleted_at is null")
+class Product(
+    brand: Brand,
+    name: Name,
+    price: Money,
+    stock: Stock,
+) : BaseEntity() {
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "brand_id", nullable = false, updatable = false)
+    val brand: Brand = brand
+
+    @Embedded
+    @AttributeOverride(name = "value", column = Column(name = "name", nullable = false, length = Name.MAX_LENGTH))
+    var name: Name = name
+        protected set
+
+    @Embedded
+    @AttributeOverride(name = "amount", column = Column(name = "price", nullable = false))
+    var price: Money = price
+        protected set
+
+    @Embedded
+    @AttributeOverride(name = "quantity", column = Column(name = "stock_quantity", nullable = false))
+    var stock: Stock = stock
+        protected set
+
+    init {
+        if (price < MIN_PRICE || price > MAX_PRICE) {
+            throw InvalidPriceException("상품 가격은 ${MIN_PRICE.amount}원 이상 ${MAX_PRICE.amount}원 이하여야 합니다.")
+        }
+    }
+
+    /** 재고를 최종 수량으로 맞춘다. 수량이 음수면 거절하고 기존 재고를 그대로 둔다. */
+    fun updateStock(quantity: Int) {
+        stock = Stock(quantity)
+    }
+
+    companion object {
+        val MIN_PRICE = Money(1)
+        val MAX_PRICE = Money(1_000_000_000)
+    }
+}

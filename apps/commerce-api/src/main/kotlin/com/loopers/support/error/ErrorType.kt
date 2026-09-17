@@ -11,5 +11,6 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
 
     /** 카탈로그. 범용 에러와 status·code를 공유하고 message만 다르다. */
     BRAND_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "브랜드를 찾을 수 없습니다."),
+    PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "상품을 찾을 수 없습니다."),
     BRAND_NAME_DUPLICATED(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "같은 이름의 브랜드가 이미 있습니다."),
 }

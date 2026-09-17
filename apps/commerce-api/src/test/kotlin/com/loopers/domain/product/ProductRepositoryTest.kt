@@ -1,0 +1,88 @@
+package com.loopers.domain.product
+
+import com.loopers.config.jpa.DataSourceConfig
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.shared.Money
+import com.loopers.domain.shared.Name
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.utils.flushAndClear
+import jakarta.persistence.EntityManager
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
+import org.springframework.context.annotation.Import
+
+/**
+ * [ProductRepository] 계약을 실제 MySQL에서 확인한다. 구현이 무엇인지는 보지 않고 인터페이스로만 부른다.
+ * 설정과 정리 방식은 [com.loopers.domain.brand.BrandRepositoryTest]와 같다.
+ */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
+class ProductRepositoryTest(
+    private val productRepository: ProductRepository,
+    private val brandRepository: BrandRepository,
+    private val entityManager: EntityManager,
+) {
+    @Test
+    fun `find reads a saved product back with its brand, price, and stock after flush and clear`() {
+        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val saved = productRepository.save(product(brand, price = 12_000, stock = 7))
+        entityManager.flushAndClear()
+
+        val found = productRepository.find(saved.id)
+
+        assertAll(
+            { assertThat(found).isNotNull().isNotSameAs(saved) },
+            { assertThat(found?.id).isEqualTo(saved.id) },
+            { assertThat(found?.brand?.id).isEqualTo(brand.id) },
+            { assertThat(found?.brand?.name).isEqualTo(Name("루퍼스")) },
+            { assertThat(found?.name).isEqualTo(Name("티셔츠")) },
+            { assertThat(found?.price).isEqualTo(Money(12_000)) },
+            { assertThat(found?.stock).isEqualTo(Stock(7)) },
+            { assertThat(found?.createdAt).isNotNull() },
+            { assertThat(found?.updatedAt).isNotNull() },
+            { assertThat(found?.deletedAt).isNull() },
+        )
+    }
+
+    @Test
+    fun `save stores price and stock in the price and stock_quantity columns`() {
+        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val saved = productRepository.save(product(brand, price = 12_000, stock = 7))
+        entityManager.flushAndClear()
+
+        val row = entityManager
+            .createNativeQuery("select brand_id, price, stock_quantity from product where id = :id")
+            .setParameter("id", saved.id)
+            .singleResult as Array<*>
+
+        assertAll(
+            { assertThat((row[0] as Number).toLong()).isEqualTo(brand.id) },
+            { assertThat((row[1] as Number).toLong()).isEqualTo(12_000L) },
+            { assertThat((row[2] as Number).toInt()).isEqualTo(7) },
+        )
+    }
+
+    @Test
+    fun `find returns null for a deleted product`() {
+        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val deleted = productRepository.save(product(brand).apply { delete() })
+        entityManager.flushAndClear()
+
+        val found = productRepository.find(deleted.id)
+
+        assertThat(found).isNull()
+    }
+
+    @Test
+    fun `find returns null for an unknown id`() {
+        assertThat(productRepository.find(999L)).isNull()
+    }
+
+    private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
+        Product(brand = brand, name = Name("티셔츠"), price = Money(price), stock = Stock(stock))
+}
