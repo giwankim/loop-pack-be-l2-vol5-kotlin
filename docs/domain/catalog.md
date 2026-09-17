@@ -76,7 +76,7 @@
 ### 협력
 
 - 관리자 재고 변경: `ProductService.updateStock` → 살아 있는 상품 조회 → `product.updateStock(quantity)` → 저장.
-- 고객 상세: `ProductService.getProduct` → 살아 있는 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo.Customer`. `soldOut`은 `product.isSoldOut()`에서 온다.
+- 고객 상세: `ProductService.find` → 살아 있는 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo`. `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 ## 이름 (Name)
 
