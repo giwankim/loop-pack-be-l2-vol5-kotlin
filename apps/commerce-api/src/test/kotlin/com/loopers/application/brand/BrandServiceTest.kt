@@ -44,21 +44,35 @@ class BrandServiceTest(
         val existing = brandService.register("루퍼스")
         entityManager.flushAndClear()
 
-        val result = assertThrows<CoreException> { brandService.register(" 루퍼스 ") }
+        val exception = assertThrows<CoreException> { brandService.register(" 루퍼스 ") }
         entityManager.flushAndClear()
 
         assertAll(
-            { assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
+            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
             { assertThat(countBrands()).isOne() },
             { assertThat(brandService.getBrand(existing.id).name).isEqualTo("루퍼스") },
         )
     }
 
     @Test
-    fun `getting an unknown brand throws BRAND_NOT_FOUND`() {
-        val result = assertThrows<CoreException> { brandService.getBrand(999L) }
+    fun `registering a name that differs from an existing brand only in letter case throws BRAND_NAME_DUPLICATED`() {
+        brandService.register("Loopers")
+        entityManager.flushAndClear()
 
-        assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        val exception = assertThrows<CoreException> { brandService.register("LOOPERS") }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
+            { assertThat(countBrands()).isOne() },
+        )
+    }
+
+    @Test
+    fun `getting an unknown brand throws BRAND_NOT_FOUND`() {
+        val exception = assertThrows<CoreException> { brandService.getBrand(999L) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
