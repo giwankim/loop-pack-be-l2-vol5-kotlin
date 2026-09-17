@@ -10,19 +10,19 @@ import org.junit.jupiter.params.provider.ValueSource
 class BrandTest {
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
-    fun `creating with a blank name throws InvalidNameException`(name: String) {
+    fun `blank name throws InvalidNameException`(name: String) {
         assertThrows<InvalidNameException> { Brand(name = name) }
     }
 
     @Test
-    fun `creating with a name of 101 chars after trimming throws InvalidNameException`() {
+    fun `name of 101 chars after trimming throws InvalidNameException`() {
         val name = " " + "가".repeat(101) + " "
 
         assertThrows<InvalidNameException> { Brand(name = name) }
     }
 
     @Test
-    fun `creating with a name of 100 chars after trimming keeps the trimmed name`() {
+    fun `name of 100 chars after trimming keeps the trimmed name`() {
         val name = "가".repeat(100)
 
         val brand = Brand(name = "  $name\t")

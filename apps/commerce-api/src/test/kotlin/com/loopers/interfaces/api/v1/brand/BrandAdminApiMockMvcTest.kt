@@ -1,9 +1,10 @@
 package com.loopers.interfaces.api.v1.brand
 
 import com.jayway.jsonpath.JsonPath
+import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.brand.Brand
-import com.loopers.infrastructure.brand.BrandJpaRepository
+import com.loopers.support.error.ErrorType
+import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.notNullValue
@@ -31,20 +32,13 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class BrandAdminApiMockMvcTest(
     private val mockMvc: MockMvc,
-    private val brandJpaRepository: BrandJpaRepository,
+    private val brandService: BrandService,
+    private val entityManager: EntityManager,
 ) {
     companion object {
         private const val ENDPOINT = "/api-admin/v1/brands"
         private val ADMIN = user("admin").roles("ADMIN")
         private val CUSTOMER = user("customer").roles("USER")
-    }
-
-    /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
-    private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN) = mockMvc.post(ENDPOINT) {
-        principal?.let { with(it) }
-        with(csrf())
-        contentType = MediaType.APPLICATION_JSON
-        content = """{"name": "$name"}"""
     }
 
     @Test
@@ -76,21 +70,21 @@ class BrandAdminApiMockMvcTest(
             jsonPath("$.meta.message") { value(containsString("브랜드 이름")) }
         }
 
-        assertThat(brandJpaRepository.count()).isZero()
+        assertThat(countBrands()).isZero()
     }
 
     @Test
     fun `registering a name taken by a live brand returns 409 and saves nothing`() {
-        brandJpaRepository.save(Brand("루퍼스"))
+        brandService.register("루퍼스")
 
         postBrand(name = "루퍼스").andExpect {
             status { isConflict() }
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Conflict") }
-            jsonPath("$.meta.message") { value(containsString("같은 이름의 브랜드")) }
+            jsonPath("$.meta.message") { value(ErrorType.BRAND_NAME_DUPLICATED.message) }
         }
 
-        assertThat(brandJpaRepository.count()).isOne()
+        assertThat(countBrands()).isOne()
     }
 
     @Test
@@ -99,7 +93,7 @@ class BrandAdminApiMockMvcTest(
             status { isForbidden() }
         }
 
-        assertThat(brandJpaRepository.count()).isZero()
+        assertThat(countBrands()).isZero()
     }
 
     @Test
@@ -108,7 +102,7 @@ class BrandAdminApiMockMvcTest(
             status { isForbidden() }
         }
 
-        assertThat(brandJpaRepository.count()).isZero()
+        assertThat(countBrands()).isZero()
     }
 
     @Test
@@ -118,13 +112,13 @@ class BrandAdminApiMockMvcTest(
                 status { isNotFound() }
                 jsonPath("$.meta.result") { value("FAIL") }
                 jsonPath("$.meta.errorCode") { value("Not Found") }
-                jsonPath("$.meta.message") { value(containsString("브랜드")) }
+                jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
             }
     }
 
     @Test
     fun `getting a brand as a customer returns 403`() {
-        val brand = brandJpaRepository.save(Brand("루퍼스"))
+        val brand = brandService.register("루퍼스")
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(CUSTOMER) }
             .andExpect { status { isForbidden() } }
@@ -132,9 +126,23 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand anonymously returns 403`() {
-        val brand = brandJpaRepository.save(Brand("루퍼스"))
+        val brand = brandService.register("루퍼스")
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isForbidden() } }
     }
+
+    /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
+    private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN) = mockMvc.post(ENDPOINT) {
+        principal?.let { with(it) }
+        with(csrf())
+        contentType = MediaType.APPLICATION_JSON
+        content = """{"name": "$name"}"""
+    }
+
+    /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
+    private fun countBrands(): Long =
+        entityManager
+            .createQuery("select count(b) from Brand b", Long::class.java)
+            .singleResult
 }

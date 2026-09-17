@@ -2,6 +2,7 @@ package com.loopers.application.brand
 
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -24,7 +25,7 @@ class BrandServiceTest(
     @Test
     fun `registering an untaken name saves a brand that can be fetched back`() {
         val registered = brandService.register("루퍼스")
-        flushAndClear()
+        entityManager.flushAndClear()
 
         val found = brandService.getBrand(registered.id)
 
@@ -41,10 +42,10 @@ class BrandServiceTest(
     @Test
     fun `registering a name that matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
         val existing = brandService.register("루퍼스")
-        flushAndClear()
+        entityManager.flushAndClear()
 
         val result = assertThrows<CoreException> { brandService.register(" 루퍼스 ") }
-        flushAndClear()
+        entityManager.flushAndClear()
 
         assertAll(
             { assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
@@ -58,12 +59,6 @@ class BrandServiceTest(
         val result = assertThrows<CoreException> { brandService.getBrand(999L) }
 
         assertThat(result.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
-    }
-
-    /** 영속성 컨텍스트를 비워 다음 조회가 DB에서 다시 읽게 한다. */
-    private fun flushAndClear() {
-        entityManager.flush()
-        entityManager.clear()
     }
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */

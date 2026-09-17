@@ -2,14 +2,14 @@ package com.loopers.domain.brand
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.utils.flushAndClear
+import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager
 import org.springframework.context.annotation.Import
-import kotlin.test.assertNotNull
 
 /**
  * [BrandRepository] 계약을 실제 MySQL에서 확인한다. 구현이 무엇인지는 보지 않고 인터페이스로만 부른다.
@@ -21,22 +21,22 @@ import kotlin.test.assertNotNull
 @Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
-    private val entityManager: TestEntityManager,
+    private val entityManager: EntityManager,
 ) {
     @Test
     fun `find reads a saved brand back with the same values after flush and clear`() {
         val saved = brandRepository.save(Brand("루퍼스"))
-        flushAndClear()
+        entityManager.flushAndClear()
 
-        val found = assertNotNull(brandRepository.find(saved.id))
+        val found = brandRepository.find(saved.id)
 
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
-            { assertThat(found.id).isEqualTo(saved.id) },
-            { assertThat(found.name).isEqualTo("루퍼스") },
-            { assertThat(found.createdAt).isNotNull() },
-            { assertThat(found.updatedAt).isNotNull() },
-            { assertThat(found.deletedAt).isNull() },
+            { assertThat(found?.id).isEqualTo(saved.id) },
+            { assertThat(found?.name).isEqualTo("루퍼스") },
+            { assertThat(found?.createdAt).isNotNull() },
+            { assertThat(found?.updatedAt).isNotNull() },
+            { assertThat(found?.deletedAt).isNull() },
         )
     }
 
@@ -52,7 +52,7 @@ class BrandRepositoryTest(
     @Test
     fun `existsByName is true for a name a saved brand uses and false for an unused one`() {
         brandRepository.save(Brand("루퍼스"))
-        flushAndClear()
+        entityManager.flushAndClear()
 
         val taken = brandRepository.existsByName("루퍼스")
         val free = brandRepository.existsByName("다른 브랜드")
@@ -72,13 +72,7 @@ class BrandRepositoryTest(
         assertThat(taken).isFalse()
     }
 
-    /** 영속성 컨텍스트를 비워 다음 조회가 DB에서 다시 읽게 한다. */
-    private fun flushAndClear() {
-        entityManager.flush()
-        entityManager.clear()
-    }
-
     private fun saveDeleted(name: String): Brand =
         brandRepository.save(Brand(name).apply { delete() })
-            .also { flushAndClear() }
+            .also { entityManager.flushAndClear() }
 }

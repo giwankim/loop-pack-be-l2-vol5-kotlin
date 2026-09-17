@@ -15,29 +15,25 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.server.ServerWebInputException
 import org.springframework.web.servlet.resource.NoResourceFoundException
-import kotlin.collections.joinToString
-import kotlin.jvm.java
-import kotlin.text.isNotEmpty
-import kotlin.text.toRegex
 
 @RestControllerAdvice
 class ApiControllerAdvice {
     private val log = LoggerFactory.getLogger(ApiControllerAdvice::class.java)
 
     @ExceptionHandler
-    fun handle(e: CoreException): ResponseEntity<ApiResponse<*>> {
+    fun handleCoreException(e: CoreException): ResponseEntity<ApiResponse<*>> {
         log.warn("CoreException : {}", e.message, e)
-        return failureResponse(errorType = e.errorType, errorMessage = e.message)
+        return failureResponse(errorType = e.errorType)
     }
 
     @ExceptionHandler
-    fun handleBadRequest(e: RuleViolationException): ResponseEntity<ApiResponse<*>> {
+    fun handleRuleViolation(e: RuleViolationException): ResponseEntity<ApiResponse<*>> {
         log.warn("RuleViolationException : {}", e.message, e)
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = e.message)
     }
 
     @ExceptionHandler
-    fun handleBadRequest(e: MethodArgumentTypeMismatchException): ResponseEntity<ApiResponse<*>> {
+    fun handleMethodArgumentTypeMismatch(e: MethodArgumentTypeMismatchException): ResponseEntity<ApiResponse<*>> {
         val name = e.name
         val type = e.requiredType?.simpleName ?: "unknown"
         val value = e.value ?: "null"
@@ -46,7 +42,7 @@ class ApiControllerAdvice {
     }
 
     @ExceptionHandler
-    fun handleBadRequest(e: MissingServletRequestParameterException): ResponseEntity<ApiResponse<*>> {
+    fun handleMissingServletRequestParameter(e: MissingServletRequestParameterException): ResponseEntity<ApiResponse<*>> {
         val name = e.parameterName
         val type = e.parameterType
         val message = "필수 요청 파라미터 '$name' (타입: $type)가 누락되었습니다."
@@ -54,7 +50,7 @@ class ApiControllerAdvice {
     }
 
     @ExceptionHandler
-    fun handleBadRequest(e: HttpMessageNotReadableException): ResponseEntity<ApiResponse<*>> {
+    fun handleHttpMessageNotReadable(e: HttpMessageNotReadableException): ResponseEntity<ApiResponse<*>> {
         val errorMessage = when (val rootCause = e.rootCause) {
             is InvalidFormatException -> {
                 val fieldName = rootCause.path.joinToString(".") { it.fieldName ?: "?" }
@@ -92,7 +88,7 @@ class ApiControllerAdvice {
     }
 
     @ExceptionHandler
-    fun handleBadRequest(e: ServerWebInputException): ResponseEntity<ApiResponse<*>> {
+    fun handleServerWebInput(e: ServerWebInputException): ResponseEntity<ApiResponse<*>> {
         fun extractMissingParameter(message: String): String {
             val regex = "'(.+?)'".toRegex()
             return regex.find(message)?.groupValues?.get(1) ?: ""
@@ -107,12 +103,12 @@ class ApiControllerAdvice {
     }
 
     @ExceptionHandler
-    fun handleNotFound(e: NoResourceFoundException): ResponseEntity<ApiResponse<*>> {
+    fun handleNoResourceFound(e: NoResourceFoundException): ResponseEntity<ApiResponse<*>> {
         return failureResponse(errorType = ErrorType.NOT_FOUND)
     }
 
     @ExceptionHandler
-    fun handle(e: Throwable): ResponseEntity<ApiResponse<*>> {
+    fun handleUnexpected(e: Exception): ResponseEntity<ApiResponse<*>> {
         log.error("Exception : {}", e.message, e)
         val errorType = ErrorType.INTERNAL_ERROR
         return failureResponse(errorType = errorType)
