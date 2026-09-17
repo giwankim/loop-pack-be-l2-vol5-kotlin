@@ -41,7 +41,8 @@ interface BrandAdminApiSpec {
 
     @Operation(
         summary = "브랜드 수정",
-        description = "브랜드의 이름을 바꿉니다. 이름 규칙은 등록과 같습니다. 거절되면 기존 이름이 그대로 남습니다.",
+        description = "브랜드의 이름을 바꿉니다. 이름은 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하이며 " +
+            "앞뒤 공백을 뗀 값이 저장됩니다. 삭제되지 않은 다른 브랜드와 겹칠 수 없습니다. 거절되면 기존 이름이 그대로 남습니다.",
     )
     fun update(
         @Schema(name = "브랜드 ID", description = "수정할 브랜드의 ID")

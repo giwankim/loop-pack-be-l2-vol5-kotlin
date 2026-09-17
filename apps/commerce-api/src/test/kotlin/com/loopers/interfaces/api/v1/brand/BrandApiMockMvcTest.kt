@@ -95,8 +95,8 @@ class BrandApiMockMvcTest(
     }
 
     /**
-     * 다음 ID 조회가 1차 캐시가 아니라 SQL을 타게 한다. 앞 요청이 삭제한 브랜드가 컨텍스트에 그대로 있으면
-     * `find`가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없기 때문이다.
+     * 쌓인 변경을 DB로 내보내고 영속성 컨텍스트를 비운다. 이어지는 ID 조회가 1차 캐시가 아니라 SQL을 보게 하려는 것이다.
+     * 캐시가 답하면 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다.
      * 운영에서는 요청마다 컨텍스트가 새로 열려 저절로 되는 일이다.
      */
     private fun clearPersistenceContext() = entityManager.flushAndClear()
