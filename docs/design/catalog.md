@@ -145,7 +145,7 @@ sequenceDiagram
 
     Admin->>AC: PUT /api-admin/v1/products/{id}/stock {quantity: 0}
     AC->>PF: updateStock(id, 0)
-    PF->>PR: find(id)
+    PF->>PR: findById(id)
     PR-->>PF: Product (deletedAt == null)
     PF->>P: updateStock(0)
     Note over P: Stock(0) 생성. 음수면 거절하고 기존 값 유지
@@ -155,7 +155,7 @@ sequenceDiagram
 
     Customer->>CC: GET /api/v1/products/{id}
     CC->>PF: getProduct(id)
-    PF->>PR: find(id)
+    PF->>PR: findById(id)
     PR-->>PF: Product (+ brand, ManyToOne)
     PF->>LR: countByProductId(id)
     LR-->>PF: likeCount
