@@ -204,7 +204,7 @@ sequenceDiagram
 | `FORBIDDEN` (신규 status) | 403 | path userId가 요청자와 다름 |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
 | `BRAND_NAME_DUPLICATED`, `BRAND_HAS_PRODUCTS` | 409, code는 CONFLICT와 같음 | 이름 중복, 삭제 조건 |
-| `INVALID_PAGE`, `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 목록 입력 |
+| ~~`INVALID_PAGE`, `INVALID_SORT`~~ | — | 두지 않았다. 목록 입력은 Request 제약이 거른다(5.22) |
 
 도메인 규칙의 거절은 `ErrorType`에 행을 두지 않는다. `RuleViolationException`의 하위 예외(`InvalidNameException`, `InvalidMoneyException`, `InvalidPriceException`, `InvalidStockException`)이며 `ApiControllerAdvice`가 한 곳에서 400 `BAD_REQUEST`로 옮긴다. 까닭은 5.12에 있다.
 
@@ -299,6 +299,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: 도메인이 가진 예외로 거절한다. 추상 `RuleViolationException` 아래 규칙마다 하위 예외를 두고, advice가 상위 타입 하나로 400에 옮긴다.
 - 선택: C (2026-09-17). 규칙이 한 곳에 남고 HTTP 응답(400, `Bad Request`, 메시지)은 그대로다. 표식 인터페이스는 `@ExceptionHandler`가 `Throwable` 하위 클래스만 받으므로 쓰지 않는다. 하위 예외가 여러 패키지에 놓이므로 `sealed`가 아니라 `abstract`다.
 - 수정 (2026-09-17, 같은 날 저녁): 도메인 예외(C)는 그대로 두고, 그 앞에 B를 입력 검사로 더했다. "규칙이 한 곳에 남는다"는 이 결정의 이점은 포기했다. 까닭과 역할 나눔은 5.18에 있다.
+- 수정 (2026-09-18, #5): 재고 변경 API도 같은 자리를 따른다. 스펙(#5)은 음수 재고를 `InvalidStockException`으로 적었지만, 그것은 `ErrorType.INVALID_STOCK` 행을 두지 않겠다는 뜻이다(이 절). 5.18이 뒤에 더해졌으므로 `ProductStockUpdateRequest`의 `@Min(0)`이 먼저 거른다. HTTP 응답(400, `Bad Request`, "재고는 0 이상이어야 합니다.")과 기존 재고 유지는 어느 쪽이든 같고, `InvalidStockException`은 도메인의 마지막 울타리로 남아 `ProductTest`와 `ApiControllerAdviceTest`가 지킨다. #4가 이름·가격에 대해 정한 것과 같은 모양이다.
 - 다시 볼 조건: 규칙마다 다른 응답 code가 필요할 때(하위 예외별 핸들러 추가).
 
 ### 5.13 브랜드 이름 비교의 대소문자
@@ -389,6 +390,26 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 비용: 개념마다 위임만 하는 클래스가 하나 더 있고, 조회를 더할 때 저장 약속·`JpaRepository`·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다.
 - 다시 볼 조건: 위임 클래스가 셋을 넘어 되풀이가 지루해지거나, domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환을 `Optional`로 바꾼다.
 
+### 5.21 목록 조각의 타입
+
+- 문제: 저장 약속이 조각을 돌려줘야 하는데 `org.springframework.data.domain.Slice`를 쓰면 domain이 Spring Data에 의존한다(5.20이 막은 것과 같은 의존).
+- 대안 A: 저장 약속이 `List<Product>`를 돌려주고 application이 `size + 1`개를 받아 다음 조각의 존재를 스스로 센다. 조각을 세는 요령이 유스케이스마다 되풀이된다.
+- 대안 B: domain에 `Slice<T>(items, page, size, hasNext)`를 두고 infrastructure가 Spring Data의 `Slice`를 여기에 옮긴다.
+- 선택: B (2026-09-18, #5). `domain/shared/Slice.kt`에 두어 브랜드·좋아요 목록도 같은 타입을 쓴다. `map`이 항목만 다른 타입으로 옮겨 `Slice<Product>` → `Slice<ProductInfo>`가 한 줄이다. `size + 1`을 읽는 요령은 `ProductRepositoryImpl` 한 곳에만 있다.
+- interfaces에는 `SliceResponse<T>`를 `ApiResponse` 옆에 둔다. 개념을 가리지 않는 봉투이므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다.
+- 대가: 같은 네 필드가 domain과 interfaces에 하나씩 있다. `ApiResponse`가 domain 타입을 그대로 내보내지 않기 위한 값이고, 항목의 타입이 층마다 다르므로(`Product`, `ProductInfo`, `ProductAdminResponse`) 봉투도 따라간다.
+- 다시 볼 조건: 커서 기반 페이징으로 바꿀 때(`page` 대신 커서). 총 개수가 필요해질 때(5.5).
+
+### 5.22 목록 입력의 검사
+
+- 문제: `page`와 `size`에 범위가 없으면 `page=-1`이 `PageRequest.of`에서 `IllegalArgumentException`으로 터져 500이 된다. 설계 4의 오류 코드 표는 `INVALID_PAGE`·`INVALID_SORT`를 `ErrorType` 행으로 적어 두었다.
+- 대안 A: 표대로 `ErrorType` 행을 더하고 Service가 범위를 손으로 검사해 `CoreException`을 던진다.
+- 대안 B: `ProductListRequest`에 Bean Validation 제약(`@Min(0) page`, `@Min(1) @Max(100) size`)을 붙인다. 다른 모든 Request와 같은 모양이다(5.18).
+- 선택: B (2026-09-18, #5). 두 대안의 HTTP 응답은 400 `Bad Request`로 같다. 오류 코드 표는 5.18보다 먼저 쓰였고, 5.18이 입력 검사를 Request 제약으로 정한 뒤로는 A가 같은 층에 두 번째 검사 방식을 들이는 것이 된다. `ErrorType`에 두 행을 더하지 않았다.
+- 쿼리 문자열은 `@ModelAttribute @Valid`로 `ProductListRequest`에 바로 바인딩한다. 본문이 없는 요청에서 `@RequestBody`가 앉을 자리이며, 기본값(`page=0`, `size=20`)은 Kotlin 생성자 기본값이 준다.
+- `sort`는 관리자 목록에 없다. `INVALID_SORT`가 필요한지는 고객 목록(#7)에서 정한다.
+- 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다).
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
@@ -407,4 +428,5 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 내 좋아요 목록을 `GET /api/v1/likes`로 줄이는 것은 확인 후 결정한다. 줄이면 403 경우와 `FORBIDDEN`이 이 조각에서 사라진다.
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
-- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록(#7)에서 브랜드를 읽으면 상품마다 조회가 붙으므로 fetch join으로 읽을지는 #7에서 정한다.
+- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로, 관리자 목록(#5)은 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`로 브랜드를 함께 읽는다. `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다. 고객 목록(#7)은 좋아요 수까지 모아야 하므로 읽는 방법을 거기서 다시 정한다.
+- `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 지금은 브랜드 삭제 자체가 없어 닿을 수 없는 상태이고, #6이 살아 있는 상품이 남은 브랜드의 삭제를 거절해 계속 닿을 수 없게 만든다. #6에서 이 조합을 다시 확인한다.
