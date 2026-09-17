@@ -68,6 +68,20 @@ class ProductTest {
         assertThat(product.stock).isEqualTo(Stock(0))
     }
 
+    @Test
+    fun `isSoldOut is true when the stock is zero`() {
+        val product = product(stock = Stock(0))
+
+        assertThat(product.isSoldOut()).isTrue()
+    }
+
+    @Test
+    fun `isSoldOut is false when any stock remains`() {
+        val product = product(stock = Stock(1))
+
+        assertThat(product.isSoldOut()).isFalse()
+    }
+
     private fun product(
         name: Name = Name("티셔츠"),
         price: Money = Money(10_000),

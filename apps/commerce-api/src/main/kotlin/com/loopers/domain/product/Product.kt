@@ -61,6 +61,9 @@ class Product(
         stock = Stock(quantity)
     }
 
+    /** 품절: 재고가 0인 상태. 고객에게는 수량 대신 이 상태만 보인다. */
+    fun isSoldOut(): Boolean = stock.quantity == 0
+
     companion object {
         const val NAME_MAX_LENGTH = 100
         const val MIN_PRICE_AMOUNT = 1L

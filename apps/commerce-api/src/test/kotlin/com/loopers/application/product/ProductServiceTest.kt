@@ -39,11 +39,28 @@ class ProductServiceTest(
             { assertThat(registered.name).isEqualTo("티셔츠") },
             { assertThat(found.id).isEqualTo(registered.id) },
             { assertThat(found.brandId).isEqualTo(brand.id) },
+            { assertThat(found.brandName).isEqualTo("루퍼스") },
             { assertThat(found.name).isEqualTo("티셔츠") },
             { assertThat(found.price).isEqualTo(12_000L) },
             { assertThat(found.stock).isEqualTo(7) },
+            { assertThat(found.soldOut).isFalse() },
             { assertThat(found.createdAt).isNotNull() },
             { assertThat(found.updatedAt).isNotNull() },
+        )
+    }
+
+    @Test
+    fun `finding a product with zero stock reports it as sold out`() {
+        val brand = brandRepository.save(Brand(Name("루퍼스")))
+        val registered =
+            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = 0))
+        entityManager.flushAndClear()
+
+        val found = productService.find(registered.id)
+
+        assertAll(
+            { assertThat(found.stock).isZero() },
+            { assertThat(found.soldOut).isTrue() },
         )
     }
 

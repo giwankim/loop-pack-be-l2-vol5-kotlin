@@ -14,7 +14,7 @@ object ProductAdminDto {
         val updatedAt: ZonedDateTime,
     ) {
         companion object {
-            fun from(info: ProductInfo.Admin): ProductResponse {
+            fun from(info: ProductInfo): ProductResponse {
                 return ProductResponse(
                     id = info.id,
                     brandId = info.brandId,

@@ -20,7 +20,7 @@ class ProductService(
     private val brandRepository: BrandRepository,
 ) {
     @Transactional
-    fun register(@Valid request: ProductRegisterRequest): ProductInfo.Admin {
+    fun register(@Valid request: ProductRegisterRequest): ProductInfo {
         val brand = brandRepository.findById(request.brandId) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
         val product = Product(
             brand = brand,
@@ -28,12 +28,12 @@ class ProductService(
             price = Money(request.price),
             stock = Stock(request.stock),
         )
-        return ProductInfo.Admin.from(productRepository.save(product))
+        return ProductInfo.from(productRepository.save(product))
     }
 
     @Transactional(readOnly = true)
-    fun find(id: Long): ProductInfo.Admin {
+    fun find(id: Long): ProductInfo {
         val product = productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
-        return ProductInfo.Admin.from(product)
+        return ProductInfo.from(product)
     }
 }
