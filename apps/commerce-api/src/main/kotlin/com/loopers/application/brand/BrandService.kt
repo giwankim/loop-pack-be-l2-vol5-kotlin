@@ -23,5 +23,5 @@ class BrandService(
 
     @Transactional(readOnly = true)
     fun getBrand(id: Long): Brand =
-        brandRepository.find(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
+        brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
 }

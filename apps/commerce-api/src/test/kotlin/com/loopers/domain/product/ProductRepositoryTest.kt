@@ -5,6 +5,8 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.shared.Money
 import com.loopers.domain.shared.Name
+import com.loopers.infrastructure.brand.BrandRepositoryImpl
+import com.loopers.infrastructure.product.ProductRepositoryImpl
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -21,19 +23,19 @@ import org.springframework.context.annotation.Import
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, BrandRepositoryImpl::class, ProductRepositoryImpl::class)
 class ProductRepositoryTest(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `find reads a saved product back with its brand, price, and stock after flush and clear`() {
+    fun `findById reads a saved product back with its brand, price, and stock after flush and clear`() {
         val brand = brandRepository.save(Brand(Name("루퍼스")))
         val saved = productRepository.save(product(brand, price = 12_000, stock = 7))
         entityManager.flushAndClear()
 
-        val found = productRepository.find(saved.id)
+        val found = productRepository.findById(saved.id)
 
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
@@ -68,19 +70,19 @@ class ProductRepositoryTest(
     }
 
     @Test
-    fun `find returns null for a deleted product`() {
+    fun `findById returns null for a deleted product`() {
         val brand = brandRepository.save(Brand(Name("루퍼스")))
         val deleted = productRepository.save(product(brand).apply { delete() })
         entityManager.flushAndClear()
 
-        val found = productRepository.find(deleted.id)
+        val found = productRepository.findById(deleted.id)
 
         assertThat(found).isNull()
     }
 
     @Test
-    fun `find returns null for an unknown id`() {
-        assertThat(productRepository.find(999L)).isNull()
+    fun `findById returns null for an unknown id`() {
+        assertThat(productRepository.findById(999L)).isNull()
     }
 
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =

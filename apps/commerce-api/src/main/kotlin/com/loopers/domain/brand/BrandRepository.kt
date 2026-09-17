@@ -8,7 +8,7 @@ import com.loopers.domain.shared.Name
 interface BrandRepository {
     fun save(brand: Brand): Brand
 
-    fun find(id: Long): Brand?
+    fun findById(id: Long): Brand?
 
     fun existsByName(name: Name): Boolean
 }

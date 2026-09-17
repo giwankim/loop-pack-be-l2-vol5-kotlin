@@ -2,6 +2,7 @@ package com.loopers.domain.brand
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.shared.Name
+import com.loopers.infrastructure.brand.BrandRepositoryImpl
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -14,22 +15,22 @@ import org.springframework.context.annotation.Import
 
 /**
  * [BrandRepository] 계약을 실제 MySQL에서 확인한다. 구현이 무엇인지는 보지 않고 인터페이스로만 부른다.
- * 슬라이스는 사용자 `@Configuration`을 스캔하지 않으므로 데이터소스 설정과 컨테이너 설정을 직접 가져오고,
- * 내장 DB로 바꾸지 않게 한다. 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ * 슬라이스는 사용자 `@Configuration`과 `@Component`를 스캔하지 않으므로 데이터소스 설정, 컨테이너 설정,
+ * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, BrandRepositoryImpl::class)
 class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `find reads a saved brand back with the same values after flush and clear`() {
+    fun `findById reads a saved brand back with the same values after flush and clear`() {
         val saved = brandRepository.save(Brand(Name("루퍼스")))
         entityManager.flushAndClear()
 
-        val found = brandRepository.find(saved.id)
+        val found = brandRepository.findById(saved.id)
 
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
@@ -42,10 +43,10 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `find returns null for a deleted brand`() {
+    fun `findById returns null for a deleted brand`() {
         val deleted = saveDeleted("루퍼스")
 
-        val found = brandRepository.find(deleted.id)
+        val found = brandRepository.findById(deleted.id)
 
         assertThat(found).isNull()
     }
