@@ -80,6 +80,7 @@ classDiagram
     class Stock {
         <<value object>>
         +Int quantity
+        +isEmpty() Boolean
     }
 
     class Money {
@@ -148,7 +149,7 @@ sequenceDiagram
     AC-->>Admin: 200 {id, brandId, name, price, stock: 0, …}
 
     Customer->>CC: GET /api/v1/products/{id}
-    CC->>PF: getProduct(id)
+    CC->>PF: find(id)
     PF->>PR: findById(id)
     PR-->>PF: Product (+ brand, ManyToOne)
     PF->>LR: countByProductId(id)

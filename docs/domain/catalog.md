@@ -68,7 +68,7 @@
 | `Product(brand, name, price, stock)` | 이름의 앞뒤 공백을 떼고 공백·길이 상한과 가격 범위를 검사하고 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
 | `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
-| `isSoldOut()` | 재고가 0이면 참 | 없음 |
+| `isSoldOut()` | 재고가 0이면 참. `stock.isEmpty()`에 맡긴다 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
 `decrease`는 이 조각에 없다. 주문 확정이 들어올 때 `Stock`에 더한다.
