@@ -12,6 +12,8 @@ import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.context.annotation.Import
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 
 /**
  * [BrandRepositoryImpl]이 [BrandRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
@@ -26,6 +28,10 @@ class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,
 ) {
+    companion object {
+        private val BASE: ZonedDateTime = ZonedDateTime.of(2026, 9, 18, 10, 0, 0, 0, ZoneOffset.UTC)
+    }
+
     @Test
     fun `findById reads a saved brand back with the same values after flush and clear`() {
         val saved = brandRepository.save(Brand("루퍼스"))
@@ -73,6 +79,96 @@ class BrandRepositoryTest(
         val taken = brandRepository.existsByName("루퍼스")
 
         assertThat(taken).isFalse()
+    }
+
+    @Test
+    fun `findAll returns live brands with the newest registration first`() {
+        save("첫째", registeredAt = BASE)
+        save("둘째", registeredAt = BASE.plusMinutes(1))
+        save("셋째", registeredAt = BASE.plusMinutes(2))
+
+        val slice = brandRepository.findAll(page = 0, size = 20)
+
+        assertThat(slice.items.map { it.name }).containsExactly("셋째", "둘째", "첫째")
+    }
+
+    @Test
+    fun `findAll breaks a tie on registration time with the higher id first`() {
+        val first = save("첫째", registeredAt = BASE)
+        val second = save("둘째", registeredAt = BASE)
+
+        val slice = brandRepository.findAll(page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
+    }
+
+    @Test
+    fun `findAll leaves out deleted brands`() {
+        save("루퍼스", registeredAt = BASE)
+        saveDeleted("무신사")
+
+        val slice = brandRepository.findAll(page = 0, size = 20)
+
+        assertThat(slice.items.map { it.name }).containsExactly("루퍼스")
+    }
+
+    @Test
+    fun `findAll has no next slice when the live brands fill the page exactly`() {
+        saveBrands(count = 2)
+
+        val slice = brandRepository.findAll(page = 0, size = 2)
+
+        assertAll(
+            { assertThat(slice.items).hasSize(2) },
+            { assertThat(slice.hasNext).isFalse() },
+            { assertThat(slice.page).isZero() },
+            { assertThat(slice.size).isEqualTo(2) },
+        )
+    }
+
+    @Test
+    fun `findAll has a next slice when one more live brand follows the page`() {
+        saveBrands(count = 3)
+
+        val slice = brandRepository.findAll(page = 0, size = 2)
+
+        assertAll(
+            { assertThat(slice.items).hasSize(2) },
+            { assertThat(slice.hasNext).isTrue() },
+        )
+    }
+
+    @Test
+    fun `findAll skips the brands the earlier pages already read`() {
+        saveBrands(count = 3)
+
+        val slice = brandRepository.findAll(page = 1, size = 2)
+
+        assertAll(
+            { assertThat(slice.items.map { it.name }).containsExactly("브랜드 0") },
+            { assertThat(slice.hasNext).isFalse() },
+            { assertThat(slice.page).isEqualTo(1) },
+        )
+    }
+
+    /** 최신 등록이 뒤 번호가 되도록 `브랜드 0`부터 1분 간격으로 만든다. */
+    private fun saveBrands(count: Int) {
+        repeat(count) { save("브랜드 $it", registeredAt = BASE.plusMinutes(it.toLong())) }
+    }
+
+    /**
+     * 등록 시각을 정해 저장한다. [com.loopers.domain.BaseEntity]가 `@PrePersist`에서 지금 시각을 찍으므로,
+     * 정렬과 동률을 흔들림 없이 확인하려면 저장한 뒤 벌크 수정으로 시각을 옮겨야 한다.
+     */
+    private fun save(name: String, registeredAt: ZonedDateTime): Brand {
+        val saved = brandRepository.save(Brand(name))
+        entityManager.flush()
+        entityManager.createQuery("update Brand b set b.createdAt = :registeredAt where b.id = :id")
+            .setParameter("registeredAt", registeredAt)
+            .setParameter("id", saved.id)
+            .executeUpdate()
+        entityManager.flushAndClear()
+        return saved
     }
 
     private fun saveDeleted(name: String): Brand =

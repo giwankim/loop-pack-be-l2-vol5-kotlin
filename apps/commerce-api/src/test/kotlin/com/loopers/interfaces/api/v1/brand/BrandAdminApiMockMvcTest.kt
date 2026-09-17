@@ -5,6 +5,7 @@ import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
+import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
@@ -18,8 +19,10 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.RequestPostProcessor
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -133,6 +136,194 @@ class BrandAdminApiMockMvcTest(
             .andExpect { status { isForbidden() } }
     }
 
+    @Test
+    fun `admin lists live brands newest first as a slice`() {
+        brandService.register(BrandRegisterRequest("첫째"))
+        brandService.register(BrandRegisterRequest("둘째"))
+
+        mockMvc.get(ENDPOINT) {
+            with(ADMIN)
+            param("page", "0")
+            param("size", "1")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.meta.result") { value("SUCCESS") }
+            jsonPath("$.data.items.length()") { value(1) }
+            jsonPath("$.data.items[0].name") { value("둘째") }
+            jsonPath("$.data.page") { value(0) }
+            jsonPath("$.data.size") { value(1) }
+            jsonPath("$.data.hasNext") { value(true) }
+        }
+    }
+
+    @Test
+    fun `listing without paging parameters uses the first page of twenty`() {
+        brandService.register(BrandRegisterRequest("루퍼스"))
+
+        mockMvc.get(ENDPOINT) { with(ADMIN) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.page") { value(0) }
+                jsonPath("$.data.size") { value(20) }
+                jsonPath("$.data.hasNext") { value(false) }
+            }
+    }
+
+    @Test
+    fun `listing a deleted brand leaves it out`() {
+        val deleted = brandService.register(BrandRegisterRequest("무신사"))
+        brandService.register(BrandRegisterRequest("루퍼스"))
+        brandService.delete(deleted.id)
+
+        mockMvc.get(ENDPOINT) { with(ADMIN) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.items.length()") { value(1) }
+                jsonPath("$.data.items[0].name") { value("루퍼스") }
+            }
+    }
+
+    @Test
+    fun `listing with a negative page returns 400`() {
+        mockMvc.get(ENDPOINT) {
+            with(ADMIN)
+            param("page", "-1")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value(ErrorType.INVALID_PAGE.message) }
+        }
+    }
+
+    @Test
+    fun `listing with a size over a hundred returns 400`() {
+        mockMvc.get(ENDPOINT) {
+            with(ADMIN)
+            param("size", "101")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.message") { value(ErrorType.INVALID_PAGE.message) }
+        }
+    }
+
+    @Test
+    fun `listing as a customer returns 403`() {
+        mockMvc.get(ENDPOINT) { with(CUSTOMER) }
+            .andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `admin renames a brand and reads the new name back`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        putBrand(brand.id, name = " 무신사 ").andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(brand.id) }
+            jsonPath("$.data.name") { value("무신사") }
+        }
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect { jsonPath("$.data.name") { value("무신사") } }
+    }
+
+    @Test
+    fun `renaming to a name a live brand uses returns 409 and keeps the old name`() {
+        brandService.register(BrandRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+
+        putBrand(renamed.id, name = "루퍼스").andExpect {
+            status { isConflict() }
+            jsonPath("$.meta.errorCode") { value("Conflict") }
+            jsonPath("$.meta.message") { value(ErrorType.BRAND_NAME_DUPLICATED.message) }
+        }
+
+        mockMvc.get("$ENDPOINT/${renamed.id}") { with(ADMIN) }
+            .andExpect { jsonPath("$.data.name") { value("무신사") } }
+    }
+
+    @Test
+    fun `renaming to a blank name returns 400 and keeps the old name`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        putBrand(brand.id, name = "   ").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.message") { value(containsString("이름은 공백일 수 없습니다")) }
+        }
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect { jsonPath("$.data.name") { value("루퍼스") } }
+    }
+
+    @Test
+    fun `renaming an unknown brand returns 404`() {
+        putBrand(999L, name = "루퍼스").andExpect {
+            status { isNotFound() }
+            jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
+        }
+    }
+
+    @Test
+    fun `renaming a deleted brand returns 404`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        brandService.delete(brand.id)
+        startNextRequest()
+
+        putBrand(brand.id, name = "무신사").andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `renaming as a customer returns 403 and keeps the old name`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        putBrand(brand.id, name = "무신사", principal = CUSTOMER).andExpect { status { isForbidden() } }
+
+        assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
+    }
+
+    @Test
+    fun `admin deletes a brand and it disappears from the detail and the list`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        deleteBrand(brand.id).andExpect {
+            status { isOk() }
+            jsonPath("$.meta.result") { value("SUCCESS") }
+            jsonPath("$.data") { doesNotExist() }
+        }
+        startNextRequest()
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect { status { isNotFound() } }
+        mockMvc.get(ENDPOINT) { with(ADMIN) }
+            .andExpect { jsonPath("$.data.items.length()") { value(0) } }
+        assertThat(countBrands()).isZero()
+    }
+
+    @Test
+    fun `deleting a brand twice returns 404 the second time`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        deleteBrand(brand.id).andExpect { status { isOk() } }
+        startNextRequest()
+
+        deleteBrand(brand.id).andExpect {
+            status { isNotFound() }
+            jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
+        }
+    }
+
+    @Test
+    fun `deleting an unknown brand returns 404`() {
+        deleteBrand(999L).andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `deleting as a customer returns 403 and keeps the brand`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        deleteBrand(brand.id, principal = CUSTOMER).andExpect { status { isForbidden() } }
+
+        assertThat(countBrands()).isOne()
+    }
+
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
     private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN) = mockMvc.post(ENDPOINT) {
         principal?.let { with(it) }
@@ -140,6 +331,27 @@ class BrandAdminApiMockMvcTest(
         contentType = MediaType.APPLICATION_JSON
         content = """{"name": "$name"}"""
     }
+
+    private fun putBrand(brandId: Long, name: String, principal: RequestPostProcessor? = ADMIN) =
+        mockMvc.put("$ENDPOINT/$brandId") {
+            principal?.let { with(it) }
+            with(csrf())
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name": "$name"}"""
+        }
+
+    private fun deleteBrand(brandId: Long, principal: RequestPostProcessor? = ADMIN) =
+        mockMvc.delete("$ENDPOINT/$brandId") {
+            principal?.let { with(it) }
+            with(csrf())
+        }
+
+    /**
+     * 다음 요청이 새 영속성 컨텍스트에서 시작한 것처럼 만든다. 운영에서는 요청마다 컨텍스트가 새로 열리지만
+     * MockMvc는 테스트 트랜잭션 안에서 돌아 앞선 요청이 남긴 엔티티가 1차 캐시에 그대로 있다.
+     * 그러면 ID 조회가 SQL을 보내지 않아 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다.
+     */
+    private fun startNextRequest() = entityManager.flushAndClear()
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
     private fun countBrands(): Long =

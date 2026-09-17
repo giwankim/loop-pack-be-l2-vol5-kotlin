@@ -1,5 +1,6 @@
 package com.loopers.application.brand
 
+import com.loopers.application.shared.PageRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -85,6 +86,123 @@ class BrandServiceTest(
         val exception = assertThrows<CoreException> { brandService.find(999L) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+    }
+
+    @Test
+    fun `listing brands returns the live ones newest first as a slice`() {
+        brandService.register(BrandRegisterRequest("첫째"))
+        brandService.register(BrandRegisterRequest("둘째"))
+        entityManager.flushAndClear()
+
+        val slice = brandService.findAll(PageRequest(page = 0, size = 1))
+
+        assertAll(
+            { assertThat(slice.items.map { it.name }).containsExactly("둘째") },
+            { assertThat(slice.page).isZero() },
+            { assertThat(slice.size).isOne() },
+            { assertThat(slice.hasNext).isTrue() },
+        )
+    }
+
+    @Test
+    fun `updating a brand replaces its name`() {
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        entityManager.flushAndClear()
+
+        brandService.update(registered.id, BrandUpdateRequest(" 무신사 "))
+        entityManager.flushAndClear()
+
+        assertThat(brandService.find(registered.id).name).isEqualTo("무신사")
+    }
+
+    @Test
+    fun `updating to a name another live brand uses throws BRAND_NAME_DUPLICATED and keeps the old name`() {
+        brandService.register(BrandRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> { brandService.update(renamed.id, BrandUpdateRequest("루퍼스")) }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
+            { assertThat(brandService.find(renamed.id).name).isEqualTo("무신사") },
+        )
+    }
+
+    @Test
+    fun `updating a brand to its own name in a different letter case is not a duplicate`() {
+        val registered = brandService.register(BrandRegisterRequest("Loopers"))
+        entityManager.flushAndClear()
+
+        brandService.update(registered.id, BrandUpdateRequest("LOOPERS"))
+        entityManager.flushAndClear()
+
+        assertThat(brandService.find(registered.id).name).isEqualTo("LOOPERS")
+    }
+
+    @Test
+    fun `updating a blank name is rejected by request validation before the domain and keeps the old name`() {
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<ConstraintViolationException> {
+            brandService.update(registered.id, BrandUpdateRequest("   "))
+        }
+        entityManager.flushAndClear()
+
+        assertAll(
+            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.") },
+            { assertThat(brandService.find(registered.id).name).isEqualTo("루퍼스") },
+        )
+    }
+
+    @Test
+    fun `updating an unknown brand throws BRAND_NOT_FOUND`() {
+        val exception = assertThrows<CoreException> { brandService.update(999L, BrandUpdateRequest("루퍼스")) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+    }
+
+    @Test
+    fun `a deleted brand is gone from the detail and from the list`() {
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        entityManager.flushAndClear()
+
+        brandService.delete(registered.id)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> { brandService.find(registered.id) }
+
+        assertAll(
+            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
+            { assertThat(brandService.findAll(PageRequest()).items).isEmpty() },
+            { assertThat(countBrands()).isZero() },
+        )
+    }
+
+    @Test
+    fun `deleting a brand twice throws BRAND_NOT_FOUND the second time`() {
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        entityManager.flushAndClear()
+        brandService.delete(registered.id)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> { brandService.delete(registered.id) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+    }
+
+    @Test
+    fun `a deleted brand frees its name for a new brand`() {
+        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        entityManager.flushAndClear()
+        brandService.delete(registered.id)
+        entityManager.flushAndClear()
+
+        val reregistered = brandService.register(BrandRegisterRequest("루퍼스"))
+
+        assertThat(reregistered.id).isNotEqualTo(registered.id)
     }
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
