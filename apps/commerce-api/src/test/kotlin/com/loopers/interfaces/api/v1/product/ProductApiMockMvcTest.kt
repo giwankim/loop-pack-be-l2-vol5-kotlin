@@ -127,11 +127,15 @@ class ProductApiMockMvcTest(
             }
     }
 
+    /**
+     * 먼저 등록한 상품을 싸게 두어 기본값이 `latest`일 때와 `price_asc`일 때의 차례가 갈리게 한다.
+     * 값이 같으면 두 기준이 같은 차례를 내놓아 기본값이 무엇이든 이 테스트가 지나간다.
+     */
     @Test
     fun `a customer lists products latest registered first without asking for a sort`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
-        val firstId = registerProduct(brand.id, name = "티셔츠")
-        val secondId = registerProduct(brand.id, name = "후드티")
+        val firstId = registerProduct(brand.id, name = "티셔츠", price = 3_000)
+        val secondId = registerProduct(brand.id, name = "후드티", price = 30_000)
         entityManager.flushAndClear()
 
         getProducts().andExpect {

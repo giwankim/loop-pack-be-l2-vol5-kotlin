@@ -215,12 +215,17 @@ class ProductServiceTest(
         )
     }
 
-    /** 고객 목록도 아무것도 고르지 않으면 늦게 등록된 상품이 앞선다. 정렬 자체는 저장소 테스트가 지킨다. */
+    /**
+     * 고객 목록도 아무것도 고르지 않으면 늦게 등록된 상품이 앞선다. 정렬 자체는 저장소 테스트가 지킨다.
+     *
+     * 먼저 등록한 상품을 싸게 두는 까닭은 기본값이 `latest`가 아니라 `price_asc`로 바뀌면 차례가 뒤집히게
+     * 하려는 것이다. 값이 같으면 두 기준이 같은 차례를 내놓아 기본값이 무엇이든 이 테스트가 지나간다.
+     */
     @Test
     fun `listing for a customer carries the default page, size, and sort into the slice`() {
         val brand = brandRepository.save(Brand("루퍼스"))
-        val first = register(brand.id, name = "티셔츠")
-        val second = register(brand.id, name = "후드티")
+        val first = register(brand.id, name = "티셔츠", price = 3_000)
+        val second = register(brand.id, name = "후드티", price = 30_000)
         entityManager.flushAndClear()
 
         val slice = productService.findAll(ProductListRequest())
