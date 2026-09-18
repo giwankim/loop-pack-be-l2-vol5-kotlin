@@ -1,6 +1,7 @@
 package com.loopers.infrastructure.product
 
 import com.loopers.config.jpa.DataSourceConfig
+import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.like.Like
@@ -28,7 +29,13 @@ import org.springframework.context.annotation.Import
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, BrandRepositoryImpl::class, ProductRepositoryImpl::class)
+@Import(
+    DataSourceConfig::class,
+    QueryDslConfig::class,
+    MySqlTestContainersConfig::class,
+    BrandRepositoryImpl::class,
+    ProductRepositoryImpl::class,
+)
 class ProductRepositoryTest(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
@@ -169,6 +176,98 @@ class ProductRepositoryTest(
     }
 
     /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
+
+    /**
+     * 좋아요를 가장 먼저 등록한 상품에 몰아 주어, 기준이 `latest`나 id 내림차순으로 새면 차례가 뒤집히게 한다.
+     */
+    @Test
+    fun `findAll sorted by likes puts the most liked first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val most = productRepository.save(product(brand))
+        val fewest = productRepository.save(product(brand))
+        val middling = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+        likedBy(most, users = 3)
+        likedBy(fewest, users = 1)
+        likedBy(middling, users = 2)
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+
+        assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id)
+    }
+
+    @Test
+    fun `findAll sorted by likes breaks a tie with the later id first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val first = productRepository.save(product(brand))
+        val second = productRepository.save(product(brand))
+        val third = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+        listOf(first, second, third).forEach { likedBy(it, users = 2) }
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+
+        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    /**
+     * 좋아요가 하나도 없는 상품도 목록에 있고 끝에 온다. `left join`이 맞춰 줄 행을 찾지 못해도 상품은 남는다.
+     *
+     * 좋아요가 없는 상품을 좋아요 하나짜리보다 나중에 등록하는 까닭은, 세는 것이 관계 행이 아니라 결합된 행이면
+     * (`count(*)`) 없는 쪽도 1로 세어져 둘이 동률이 되고 동률 규칙이 차례를 뒤집기 때문이다. 그래야 이 테스트가
+     * 둘을 구별한다.
+     */
+    @Test
+    fun `findAll sorted by likes keeps a product nobody liked, last`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val liked = productRepository.save(product(brand))
+        val unliked = productRepository.save(product(brand))
+        val mostLiked = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+        likedBy(liked, users = 1)
+        likedBy(mostLiked, users = 2)
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+
+        assertThat(slice.items.map { it.id }).containsExactly(mostLiked.id, liked.id, unliked.id)
+    }
+
+    /**
+     * 좋아요 많은순에도 브랜드 필터와 조각 나누기가 그대로 있다. 다른 브랜드에 좋아요가 가장 많은 상품을 두어,
+     * 필터가 새면 그 상품이 맨 앞에 끼어들게 한다. `group by` 뒤에 `limit`이 붙는 자리이기도 하다.
+     */
+    @Test
+    fun `findAll sorted by likes keeps the brand filter and slices with hasNext`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        val fewest = productRepository.save(product(brand))
+        val most = productRepository.save(product(brand))
+        val middling = productRepository.save(product(brand))
+        val othersMostLiked = productRepository.save(product(other))
+        entityManager.flushAndClear()
+        likedBy(fewest, users = 1)
+        likedBy(most, users = 3)
+        likedBy(middling, users = 2)
+        likedBy(othersMostLiked, users = 9)
+        entityManager.flushAndClear()
+
+        val first = productRepository.findAll(brandId = brand.id, page = 0, size = 2, sort = ProductSort.LIKES_DESC)
+        val second = productRepository.findAll(brandId = brand.id, page = 1, size = 2, sort = ProductSort.LIKES_DESC)
+
+        assertAll(
+            { assertThat(first.items.map { it.id }).containsExactly(most.id, middling.id) },
+            { assertThat(first.hasNext).isTrue() },
+            { assertThat(first.page).isZero() },
+            { assertThat(first.size).isEqualTo(2) },
+            { assertThat(second.items.map { it.id }).containsExactly(fewest.id) },
+            { assertThat(second.hasNext).isFalse() },
+            { assertThat(second.page).isEqualTo(1) },
+        )
+    }
+
     @Test
     fun `findAll with a deleted brand's id is empty`() {
         val brand = brandRepository.save(Brand("루퍼스"))
@@ -240,7 +339,7 @@ class ProductRepositoryTest(
     }
 
     /**
-     * `@EntityGraph`가 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
+     * fetch join이 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
      * 삭제된 브랜드에 달렸지만 자신은 삭제되지 않은 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제 거절이
      * 막고 있어 실제로는 닿을 수 없다. 저장소는 그 거절을 모르므로 여기서만 만들 수 있다(설계 7).
      */
@@ -433,6 +532,14 @@ class ProductRepositoryTest(
     /** 좋아요 관계 하나. 좋아요는 사용자와 상품을 식별자로만 가리키므로(설계 2) 사용자 행 없이 만든다. */
     private fun like(userId: Long, productId: Long): Like =
         Like(userId = userId, productId = productId).also { entityManager.persist(it) }
+
+    /**
+     * [users]명이 [product]를 좋아한다. 좋아요는 사용자를 식별자로만 가리키므로 `users` 행은 없어도 된다(설계 2).
+     * 같은 사용자–상품 쌍은 하나뿐이라 사용자 식별자를 상품마다 1부터 새로 센다.
+     */
+    private fun likedBy(product: Product, users: Int) {
+        (1..users).forEach { entityManager.persist(Like(userId = it.toLong(), productId = product.id)) }
+    }
 
     /**
      * 생성 시각을 모든 행이 같은 값으로 갖게 한다. `created_at`은 `@Column(updatable = false)`지만

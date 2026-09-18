@@ -10,6 +10,7 @@ class ProductSortTest {
         assertAll(
             { assertThat(ProductSort.from("latest")).isEqualTo(ProductSort.LATEST) },
             { assertThat(ProductSort.from("price_asc")).isEqualTo(ProductSort.PRICE_ASC) },
+            { assertThat(ProductSort.from("likes_desc")).isEqualTo(ProductSort.LIKES_DESC) },
         )
     }
 

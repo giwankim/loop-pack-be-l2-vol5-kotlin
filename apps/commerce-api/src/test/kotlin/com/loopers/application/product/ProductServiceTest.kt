@@ -313,6 +313,27 @@ class ProductServiceTest(
     }
 
     /**
+     * 좋아요 많은순은 차례를 내는 쿼리와 `likeCount`를 세는 쿼리가 서로 다르다(설계 5.29). 둘이 어긋나면
+     * 차례는 맞는데 수가 남의 것이 된다. 그래서 이 자리만은 차례와 값을 함께 본다.
+     */
+    @Test
+    fun `listing by likes orders the slice and carries each product's own count`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val liked = register(brand.id, name = "티셔츠")
+        val unliked = register(brand.id, name = "양말")
+        val mostLiked = register(brand.id, name = "후드티")
+        likeRepository.save(Like(userId = 1L, productId = liked.id))
+        likeRepository.save(Like(userId = 1L, productId = mostLiked.id))
+        likeRepository.save(Like(userId = 2L, productId = mostLiked.id))
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest(sort = "likes_desc"))
+
+        assertThat(slice.items.map { it.id to it.likeCount })
+            .containsExactly(mostLiked.id to 2L, liked.id to 1L, unliked.id to 0L)
+    }
+
+    /**
      * 모르는 정렬 값은 Controller를 거치지 않고 불러도 거절된다. 배치나 컨슈머가 요청을 손으로 만들어
      * 부르는 자리가 여기이므로, 철자를 거르는 일이 HTTP 밖에도 있어야 한다.
      */
@@ -320,7 +341,7 @@ class ProductServiceTest(
     fun `a sort no product sort answers to is rejected without any controller`() {
         assertAll(
             {
-                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "likes_desc")) })
+                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "likes")) })
                     .isEqualTo(ErrorType.INVALID_SORT)
             },
             {

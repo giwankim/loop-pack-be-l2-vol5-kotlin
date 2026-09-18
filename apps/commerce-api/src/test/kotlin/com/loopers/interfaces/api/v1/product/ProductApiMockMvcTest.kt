@@ -5,6 +5,8 @@ import com.loopers.application.brand.BrandService
 import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.like.Like
+import com.loopers.domain.like.LikeRepository
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -36,6 +38,7 @@ class ProductApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val brandService: BrandService,
     private val productService: ProductService,
+    private val likeRepository: LikeRepository,
     private val entityManager: EntityManager,
 ) {
     companion object {
@@ -173,9 +176,30 @@ class ProductApiMockMvcTest(
         }
     }
 
+    /**
+     * 좋아요를 먼저 등록한 상품에만 눌러 두어 `latest`와 차례가 갈리게 한다. 정렬과 동률 자체는 저장소 테스트가 지키므로
+     * 여기서는 쿼리 문자열의 `likes_desc`가 기준까지 닿는지와, 항목마다 자기 `likeCount`가 실리는지만 본다.
+     */
+    @Test
+    fun `the likes_desc sort in the query string reaches the list order`() {
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val likedId = registerProduct(brand.id, name = "티셔츠")
+        val unlikedId = registerProduct(brand.id, name = "후드티")
+        likeRepository.save(Like(userId = 1L, productId = likedId))
+        entityManager.flushAndClear()
+
+        getProducts("sort" to "likes_desc").andExpect {
+            status { isOk() }
+            jsonPath("$.data.items[0].id") { value(likedId) }
+            jsonPath("$.data.items[0].likeCount") { value(1) }
+            jsonPath("$.data.items[1].id") { value(unlikedId) }
+            jsonPath("$.data.items[1].likeCount") { value(0) }
+        }
+    }
+
     @Test
     fun `listing with a sort no product sort answers to returns 400`() {
-        getProducts("sort" to "likes_desc").andExpect {
+        getProducts("sort" to "likes").andExpect {
             status { isBadRequest() }
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Bad Request") }

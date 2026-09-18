@@ -2,9 +2,7 @@ package com.loopers.domain.product
 
 /**
  * 상품 목록의 정렬 기준. [apiValue]가 API에서 쓰는 유일한 철자이고 상수 이름은 밖으로 나가지 않는다.
- * 어느 기준이든 동률은 id 내림차순으로 깬다. 어느 컬럼을 읽어 그렇게 만드는지는 저장소가 안다.
- *
- * 좋아요 수 정렬(`likes_desc`)은 좋아요가 생기는 티켓에서 더한다.
+ * 어느 기준이든 동률은 id 내림차순으로 깬다. 무엇을 읽어 그렇게 만드는지는 저장소가 안다.
  */
 enum class ProductSort(val apiValue: String) {
     /** 늦게 등록된 상품이 앞선다. 아무것도 고르지 않았을 때의 기준이다. */
@@ -12,6 +10,14 @@ enum class ProductSort(val apiValue: String) {
 
     /** 싼 상품이 앞선다. */
     PRICE_ASC("price_asc"),
+
+    /**
+     * 좋아요가 많은 상품이 앞선다. 좋아요가 하나도 없는 상품도 0으로 목록에 있다.
+     *
+     * 다른 둘과 달리 정렬 키가 상품의 컬럼이 아니라 관계를 세어 나오는 값이다. 그래도 도메인에서는
+     * 기준 하나일 뿐이고, 무엇을 세는지는 저장소가 안다(설계 5.29).
+     */
+    LIKES_DESC("likes_desc"),
     ;
 
     companion object {

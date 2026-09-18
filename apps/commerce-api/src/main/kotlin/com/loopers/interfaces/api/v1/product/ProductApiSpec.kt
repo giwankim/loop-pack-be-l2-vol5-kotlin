@@ -23,8 +23,9 @@ interface ProductApiSpec {
     @Operation(
         summary = "상품 목록 조회",
         description = "삭제되지 않은 상품을 한 조각씩 조회합니다. brandId를 주면 그 브랜드의 상품만 보며, " +
-            "없거나 삭제된 브랜드를 가리키면 빈 목록입니다. sort는 latest(기본)와 price_asc이고 어느 쪽이든 " +
-            "같은 값끼리는 나중에 등록된 상품이 앞섭니다. 모르는 sort는 400입니다. " +
+            "없거나 삭제된 브랜드를 가리키면 빈 목록입니다. sort는 latest(기본), price_asc, likes_desc이고 " +
+            "어느 쪽이든 같은 값끼리는 나중에 등록된 상품이 앞섭니다. likes_desc는 좋아요 수 내림차순이며, " +
+            "좋아요가 하나도 없는 상품도 0으로 목록의 끝에 있습니다. 모르는 sort는 400입니다. " +
             "page는 0 이상, size는 1 이상 100 이하이며, 주지 않으면 page=0, size=20입니다. " +
             "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다. 항목마다 likeCount를 함께 줍니다.",
     )
