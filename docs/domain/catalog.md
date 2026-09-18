@@ -164,16 +164,19 @@ DB 유일 제약: `(user_id, product_id)`.
 | --- | --- |
 | `LikeService.like(userId, productId)` | 요청자(사용자) 존재 확인 → 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
 | `LikeService.unlike(userId, productId)` | 요청자 존재 확인 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
-| `LikeService.getMyLikes(userId, page)` | 사용자의 관계를 최신순으로 → 삭제되지 않은 상품만 골라 상품 항목으로 조합. #10 |
+| `LikeService.findLikedProducts(userId, request)` | 요청자 존재 확인 → 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
 
 ### 저장 약속
 
 `LikeRepository`: `save`, `existsByUserIdAndProductId`, `findByUserIdAndProductId`, `delete`(행 삭제), `countByProductId`, `countByProductIds`(식별자마다 개수, 없는 상품은 0).
 
+좋아요 목록은 `LikeRepository`가 아니라 `ProductRepository.findAllLikedBy(userId, page, size)`가 돌려준다. 돌려주는 것이 상품이고, 삭제된 상품을 조회가 걸러야 조각의 크기와 `hasNext`가 남은 상품만 세기 때문이다(설계 5.29).
+
 ### 협력
 
 - 상품 상세·수정·재고 변경: `ProductService`가 상품을 읽은 뒤 `countByProductId`로 좋아요 수를 세어 `ProductInfo`에 싣는다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
 - 상품 목록: 조각의 상품 식별자 목록에 대해 `countByProductIds` 한 번으로 센다. 항목마다 세지 않는다(설계 5.28).
+- 내 좋아요 목록: `LikeService`가 `ProductRepository.findAllLikedBy`로 상품 조각을 받고, 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자
 
@@ -190,7 +193,7 @@ DB 유일 제약: `(user_id, product_id)`.
 ### 규칙
 
 - 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`LikeService`)이 본다(설계 5.27).
-- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`.
+- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 interfaces(`UserIdHeader.requireSelf`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없으면 견줄 요청자가 없으므로 401이 먼저다.
 - 브랜드·상품 조회는 요청자가 없어도 된다.
 
 ## 상품 목록 정렬 (ProductSort)
