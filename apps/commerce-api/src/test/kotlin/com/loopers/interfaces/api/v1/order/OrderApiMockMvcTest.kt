@@ -13,6 +13,7 @@ import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
+import com.loopers.utils.assertCheckConstraintRejects
 import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -22,7 +23,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -31,7 +31,6 @@ import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.UncategorizedSQLException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
@@ -450,16 +449,11 @@ class OrderApiMockMvcTest(
             "total_amount = 0",
             "status = 'CONFIRMED', paid_amount = 999, confirmed_at = now(6)",
             "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
-        ).forEach { update -> assertCheckConstraint("update orders set $update where id = ?", orderId) }
+        ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
         listOf("quantity = 0", "unit_price = 0", "line_amount = 0").forEach { update ->
-            assertCheckConstraint("update order_line_item set $update where order_id = ?", orderId)
+            jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
         assertThat(detail(orderId).json()).isEqualTo(original)
-    }
-
-    private fun assertCheckConstraint(sql: String, vararg args: Any) {
-        val failure = assertThrows<UncategorizedSQLException> { jdbc.update(sql, *args) }
-        assertThat(failure.sqlException!!.errorCode).isEqualTo(3819)
     }
 
     @Test

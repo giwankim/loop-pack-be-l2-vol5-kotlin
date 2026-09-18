@@ -7,6 +7,7 @@ import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.point.PointHistoryRepository
+import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.IdempotencyKey
 import com.loopers.domain.shared.PageSlice
@@ -50,9 +51,7 @@ class OrderService(
             return OrderInfo.from(order).copy(status = OrderStatus.DRAFT, paidAmount = null, confirmedAt = null)
         }
         val products = items.map { item ->
-            val product = productRepository.findById(item.productId)
-                ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
-            brandRepository.findById(product.brand.id) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+            val product = availableProduct(item.productId)
             OrderProduct(product.id, product.name, product.price, item.quantity)
         }
         return OrderInfo.from(orderRepository.save(Order(userId, creationKey, products)))
@@ -93,12 +92,10 @@ class OrderService(
         val order = orderRepository.findByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
         if (order.status == OrderStatus.CONFIRMED) return OrderInfo.from(order)
 
-        order.items.forEach { item ->
-            val product = productRepository.findById(item.productId)
-                ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
-            brandRepository.findById(product.brand.id) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
-            product.deductStock(item.quantity)
-        }
+        // 모든 품목의 판매 가능 여부를 먼저 본 뒤 차감한다. 삭제와 재고 부족이 함께면 품목 차례와 무관하게
+        // ORDER_PRODUCT_NOT_AVAILABLE이 앞선다(설계 15).
+        val products = order.items.map { item -> item to availableProduct(item.productId) }
+        products.forEach { (item, product) -> product.deductStock(item.quantity) }
         val account = pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
         val history = account.pay(order.totalAmount, order)
         order.confirm()
@@ -108,5 +105,13 @@ class OrderService(
 
     private fun checkUserExists(userId: Long) {
         if (!userRepository.existsById(userId)) throw CoreException(ErrorType.UNAUTHORIZED)
+    }
+
+    /** 논리 삭제된 상품·브랜드는 주문할 수도 확정할 수도 없다. 생성과 확정이 같은 판단을 쓴다. */
+    private fun availableProduct(productId: Long): Product {
+        val product = productRepository.findById(productId)
+            ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+        brandRepository.findById(product.brand.id) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+        return product
     }
 }

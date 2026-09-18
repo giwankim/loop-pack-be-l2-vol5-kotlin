@@ -14,6 +14,7 @@ import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.UserFixture
+import com.loopers.utils.assertCheckConstraintRejects
 import com.ninjasquad.springmockk.SpykBean
 import io.mockk.every
 import jakarta.persistence.EntityManager
@@ -22,7 +23,6 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -31,7 +31,6 @@ import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.jdbc.UncategorizedSQLException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
@@ -251,6 +250,33 @@ class OrderConfirmationApiMockMvcTest(
         assertPaymentCount(0)
     }
 
+    /**
+     * 품목은 상품 ID 오름차순이다. 판매 불가와 재고 부족을 함께 두고 둘의 차례를 바꿔 넣어, 응답하는 오류가
+     * 품목의 차례가 아니라 확정의 검사 차례로 정해지는지 본다(설계 15).
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = [true, false])
+    fun `an unavailable product outranks a shortage whichever item comes first`(shortageFirst: Boolean) {
+        charge(10_000).andExpect { status { isOk() } }
+        val first = product("첫 상품", stock = 10)
+        val second = product("둘째 상품", stock = 10)
+        val draft = create(listOf(first to 2, second to 2)).andExpect { status { isCreated() } }.json()
+        val orderId = draft["data"]["orderId"].longValue()
+        val (short, unavailable) = if (shortageFirst) first to second else second to first
+        productService.updateStock(short, ProductAdminStockUpdateRequest(1))
+        productService.delete(unavailable)
+
+        confirm(orderId).andExpect {
+            status { isNotFound() }
+            jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
+        }
+
+        assertThat(detail(orderId).json()).isEqualTo(draft)
+        balance(10_000)
+        assertStock(short, 1)
+        assertPaymentCount(0)
+    }
+
     @Test
     fun `requester and ownership checks precede both first confirmation and successful replay`() {
         charge(1_000).andExpect { status { isOk() } }
@@ -421,33 +447,27 @@ class OrderConfirmationApiMockMvcTest(
 
         assertThatThrownBy {
             jdbc.update(
-            "update point_history set order_id = ? where order_id = ?",
-            Long.MAX_VALUE,
-            orderIds[0],
-        )
-        }
-            .isInstanceOf(DataIntegrityViolationException::class.java)
+                "update point_history set order_id = ? where order_id = ?",
+                Long.MAX_VALUE,
+                orderIds[0],
+            )
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
         assertThatThrownBy { jdbc.update("update point_history set order_id = ? where order_id = ?", orderIds[0], orderIds[1]) }
             .isInstanceOf(DataIntegrityViolationException::class.java)
         listOf("charge_key = 'unexpected'", "order_id = null", "amount = 0", "balance_after = -1").forEach { update ->
-            assertHistoryCheck("update point_history set $update where order_id = ?", orderIds[0])
+            jdbc.assertCheckConstraintRejects("update point_history set $update where order_id = ?", orderIds[0])
         }
-        assertHistoryCheck("update point_history set charge_key = null where type = 'CHARGE'")
+        jdbc.assertCheckConstraintRejects("update point_history set charge_key = null where type = 'CHARGE'")
         // Use an existing order without a PAYMENT so the CHECK, rather than the unique key, is the rejecting constraint.
         val draftId = create(listOf(productId to 1), "create-3").andExpect { status { isCreated() } }
             .json()["data"]["orderId"].longValue()
-        assertHistoryCheck("update point_history set order_id = ? where type = 'CHARGE'", draftId)
+        jdbc.assertCheckConstraintRejects("update point_history set order_id = ? where type = 'CHARGE'", draftId)
         assertPaymentCount(2)
         charge(3_000).andExpect {
             status { isOk() }
             jsonPath("$.data.balance") { value(3_000) }
         }
         balance(1_000)
-    }
-
-    private fun assertHistoryCheck(sql: String, vararg args: Any) {
-        val failure = assertThrows<UncategorizedSQLException> { jdbc.update(sql, *args) }
-        assertThat(failure.sqlException!!.errorCode).isEqualTo(3819)
     }
 
     private fun balance(expected: Long) {

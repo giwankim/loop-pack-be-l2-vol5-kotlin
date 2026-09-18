@@ -26,13 +26,13 @@ private val log = KotlinLogging.logger {}
 class ApiControllerAdvice {
     @ExceptionHandler
     fun handleInsufficientStock(e: InsufficientStockException): ResponseEntity<ApiResponse<*>> {
-        log.warn(e) { "RuleViolationException : ${e.message}" }
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.INSUFFICIENT_STOCK)
     }
 
     @ExceptionHandler
     fun handleInsufficientPoints(e: InsufficientPointsException): ResponseEntity<ApiResponse<*>> {
-        log.warn(e) { "RuleViolationException : ${e.message}" }
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.INSUFFICIENT_POINTS)
     }
 
@@ -44,7 +44,7 @@ class ApiControllerAdvice {
 
     @ExceptionHandler
     fun handleRuleViolation(e: RuleViolationException): ResponseEntity<ApiResponse<*>> {
-        log.warn(e) { "RuleViolationException : ${e.message}" }
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = e.message)
     }
 

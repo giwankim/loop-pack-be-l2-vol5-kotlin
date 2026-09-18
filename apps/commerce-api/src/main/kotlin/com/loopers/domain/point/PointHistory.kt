@@ -84,9 +84,6 @@ class PointHistory private constructor(
     @OnDelete(action = OnDeleteAction.RESTRICT)
     val order: Order? = order
 
-    val orderId: Long?
-        get() = order?.id
-
     companion object {
         /** 성공한 충전의 기록. [PointAccount.charge]만 부른다. */
         internal fun charge(account: PointAccount, amount: Money, balanceAfter: Money, chargeKey: String): PointHistory =

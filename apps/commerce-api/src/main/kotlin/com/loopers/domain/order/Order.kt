@@ -87,9 +87,15 @@ class Order(
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
 
-    /** 저장된 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003). */
+    /**
+     * 저장된 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003).
+     * 이미 확정된 주문은 거절해 결제액·확정 시각을 다시 쓰지 않는다. 확정 결과의 재생은 application이 먼저 처리하므로
+     * 정상 흐름은 이 거절에 닿지 않는다.
+     */
     fun confirm() {
-        if (status == OrderStatus.CONFIRMED) return
+        if (status == OrderStatus.CONFIRMED) {
+            throw InvalidOrderException("이미 확정된 주문입니다.")
+        }
         paidAmount = totalAmount
         confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
         status = OrderStatus.CONFIRMED
