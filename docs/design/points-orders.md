@@ -551,7 +551,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 - `Order`가 `OrderLineItem`을 소유한다. 품목의 상품 식별자·이름·단가·수량·금액과 주문 합계는 생성 후 바뀌지 않는다. 상품 객체 연관은 없고, 현재 상품을 읽지 않아도 상세를 구성한다. 카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다.
 - nullable `paidAmount`·`confirmedAt`과 `DRAFT`·`CONFIRMED` 저장 형태를 함께 둔다. 상태와 결제 필드의 일치, 양수 금액·수량은 MySQL CHECK로도 확인한다. 이 티켓의 공개 API에는 확정 동작이 없다.
-- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 원본 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사하고(5.18), 합산 넘침은 정규화 과정에서 거절한다. 주문 전용 advice가 본문·검증·금액 오류를 `INVALID_POINT_ORDER_REQUEST`로 바꾼다.
+- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 원본 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사하고(5.18), 합산 넘침은 정규화 과정에서 거절한다. 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
 - `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
 - `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
@@ -576,4 +576,34 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - 검사 순서가 한 군데 바뀌었다. 키 형식을 Controller가 보게 되어, 잘못된 키와 없는 사용자를 함께 보낸 요청은 401이 아니라 400 `INVALID_IDEMPOTENCY_KEY`다. 헤더의 형식은 HTTP만 아는 사실이라 요청자 확인보다 앞선다는 12.4의 자리 그대로다. 본문이 요청자 확인보다 앞서는 것(12.3 끝)과 같은 까닭이며, 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 여전히 없다. 테스트는 한 가지 잘못만 보낸다.
 - Service 입구의 `@Pattern`은 남겼다. Controller를 거치지 않는 호출도 같은 규칙을 받아야 한다(카탈로그 설계 5.25). 충전이 `PointChargeRequest`의 필드 제약으로 하는 일을, 생성 키는 Request에 실리지 않으므로 메서드 파라미터 제약으로 한다.
 
-아직 옮기지 않은 것이 둘 있다. `OrderControllerAdvice`는 `75aa245`의 `ApiControllerAdvice`가 입력 오류를 모두 범용 `Bad Request`로만 답해 새 code를 실을 자리가 없어 둔 것이고, #12가 `handleHttpMessageNotReadable`에 근본 원인 `CoreException`을 푸는 자리를 만들어 본문 경로는 공용 advice로도 된다. 다만 advice는 `MethodArgumentNotValidException`·`ConstraintViolationException`·`RuleViolationException`도 받아 `RuleViolationException`의 메시지를 범용 400으로 주는 12.4와 다른 답을 하므로, 주문의 오류 계약을 하나로 볼지 정한 뒤 옮긴다. `OrderCreateRequestDeserializer`도 `StrictLongDeserializer`와 하는 일이 겹치지만, `items`가 배열인지처럼 컨테이너의 모양을 보는 일은 필드 단위 역직렬화기로 적을 수 없어 남겼다(12.3 끝). 둘 다 응답 code를 바꾸는 일이라 테스트의 기대와 함께 정한다.
+`OrderCreateRequestDeserializer`는 `StrictLongDeserializer`와 하는 일이 겹치지만 남겼다. `items`가 배열인지처럼 컨테이너의 모양을 보는 일은 필드 단위 역직렬화기로 적을 수 없다(12.3 끝). 합칠 때는 `Int`용 역직렬화기를 `StrictLongDeserializer` 옆에 두고 HTTP 입력 DTO를 하나 더 만드는 12.3의 모양이 된다.
+
+### 13.2 advice를 하나로 모음
+
+**선택: `@RestControllerAdvice`는 `ApiControllerAdvice` 하나다.** `OrderControllerAdvice`를 지웠고, 주문의 입력 오류는 다른 엔드포인트와 같은 자리에서 같은 규칙으로 답한다.
+
+`OrderControllerAdvice`가 있었던 까닭은 `75aa245`의 `ApiControllerAdvice`가 입력 오류를 모두 범용 `Bad Request`로만 답해 새 code를 실을 자리가 없었기 때문이다. 컨트롤러 한 개에만 닿는 advice(`assignableTypes`, `HIGHEST_PRECEDENCE`)가 카탈로그의 오류 계약을 건드리지 않고 새 code를 줄 수 있는 유일한 길이었다. #12가 `handleHttpMessageNotReadable`에 가장 안쪽 원인이 `CoreException`이면 그 `ErrorType`으로 답하는 자리를 만들어 그 길이 필요 없어졌다.
+
+거절을 실어 보내는 방법은 이렇다.
+
+```kotlin
+throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_POINT_ORDER_REQUEST))
+```
+
+`HttpMessageNotReadableException`은 `NestedRuntimeException`이라 `rootCause`가 원인 사슬의 가장 안쪽까지 걸어간다. 그래서 `HttpMessageNotReadable → JsonMapping → CoreException`에서 `CoreException`이 잡힌다. `StrictLongDeserializer`처럼 맨 `CoreException`을 던지지 않고 `JsonMappingException`을 직접 만드는 까닭은, 이 역직렬화기가 타입 전체를 맡아 Jackson이 감싸 줄 bean 경계가 없기 때문이다. 맨 `RuntimeException`은 `JsonProcessingException`이 아니라 Spring의 본문 변환기를 그대로 빠져나가 500이 된다.
+
+오류 계약은 12.4와 같아진다. 같은 종류의 실패에 충전과 주문이 같은 답을 한다.
+
+| 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
+| --- | --- | --- | --- |
+| 본문을 읽을 수 없음(빈 본문, `null` 리터럴, 깨진 JSON) | 400 | 범용 `Bad Request` | Spring·Jackson. 역직렬화기가 판단할 기회가 없다 |
+| 토큰의 종류·컨테이너의 모양(`items`가 배열이 아님, 정수 표기가 아닌 수량·상품 ID) | 400 | `INVALID_POINT_ORDER_REQUEST` | `OrderCreateRequestDeserializer` → 공용 `handleHttpMessageNotReadable` |
+| 원본 품목 개수, 양수 상품 ID·수량 | 400 | 범용 `Bad Request` + Request 제약의 메시지 | `OrderCreateRequest`의 `@Size`·`@Positive`, Controller의 `@Valid` |
+| 상품별 합산 수량의 `Int` 넘침 | 400 | `INVALID_POINT_ORDER_REQUEST` | `OrderCreateRequest.normalizedItems`의 `CoreException` |
+| 품목·주문 금액의 `Long` 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `Money` → 공용 `handleRuleViolation` |
+
+- 업무 규칙은 범용 400에 규칙의 메시지를 실어 답한다. 충전액 0과 충전 후 넘침이 가는 길과 같다(12.4). 12.4가 "금액 범위 오류"를 새 code에서 떼어 낸 판단을 주문도 따르는 것이다. `INVALID_POINT_ORDER_REQUEST`는 JSON의 모양에만 남는다.
+- 그래서 `OrderCreateRequest`의 `@Size`·`@Positive`에 메시지를 적었다. 전에는 주문 전용 advice가 메시지를 버려 비어 있었고, 저장소의 다른 Request는 모두 메시지를 적는다(카탈로그 설계 5.18). 메시지가 없으면 Hibernate Validator의 locale 기본 문장이 그대로 내려간다.
+- 로그도 돌아왔다. `OrderControllerAdvice.invalidRequest()`는 예외를 받지 않고 버려 주문의 거절이 아무 줄도 남기지 않았다. 공용 handler는 모두 `log.warn`한다.
+- `ConstraintViolationException` handler는 옮기지 않고 지웠다. 본문 제약은 Controller의 `@Valid`가, 키는 `IdempotencyKeyHeader`가 먼저 보므로 HTTP로는 닿지 않는다. Controller를 거치지 않는 호출은 공용 handler가 받는다.
+- 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableBodies`), 역직렬화기가 거르는 33개(`malformedBodies`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. 검사하는 입력은 그대로이고 나누는 기준만 응답 계약에 맞췄다.

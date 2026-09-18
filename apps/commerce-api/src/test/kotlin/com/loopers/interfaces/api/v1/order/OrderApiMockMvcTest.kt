@@ -50,16 +50,21 @@ class OrderApiMockMvcTest(
     private val entityManagerFactory: EntityManagerFactory,
 ) {
     companion object {
+        /** 본문을 읽을 수조차 없는 것. 역직렬화기가 판단할 기회가 없어 Spring·Jackson의 범용 400이다(설계 13.1). */
+        @JvmStatic
+        fun unreadableBodies(): List<String> = listOf("", "null", "{")
+
+        /** 역직렬화기가 토큰과 컨테이너의 모양을 보고 거절하는 것. 양수 조건은 Request 제약이라 여기 없다. */
         @JvmStatic
         fun malformedBodies(): List<String> = listOf(
-            "", "null", "[]", "true", "123", "\"text\"", "{", "{}", "{\"items\":null}",
+            "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}",
             "{\"items\":{\"productId\":PRODUCT_ID,\"quantity\":1}}", "{\"items\":\"text\"}",
             "{\"items\":true}", "{\"items\":1}", "{\"items\":[null]}", "{\"items\":[1]}",
             "{\"items\":[[]]}", "{\"items\":[{}]}", "{\"items\":[{\"productId\":PRODUCT_ID}]}",
             "{\"items\":[{\"quantity\":1}]}",
-        ) + listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "0", "-1", "9223372036854775808")
+        ) + listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "9223372036854775808")
             .map { """{"items":[{"productId":$it,"quantity":1}]}""" } +
-            listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "0", "-1", "2147483648", "9223372036854775808")
+            listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "2147483648", "9223372036854775808")
                 .map { """{"items":[{"productId":PRODUCT_ID,"quantity":$it}]}""" }
     }
 
@@ -153,15 +158,31 @@ class OrderApiMockMvcTest(
         create(body(id)).andExpect { status { isCreated() } }
     }
 
+    @ParameterizedTest
+    @MethodSource("unreadableBodies")
+    fun `unreadable bodies are rejected without consuming a key`(body: String) {
+        val id = product()
+        create(body).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+        }
+        assertNoOrders()
+        create(body(id)).andExpect { status { isCreated() } }
+    }
+
     @Test
     fun `raw items count is checked before merging and one hundred entries are allowed`() {
         val id = product()
-        create("""{"items":[]}""").andExpect { status { isBadRequest() } }
-        val entries = List(101) { """{"productId":$id,"quantity":1}""" }
-        create("""{"items":[${entries.joinToString()}]}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+        listOf(0, 101).forEach { count ->
+            val raw = List(count) { """{"productId":$id,"quantity":1}""" }
+            create("""{"items":[${raw.joinToString()}]}""").andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value("주문 품목은 1개 이상 100개 이하여야 합니다.") }
+            }
+            assertNoOrders()
         }
+        val entries = List(101) { """{"productId":$id,"quantity":1}""" }
         assertNoOrders()
         create("""{"items":[${entries.take(100).joinToString()}]}""").andExpect {
             status { isCreated() }
@@ -173,14 +194,29 @@ class OrderApiMockMvcTest(
     @Test
     fun `invalid raw quantities cannot be hidden by merging and quantity overflow saves nothing`() {
         val id = product()
-        listOf("0,1", "-1,2", "2147483647,1").forEach { quantities ->
-            val entries = quantities.split(',').joinToString { """{"productId":$id,"quantity":$it}""" }
-            create("""{"items":[$entries]}""").andExpect {
+        // 원본 값의 양수 조건은 Request 제약이라 범용 400 + 규칙 메시지다(설계 12.4, 13.1).
+        listOf("0,1", "-1,2").forEach { quantities ->
+            create(items(id, quantities)).andExpect {
                 status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value("수량은 1개 이상이어야 합니다.") }
             }
             assertNoOrders()
         }
+        listOf(0, -1).forEach { productId ->
+            create("""{"items":[{"productId":$productId,"quantity":1}]}""").andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value("상품 ID는 1 이상이어야 합니다.") }
+            }
+            assertNoOrders()
+        }
+        // 합산 넘침은 정규화가 거르므로 주문 전용 code가 남는다.
+        create(items(id, "2147483647,1")).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+        }
+        assertNoOrders()
         create(body(id, Int.MAX_VALUE)).andExpect {
             status { isCreated() }
             jsonPath("$.data.items[0].quantity") { value(Int.MAX_VALUE) }
@@ -194,7 +230,8 @@ class OrderApiMockMvcTest(
         val entries = products.joinToString { """{"productId":$it,"quantity":2147483647}""" }
         create("""{"items":[$entries]}""").andExpect {
             status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
         }
         assertNoOrders()
         create(body(products.first())).andExpect { status { isCreated() } }
@@ -307,7 +344,8 @@ class OrderApiMockMvcTest(
         jdbc.update("update product set price = ? where id = ?", Long.MAX_VALUE, id)
         create(body(id, 2)).andExpect {
             status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
         }
         assertNoOrders()
         jdbc.update("update product set price = 1000 where id = ?", id)
@@ -454,6 +492,9 @@ class OrderApiMockMvcTest(
     }
 
     private fun body(id: Long, quantity: Int = 1): String = """{"items":[{"productId":$id,"quantity":$quantity}]}"""
+
+    private fun items(id: Long, quantities: String): String = quantities.split(',')
+        .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
 
     private fun assertNoOrders() {
         assertThat(jdbc.queryForObject("select count(*) from orders", Long::class.java)!!).isZero()

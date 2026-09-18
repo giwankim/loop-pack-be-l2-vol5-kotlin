@@ -77,7 +77,8 @@ class ApiControllerAdvice {
 
     /**
      * 본문을 읽다 난 오류. 근본 원인이 [CoreException]이면 그 [ErrorType]으로 답한다. 포인트·주문의 HTTP 입력 DTO가
-     * JSON 토큰의 종류를 가리며 던진 거절이 Jackson과 Spring에 감싸여 여기까지 오기 때문이다([StrictLongDeserializer]).
+     * JSON 토큰의 종류를 가리며 던진 거절이 Jackson과 Spring에 감싸여 여기까지 오기 때문이다
+     * ([StrictLongDeserializer], [com.loopers.interfaces.api.v1.order.OrderCreateRequestDeserializer]).
      */
     @ExceptionHandler
     fun handleHttpMessageNotReadable(e: HttpMessageNotReadableException): ResponseEntity<ApiResponse<*>> {
