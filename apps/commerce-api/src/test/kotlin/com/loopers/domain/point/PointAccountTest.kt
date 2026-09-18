@@ -1,5 +1,7 @@
 package com.loopers.domain.point
 
+import com.loopers.domain.order.Order
+import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
@@ -10,6 +12,44 @@ import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 
 class PointAccountTest {
+    @Test
+    fun `paying the entire balance returns a positive payment history with a zero resulting balance`() {
+        val account = PointAccount(User())
+        account.charge(Money(3_000), chargeKey = "charge-001")
+        val order = order()
+
+        val history = account.pay(Money(3_000), order)
+
+        assertAll(
+            { assertThat(account.balance).isEqualTo(Money.ZERO) },
+            { assertThat(history.type.name).isEqualTo("PAYMENT") },
+            { assertThat(history.amount).isEqualTo(Money(3_000)) },
+            { assertThat(history.balanceAfter).isEqualTo(Money.ZERO) },
+            { assertThat(history.chargeKey).isNull() },
+            { assertThat(history.order).isSameAs(order) },
+        )
+    }
+
+    @Test
+    fun `paying zero is rejected without changing the balance`() {
+        val account = PointAccount(User())
+        account.charge(Money(3_000), chargeKey = "charge-001")
+
+        assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO, order()) }
+
+        assertThat(account.balance).isEqualTo(Money(3_000))
+    }
+
+    @Test
+    fun `paying 4000 from a 3000 balance rejects insufficient points and preserves the balance`() {
+        val account = PointAccount(User())
+        account.charge(Money(3_000), chargeKey = "charge-001")
+
+        assertThrows<InsufficientPointsException> { account.pay(Money(4_000), order()) }
+
+        assertThat(account.balance).isEqualTo(Money(3_000))
+    }
+
     @Test
     fun `a new account starts with a zero balance`() {
         val account = PointAccount(User())
@@ -76,4 +116,10 @@ class PointAccountTest {
 
         assertThat(account.balance).isEqualTo(Money(1_000_000_001))
     }
+
+    private fun order(): Order = Order(
+        userId = 1,
+        creationKey = "create-1",
+        products = listOf(OrderProduct(1, "상품", Money(3_000), 1)),
+    )
 }

@@ -86,4 +86,12 @@ class Order(
     /** MySQL datetime(6)와 정밀도를 맞춰 첫 응답도 저장 후 재생과 같다. */
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
+
+    /** 저장된 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003). */
+    fun confirm() {
+        if (status == OrderStatus.CONFIRMED) return
+        paidAmount = totalAmount
+        confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        status = OrderStatus.CONFIRMED
+    }
 }

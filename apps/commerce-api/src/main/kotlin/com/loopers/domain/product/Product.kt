@@ -70,6 +70,11 @@ class Product(
         stock = Stock(quantity)
     }
 
+    /** 구매 수량만큼 재고를 차감한다. 수량이 잘못되거나 부족하면 기존 재고를 유지한다. */
+    fun deductStock(quantity: Int) {
+        stock = stock.deduct(quantity)
+    }
+
     /** 재고가 0이면 품절이다. */
     fun isSoldOut(): Boolean = stock.isEmpty()
 

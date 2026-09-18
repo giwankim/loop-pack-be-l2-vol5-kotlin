@@ -5,6 +5,8 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.point.PointAccountRepository
+import com.loopers.domain.point.PointHistoryRepository
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.IdempotencyKey
 import com.loopers.domain.shared.PageSlice
@@ -24,6 +26,8 @@ class OrderService(
     private val userRepository: UserRepository,
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
+    private val pointAccountRepository: PointAccountRepository,
+    private val pointHistoryRepository: PointHistoryRepository,
 ) {
     /**
      * 생성 키의 형식은 [IdempotencyKey] 하나다. HTTP에서는 [com.loopers.interfaces.api.IdempotencyKeyHeader]가 먼저 거르고,
@@ -76,6 +80,30 @@ class OrderService(
         checkUserExists(userId)
         return orderRepository.findAllByUserId(userId = userId, page = request.page, size = request.size)
             .map(OrderInfo::from)
+    }
+
+    /**
+     * 재고·잔액·PAYMENT 이력·확정 상태를 함께 커밋한다. 실패는 기존 DRAFT를 남긴다(ADR 0003).
+     * 이미 확정된 본인 주문은 현재 카탈로그·잔액을 읽기 전에 저장된 결과를 돌려준다.
+     * 단일 요청의 원자성과 순차 재요청만 보장하며 동시 요청의 경합은 이번 범위 밖이다.
+     */
+    @Transactional
+    fun confirm(userId: Long, orderId: Long): OrderInfo {
+        checkUserExists(userId)
+        val order = orderRepository.findByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+        if (order.status == OrderStatus.CONFIRMED) return OrderInfo.from(order)
+
+        order.items.forEach { item ->
+            val product = productRepository.findById(item.productId)
+                ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+            brandRepository.findById(product.brand.id) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+            product.deductStock(item.quantity)
+        }
+        val account = pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
+        val history = account.pay(order.totalAmount, order)
+        order.confirm()
+        pointHistoryRepository.save(history)
+        return OrderInfo.from(order)
     }
 
     private fun checkUserExists(userId: Long) {

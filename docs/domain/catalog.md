@@ -71,10 +71,11 @@
 | `Product(brand, name, price, stock)` | 이름의 앞뒤 공백을 떼고 공백·길이 상한과 가격 범위를 검사하고 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
 | `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
+| `deductStock(quantity)` | 양수 구매 수량을 차감한다. 거절하면 기존 재고를 유지한다 | `InvalidStockException`, `InsufficientStockException` |
 | `isSoldOut()` | 재고가 0이면 참. `stock.isEmpty()`에 맡긴다 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-`decrease`는 이 조각에 없다. 주문 확정이 들어올 때 `Stock`에 더한다.
+주문 확정에서는 `OrderService.confirm`이 `deductStock`을 다른 재고·포인트·주문 변경과 같은 트랜잭션에서 부른다(ADR 0003).
 
 ### 협력
 
@@ -101,6 +102,7 @@
 | --- | --- | --- |
 | `Stock(quantity)` | 수량을 검사하고 만든다 | `InvalidStockException` |
 | `isEmpty()` | 수량이 0이면 참 | 없음 |
+| `deduct(quantity)` | 양수 수량을 차감한 새 `Stock`을 반환한다 | 0 이하이면 `InvalidStockException`, 부족하면 `InsufficientStockException` |
 
 TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Product.updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다.
 

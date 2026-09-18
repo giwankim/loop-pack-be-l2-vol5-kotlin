@@ -3,6 +3,8 @@ package com.loopers.interfaces.api
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.exc.InvalidFormatException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
+import com.loopers.domain.point.InsufficientPointsException
+import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -22,6 +24,18 @@ private val log = KotlinLogging.logger {}
 
 @RestControllerAdvice
 class ApiControllerAdvice {
+    @ExceptionHandler
+    fun handleInsufficientStock(e: InsufficientStockException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "RuleViolationException : ${e.message}" }
+        return failureResponse(errorType = ErrorType.INSUFFICIENT_STOCK)
+    }
+
+    @ExceptionHandler
+    fun handleInsufficientPoints(e: InsufficientPointsException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "RuleViolationException : ${e.message}" }
+        return failureResponse(errorType = ErrorType.INSUFFICIENT_POINTS)
+    }
+
     @ExceptionHandler
     fun handleCoreException(e: CoreException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "CoreException : ${e.message}" }

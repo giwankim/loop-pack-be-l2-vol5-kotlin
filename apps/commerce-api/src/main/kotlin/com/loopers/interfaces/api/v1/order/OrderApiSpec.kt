@@ -11,7 +11,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn
 import io.swagger.v3.oas.annotations.tags.Tag
 
-@Tag(name = "Order V1 API", description = "사용자의 주문 생성·상세 조회 API")
+@Tag(name = "Order V1 API", description = "사용자의 주문 생성·확정·상세·목록 조회 API")
 interface OrderApiSpec {
     @Operation(
         summary = "확정 전 주문 생성",
@@ -46,6 +46,18 @@ interface OrderApiSpec {
 
     @Operation(summary = "내 주문 상세", description = "저장된 주문 스냅샷을 조회합니다. 없거나 다른 사용자의 주문은 모두 404입니다.")
     fun find(
+        @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
+        userId: Long?,
+        orderId: Long,
+    ): ApiResponse<OrderResponse>
+
+    @Operation(
+        summary = "내 주문 확정",
+        description = "생성 당시 금액으로 재고와 포인트를 함께 차감합니다. 부족하면 409이며 같은 주문으로 재시도할 수 있습니다. " +
+            "이미 확정된 주문은 최초 성공 결과를 반환합니다. 별도 Idempotency-Key는 필요하지 않습니다. " +
+            "없거나 다른 사용자의 주문은 404입니다.",
+    )
+    fun confirm(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
         userId: Long?,
         orderId: Long,

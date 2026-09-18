@@ -27,6 +27,8 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
      */
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),
     ORDER_PRODUCT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "ORDER_PRODUCT_NOT_AVAILABLE", "주문할 수 없는 상품입니다."),
+    INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "재고가 부족합니다."),
+    INSUFFICIENT_POINTS(HttpStatus.CONFLICT, "INSUFFICIENT_POINTS", "포인트가 부족합니다."),
     INVALID_IDEMPOTENCY_KEY(
         HttpStatus.BAD_REQUEST,
         "INVALID_IDEMPOTENCY_KEY",

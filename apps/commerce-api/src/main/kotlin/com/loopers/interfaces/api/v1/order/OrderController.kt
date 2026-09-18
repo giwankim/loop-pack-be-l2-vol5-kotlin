@@ -51,4 +51,11 @@ class OrderController(private val orderService: OrderService) : OrderApiSpec {
         @PathVariable orderId: Long,
     ): ApiResponse<OrderResponse> = orderService.find(UserIdHeader.require(userId), orderId)
         .let { ApiResponse.success(OrderResponse.from(it)) }
+
+    @PostMapping("/{orderId}/confirm")
+    override fun confirm(
+        @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
+        @PathVariable orderId: Long,
+    ): ApiResponse<OrderResponse> = orderService.confirm(UserIdHeader.require(userId), orderId)
+        .let { ApiResponse.success(OrderResponse.from(it)) }
 }

@@ -1,6 +1,7 @@
 package com.loopers.domain.point
 
 import com.loopers.domain.BaseEntity
+import com.loopers.domain.order.Order
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import jakarta.persistence.AttributeOverride
@@ -57,5 +58,13 @@ class PointAccount(
         }
         balance = balance + amount
         return PointHistory.charge(account = this, amount = amount, balanceAfter = balance, chargeKey = chargeKey)
+    }
+
+    /** 결제하고 직후 잔액을 담은 PAYMENT 이력을 돌려준다. 주문과 재고의 변경·저장은 application이 조율한다. */
+    fun pay(amount: Money, order: Order): PointHistory {
+        if (amount <= Money.ZERO) throw InvalidPaymentAmountException()
+        if (amount > balance) throw InsufficientPointsException()
+        balance = balance - amount
+        return PointHistory.payment(account = this, amount = amount, balanceAfter = balance, order = order)
     }
 }

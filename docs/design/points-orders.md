@@ -528,7 +528,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 12.6 이력의 범위
 
-**선택: `PointHistoryType`은 `CHARGE`뿐이고 `charge_key`는 `not null`이다.** 결제 이력(`PAYMENT`), `order_id`, 그리고 그때 필요한 `charge_key`의 nullable 전환은 주문 확정 조각(#14)이 한다.
+**#12 시점의 선택: `PointHistoryType`은 `CHARGE`뿐이고 `charge_key`는 `not null`이다.** #14에서 결제 이력(`PAYMENT`), `order_id`, `charge_key`의 nullable 전환을 추가했다(15절).
 
 - 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 조각에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
 - `PointHistory`의 생성자는 private이고 `PointAccount.charge`가 `PointHistory.charge` 팩토리로 만든다. "이력의 잔액은 그 충전 직후의 잔액"을 계정이 지키게 하려는 것이다. 계정은 이력 컬렉션을 갖지 않는다(7절).
@@ -638,7 +638,21 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 품목의 차례를 보는 곳에서는 품목을 상품 ID의 거꾸로 넣는다. 넣은 차례가 이미 상품 ID 차례이면 응답이 그대로여도 차례를 확인한 것이 아니다.
 - 만든 시각은 `Order`가 스스로 정하므로 동률을 요청으로 만들 수 없다. 저장한 뒤 SQL로 시각을 겹쳐 놓고 남은 차례를 식별자가 가르는지 본다. 저장소와 HTTP 두 자리에서 모두 확인한다.
-- `CONFIRMED` 항목은 13과 같이 DB fixture로 상태 형태를 만든다. 확정 흐름의 검증은 후속 티켓의 책임이고, 운영 코드에 fixture용 API를 더하지 않는다.
+- `CONFIRMED` 항목은 13과 같이 DB fixture로 상태 형태를 만든다. 확정 흐름은 #14의 `OrderConfirmationApiMockMvcTest`가 검증하며, 운영 코드에 fixture용 API를 더하지 않는다.
 - 목록 항목을 필드마다 다시 세지 않고 상세의 JSON과 그대로 견준다. 두 응답이 말없이 어긋날 수 없게 하려는 것이며, 같은 테스트가 상품 이름 변경·삭제 뒤에도 스냅샷이 그대로인지 함께 본다(ADR 0002).
 
 동시 요청, 커서 페이지네이션, 상태·기간 필터, 관리자 목록은 이 구현에 포함하지 않는다.
+
+## 15. 주문 확정 구현 — #14
+
+`POST /api/v1/orders/{orderId}/confirm`은 요청자·소유권을 확인하고 저장된 CONFIRMED 결과를 200으로 반환한다. 별도 키나 본문이 필요하지 않다. 이미 확정된 주문이면 현재 상품·브랜드·재고·잔액을 읽기 전에 결과를 재생한다.
+
+첫 확정의 트랜잭션 경계는 `OrderService.confirm`이다. 상품별 합산 수량으로 `Product.deductStock`을 부르고, `PointAccount.pay`가 저장된 주문 총액을 차감한 뒤 PAYMENT 이력을 만든다. `Order.confirm`이 결제액과 마이크로초 정밀도의 확정 시각을 정한다. 이력 저장과 관리 중인 엔티티의 변경 감지를 같은 트랜잭션에 둔다. `PointService`를 호출하거나 다른 트랜잭션에서 결제하지 않는다. 실패는 주문과 모든 재고·잔액·이력을 되돌려 같은 DRAFT로 재시도할 수 있게 한다.
+
+- 부족은 각각 `InsufficientStockException`·`InsufficientPointsException`으로 표현하고 공통 advice에서 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`/409로 바꾼다. 다른 도메인 규칙의 기존 400 매핑은 유지한다.
+- `PointHistory.order`는 읽기용 LAZY 연관이다. `uk_point_history_order_id`가 주문당 PAYMENT 하나를 보장하고 Hibernate가 `fk_point_history_order`를 만든다. 처음에는 스칼라 참조와 import SQL을 사용했지만, 스키마 재생성 테스트에서 Hibernate가 FK를 모른 채 `orders`를 먼저 삭제해 실패했다. 연관 매핑으로 FK를 테이블보다 먼저 제거하게 하며 별도 스키마 삭제 훅은 두지 않는다. CHARGE는 키만, PAYMENT는 주문 참조만 가지며 양수 금액과 0 이상 직후 잔액을 DB CHECK로도 지킨다. CHARGE의 키 비교·재생은 그대로다.
+- 생성·확정 응답의 시각 정밀도를 MySQL `datetime(6)`에 맞춘다. 확정 후에도 생성 재요청은 최초 DRAFT/201이며 충전 재요청은 충전 당시 잔액이다. GET은 현재 상태를 읽는다.
+- 주 검증 경계는 `OrderConfirmationApiMockMvcTest`의 실제 HTTP 요청·MySQL이다. 테스트 전체를 트랜잭션으로 감싸지 않는다. 늦은 실패는 기존 `PointHistoryRepository.save` 경계에서 실제 저장과 flush 뒤 주입하고, 종료 후 새 트랜잭션으로 재조회한다. 공개 테스트 API는 추가하지 않는다.
+- `PointAccountTest`의 3,000원 잔액에서 4,000원 결제 거절은 실패하는 테스트를 먼저 실행한 뒤 최소 구현을 추가했다. 기존 Product 테스트는 양수 차감·부족·마지막 재고의 규칙을 보완한다.
+
+동시성 제어, 예약·만료, 취소·환불, 외부 결제, migration 도구는 추가하지 않는다. 단일 요청의 원자성과 순차 재요청만 이번 검증의 대상이다.

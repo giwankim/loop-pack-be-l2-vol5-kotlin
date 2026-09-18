@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 표기와 예외 규칙은 [카탈로그 도메인](./catalog.md)과 같다. 구조와 API, 결정은 [`docs/design/points-orders.md`](../design/points-orders.md)에 있다.
 
-2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13)까지 구현되었다. 주문 확정과 결제 이력, 목록·관리자 조회는 #14–#16에서 더한다.
+2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13), 원자적 주문 확정과 결제 이력(#14), 내 주문 목록 조회(#15)까지 구현되었다. 관리자 조회는 #16에서 더한다.
 
 ## 포인트 계정 (PointAccount)
 
@@ -31,6 +31,7 @@
 | --- | --- | --- |
 | `PointAccount(user)` | 그 사용자의 0원 계정을 만든다 | 없음 |
 | `charge(amount, chargeKey)` | 잔액에 `amount`를 더하고 그 충전의 CHARGE `PointHistory`를 돌려준다. 저장은 부르는 쪽이 한다 | `InvalidChargeAmountException`, `InvalidMoneyException` |
+| `pay(amount, order)` | 양의 결제액을 차감하고 주문 참조·직후 잔액을 담은 PAYMENT `PointHistory`를 돌려준다. 주문은 변경하지 않는다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
 
 ### 저장 약속
 
@@ -43,7 +44,7 @@
 
 ## 포인트 이력 (PointHistory)
 
-`BaseEntity`를 상속한다. 남긴 뒤 바꾸지 않는 기록이며 별도 애그리거트가 아니다. `PointAccount.charge`만 만든다(설계 12.6).
+`BaseEntity`를 상속한다. 남긴 뒤 바꾸지 않는 기록이며 별도 애그리거트가 아니다. `PointAccount.charge`·`pay`가 만든다(설계 12.6, 15).
 
 ### 속성
 
@@ -51,10 +52,12 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
 | `account` | `PointAccount` | 잔액이 바뀐 계정. `@ManyToOne(fetch = LAZY)`, 읽기용. DB 외래 키의 자리 |
-| `type` | `PointHistoryType` | 성공의 종류. 지금은 `CHARGE`뿐 |
+| `type` | `PointHistoryType` | 성공의 종류. `CHARGE` 또는 `PAYMENT` |
 | `amount` | `Money` | 잔액을 바꾼 금액. 양수 |
 | `balanceAfter` | `Money` | 이 기록 직후의 잔액. 뒤에 잔액이 바뀌어도 그대로다 |
-| `chargeKey` | `String` | 충전 키. 계정 안에서 유일, 대소문자 구분 |
+| `chargeKey` | `String?` | CHARGE의 충전 키. 계정 안에서 유일, 대소문자 구분. PAYMENT에는 없다 |
+| `order` | `Order?` | PAYMENT의 주문. 읽기용 LAZY 연관이며 주문당 유일하고 물리 FK를 가진다. CHARGE에는 없다 |
+| `orderId` | `Long?` | 주문 참조에서 읽은 식별자. 프록시가 들고 있어 주문을 조회하지 않는다 |
 
 테이블 `point_history`. `(point_account_id, charge_key)` 유일(`uk_point_history_point_account_id_charge_key`), `point_account`로 외래 키(`fk_point_history_point_account`). `charge_key`는 `varchar(128) character set utf8mb4 collate utf8mb4_bin`이라 조회와 유일 제약이 대소문자를 구분한다(설계 12.2).
 
@@ -62,7 +65,8 @@
 
 - 성공해서 잔액이 바뀐 기록만 남긴다. 실패한 시도와 성공의 재생은 기록을 늘리지 않는다(설계 5.4).
 - 같은 계정에 같은 충전 키의 기록은 하나다. `Charge-A`와 `charge-a`는 다른 키다.
-- 이력의 `balanceAfter`는 그 충전 직후의 계정 잔액과 같다. 계정이 이력을 만들며 지킨다.
+- 이력의 `balanceAfter`는 그 충전·결제 직후의 계정 잔액과 같다. 계정이 이력을 만들며 지킨다.
+- PAYMENT는 `order_id` 유일 제약(`uk_point_history_order_id`)과 주문 FK(`fk_point_history_order`)를 가진다. 금액은 양수, 직후 잔액은 0 이상이며 CHARGE/PAYMENT별 키·주문 식별자 조건은 DB CHECK도 지킨다.
 
 ### 저장 약속
 
@@ -102,7 +106,7 @@
 - 생성 정보(품목의 상품·이름·단가·수량·금액과 총액, 생성 시각, 생성 키)는 생성 후 바뀌지 않는다(ADR 0002).
 - `DRAFT`는 재고도 포인트도 건드리지 않는다. 재고 0이거나 잔액이 부족한 상태에서도 생성된다(설계 5.7, Q12).
 - 총액은 품목 금액의 합이며 `Money`가 `Long` 범위를 지킨다. 넘치면 `InvalidMoneyException`이고 주문은 저장되지 않는다.
-- `DRAFT`에는 `paidAmount`·`confirmedAt`이 없고 `CONFIRMED`에는 둘 다 있으며 `paidAmount`는 총액과 같다. 확정 행위 자체는 #14가 더한다.
+- `DRAFT`에는 `paidAmount`·`confirmedAt`이 없고 `CONFIRMED`에는 둘 다 있으며 `paidAmount`는 총액과 같다. 이미 확정되면 결제액·확정 시각을 다시 쓰지 않는다.
 - 생성 시각은 MySQL `datetime(6)`과 정밀도를 맞춰 첫 응답과 저장 후 재생이 같은 값을 준다. `updatedAt`에 기대지 않는다.
 
 ### 행위
@@ -110,6 +114,7 @@
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `Order(userId, creationKey, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException`, `InvalidMoneyException` |
+| `confirm()` | 저장된 총액과 마이크로초 정밀도의 현재 시각으로 확정한다. 이미 확정되었으면 그대로 둔다 | 없음. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
 
 ### 저장 약속
 
@@ -120,6 +125,7 @@
 - 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 같은 생성 키의 주문 조회 → 있으면 정규화한 의도를 견줘 최초 `DRAFT` 응답 재생(같음) 또는 `IDEMPOTENCY_KEY_CONFLICT`(다름) → 없으면 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문·품목·생성 키는 한 트랜잭션이다.
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
 - 목록 조회: `OrderService.findAll` → 요청자 존재 확인 → `findAllByUserId` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
+- 확정: `OrderService.confirm` → 요청자·소유권 확인 → CONFIRMED면 저장된 결과 반환 → 각 상품·브랜드 확인과 `Product.deductStock` → `PointAccount.pay` → `Order.confirm` → PAYMENT 저장. 전부 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이다(ADR 0002·0003).
 
 ## 주문 품목 (OrderLineItem)
 
@@ -157,4 +163,4 @@
 
 ## 사용자 (User)와 요청자
 
-카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·상세·목록 조회 모두 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`·`OrderService`)이 본다. 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`·`findAllByUserId`로 요청자의 것만 읽는다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).
+카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·확정·상세·목록 조회 모두 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`·`OrderService`)이 본다. 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`·`findAllByUserId`로 요청자의 것만 읽는다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).

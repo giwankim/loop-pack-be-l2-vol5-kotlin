@@ -126,4 +126,33 @@ class ProductTest {
         price: Money = Money(10_000),
         stock: Stock = Stock(1),
     ) = Product(brand = Brand("루퍼스"), name = name, price = price, stock = stock)
+
+    @ParameterizedTest
+    @ValueSource(ints = [0, -1, Int.MIN_VALUE])
+    fun `deductStock rejects nonpositive quantities without changing stock`(quantity: Int) {
+        val product = product(stock = Stock(5))
+
+        assertThrows<InvalidStockException> { product.deductStock(quantity) }
+
+        assertThat(product.stock).isEqualTo(Stock(5))
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = [6, Int.MAX_VALUE])
+    fun `deductStock rejects shortages without changing stock`(quantity: Int) {
+        val product = product(stock = Stock(5))
+
+        assertThrows<InsufficientStockException> { product.deductStock(quantity) }
+
+        assertThat(product.stock).isEqualTo(Stock(5))
+    }
+
+    @Test
+    fun `deductStock can sell the final unit`() {
+        val product = product(stock = Stock(1))
+
+        product.deductStock(1)
+
+        assertThat(product.isSoldOut()).isTrue()
+    }
 }
