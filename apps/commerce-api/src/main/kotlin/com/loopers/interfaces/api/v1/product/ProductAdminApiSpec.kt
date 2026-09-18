@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.v1.product
 
-import com.loopers.application.product.ProductListRequest
+import com.loopers.application.product.ProductAdminListRequest
 import com.loopers.application.product.ProductRegisterRequest
 import com.loopers.application.product.ProductStockUpdateRequest
 import com.loopers.application.product.ProductUpdateRequest
@@ -28,7 +28,7 @@ interface ProductAdminApiSpec {
             "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다.",
     )
     fun getProducts(
-        request: ProductListRequest,
+        request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>>
 
     @Operation(

@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.v1.product
 
-import com.loopers.application.product.ProductListRequest
+import com.loopers.application.product.ProductAdminListRequest
 import com.loopers.application.product.ProductRegisterRequest
 import com.loopers.application.product.ProductService
 import com.loopers.application.product.ProductStockUpdateRequest
@@ -35,10 +35,10 @@ class ProductAdminController(
             .let { ApiResponse.success(it) }
     }
 
-    /** 쿼리 문자열을 [ProductListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
+    /** 쿼리 문자열을 [ProductAdminListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
     @GetMapping
     override fun getProducts(
-        @ModelAttribute @Valid request: ProductListRequest,
+        @ModelAttribute @Valid request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>> {
         return productService.findAll(request)
             .let { PageResponse.from(it, ProductAdminResponse::from) }

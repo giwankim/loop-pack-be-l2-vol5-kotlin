@@ -108,6 +108,8 @@ classDiagram
         LATEST
         PRICE_ASC
         LIKES_DESC
+        +String apiValue
+        +from(value) ProductSort?
     }
 
     Product "*" --> "1" Brand : brand (읽기용 참조)
@@ -120,6 +122,7 @@ classDiagram
 - 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 저장소에 물어서 판단한다.
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001).
+- `ProductSort`의 `LIKES_DESC`는 아직 없다. 좋아요가 생기는 티켓에서 더한다. `apiValue`와 `from`은 #7에서 생겼다(5.24).
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -170,7 +173,7 @@ sequenceDiagram
 | 기능 | method·path | 입력 | 성공 | 대표 오류 | 규칙 기대값 |
 | --- | --- | --- | --- | --- | --- |
 | 브랜드 상세 | `GET /brands/{brandId}` | path brandId | 200 `{id, name}` | 없거나 삭제됨 → 404 NOT_FOUND | 삭제된 브랜드는 없는 브랜드다 |
-| 상품 목록 | `GET /products` | query `brandId?`, `page=0`, `size=20`, `sort=latest` | 200 `{items:[{id, name, price, soldOut, brand:{id,name}, likeCount}], page, size, hasNext}` | 모르는 sort, page<0, size∉1..100 → 400 BAD_REQUEST | 삭제된 상품 제외. 없는·삭제된 brandId 필터는 빈 목록. 정렬 동률은 id 내림차순 |
+| 상품 목록 | `GET /products` | query `brandId?`, `page=0`, `size=20`, `sort=latest` | 200 `{items:[{id, name, price, soldOut, brand:{id,name}, likeCount}], page, size, hasNext}` | 모르는 sort → 400 INVALID_SORT. page<0, size∉1..100 → 400 BAD_REQUEST | 삭제된 상품 제외. 없는·삭제된 brandId 필터는 빈 목록. 정렬 동률은 id 내림차순 |
 | 상품 상세 | `GET /products/{productId}` | path productId | 200 상품 목록의 항목과 같음 | 없거나 삭제됨 → 404 | 좋아요 수는 관계에서 센다 |
 | 좋아요 누르기 | `POST /products/{productId}/likes` | 헤더 `X-USER-ID` | 200, data 없음 | 헤더 없음·없는 사용자 → 401 UNAUTHORIZED. 없거나 삭제된 상품 → 404 | 이미 있으면 그대로 두고 200. 관계는 사용자–상품 쌍마다 하나 |
 | 좋아요 취소 | `DELETE /products/{productId}/likes` | 헤더 `X-USER-ID` | 200, data 없음 | 401 | 관계가 없어도 200. 삭제된 상품의 남은 좋아요도 취소된다 |
@@ -204,7 +207,8 @@ sequenceDiagram
 | `FORBIDDEN` (신규 status) | 403 | path userId가 요청자와 다름 |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
 | `BRAND_NAME_DUPLICATED`, `BRAND_HAS_PRODUCTS` | 409, code는 CONFLICT와 같음 | 이름 중복, 삭제 조건 |
-| ~~`INVALID_PAGE`, `INVALID_SORT`~~ | — | 두지 않았다. 목록 입력은 Request 제약이 거른다(5.22) |
+| `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 모르는 정렬 값(5.24) |
+| ~~`INVALID_PAGE`~~ | — | 두지 않았다. `page`·`size`는 Request 제약이 거른다(5.22) |
 
 도메인 규칙의 거절은 `ErrorType`에 행을 두지 않는다. `RuleViolationException`의 하위 예외(`InvalidNameException`, `InvalidMoneyException`, `InvalidPriceException`, `InvalidStockException`)이며 `ApiControllerAdvice`가 한 곳에서 400 `BAD_REQUEST`로 옮긴다. 까닭은 5.12에 있다.
 
@@ -419,7 +423,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: B (2026-09-18, #5). 두 대안의 HTTP 응답은 400 `Bad Request`로 같다. 오류 코드 표는 5.18보다 먼저 쓰였고, 5.18이 입력 검사를 Request 제약으로 정한 뒤로는 A가 같은 층에 두 번째 검사 방식을 들이는 것이 된다. `ErrorType`에 두 행을 더하지 않았다.
 - 쿼리 문자열은 `@ModelAttribute @Valid`로 `ProductListRequest`에 바로 바인딩한다. 본문이 없는 요청에서 `@RequestBody`가 앉을 자리이며, 기본값(`page=0`, `size=20`)은 Kotlin 생성자 기본값이 준다.
 - #3의 브랜드 목록도 같은 모양을 따른다. `BrandListRequest`가 같은 제약과 기본값을 들고 `BrandAdminController.getBrands`가 `@ModelAttribute @Valid`로 받는다. #3이 먼저 두었던 공용 `PageQuery`는 5.21이 적은 대로 철회했다. 개념마다 Request가 하나씩 생기는 대신 목록 입력이 다른 모든 입력과 같은 모양이 되고(5.17), 범위 숫자와 메시지가 한 파일에 모인다 (2026-09-18, #3).
-- `sort`는 관리자 목록에 없다. `INVALID_SORT`가 필요한지는 고객 목록(#7)에서 정한다.
+- `sort`는 관리자 목록에 없다. `INVALID_SORT`는 고객 목록에서 두기로 했다(5.24, 2026-09-18, #7). `INVALID_PAGE`는 두지 않은 채로 남는다.
+- 여기서 A를 물리친 것은 "두 번 검사하는 것"이 아니라 "같은 규칙을 두 가지 방식으로 적는 것"이다. 이 둘은 다른 축이다(5.25).
 - 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
 
 ### 5.23 이름 수정의 순서
@@ -435,6 +440,30 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 한 규칙이 두 모양으로 적히는 것은 지금 감수한다. `Brand`는 companion의 `normalizeName`으로, `Product`는 `init`에서 그대로 검사한다. `Product`에는 아직 이름을 바꾸는 길이 없어 companion이 필요한 자리가 없다. #5가 `Product.update`를 더할 때 같은 모양으로 맞춘다.
 - 중복 조회가 삭제된 브랜드를 빠뜨리는지는 `BrandRepositoryTest`의 `existsByNameAndIdNot` 사례가 지킨다. 삭제된 브랜드만 쓰던 이름은 비어 있으므로 수정이 그 이름을 가져갈 수 있고, 그 규칙은 `BrandServiceTest`의 "a deleted brand frees its name for a rename"이 지킨다(2026-09-18에 더함).
 - 다시 볼 조건: 이름 말고도 바꿀 것이 생겨 `update`가 여러 값을 받게 될 때. 그때는 값마다 다듬기 함수를 공개하는 대신 수정 입력을 도메인이 읽는 타입으로 올린다.
+
+### 5.24 정렬 기준의 자리와 모르는 값의 거절
+
+- 문제: 고객 목록은 `sort=latest|price_asc`를 받고 모르는 값을 거절해야 한다. 5.22가 `page`·`size`를 Request 제약에 맡겼으니 `sort`도 같은 자리인지, 아니면 `INVALID_SORT`를 두는지 정해야 한다(5.22가 #7로 미뤄 둔 것).
+- `sort`가 `page`·`size`와 다른 점: 숫자의 범위가 아니라 낱말이다. Bean Validation은 범위를 그대로 말할 수 있지만 "이 열거가 아는 낱말"은 말할 수 없다.
+- 대안 A: `@Pattern(regexp = "latest|price_asc")`. 철자가 정규식 문자열에 한 벌 더 적힌다. `likes_desc`가 생기면 고칠 자리가 둘이고 서로 어긋날 수 있다.
+- 대안 B: 필드 타입을 `ProductSort`로 두고 Spring의 타입 변환에 맡긴다. 기본 변환기는 `Enum.valueOf`라 상수 이름(`PRICE_ASC`)만 받고 API 철자(`price_asc`)를 거절한다. 변환기를 따로 등록하면 실패가 `MethodArgumentTypeMismatchException`으로 올라와 응답 메시지가 "요청 파라미터 'sort' (타입: ProductSort)…"가 된다. 고객에게 Kotlin 타입 이름이 나간다.
+- 대안 C: `ProductSort.from(value): ProductSort?`를 domain에 두고, Service가 옮기면서 null이면 `CoreException(ErrorType.INVALID_SORT)`를 던진다.
+- 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.apiValue` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
+- `INVALID_SORT`는 두고 `INVALID_PAGE`는 두지 않는 것이 엇갈려 보이지만, 갈린 기준은 "Bean Validation이 그 규칙을 그대로 말할 수 있는가"다. 범위는 말할 수 있고 낱말은 말할 수 없다.
+- `sort`는 `ProductCustomerListRequest`에만 있다. 관리자 목록은 정렬을 고르지 않으므로 `ProductListRequest`는 그대로 두고 요청 타입을 나눴다. 두 타입이 페이지 세 필드를 겹쳐 갖는 대신, 관리자 API가 조용히 넓어지지 않는다.
+- 실제로 읽을 컬럼은 `ProductRepositoryImpl`이 안다. 가격은 `Money`가 `@Embeddable`이라 경로가 `price.amount`이며, `ProductSort`는 컬럼을 모른다.
+- 다시 볼 조건: 정렬 기준이 목록마다 달라질 때(내 좋아요 목록이 다른 기준을 받을 때). 그때는 목록마다 열거를 나눌지, 하나를 나눠 쓸지 다시 본다.
+
+### 5.25 같은 규칙을 여러 층에서 검사하는 것
+
+- 문제: 5.22가 "같은 층에 두 번째 검사 방식을 들인다"를 대안을 물리치는 근거로 썼다. 이것이 "한 규칙을 여러 곳에서 검사하지 말라"는 말로 읽히면 이 저장소가 이미 하고 있는 일과 어긋난다.
+- 두 축을 나눈다.
+  - 검사가 걸리는 자리가 여럿인 것: 규칙은 한 번 적히고 여러 경계에서 걸린다. `@Min(0) page`는 Request에 한 번 적히고 Controller(`@Valid`)와 Service(`@Validated`)에서 두 번 걸린다. 적힌 곳이 하나라 어긋날 수 없고, 값이 공짜다.
+  - 규칙이 적힌 방식이 여럿인 것: 같은 규칙을 애노테이션으로 한 번, Service 본문의 `if`로 또 한 번 적는다. 둘이 따로 움직여 어긋난다.
+- 5.22가 물리친 것은 뒤쪽이다. 앞쪽은 이 저장소가 일부러 하는 일이다. 층은 서로를 거치지 않고도 불릴 수 있다. 이 저장소만 해도 `commerce-api` 말고 `commerce-batch`와 `commerce-streamer`가 있어, 배치 태스크릿이나 컨슈머가 Controller 없이 application을 바로 부를 수 있다. 바깥 층의 검사는 그 층을 지나온 호출만 지킨다.
+- 그래서 `sort`의 거절은 Service 본문에 있다(5.24). 모든 호출자가 지나는 가장 안쪽 길목이라, HTTP 호출도 함께 지켜진다. 같은 낱말 검사를 Controller 쪽 제약으로 한 번 더 두는 것은 보태는 것이 아니라 이미 덮인 자리 바깥에 하나를 더 두는 것이다.
+- 이미 코드에 적혀 있던 것: `ProductRegisterRequest`의 "제약 애노테이션은 Controller(`@Valid`)와 Service(`@Validated`)가 같은 규칙으로 먼저 거른다", `ApiControllerAdvice.handleConstraintViolation`의 "Controller를 거치지 않은 호출에서만 여기까지 온다".
+- 다시 볼 조건: 층을 거치지 않는 호출이 없어질 때(app이 하나로 줄 때). 그때는 안쪽 검사를 줄일지 다시 본다.
 
 ## 6. 테스트 경계
 

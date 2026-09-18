@@ -10,6 +10,9 @@ interface ProductRepository {
 
     fun findById(id: Long): Product?
 
-    /** 늦게 등록된 상품이 앞서는 한 조각. [brandId]가 있으면 그 브랜드의 상품만 고른다. */
-    fun findAll(brandId: Long?, page: Int, size: Int): PageSlice<Product>
+    /**
+     * [sort]가 정한 차례로 놓인 한 조각. [brandId]가 있으면 그 브랜드의 상품만 고른다.
+     * 어느 기준이든 동률은 id 내림차순으로 깬다.
+     */
+    fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<Product>
 }

@@ -5,6 +5,7 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandRepositoryImpl
@@ -116,9 +117,68 @@ class ProductRepositoryTest(
         val third = productRepository.save(product(brand))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    @Test
+    fun `findAll sorted by price puts the cheapest first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val dear = productRepository.save(product(brand, price = 30_000))
+        val cheap = productRepository.save(product(brand, price = 10_000))
+        val middling = productRepository.save(product(brand, price = 20_000))
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
+
+        assertThat(slice.items.map { it.id }).containsExactly(cheap.id, middling.id, dear.id)
+    }
+
+    @Test
+    fun `findAll sorted by price breaks a tie with the later id first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val first = productRepository.save(product(brand, price = 10_000))
+        val second = productRepository.save(product(brand, price = 10_000))
+        val third = productRepository.save(product(brand, price = 10_000))
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
+
+        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    /**
+     * 등록 시각이 같은 상품은 나중에 받은 식별자가 앞선다. Hibernate가 만드는 `created_at`은 `datetime(6)`이라
+     * 이어서 저장해도 시각이 저절로 같아지지는 않으므로, 동률을 native 쿼리로 만들어 고정한다.
+     */
+    @Test
+    fun `findAll sorted by latest breaks a tie with the later id first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val first = productRepository.save(product(brand))
+        val second = productRepository.save(product(brand))
+        val third = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+        listOf(first, second, third).forEach { shareCreatedAt(it.id) }
+        entityManager.clear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
+
+        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
+    @Test
+    fun `findAll with a deleted brand's id is empty`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        productRepository.save(product(brand))
+        brand.delete()
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
+
+        assertThat(slice.items).isEmpty()
+        assertThat(slice.hasNext).isFalse()
     }
 
     @Test
@@ -128,7 +188,7 @@ class ProductRepositoryTest(
         productRepository.save(product(brand).apply { delete() })
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(live.id)
     }
@@ -141,7 +201,7 @@ class ProductRepositoryTest(
         productRepository.save(product(other))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20)
+        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(mine.id)
     }
@@ -152,7 +212,7 @@ class ProductRepositoryTest(
         productRepository.save(product(brand))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = 999L, page = 0, size = 20)
+        val slice = productRepository.findAll(brandId = 999L, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items).isEmpty()
         assertThat(slice.hasNext).isFalse()
@@ -164,8 +224,8 @@ class ProductRepositoryTest(
         repeat(3) { productRepository.save(product(brand)) }
         entityManager.flushAndClear()
 
-        val first = productRepository.findAll(brandId = null, page = 0, size = 2)
-        val second = productRepository.findAll(brandId = null, page = 1, size = 2)
+        val first = productRepository.findAll(brandId = null, page = 0, size = 2, sort = ProductSort.LATEST)
+        val second = productRepository.findAll(brandId = null, page = 1, size = 2, sort = ProductSort.LATEST)
 
         assertAll(
             { assertThat(first.items).hasSize(2) },
@@ -190,7 +250,7 @@ class ProductRepositoryTest(
         brand.delete()
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertAll(
             { assertThat(productRepository.findById(live.id)).isNotNull() },
@@ -200,4 +260,20 @@ class ProductRepositoryTest(
 
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
         Product(brand = brand, name = "티셔츠", price = Money(price), stock = Stock(stock))
+
+    /**
+     * 등록 시각을 모든 상품이 같은 값으로 갖게 한다. `created_at`은 `@Column(updatable = false)`지만
+     * 그것은 JPA의 UPDATE만 막는 것이고 native 쿼리는 영속성 컨텍스트를 거치지 않는다.
+     */
+    private fun shareCreatedAt(productId: Long) {
+        entityManager
+            .createNativeQuery("update product set created_at = :at where id = :id")
+            .setParameter("at", SHARED_CREATED_AT)
+            .setParameter("id", productId)
+            .executeUpdate()
+    }
+
+    companion object {
+        private const val SHARED_CREATED_AT = "2026-01-01 00:00:00.000000"
+    }
 }

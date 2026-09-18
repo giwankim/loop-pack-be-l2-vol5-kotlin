@@ -206,12 +206,82 @@ class ProductServiceTest(
         register(brand.id, name = "후드티")
         entityManager.flushAndClear()
 
-        val slice = productService.findAll(ProductListRequest())
+        val slice = productService.findAll(ProductAdminListRequest())
 
         assertAll(
             { assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE) },
             { assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE) },
             { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
+        )
+    }
+
+    /** 고객 목록도 아무것도 고르지 않으면 늦게 등록된 상품이 앞선다. 정렬 자체는 저장소 테스트가 지킨다. */
+    @Test
+    fun `listing for a customer carries the default page, size, and sort into the slice`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val first = register(brand.id, name = "티셔츠")
+        val second = register(brand.id, name = "후드티")
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest())
+
+        assertAll(
+            { assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE) },
+            { assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE) },
+            { assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id) },
+            { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
+        )
+    }
+
+    @Test
+    fun `listing a customer sort reaches the slice order`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val cheap = register(brand.id, name = "양말", price = 3_000)
+        val dear = register(brand.id, name = "코트", price = 30_000)
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest(sort = "price_asc"))
+
+        assertThat(slice.items.map { it.id }).containsExactly(cheap.id, dear.id)
+    }
+
+    /**
+     * 모르는 정렬 값은 Controller를 거치지 않고 불러도 거절된다. 배치나 컨슈머가 요청을 손으로 만들어
+     * 부르는 자리가 여기이므로, 철자를 거르는 일이 HTTP 밖에도 있어야 한다.
+     */
+    @Test
+    fun `a sort no product sort answers to is rejected without any controller`() {
+        assertAll(
+            {
+                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "likes_desc")) })
+                    .isEqualTo(ErrorType.INVALID_SORT)
+            },
+            {
+                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "LATEST")) })
+                    .isEqualTo(ErrorType.INVALID_SORT)
+            },
+            {
+                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "")) })
+                    .isEqualTo(ErrorType.INVALID_SORT)
+            },
+        )
+    }
+
+    @Test
+    fun `listing for a customer outside the page and size bounds is rejected by request validation`() {
+        assertAll(
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(page = -1)) }
+                        .constraintViolations.map { it.message },
+                ).containsExactly("page는 0 이상이어야 합니다.")
+            },
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 101)) }
+                        .constraintViolations.map { it.message },
+                ).containsExactly("size는 100 이하여야 합니다.")
+            },
         )
     }
 
@@ -291,19 +361,19 @@ class ProductServiceTest(
         assertAll(
             {
                 assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(page = -1)) }
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(page = -1)) }
                         .constraintViolations.map { it.message },
                 ).containsExactly("page는 0 이상이어야 합니다.")
             },
             {
                 assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 0)) }
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 0)) }
                         .constraintViolations.map { it.message },
                 ).containsExactly("size는 1 이상이어야 합니다.")
             },
             {
                 assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 101)) }
+                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 101)) }
                         .constraintViolations.map { it.message },
                 ).containsExactly("size는 100 이하여야 합니다.")
             },
