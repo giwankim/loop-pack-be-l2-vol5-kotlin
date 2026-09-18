@@ -28,7 +28,7 @@ class ProductRepositoryImpl(
     override fun findById(id: Long): Product? = productJpaRepository.findByIdOrNull(id)
 
     /**
-     * 브랜드 필터도 정렬 기준도 조각마다 달라지므로 목록은 QueryDSL로 짠다(설계 5.29).
+     * 브랜드 필터도 정렬 기준도 조각마다 달라지므로 목록은 QueryDSL로 짠다(설계 5.32).
      * 정렬 기준이 셋인데 그중 하나만 조인을 요구하므로, 조회 메서드를 기준마다 두면 기준이 늘 때마다 메서드가 는다.
      *
      * 총 개수를 세는 쿼리는 나가지 않는다(설계 5.5). `size + 1`개를 읽어 넘치는 하나로 다음 조각의 존재를 정하고

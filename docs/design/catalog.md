@@ -123,7 +123,7 @@ classDiagram
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
-- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.29). `apiValue`와 `from`은 #7에서 생겼다(5.24).
+- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `apiValue`와 `from`은 #7에서 생겼다(5.24).
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -406,7 +406,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: C (2026-09-18, #3과 #5).
   - 조각은 저장소가 읽은 결과의 모양이고 `Money`처럼 여러 개념이 함께 쓰므로 `domain/shared/PageSlice.kt`에 둔다. `hasNext`를 저장소가 정하므로 `BrandRepositoryTest`가 "size와 정확히 같을 때"와 "하나 더 있을 때"를 직접 확인한다(#3의 인수 조건). `size + 1`을 읽는 요령은 `*RepositoryImpl` 한 곳에만 있다.
   - `map`이 항목만 다른 타입으로 옮겨 `PageSlice<Product>` → `PageSlice<ProductInfo>`가 한 줄이다. 항목이 지연 로딩되는 연관을 읽으면 옮기는 일이 트랜잭션 안에서 끝나야 하므로 `map`은 봉투가 아니라 조각이 가진다.
-  - 조각을 만드는 재료는 저장소마다 다르다. 브랜드 목록은 Spring Data의 `Slice`를 옮기고, 상품 목록은 #9이 QueryDSL로 옮긴 뒤로 `size + 1`을 직접 읽어 `PageSlice`를 만든다(5.29). `PageSlice`의 KDoc이 처음부터 그 요령으로 적혀 있어 약속은 그대로다.
+  - 조각을 만드는 재료는 저장소마다 다르다. 브랜드 목록은 Spring Data의 `Slice`를 옮기고, 상품 목록은 #9이 QueryDSL로 옮긴 뒤로 `size + 1`을 직접 읽어 `PageSlice`를 만든다(5.32). `PageSlice`의 KDoc이 처음부터 그 요령으로 적혀 있어 약속은 그대로다.
   - 페이지 범위(`page` 0 이상, `size` 1..100)는 도메인 불변식이 아니라 API가 정한 입력 한계다. 개념별 목록 Request의 Bean Validation 제약이 거른다(5.22). 유효한 입력만 저장 약속에 닿으므로 저장 약속은 원시값 둘을 받는다.
 - 철회 (2026-09-18): #3은 처음 `application/shared/PageQuery`를 두고 생성자 `init`에서 범위를 검사해 `CoreException(ErrorType.INVALID_PAGE)`를 던졌다. 그 선택을 적으며 "5.18의 제약은 `@RequestBody` 본문에 붙는다. 페이지는 쿼리 파라미터이므로 5.18을 쓸 수 없다"고 했는데, 전제가 틀렸다. `@ModelAttribute @Valid`가 쿼리 문자열을 Request에 그대로 바인딩하고, #5의 `ProductAdminController.getProducts`가 이미 그렇게 돌고 있었다. 남은 근거였던 "스펙이 `INVALID_PAGE`를 이름 붙였다"는 4장 오류 코드 표에 걸려 있었고 #5가 그 두 행을 지웠으므로 근거가 함께 없어졌다. 한 층에 검사 방식을 둘 두는 대신 5.22 하나로 모은다. `application/shared/PageQuery`와 `PageQueryTest`, `ErrorType.INVALID_PAGE`가 함께 사라졌다.
 - `init` 불변식이 지키던 것("범위를 어긴 조각 입력은 만들어질 수 없다")은 Request 제약 + Service 입구의 `@Validated`·`@Valid`가 대신 지킨다. 6장이 그 자리를 이미 테스트 경계로 적어 두었다.
@@ -461,7 +461,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - `sort`는 고객 목록 입력에만 있다. 관리자 목록은 정렬을 고르지 않으므로 요청 타입을 둘로 나눴다. 두 타입이 페이지 세 필드를 겹쳐 갖는 대신, 관리자 API가 조용히 넓어지지 않는다.
 - 이름은 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)다. CONTEXT.md의 고객 항목이 "코드에 별도 이름이 없고, 고객 쪽이 기본이며 관리자 쪽에만 Admin을 붙인다"이고 `Customer`를 _Avoid_에 적었으므로, 수식어가 붙는 쪽은 관리자다. 응답 DTO(`ProductResponse`/`ProductAdminResponse`)와 컨트롤러가 이미 그렇게 갈려 있다. 페이지 값의 범위는 역할에 따라 다르지 않으므로 상수는 `ProductListRequest`의 companion 하나에 둔다.
 - 같은 규칙을 application의 Request 전부에 밀었다(5.26). `ProductInfo`는 그대로 역할을 모른다(5.7). 응답은 역할마다 필드가 다르지만 입력은 어느 API가 받느냐로 갈리므로, 역할이 이름에 적히는 자리가 Request와 Response 양쪽이 된다.
-- 실제로 무엇을 읽을지는 `ProductRepositoryImpl`이 안다. 가격은 `Money`가 `@Embeddable`이라 경로가 `price.amount`이며, `ProductSort`는 그것을 모른다. #9의 `LIKES_DESC`에 이르면 읽을 것이 컬럼도 아니게 되므로(5.29) 이 문장은 "컬럼"이 아니라 "무엇을 읽는지"로 읽어야 한다.
+- 실제로 무엇을 읽을지는 `ProductRepositoryImpl`이 안다. 가격은 `Money`가 `@Embeddable`이라 경로가 `price.amount`이며, `ProductSort`는 그것을 모른다. #9의 `LIKES_DESC`에 이르면 읽을 것이 컬럼도 아니게 되므로(5.32) 이 문장은 "컬럼"이 아니라 "무엇을 읽는지"로 읽어야 한다.
 - 다시 볼 조건: 정렬 기준이 목록마다 달라질 때(내 좋아요 목록이 다른 기준을 받을 때). 그때는 목록마다 열거를 나눌지, 하나를 나눠 쓸지 다시 본다.
 
 ### 5.25 같은 규칙을 여러 층에서 검사하는 것
@@ -507,25 +507,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: C (2026-09-18, #8). 저장소는 각자 자기 애그리거트만 알고, 합치는 일은 이미 `ProductInfo`를 채우는 application이 한다(5.7). 목록은 조각 크기와 무관하게 조회 두 번이다. 항목마다 세면 조각 크기만큼 늘어난다.
 - `countByProductIds`는 요청한 식별자마다 값을 돌려준다. 좋아요가 없는 상품은 집계 행이 없으므로 구현이 0을 채운다. 부르는 쪽이 빠진 키를 다루지 않게 하려는 것이다. 빈 목록은 SQL을 보내지 않는다.
 - 등록 응답은 세지 않고 0을 넣는다(5.7). 수정·재고 변경·상세는 센다.
-- 열렸고 닫혔다: 좋아요 많은순 정렬(#9, 2026-09-18)이 B의 join을 상품 목록 쿼리에 들여왔다. B를 물리친 두 근거 중 "`ProductRepository`가 좋아요를 알게 된다"는 그래서 더 이상 사실이 아니다. 남은 근거는 반환 타입이고, 세어 나온 값은 정렬에만 쓰고 돌려주지 않으므로 이 집계는 그대로 C다. 까닭은 5.29에 있다.
+- 열렸고 닫혔다: 좋아요 많은순 정렬(#9, 2026-09-18)이 B의 join을 상품 목록 쿼리에 들여왔다. B를 물리친 두 근거 중 "`ProductRepository`가 좋아요를 알게 된다"는 그래서 더 이상 사실이 아니다. 남은 근거는 반환 타입이고, 세어 나온 값은 정렬에만 쓰고 돌려주지 않으므로 이 집계는 그대로 C다. 까닭은 5.32에 있다.
 
-
-### 5.29 좋아요 많은순의 쿼리
-
-- 문제: `likes_desc`는 정렬 키가 상품의 컬럼이 아니라 `likes` 관계를 세어 나오는 값이다. 다른 두 기준은 Spring Data의 `Sort` 하나로 끝나지만 이것은 그럴 수 없다. `Like`는 상품을 식별자로만 가리켜(설계 2) 타고 갈 연관도 없다.
-- 대안 A: 정렬도 집계도 한 쿼리가 한다(5.28의 B로 옮긴다). 목록이 조회 한 번이다. 그러나 `ProductRepository`의 반환이 엔티티가 아닌 튜플이 된다.
-- 대안 B: `order by`에 상관 서브쿼리를 둔다. `group by`가 없으니 그때까지 쓰던 `@EntityGraph`를 그대로 두어도 됐다. 그러나 `product_id` 단독 인덱스가 없는 지금 MySQL은 후보 행마다 `likes`를 다시 훑는다(중첩 루프).
-- 대안 C: `left join` + `group by`로 차례만 내고, 값은 5.28의 C가 그대로 센다.
-- 선택: C (2026-09-18, #9). 정렬에 쓰는 수와 응답에 싣는 수가 같은 쿼리에서 나오지 않지만, 그 대가로 저장소의 반환이 기준과 무관하게 `Product`로 남는다.
-- A와 C가 갈리는 자리는 반환 타입 하나뿐이다. "상품 저장소가 좋아요를 알게 된다"는 A를 물리치는 근거가 되지 못한다. C도 `QLike`를 들여와 `likes`를 조인하므로 이미 알고 있다. 상품 저장소가 좋아요를 모르는 선택지는 애초에 없었고, 5.28의 B를 물리친 근거 중 살아남은 것도 같은 절반이다. B와 갈린 자리는 인덱스다. `likes`의 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회는 인덱스가 없는데, 같은 조건에서 MySQL 8.0은 equi-join을 해시 조인으로 푼다. `likes`를 한 번 훑어 해시 테이블을 만들고 훑는 O(N + L)이고, B의 중첩 루프는 O(N × L)이다.
-- QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductRepositoryImpl.findAll`이 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 조각에서 처음 쓰인다.
-- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(`JpaRepository`의 저장·단건 조회와 `existsByBrandId`)만 남는다.
-- `brandId`가 null이면 QueryDSL이 그 조건을 통째로 버리므로 `:brandId is null` 같은 관용구가 없다. 나가는 SQL에 죽은 조건이 남지 않는다.
-- `hasNext`는 저장소가 정한다. `size + 1`개를 읽어 넘치면 다음 조각이 있고 그 하나는 버린다. `PageSlice`의 KDoc이 이미 그렇게 적혀 있었고, Spring의 `Slice`가 하던 일을 그대로 옮긴 것이다. 총 개수를 세는 쿼리는 여전히 나가지 않는다(5.5).
-- `group by product, product.brand`를 Hibernate 6.6은 식별자로만 편다: `group by p1_0.id, b1_0.id`. MySQL 8.0은 `ONLY_FULL_GROUP_BY`가 켜져 있어도 이것을 받는다. 두 기본 키에서 나머지 컬럼의 함수 종속을 스스로 알아내기 때문이다. 브랜드를 fetch join으로 함께 읽으면서도 `group by`에 브랜드의 모든 컬럼을 적지 않아도 되는 까닭이다.
-- 세는 것은 `count(l1_0.id)`이지 `count(*)`가 아니다. `left join`이 맞출 행을 찾지 못한 상품은 0이 된다. `count(*)`였다면 좋아요가 없는 상품이 1로 세어져 좋아요 하나짜리와 동률이 된다. `ProductRepositoryTest`의 `keeps a product nobody liked, last`가 둘을 구별하도록 식별자 차례를 잡아 두었다.
-- 어느 대안이든 치르는 값: 집계로 정렬하는 한 차례를 인덱스로 낼 수 없다. 거른 후보 전체를 세고 정렬한 뒤에야 `limit`이 조각을 떠 가므로 0쪽과 50쪽의 비용이 같다. 이것을 없애려면 `like_count` 컬럼을 두어야 하는데(5.28의 A) CONTEXT.md가 막는다.
-- 다시 볼 조건: `likes(product_id)` 인덱스. 지금은 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회에 인덱스가 없고, 이는 #8의 `countByProductId`·`countByProductIdIn`도 이미 치르고 있다. 좋아요 행이 늘어 해시 조인의 한 번 훑기가 비싸지면 그때 `@Table(indexes = ...)`을 더한다. 마이그레이션 도구가 없어 운영 DDL이 이 저장소에 없다는 것도 함께 본다.
 
 ### 5.29 좋아요 목록 조회의 자리
 
@@ -563,6 +546,22 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - `ProductService`는 이 변경으로 `LikeRepository`를 놓는다. 상품 유스케이스는 좋아요 저장소를 직접 알지 않아도 된다.
 - 다시 볼 조건: #9의 좋아요 많은순 정렬이 좋아요 수를 상품 쿼리 안으로 들일 때. 그때 이 조립기는 세는 일을 잃고 읽기 모델을 돌려주는 쪽으로 옮겨 간다(5.28, 5.29의 다시 볼 조건과 같은 자리).
 
+### 5.32 좋아요 많은순의 쿼리
+
+- 문제: `likes_desc`는 정렬 키가 상품의 컬럼이 아니라 `likes` 관계를 세어 나오는 값이다. 다른 두 기준은 Spring Data의 `Sort` 하나로 끝나지만 이것은 그럴 수 없다. `Like`는 상품을 식별자로만 가리켜(설계 2) 타고 갈 연관도 없다.
+- 대안 A: 정렬도 집계도 한 쿼리가 한다(5.28의 B로 옮긴다). 목록이 조회 한 번이다. 그러나 `ProductRepository`의 반환이 엔티티가 아닌 튜플이 된다.
+- 대안 B: `order by`에 상관 서브쿼리를 둔다. `group by`가 없으니 그때까지 쓰던 `@EntityGraph`를 그대로 두어도 됐다. 그러나 `product_id` 단독 인덱스가 없는 지금 MySQL은 후보 행마다 `likes`를 다시 훑는다(중첩 루프).
+- 대안 C: `left join` + `group by`로 차례만 내고, 값은 5.28의 C가 그대로 센다.
+- 선택: C (2026-09-18, #9). 정렬에 쓰는 수와 응답에 싣는 수가 같은 쿼리에서 나오지 않지만, 그 대가로 저장소의 반환이 기준과 무관하게 `Product`로 남는다.
+- A와 C가 갈리는 자리는 반환 타입 하나뿐이다. "상품 저장소가 좋아요를 알게 된다"는 A를 물리치는 근거가 되지 못한다. C도 `QLike`를 들여와 `likes`를 조인하므로 이미 알고 있다. 상품 저장소가 좋아요를 모르는 선택지는 애초에 없었고, 5.28의 B를 물리친 근거 중 살아남은 것도 같은 절반이다. B와 갈린 자리는 인덱스다. `likes`의 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회는 인덱스가 없는데, 같은 조건에서 MySQL 8.0은 equi-join을 해시 조인으로 푼다. `likes`를 한 번 훑어 해시 테이블을 만들고 훑는 O(N + L)이고, B의 중첩 루프는 O(N × L)이다.
+- QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductRepositoryImpl.findAll`이 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 조각에서 처음 쓰인다.
+- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(`JpaRepository`의 저장·단건 조회와 `existsByBrandId`)만 남는다.
+- `brandId`가 null이면 QueryDSL이 그 조건을 통째로 버리므로 `:brandId is null` 같은 관용구가 없다. 나가는 SQL에 죽은 조건이 남지 않는다.
+- `hasNext`는 저장소가 정한다. `size + 1`개를 읽어 넘치면 다음 조각이 있고 그 하나는 버린다. `PageSlice`의 KDoc이 이미 그렇게 적혀 있었고, Spring의 `Slice`가 하던 일을 그대로 옮긴 것이다. 총 개수를 세는 쿼리는 여전히 나가지 않는다(5.5).
+- `group by product, product.brand`를 Hibernate 6.6은 식별자로만 편다: `group by p1_0.id, b1_0.id`. MySQL 8.0은 `ONLY_FULL_GROUP_BY`가 켜져 있어도 이것을 받는다. 두 기본 키에서 나머지 컬럼의 함수 종속을 스스로 알아내기 때문이다. 브랜드를 fetch join으로 함께 읽으면서도 `group by`에 브랜드의 모든 컬럼을 적지 않아도 되는 까닭이다.
+- 세는 것은 `count(l1_0.id)`이지 `count(*)`가 아니다. `left join`이 맞출 행을 찾지 못한 상품은 0이 된다. `count(*)`였다면 좋아요가 없는 상품이 1로 세어져 좋아요 하나짜리와 동률이 된다. `ProductRepositoryTest`의 `keeps a product nobody liked, last`가 둘을 구별하도록 식별자 차례를 잡아 두었다.
+- 어느 대안이든 치르는 값: 집계로 정렬하는 한 차례를 인덱스로 낼 수 없다. 거른 후보 전체를 세고 정렬한 뒤에야 `limit`이 조각을 떠 가므로 0쪽과 50쪽의 비용이 같다. 이것을 없애려면 `like_count` 컬럼을 두어야 하는데(5.28의 A) CONTEXT.md가 막는다.
+- 다시 볼 조건: `likes(product_id)` 인덱스. 지금은 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회에 인덱스가 없고, 이는 #8의 `countByProductId`·`countByProductIdIn`도 이미 치르고 있다. 좋아요 행이 늘어 해시 조인의 한 번 훑기가 비싸지면 그때 `@Table(indexes = ...)`을 더한다. 마이그레이션 도구가 없어 운영 DDL이 이 저장소에 없다는 것도 함께 본다.
 
 ## 6. 테스트 경계
 
@@ -578,9 +577,9 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | 목록 입력이 저장소까지 이어짐, `PageSlice` 항목이 `Info`로 옮겨짐 | application 통합 테스트 | 저장소 테스트가 삭제 필터·브랜드 필터·`hasNext`를 이미 지키므로 이 자리는 되풀이가 아니라 이어짐만 본다: 기본값(`page=0`, `size=20`)이 조각에 닿는지, `brandName`이 트랜잭션 안에서 채워지는지. HTTP 테스트는 그 위에서 쿼리 문자열이 실제로 바인딩되는지를 두 번째 조각으로 확인한다 |
 | 고객·관리자 응답 필드, 401·403·404·409 | HTTP 테스트. 관리자는 MockMvc + `user().roles("ADMIN")` + `csrf()` | 거절 시 기존 값 유지 확인 |
 | 페이지 범위 거절과 기본값 | HTTP 테스트. 범위를 어긴 쿼리 문자열은 400, 파라미터가 없으면 응답의 `page`·`size`가 기본값 | 제약이 목록 Request에 있으므로(5.22) "만들 때 터진다"를 볼 단위 테스트 자리가 없다. 거절은 `@ModelAttribute @Valid`가 바인딩한 뒤에 난다 |
-| 목록이 총 개수를 세지 않는지 | repository·DB 통합 테스트(`BrandRepositoryTest`)와 application 통합 테스트(`ProductServiceTest`). Hibernate 통계로 조회 수를 센다 | 한 조각에 조회 하나. 브랜드 목록은 Spring Data의 `Slice`가, 상품 목록은 `ProductRepositoryImpl`이 직접 `size + 1`을 읽어 그것을 지킨다. 상품 목록은 정렬 기준마다 조각을 뜨는 방법이 갈리므로 세는 자리도 기준마다 둔다: 기본 정렬과 `likes_desc`를 따로 센다. 어느 쪽이든 총 개수를 세기 시작하면 이 테스트가 먼저 말한다(5.21, 5.29) |
-| 좋아요 많은순의 정렬·동률·좋아요 0, 브랜드 필터와 `hasNext`, 브랜드 fetch join | repository·DB 통합 테스트(`ProductRepositoryTest`) | 동률 테스트는 `shareCreatedAt`으로 등록 시각까지 같게 만든다. 그러지 않으면 동률 규칙이 `createdAt`으로 새도 id 차례와 겹쳐 그냥 지나간다. 좋아요 0은 `count(*)`와 `count(l.id)`가 서로 다른 차례를 내놓도록 식별자 차례를 잡는다. `group by`가 붙는 유일한 기준이라 브랜드를 함께 읽는 일도 여기서만 깨질 수 있어 `Hibernate.isInitialized`로 함께 본다(5.29) |
-| 좋아요 많은순에서 차례와 `likeCount`가 서로 맞는지 | application 통합 테스트(`ProductServiceTest`) | 이 기준만 차례를 내는 쿼리와 수를 세는 쿼리가 다르다(5.29). 저장소 테스트가 차례를 이미 지키지만 둘이 어긋나면 차례는 맞는데 수가 남의 것이 되므로, 이 자리는 위의 "이어짐만 본다"의 예외다 |
+| 목록이 총 개수를 세지 않는지 | repository·DB 통합 테스트(`BrandRepositoryTest`)와 application 통합 테스트(`ProductServiceTest`). Hibernate 통계로 조회 수를 센다 | 한 조각에 조회 하나. 브랜드 목록은 Spring Data의 `Slice`가, 상품 목록은 `ProductRepositoryImpl`이 직접 `size + 1`을 읽어 그것을 지킨다. 상품 목록은 정렬 기준마다 조각을 뜨는 방법이 갈리므로 세는 자리도 기준마다 둔다: 기본 정렬과 `likes_desc`를 따로 센다. 어느 쪽이든 총 개수를 세기 시작하면 이 테스트가 먼저 말한다(5.21, 5.32) |
+| 좋아요 많은순의 정렬·동률·좋아요 0, 브랜드 필터와 `hasNext`, 브랜드 fetch join | repository·DB 통합 테스트(`ProductRepositoryTest`) | 동률 테스트는 `shareCreatedAt`으로 등록 시각까지 같게 만든다. 그러지 않으면 동률 규칙이 `createdAt`으로 새도 id 차례와 겹쳐 그냥 지나간다. 좋아요 0은 `count(*)`와 `count(l.id)`가 서로 다른 차례를 내놓도록 식별자 차례를 잡는다. `group by`가 붙는 유일한 기준이라 브랜드를 함께 읽는 일도 여기서만 깨질 수 있어 `Hibernate.isInitialized`로 함께 본다(5.32) |
+| 좋아요 많은순에서 차례와 `likeCount`가 서로 맞는지 | application 통합 테스트(`ProductServiceTest`) | 이 기준만 차례를 내는 쿼리와 수를 세는 쿼리가 다르다(5.32). 저장소 테스트가 차례를 이미 지키지만 둘이 어긋나면 차례는 맞는데 수가 남의 것이 되므로, 이 자리는 위의 "이어짐만 본다"의 예외다 |
 | 좋아요 멱등(두 번 누르기, 없는 관계 취소), 삭제 상품 거절·취소 허용, 요청자 없음 | application 통합 테스트(`LikeServiceTest`). 관계는 `likes` 테이블을 native SQL로 센다 | 저장 약속을 거치지 않고 세는 까닭은 "행이 하나다", "행이 지워졌다"가 테이블의 사실이기 때문이다(ADR 0001) |
 | 좋아요 유일 제약, 행 삭제 뒤 재조회 없음, 삭제 뒤 다시 누르기, 상품 여러 개의 집계와 0 채움 | repository·DB 통합 테스트(`LikeRepositoryTest`) | 유일 제약 위반은 IDENTITY라 저장 즉시 난다. 사용자·상품 행 없이 식별자만으로 만든다 |
 | 헤더 → 요청자, 401·404, 누르기 → 상세 `likeCount` 1 → 취소 → 0 | HTTP 테스트(`LikeApiMockMvcTest`). 헤더 없음과 없는 사용자를 따로 본다 | 두 401은 서로 다른 층이 거절한다(5.27). 한쪽만 테스트하면 다른 쪽이 빠져도 모른다 |
@@ -596,8 +595,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
 - MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 관리자가 바꾼 이름을 고객 조회가 읽는 자리도 같다. 그런 자리에서는 `flushAndClear`로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
-- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로 목록은 브랜드를 함께 읽는다. #5·#7에서는 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`였고, #9이 목록을 QueryDSL로 옮기면서 `innerJoin(product.brand).fetchJoin()`이 되었다(5.29). 어느 쪽이든 `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다.
-- `ProductSort.LIKES_DESC`는 #9(2026-09-18)에서 들어왔다. 목록 쿼리가 `left join` + `group by`로 차례만 내고 `likeCount` 값은 5.28의 C가 그대로 센다. 쿼리를 QueryDSL로 옮긴 까닭과 치른 값은 5.29에 있다.
+- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로 목록은 브랜드를 함께 읽는다. #5·#7에서는 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`였고, #9이 목록을 QueryDSL로 옮기면서 `innerJoin(product.brand).fetchJoin()`이 되었다(5.32). 어느 쪽이든 `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다.
+- `ProductSort.LIKES_DESC`는 #9(2026-09-18)에서 들어왔다. 목록 쿼리가 `left join` + `group by`로 차례만 내고 `likeCount` 값은 5.28의 C가 그대로 센다. 쿼리를 QueryDSL로 옮긴 까닭과 치른 값은 5.32에 있다.
 - 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
 - `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.
 - `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다.
