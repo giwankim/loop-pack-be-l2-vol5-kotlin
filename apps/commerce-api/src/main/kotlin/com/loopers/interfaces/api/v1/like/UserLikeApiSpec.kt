@@ -11,7 +11,8 @@ import io.swagger.v3.oas.annotations.enums.ParameterIn
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag
 
-@Tag(name = "Like V1 API", description = "고객 좋아요 API 입니다. X-USER-ID 헤더의 사용자 식별자로 요청자를 식별합니다.")
+/** 설명은 같은 tag의 [LikeApiSpec]이 한 번만 적는다. 두 spec이 한 tag 아래 모인다. */
+@Tag(name = "Like V1 API")
 interface UserLikeApiSpec {
     @Operation(
         summary = "내 좋아요 목록 조회",

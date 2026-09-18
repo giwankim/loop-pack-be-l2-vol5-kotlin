@@ -1,6 +1,7 @@
 package com.loopers.application.like
 
 import com.loopers.application.product.ProductInfo
+import com.loopers.application.product.ProductInfoAssembler
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.ProductRepository
@@ -25,6 +26,7 @@ class LikeService(
     private val likeRepository: LikeRepository,
     private val productRepository: ProductRepository,
     private val userRepository: UserRepository,
+    private val productInfoAssembler: ProductInfoAssembler,
 ) {
     /**
      * 삭제되지 않은 상품에 요청자의 관계를 만든다. 이미 있으면 그대로 두고 성공으로 답한다(설계 5.6).
@@ -55,15 +57,15 @@ class LikeService(
      * 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없다. 경로가 가리키는 사용자와 요청자가
      * 같은지는 둘 다 HTTP가 실은 값이라 interfaces가 본다(설계 5.30).
      *
-     * 항목은 고객 상품 목록의 항목과 같은 [ProductInfo]다. 브랜드 이름을 연관에서 건너 읽으므로 옮기는 일이
-     * 트랜잭션 안에서 끝나야 한다(설계 5.7). 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다(설계 5.28).
+     * 항목은 고객 상품 목록의 항목과 같은 [ProductInfo]다. 옮기는 규칙이 상품 목록과 하나이므로 그 일은
+     * [ProductInfoAssembler]가 하고, 여기서는 어느 상품을 읽을지만 정한다(설계 5.31).
      */
     @Transactional(readOnly = true)
     fun findLikedProducts(userId: Long, @Valid request: LikeListRequest): PageSlice<ProductInfo> {
         checkUserExists(userId)
-        val slice = productRepository.findAllLikedBy(userId = userId, page = request.page, size = request.size)
-        val likeCounts = likeRepository.countByProductIds(slice.items.map { it.id })
-        return slice.map { ProductInfo.from(it, likeCount = likeCounts.getValue(it.id)) }
+        return productInfoAssembler.toInfos(
+            productRepository.findAllLikedBy(userId = userId, page = request.page, size = request.size),
+        )
     }
 
     /** 요청자가 가리키는 사용자가 없으면 요청자가 없는 것이다. */

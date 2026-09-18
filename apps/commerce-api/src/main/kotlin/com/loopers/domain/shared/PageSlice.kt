@@ -24,7 +24,7 @@ data class PageSlice<T>(
      * 항목만 다른 타입으로 옮긴 같은 조각. 조각의 위치와 다음 조각의 존재는 그대로다.
      *
      * 항목이 지연 로딩되는 연관을 읽어야 하면 옮기는 일이 트랜잭션 안에서 끝나야 하므로,
-     * 응답 봉투가 아니라 조각 자신이 이 일을 할 수 있어야 한다([com.loopers.application.product.ProductService.findAll]).
+     * 응답 봉투가 아니라 조각 자신이 이 일을 할 수 있어야 한다([com.loopers.application.product.ProductInfoAssembler.toInfos]).
      */
     fun <R> map(transform: (T) -> R): PageSlice<R> =
         PageSlice(items = items.map(transform), page = page, size = size, hasNext = hasNext)

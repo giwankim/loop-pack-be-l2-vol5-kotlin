@@ -1,7 +1,6 @@
 package com.loopers.application.product
 
 import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort
@@ -20,7 +19,7 @@ import org.springframework.validation.annotation.Validated
 class ProductService(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
-    private val likeRepository: LikeRepository,
+    private val productInfoAssembler: ProductInfoAssembler,
 ) {
     /** 새 상품에는 좋아요가 없다는 불변식으로 0을 넣는다. 세어 볼 관계가 아직 없다(설계 5.7). */
     @Transactional
@@ -36,20 +35,20 @@ class ProductService(
     }
 
     @Transactional(readOnly = true)
-    fun find(id: Long): ProductInfo = infoOf(findOrThrow(id))
+    fun find(id: Long): ProductInfo = productInfoAssembler.toInfo(findOrThrow(id))
 
     @Transactional
     fun update(id: Long, @Valid request: ProductAdminUpdateRequest): ProductInfo {
         val product = findOrThrow(id)
         product.update(name = request.name, price = Money(request.price))
-        return infoOf(product)
+        return productInfoAssembler.toInfo(product)
     }
 
     @Transactional
     fun updateStock(id: Long, @Valid request: ProductAdminStockUpdateRequest): ProductInfo {
         val product = findOrThrow(id)
         product.updateStock(request.quantity)
-        return infoOf(product)
+        return productInfoAssembler.toInfo(product)
     }
 
     /**
@@ -80,15 +79,11 @@ class ProductService(
             sort = ProductSort.from(request.sort) ?: throw CoreException(ErrorType.INVALID_SORT),
         )
 
-    /**
-     * 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 트랜잭션 안에서 끝난다.
-     * 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다. 항목마다 세면 조각 크기만큼 조회가 붙는다(설계 5.28).
-     */
-    private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<ProductInfo> {
-        val slice = productRepository.findAll(brandId = brandId, page = page, size = size, sort = sort)
-        val likeCounts = likeRepository.countByProductIds(slice.items.map { it.id })
-        return slice.map { ProductInfo.from(it, likeCount = likeCounts.getValue(it.id)) }
-    }
+    /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
+    private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<ProductInfo> =
+        productInfoAssembler.toInfos(
+            productRepository.findAll(brandId = brandId, page = page, size = size, sort = sort),
+        )
 
     /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
     @Transactional
@@ -99,8 +94,4 @@ class ProductService(
     /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. */
     private fun findOrThrow(id: Long): Product =
         productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
-
-    /** 상품 하나의 응답 모델. 좋아요 수는 관계를 세어 채운다. 관리자 응답도 이 count 쿼리 한 번을 치른다(설계 5.7). */
-    private fun infoOf(product: Product): ProductInfo =
-        ProductInfo.from(product, likeCount = likeRepository.countByProductId(product.id))
 }
