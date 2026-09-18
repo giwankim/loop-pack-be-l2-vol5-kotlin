@@ -335,6 +335,26 @@ class ProductAdminApiMockMvcTest(
         deleteProduct(id, principal = USER).andExpect { status { isForbidden() } }
     }
 
+    /**
+     * 포인트·주문 요청의 엄격한 정수 정책은 그 요청 경계에만 있고 전역 Jackson 설정은 그대로다(포인트·주문 설계 5.10).
+     * 카탈로그는 예전처럼 숫자 문자열과 소수 표기의 정수를 받는다. 이 테스트는 그 계약이 조용히 바뀌지 않게 붙들어 둔다.
+     */
+    @Test
+    fun `registering still accepts a numeric string and a decimal notation for price and stock`() {
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+
+        mockMvc.post(ENDPOINT) {
+            with(ADMIN)
+            with(csrf())
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"brandId": ${brand.id}, "name": "티셔츠", "price": "12000", "stock": 7.0}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.data.price") { value(12_000) }
+            jsonPath("$.data.stock") { value(7) }
+        }
+    }
+
     private fun getProducts(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN) =
         mockMvc.get(ENDPOINT) {
             principal?.let { with(it) }

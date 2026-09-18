@@ -30,6 +30,11 @@ data class Money(
 
     override fun compareTo(other: Money): Int = amount.compareTo(other.amount)
 
+    companion object {
+        /** 0원. 포인트 계정의 처음 잔액이고, 양수 검사의 기준이다. */
+        val ZERO = Money(0)
+    }
+
     private inline fun exact(calculate: () -> Long): Long =
         try {
             calculate()

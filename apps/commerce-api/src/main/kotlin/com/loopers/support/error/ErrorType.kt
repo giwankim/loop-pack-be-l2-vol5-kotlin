@@ -19,4 +19,21 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     /** 요청자. 새 status가 필요하므로 code도 새로 갖는다(설계 4 오류 코드). */
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, HttpStatus.UNAUTHORIZED.reasonPhrase, "요청자를 확인할 수 없습니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, HttpStatus.FORBIDDEN.reasonPhrase, "다른 사용자의 것은 다룰 수 없습니다."),
+
+    /**
+     * 포인트·주문. 클라이언트가 구별해 다뤄야 하는 거절은 code도 새로 갖는다(설계 6 오류 코드).
+     * 계정 없음은 fixture와 데이터의 불일치라 범용 500과 status·code를 공유한다(설계 5.9).
+     */
+    INVALID_IDEMPOTENCY_KEY(
+        HttpStatus.BAD_REQUEST,
+        "INVALID_IDEMPOTENCY_KEY",
+        "Idempotency-Key 헤더는 1자 이상 128자 이하의 영문·숫자·하이픈·밑줄이어야 합니다.",
+    ),
+    IDEMPOTENCY_KEY_CONFLICT(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_CONFLICT", "같은 Idempotency-Key로 다른 요청을 보냈습니다."),
+    INVALID_POINT_ORDER_REQUEST(
+        HttpStatus.BAD_REQUEST,
+        "INVALID_POINT_ORDER_REQUEST",
+        "요청 본문이 잘못되었습니다. 금액과 수량은 정수 표기의 JSON 숫자여야 하고 빠질 수 없습니다.",
+    ),
+    POINT_ACCOUNT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "사용자의 포인트 계정이 없습니다."),
 }
