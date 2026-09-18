@@ -18,6 +18,6 @@ interface ProductJpaRepository : JpaRepository<Product, Long> {
     @EntityGraph(attributePaths = ["brand"])
     fun findAllByBrandId(brandId: Long, pageable: Pageable): Slice<Product>
 
-    /** `brandId`는 상품의 외래 키라 [com.loopers.domain.brand.Brand]로 가는 조인이 없다. 삭제된 상품을 빼는 것은 상품의 제한이다. */
+    /** `brandId`는 상품의 외래 키라 [com.loopers.domain.brand.Brand]로 가는 조인이 없다. */
     fun existsByBrandId(brandId: Long): Boolean
 }

@@ -391,6 +391,7 @@ class BrandAdminApiMockMvcTest(
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
             .andExpect { status { isNotFound() } }
+        assertThat(countStampedBrands(brand.id)).isOne()
     }
 
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */

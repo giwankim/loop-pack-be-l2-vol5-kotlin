@@ -1,7 +1,10 @@
 package com.loopers.application.brand
 
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductService
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.Stock
+import com.loopers.domain.shared.Money
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -23,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class BrandServiceTest(
     private val brandService: BrandService,
-    private val productService: ProductService,
+    private val productRepository: ProductRepository,
     private val entityManager: EntityManager,
 ) {
     @Test
@@ -225,7 +228,7 @@ class BrandServiceTest(
     @Test
     fun `deleting a brand that still has a live product throws BRAND_HAS_PRODUCTS and keeps the brand`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        registerProduct(brand.id)
+        saveProduct(brand)
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> { brandService.delete(brand.id) }
@@ -233,6 +236,7 @@ class BrandServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS) },
+            { assertThat(countBrands()).isOne() },
             { assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스") },
         )
     }
@@ -241,7 +245,7 @@ class BrandServiceTest(
     @Test
     fun `deleting a brand whose only product is out of stock throws BRAND_HAS_PRODUCTS`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        registerProduct(brand.id, stock = 0)
+        saveProduct(brand, stock = 0)
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> { brandService.delete(brand.id) }
@@ -249,17 +253,19 @@ class BrandServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS) },
+            { assertThat(countBrands()).isOne() },
             { assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스") },
         )
     }
 
-    /** 삭제된 상품은 없는 상품이므로 남은 상품이 아니다. 상품을 모두 삭제하면 브랜드를 삭제할 수 있다. */
+    /**
+     * 삭제된 상품은 없는 상품이므로 남은 상품이 아니다. 상품을 모두 삭제하면 브랜드를 삭제할 수 있다.
+     * 삭제가 행을 지우지 않고 시각만 찍는다는 것은 네이티브 조회를 가진 `BrandAdminApiMockMvcTest`가 확인한다.
+     */
     @Test
-    fun `deleting a brand whose products were all deleted stamps the brand`() {
+    fun `deleting a brand whose products were all deleted leaves it gone from the detail`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val product = registerProduct(brand.id)
-        entityManager.flushAndClear()
-        productService.delete(product.id)
+        saveProduct(brand).delete()
         entityManager.flushAndClear()
 
         brandService.delete(brand.id)
@@ -270,12 +276,9 @@ class BrandServiceTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }
 
-    /**
-     * 네 경우의 표를 한자리에서 읽히게 하려고 둔다. 상품이 없는 브랜드가 삭제된다는 사실 자체는
-     * `a deleted brand is gone from the detail and from the list`가 이미 지키고 있다.
-     */
+    /** 삭제 조건이 묻는 것은 남은 상품뿐이다. 상품을 가진 적 없는 브랜드는 아무것도 막지 않는다. */
     @Test
-    fun `deleting a brand that never had a product stamps the brand`() {
+    fun `deleting a brand that never had a product leaves it gone from the detail`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
@@ -293,6 +296,7 @@ class BrandServiceTest(
             .createQuery("select count(b) from Brand b", Long::class.java)
             .singleResult
 
-    private fun registerProduct(brandId: Long, stock: Int = 1) =
-        productService.register(ProductAdminRegisterRequest(brandId = brandId, name = "티셔츠", price = 10_000, stock = stock))
+    /** 다른 조각의 준비물은 그 조각의 유스케이스가 아니라 저장 약속으로 만든다. 상품 등록 규칙이 바뀌어도 브랜드 테스트는 흔들리지 않는다. */
+    private fun saveProduct(brand: Brand, stock: Int = 1) =
+        productRepository.save(Product(brand = brand, name = "티셔츠", price = Money(10_000), stock = Stock(stock)))
 }
