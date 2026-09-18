@@ -265,7 +265,7 @@ Content-Type: application/json
 | 성공한 같은 키에 다른 의도 | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
 
 ```json
-{"meta":{"result":"FAIL","errorCode":"INSUFFICIENT_POINTS","message":"포인트 잔액이 부족합니다."}}
+{"meta":{"result":"FAIL","errorCode":"INSUFFICIENT_POINTS","message":"포인트가 부족합니다."}}
 ```
 
 domain의 부족 예외를 interfaces에서 구체적으로 매핑한다. 기존 `RuleViolationException`의 범용 400 매핑은 유지한다. 새 키 헤더의 누락도 의도적으로 400으로 변환해 프레임워크 예외가 범용 500으로 빠지지 않도록 한다. 사용자와 계정을 함께 준비하기로 했는데 계정만 없는 경우는 입력 오류가 아니라 내부 데이터 불일치로 처리한다.
@@ -295,12 +295,12 @@ classDiagram
         userId
         balance
         charge(amount)
-        pay(amount)
+        pay(amount, order)
     }
     class Product {
         price
         stock
-        decreaseStock(quantity)
+        deductStock(quantity)
     }
     Order "1" *-- "1..100" OrderLineItem
     OrderLineItem ..> Product : productId reference
@@ -647,9 +647,11 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 `POST /api/v1/orders/{orderId}/confirm`은 요청자·소유권을 확인하고 저장된 CONFIRMED 결과를 200으로 반환한다. 별도 키나 본문이 필요하지 않다. 이미 확정된 주문이면 현재 상품·브랜드·재고·잔액을 읽기 전에 결과를 재생한다.
 
-첫 확정의 트랜잭션 경계는 `OrderService.confirm`이다. 상품별 합산 수량으로 `Product.deductStock`을 부르고, `PointAccount.pay`가 저장된 주문 총액을 차감한 뒤 PAYMENT 이력을 만든다. `Order.confirm`이 결제액과 마이크로초 정밀도의 확정 시각을 정한다. 이력 저장과 관리 중인 엔티티의 변경 감지를 같은 트랜잭션에 둔다. `PointService`를 호출하거나 다른 트랜잭션에서 결제하지 않는다. 실패는 주문과 모든 재고·잔액·이력을 되돌려 같은 DRAFT로 재시도할 수 있게 한다.
+첫 확정의 트랜잭션 경계는 `OrderService.confirm`이다. 모든 품목의 상품·브랜드가 판매 가능한지 먼저 확인한 뒤 상품별 합산 수량으로 `Product.deductStock`을 부르고, `PointAccount.pay`가 저장된 주문 총액을 차감한 뒤 PAYMENT 이력을 만든다. `Order.confirm`이 결제액과 마이크로초 정밀도의 확정 시각을 정한다. 이력 저장과 관리 중인 엔티티의 변경 감지를 같은 트랜잭션에 둔다. `PointService`를 호출하거나 다른 트랜잭션에서 결제하지 않는다. 실패는 주문과 모든 재고·잔액·이력을 되돌려 같은 DRAFT로 재시도할 수 있게 한다.
 
 - 부족은 각각 `InsufficientStockException`·`InsufficientPointsException`으로 표현하고 공통 advice에서 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`/409로 바꾼다. 다른 도메인 규칙의 기존 400 매핑은 유지한다.
+- 판매 불가와 재고 부족이 함께면 `ORDER_PRODUCT_NOT_AVAILABLE`/404가 앞선다. 확인을 차감보다 먼저 한 번에 끝내므로 응답이 품목의 차례(상품 ID 오름차순)에 흔들리지 않는다. 검사 순서를 바꾸면 이 계약도 함께 본다.
+- 이미 확정된 주문의 재확정은 `Order.confirm`이 `InvalidOrderException`으로 거절한다. `OrderService.confirm`이 저장된 결과를 먼저 재생하므로 정상 흐름은 이 거절에 닿지 않으며, 애그리거트가 결제액·확정 시각을 두 번 쓰지 않도록 스스로 지킨다(#14 표준 리뷰).
 - `PointHistory.order`는 읽기용 LAZY 연관이다. `uk_point_history_order_id`가 주문당 PAYMENT 하나를 보장하고 Hibernate가 `fk_point_history_order`를 만든다. 처음에는 스칼라 참조와 import SQL을 사용했지만, 스키마 재생성 테스트에서 Hibernate가 FK를 모른 채 `orders`를 먼저 삭제해 실패했다. 연관 매핑으로 FK를 테이블보다 먼저 제거하게 하며 별도 스키마 삭제 훅은 두지 않는다. CHARGE는 키만, PAYMENT는 주문 참조만 가지며 양수 금액과 0 이상 직후 잔액을 DB CHECK로도 지킨다. CHARGE의 키 비교·재생은 그대로다.
 - 생성·확정 응답의 시각 정밀도를 MySQL `datetime(6)`에 맞춘다. 확정 후에도 생성 재요청은 최초 DRAFT/201이며 충전 재요청은 충전 당시 잔액이다. GET은 현재 상태를 읽는다.
 - 주 검증 경계는 `OrderConfirmationApiMockMvcTest`의 실제 HTTP 요청·MySQL이다. 테스트 전체를 트랜잭션으로 감싸지 않는다. 늦은 실패는 기존 `PointHistoryRepository.save` 경계에서 실제 저장과 flush 뒤 주입하고, 종료 후 새 트랜잭션으로 재조회한다. 공개 테스트 API는 추가하지 않는다.

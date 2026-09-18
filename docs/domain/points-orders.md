@@ -57,7 +57,6 @@
 | `balanceAfter` | `Money` | 이 기록 직후의 잔액. 뒤에 잔액이 바뀌어도 그대로다 |
 | `chargeKey` | `String?` | CHARGE의 충전 키. 계정 안에서 유일, 대소문자 구분. PAYMENT에는 없다 |
 | `order` | `Order?` | PAYMENT의 주문. 읽기용 LAZY 연관이며 주문당 유일하고 물리 FK를 가진다. CHARGE에는 없다 |
-| `orderId` | `Long?` | 주문 참조에서 읽은 식별자. 프록시가 들고 있어 주문을 조회하지 않는다 |
 
 테이블 `point_history`. `(point_account_id, charge_key)` 유일(`uk_point_history_point_account_id_charge_key`), `point_account`로 외래 키(`fk_point_history_point_account`). `charge_key`는 `varchar(128) character set utf8mb4 collate utf8mb4_bin`이라 조회와 유일 제약이 대소문자를 구분한다(설계 12.2).
 
@@ -114,7 +113,7 @@
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `Order(userId, creationKey, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException`, `InvalidMoneyException` |
-| `confirm()` | 저장된 총액과 마이크로초 정밀도의 현재 시각으로 확정한다. 이미 확정되었으면 그대로 둔다 | 없음. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
+| `confirm()` | 저장된 총액과 마이크로초 정밀도의 현재 시각으로 확정한다 | `InvalidOrderException`. 이미 확정된 주문은 거절해 결제액·확정 시각을 다시 쓰지 않는다. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
 
 ### 저장 약속
 
@@ -125,7 +124,7 @@
 - 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 같은 생성 키의 주문 조회 → 있으면 정규화한 의도를 견줘 최초 `DRAFT` 응답 재생(같음) 또는 `IDEMPOTENCY_KEY_CONFLICT`(다름) → 없으면 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문·품목·생성 키는 한 트랜잭션이다.
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
 - 목록 조회: `OrderService.findAll` → 요청자 존재 확인 → `findAllByUserId` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
-- 확정: `OrderService.confirm` → 요청자·소유권 확인 → CONFIRMED면 저장된 결과 반환 → 각 상품·브랜드 확인과 `Product.deductStock` → `PointAccount.pay` → `Order.confirm` → PAYMENT 저장. 전부 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이다(ADR 0002·0003).
+- 확정: `OrderService.confirm` → 요청자·소유권 확인 → CONFIRMED면 저장된 결과 반환 → 모든 품목의 상품·브랜드 확인 → 상품별 `Product.deductStock` → `PointAccount.pay` → `Order.confirm` → PAYMENT 저장. 전부 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이다(ADR 0002·0003).
 
 ## 주문 품목 (OrderLineItem)
 
