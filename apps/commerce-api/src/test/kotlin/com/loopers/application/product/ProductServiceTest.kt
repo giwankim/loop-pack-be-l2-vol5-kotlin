@@ -7,10 +7,10 @@ import com.loopers.domain.like.LikeRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
+import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
-import org.hibernate.SessionFactory
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
@@ -93,7 +93,7 @@ class ProductServiceTest(
         val products = listOf("티셔츠", "후드티", "양말").map { register(brand.id, name = it) }
         products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
         entityManager.flushAndClear()
-        val statistics = entityManager.entityManagerFactory.unwrap(SessionFactory::class.java).statistics
+        val statistics = entityManager.statistics
         statistics.isStatisticsEnabled = true
         statistics.clear()
 

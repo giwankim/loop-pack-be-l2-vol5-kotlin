@@ -5,10 +5,9 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
+import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
-import org.hibernate.SessionFactory
-import org.hibernate.stat.Statistics
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
@@ -200,18 +199,15 @@ class BrandRepositoryTest(
     @Test
     fun `findAll reads a slice with a single query and never counts the total`() {
         saveBrands(count = 3)
-        statistics.clear()
+        entityManager.statistics.clear()
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
         assertAll(
             { assertThat(slice.hasNext).isTrue() },
-            { assertThat(statistics.prepareStatementCount).isOne() },
+            { assertThat(entityManager.statistics.prepareStatementCount).isOne() },
         )
     }
-
-    private val statistics: Statistics
-        get() = entityManager.entityManagerFactory.unwrap(SessionFactory::class.java).statistics
 
     /** 최신 등록이 뒤 번호가 되도록 `브랜드 0`부터 1분 간격으로 만든다. */
     private fun saveBrands(count: Int) {

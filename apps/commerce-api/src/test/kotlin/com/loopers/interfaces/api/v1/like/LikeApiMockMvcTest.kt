@@ -9,6 +9,7 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.error.ErrorType
+import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -100,7 +101,7 @@ class LikeApiMockMvcTest(
         like(productId, userId).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
-        assertThat(countLikes(userId, productId)).isOne()
+        assertThat(entityManager.countLikes(userId, productId)).isOne()
         mockMvc.get("$PRODUCTS/$productId").andExpect { jsonPath("$.data.likeCount") { value(1) } }
     }
 
@@ -163,7 +164,7 @@ class LikeApiMockMvcTest(
             jsonPath("$.meta.message") { value(ErrorType.UNAUTHORIZED.message) }
         }
 
-        assertThat(countLikes(999L, productId)).isZero()
+        assertThat(entityManager.countLikes(999L, productId)).isZero()
     }
 
     @Test
@@ -197,7 +198,7 @@ class LikeApiMockMvcTest(
 
     /** 상품이 삭제되어도 남은 좋아요는 취소된다. 취소는 상품을 보지 않는다. */
     @Test
-    fun `unliking a deleted product returns 200 and removes the like that remained`() {
+    fun `unliking a deleted product returns 200 and lets the remaining like go`() {
         val userId = registerUser()
         val productId = registerProduct()
         like(productId, userId).andExpect { status { isOk() } }
@@ -207,7 +208,7 @@ class LikeApiMockMvcTest(
         unlike(productId, userId).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
-        assertThat(countLikes(userId, productId)).isZero()
+        assertThat(entityManager.countLikes(userId, productId)).isZero()
     }
 
     private fun like(productId: Long, userId: Long): ResultActionsDsl =
@@ -224,13 +225,4 @@ class LikeApiMockMvcTest(
             .register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 10_000, stock = 1))
             .id
     }
-
-    private fun countLikes(userId: Long, productId: Long): Long =
-        (
-            entityManager
-                .createNativeQuery("select count(*) from likes where user_id = :userId and product_id = :productId")
-                .setParameter("userId", userId)
-                .setParameter("productId", productId)
-                .singleResult as Number
-        ).toLong()
 }

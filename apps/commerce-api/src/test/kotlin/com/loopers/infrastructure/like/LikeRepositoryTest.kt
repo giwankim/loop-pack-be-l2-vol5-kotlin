@@ -4,7 +4,9 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
 import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
+import com.loopers.utils.likeRowExists
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -85,11 +87,11 @@ class LikeRepositoryTest(
         likeRepository.save(Like(userId = 2L, productId = 10L))
         entityManager.flushAndClear()
 
-        assertThat(countRows()).isEqualTo(3L)
+        assertThat(entityManager.countLikes()).isEqualTo(3L)
     }
 
     @Test
-    fun `delete removes the row so the pair can no longer be found`() {
+    fun `delete erases the row so the pair can no longer be found`() {
         val saved = likeRepository.save(Like(userId = 1L, productId = 10L))
         entityManager.flushAndClear()
 
@@ -98,7 +100,7 @@ class LikeRepositoryTest(
 
         assertAll(
             { assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)).isNull() },
-            { assertThat(rowExists(saved.id)).isFalse() },
+            { assertThat(entityManager.likeRowExists(saved.id)).isFalse() },
         )
     }
 
@@ -115,7 +117,7 @@ class LikeRepositoryTest(
         assertAll(
             { assertThat(second.id).isNotEqualTo(first.id) },
             { assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)?.id).isEqualTo(second.id) },
-            { assertThat(countRows()).isOne() },
+            { assertThat(entityManager.countLikes()).isOne() },
         )
     }
 
@@ -153,16 +155,4 @@ class LikeRepositoryTest(
 
         assertThat(likeRepository.countByProductIds(emptyList())).isEmpty()
     }
-
-    /** 행 수는 저장 약속을 거치지 않고 SQL로 센다. 취소가 행을 지운다는 약속은 테이블에서 봐야 한다. */
-    private fun countRows(): Long =
-        (entityManager.createNativeQuery("select count(*) from likes").singleResult as Number).toLong()
-
-    private fun rowExists(id: Long): Boolean =
-        (
-            entityManager
-                .createNativeQuery("select count(*) from likes where id = :id")
-                .setParameter("id", id)
-                .singleResult as Number
-        ).toLong() > 0
 }

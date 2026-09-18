@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * 좋아요는 상품 아래의 자원이라 경로가 상품을 품는다. 요청자는 헤더에서 읽는다([UserIdHeader]).
- * 두 요청 모두 최종 상태를 말하는 것이라 응답에 data가 없다(설계 5.6).
+ * 두 요청 모두 최종 상태를 말하는 것이라(설계 5.6) 응답에 data가 없다(설계 4).
  */
 @RestController
 @RequestMapping("/api/v1/products/{productId}/likes")

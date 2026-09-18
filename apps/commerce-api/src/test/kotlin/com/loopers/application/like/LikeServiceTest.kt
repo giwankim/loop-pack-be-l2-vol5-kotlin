@@ -12,6 +12,7 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -46,7 +47,7 @@ class LikeServiceTest(
         likeService.like(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertThat(countLikes(user.id, product.id)).isOne()
+        assertThat(entityManager.countLikes(user.id, product.id)).isOne()
     }
 
     @Test
@@ -59,7 +60,7 @@ class LikeServiceTest(
         likeService.like(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertThat(countLikes(user.id, product.id)).isOne()
+        assertThat(entityManager.countLikes(user.id, product.id)).isOne()
     }
 
     @Test
@@ -74,13 +75,13 @@ class LikeServiceTest(
         entityManager.flushAndClear()
 
         assertAll(
-            { assertThat(countLikes(user.id, product.id)).isOne() },
-            { assertThat(countLikes(other.id, product.id)).isOne() },
+            { assertThat(entityManager.countLikes(user.id, product.id)).isOne() },
+            { assertThat(entityManager.countLikes(other.id, product.id)).isOne() },
         )
     }
 
     @Test
-    fun `unliking removes the like`() {
+    fun `unliking leaves the pair without a like`() {
         val user = userRepository.save(User())
         val product = registerProduct()
         likeService.like(userId = user.id, productId = product.id)
@@ -89,7 +90,7 @@ class LikeServiceTest(
         likeService.unlike(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertThat(countLikes(user.id, product.id)).isZero()
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
     @Test
@@ -101,11 +102,11 @@ class LikeServiceTest(
         likeService.unlike(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertThat(countLikes(user.id, product.id)).isZero()
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
     @Test
-    fun `unliking removes only the user's own like`() {
+    fun `unliking leaves the other user's like in place`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
         val product = registerProduct()
@@ -117,8 +118,8 @@ class LikeServiceTest(
         entityManager.flushAndClear()
 
         assertAll(
-            { assertThat(countLikes(user.id, product.id)).isZero() },
-            { assertThat(countLikes(other.id, product.id)).isOne() },
+            { assertThat(entityManager.countLikes(user.id, product.id)).isZero() },
+            { assertThat(entityManager.countLikes(other.id, product.id)).isOne() },
         )
     }
 
@@ -133,7 +134,7 @@ class LikeServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
-            { assertThat(countLikes(user.id, product.id)).isZero() },
+            { assertThat(entityManager.countLikes(user.id, product.id)).isZero() },
         )
     }
 
@@ -148,7 +149,7 @@ class LikeServiceTest(
 
     /** 삭제된 상품에 남은 좋아요는 그대로 두되 취소는 허용한다. 취소는 상품의 존재를 보지 않는다. */
     @Test
-    fun `unliking a deleted product removes the like that remained on it`() {
+    fun `unliking a deleted product still lets the remaining like go`() {
         val user = userRepository.save(User())
         val product = registerProduct()
         likeService.like(userId = user.id, productId = product.id)
@@ -158,7 +159,7 @@ class LikeServiceTest(
         likeService.unlike(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertThat(countLikes(user.id, product.id)).isZero()
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
     @Test
@@ -171,12 +172,12 @@ class LikeServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(countLikes(999L, product.id)).isZero() },
+            { assertThat(entityManager.countLikes(999L, product.id)).isZero() },
         )
     }
 
     @Test
-    fun `unliking as an unknown user throws UNAUTHORIZED and removes nothing`() {
+    fun `unliking as an unknown user throws UNAUTHORIZED and leaves the like in place`() {
         val user = userRepository.save(User())
         val product = registerProduct()
         likeRepository.save(Like(userId = user.id, productId = product.id))
@@ -187,7 +188,7 @@ class LikeServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(countLikes(user.id, product.id)).isOne() },
+            { assertThat(entityManager.countLikes(user.id, product.id)).isOne() },
         )
     }
 
@@ -195,13 +196,4 @@ class LikeServiceTest(
         val brand = brandRepository.save(Brand("루퍼스"))
         return productRepository.save(Product(brand = brand, name = "티셔츠", price = Money(10_000), stock = Stock(1)))
     }
-
-    private fun countLikes(userId: Long, productId: Long): Long =
-        (
-            entityManager
-                .createNativeQuery("select count(*) from likes where user_id = :userId and product_id = :productId")
-                .setParameter("userId", userId)
-                .setParameter("productId", productId)
-                .singleResult as Number
-        ).toLong()
 }
