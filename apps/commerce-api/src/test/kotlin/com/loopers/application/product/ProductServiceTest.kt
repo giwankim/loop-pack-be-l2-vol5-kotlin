@@ -334,6 +334,34 @@ class ProductServiceTest(
     }
 
     /**
+     * 좋아요 많은순도 조각 조회 하나와 집계 하나, 둘이어야 한다. 기본 정렬을 세는 위쪽 테스트와 겹쳐 보이지만
+     * 겹치지 않는다. 이 기준만 `group by`가 붙어(설계 5.29) 총 개수를 세고 싶은 유혹이 생기는 자리이고,
+     * 조각을 뜨는 방법이 기준마다 갈리므로 세는 자리도 기준마다 있어야 한다(설계 5.5).
+     */
+    @Test
+    fun `listing by likes counts the likes of the whole slice in one query`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val products = listOf("티셔츠", "후드티", "양말").map { register(brand.id, name = it) }
+        products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
+        entityManager.flushAndClear()
+        val statistics = entityManager.statistics
+        statistics.isStatisticsEnabled = true
+        statistics.clear()
+
+        try {
+            val slice = productService.findAll(ProductListRequest(sort = "likes_desc"))
+
+            assertAll(
+                { assertThat(slice.items).hasSize(3) },
+                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
+                { assertThat(statistics.prepareStatementCount).isEqualTo(2L) },
+            )
+        } finally {
+            statistics.isStatisticsEnabled = false
+        }
+    }
+
+    /**
      * 모르는 정렬 값은 Controller를 거치지 않고 불러도 거절된다. 배치나 컨슈머가 요청을 손으로 만들어
      * 부르는 자리가 여기이므로, 철자를 거르는 일이 HTTP 밖에도 있어야 한다.
      */

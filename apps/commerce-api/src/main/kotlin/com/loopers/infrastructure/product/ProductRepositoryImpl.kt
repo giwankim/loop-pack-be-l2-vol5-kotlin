@@ -15,7 +15,7 @@ import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
 /**
- * [ProductRepository]의 구현. 식별자로 읽고 쓰는 일과 좋아요 목록은 [ProductJpaRepository]에 맡기고, 상품 목록만 QueryDSL로 짠다.
+ * [ProductRepository]의 구현. 메서드 이름만으로 끝나는 일과 좋아요 목록은 [ProductJpaRepository]에 맡기고, 상품 목록만 QueryDSL로 짠다.
  * 두 인터페이스를 하나로 합치지 않는 이유는 [com.loopers.infrastructure.brand.BrandRepositoryImpl]과 같다.
  */
 @Component

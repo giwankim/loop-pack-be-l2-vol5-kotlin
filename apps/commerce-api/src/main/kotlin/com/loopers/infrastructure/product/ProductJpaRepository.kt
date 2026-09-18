@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 
 /**
- * [Product]의 Spring Data JPA 저장소. [ProductRepositoryImpl]이 식별자로 읽고 쓰는 일을 이것에 맡긴다.
+ * [Product]의 Spring Data JPA 저장소. [ProductRepositoryImpl]이 메서드 이름만으로 끝나는 일과 좋아요 목록을 이것에 맡긴다.
  * 삭제된 행을 거르는 조건은 [Product]의 `@SQLRestriction`이 모든 조회에 붙이므로 여기서는 적지 않는다.
  *
  * 상품 목록은 여기 없다. 브랜드 필터와 정렬 기준이 조각마다 달라 [ProductRepositoryImpl]이 QueryDSL로 짠다(설계 5.29).
