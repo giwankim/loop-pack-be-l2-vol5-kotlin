@@ -70,12 +70,18 @@ class BrandApiMockMvcTest(
     fun `reading a deleted brand returns 404`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
-        clearPersistenceContext()
+        entityManager.flushAndClear()
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isNotFound() } }
     }
 
+    /**
+     * 관리자가 바꾼 이름이 고객 상세에 보인다(#3의 인수 조건).
+     *
+     * 두 요청 사이를 비우는 까닭: 같은 트랜잭션이라 1차 캐시에 방금 이름을 바꾼 브랜드가 그대로 남아 있다.
+     * 비우지 않으면 고객 조회가 SQL 대신 그 객체를 받아, 수정이 DB에 닿았는지와 무관하게 통과한다.
+     */
     @Test
     fun `a name an admin changed shows up in the customer detail`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
@@ -86,6 +92,7 @@ class BrandApiMockMvcTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"name": "무신사"}"""
         }.andExpect { status { isOk() } }
+        entityManager.flushAndClear()
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect {
@@ -93,11 +100,4 @@ class BrandApiMockMvcTest(
                 jsonPath("$.data.name") { value("무신사") }
             }
     }
-
-    /**
-     * 쌓인 변경을 DB로 내보내고 영속성 컨텍스트를 비운다. 이어지는 ID 조회가 1차 캐시가 아니라 SQL을 보게 하려는 것이다.
-     * 캐시가 답하면 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다.
-     * 운영에서는 요청마다 컨텍스트가 새로 열려 저절로 되는 일이다.
-     */
-    private fun clearPersistenceContext() = entityManager.flushAndClear()
 }

@@ -274,7 +274,7 @@ class BrandAdminApiMockMvcTest(
     fun `renaming a deleted brand returns 404`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
-        clearPersistenceContext()
+        entityManager.flushAndClear()
 
         putBrand(brand.id, name = "무신사").andExpect { status { isNotFound() } }
     }
@@ -297,7 +297,7 @@ class BrandAdminApiMockMvcTest(
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data") { doesNotExist() }
         }
-        clearPersistenceContext()
+        entityManager.flushAndClear()
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
             .andExpect { status { isNotFound() } }
@@ -307,11 +307,11 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `deleting a brand stamps the row instead of removing it`() {
+    fun `deleting a brand stamps the row instead of erasing it`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
         deleteBrand(brand.id).andExpect { status { isOk() } }
-        clearPersistenceContext()
+        entityManager.flushAndClear()
 
         assertAll(
             { assertThat(brandRowExists(brand.id)).isTrue() },
@@ -323,7 +323,7 @@ class BrandAdminApiMockMvcTest(
     fun `deleting a brand twice returns 404 the second time`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         deleteBrand(brand.id).andExpect { status { isOk() } }
-        clearPersistenceContext()
+        entityManager.flushAndClear()
 
         deleteBrand(brand.id).andExpect {
             status { isNotFound() }
@@ -366,14 +366,6 @@ class BrandAdminApiMockMvcTest(
             principal?.let { with(it) }
             with(csrf())
         }
-
-    /**
-     * 쌓인 변경을 DB로 내보내고 영속성 컨텍스트를 비운다. 이어지는 조회가 1차 캐시가 아니라 SQL을 보게 하려는 것이다.
-     * 삭제한 브랜드를 ID로 다시 찾는 자리(캐시가 답하면 [com.loopers.domain.brand.Brand]의 삭제 필터가 붙을 자리가 없다)와
-     * 네이티브 조회로 행을 들여다보는 자리(아직 내보내지 않은 변경은 보이지 않는다)에 쓴다.
-     * 운영에서는 요청마다 컨텍스트가 새로 열려 저절로 되는 일이다.
-     */
-    private fun clearPersistenceContext() = entityManager.flushAndClear()
 
     /** 삭제 시각과 상관없이 브랜드 행이 남아 있는지. 물리 삭제와 논리 삭제를 가른다. */
     private fun brandRowExists(brandId: Long): Boolean =
