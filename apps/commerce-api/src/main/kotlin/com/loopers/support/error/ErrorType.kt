@@ -22,7 +22,8 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
 
     /**
      * 포인트·주문. 클라이언트가 구별해 다뤄야 하는 거절은 code도 새로 갖는다(설계 6 오류 코드).
-     * 계정 없음은 fixture와 데이터의 불일치라 범용 500과 status·code를 공유한다(설계 5.9).
+     * 계정 없음은 fixture와 데이터의 불일치라 범용 500과 status·code를 공유한다(설계 6 끝).
+     * 키 메시지의 128자는 domain의 `IdempotencyKey.MAX_LENGTH`와 같다. support는 domain을 참조할 수 없어 글자로 적는다.
      */
     INVALID_IDEMPOTENCY_KEY(
         HttpStatus.BAD_REQUEST,

@@ -225,7 +225,7 @@ class PointApiMockMvcTest(
         }
     }
 
-    /** 사용자는 있는데 계정이 없는 것은 데이터 불일치라 내부 오류다. 0원 계정을 만들어 주지 않는다(설계 5.9). */
+    /** 사용자는 있는데 계정이 없는 것은 데이터 불일치라 내부 오류다. 0원 계정을 만들어 주지 않는다(설계 5.9, 6 끝). */
     @Test
     fun `an existing user without an account gets 500 on both APIs and no account is created`() {
         val userId = userFixture.registerUserWithoutAccount().id

@@ -27,6 +27,17 @@ fun EntityManager.countPointHistories(accountId: Long, chargeKey: String): Long 
         "chargeKey" to chargeKey,
     )
 
+/** CHARGE 이력 한 행의 종류·금액·직후 잔액. 없으면 예외다. */
+fun EntityManager.pointHistoryRow(accountId: Long, chargeKey: String): List<Any?> {
+    val row = createNativeQuery(
+        "select type, amount, balance_after from point_history where point_account_id = :accountId and charge_key = :chargeKey",
+    )
+        .setParameter("accountId", accountId)
+        .setParameter("chargeKey", chargeKey)
+        .singleResult as Array<*>
+    return listOf(row[0], (row[1] as Number).toLong(), (row[2] as Number).toLong())
+}
+
 /** 한 사용자의 계정 행 수. 조회나 충전이 계정을 만들지 않았는지 볼 때 쓴다. */
 fun EntityManager.countPointAccounts(userId: Long): Long =
     countRows("select count(*) from point_account where user_id = :userId", "userId" to userId)

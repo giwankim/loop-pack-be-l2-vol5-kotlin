@@ -26,7 +26,7 @@ interface PointApiSpec {
             description = "충전 요청을 구별하는 키. 영문·숫자·하이픈·밑줄 1–128자, 대소문자 구분",
             required = true,
         )
-        idempotencyKey: String?,
+        chargeKey: String?,
         body: PointChargeRequestBody,
     ): ApiResponse<PointAccountResponse>
 

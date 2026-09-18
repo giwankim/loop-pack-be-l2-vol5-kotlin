@@ -484,7 +484,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 12.2 충전 키 열의 비교
 
-**선택: `charge_key`는 `varchar(128) character set utf8mb4 collate utf8mb4_bin`이다.** `PointHistory.CHARGE_KEY_COLUMN`이 `columnDefinition`으로 못 박는다.
+**선택: `charge_key`는 `varchar(128) character set utf8mb4 collate utf8mb4_bin`이다.** `domain.shared.IdempotencyKey.COLUMN_DEFINITION`이 `columnDefinition`으로 못 박는다. 길이 128, 정규식, 열 정의는 그 object 하나에 있어 Request의 `@Pattern`, 헤더 검사, 엔티티 열이 같은 상수를 읽는다(카탈로그 설계 5.18). 주문 생성 키(#13)도 같은 object를 쓴다.
 
 - 서버 기본 collation `utf8mb4_general_ci`는 대소문자를 무시한다. 열이 스스로 binary collation을 가져야 조회(`where charge_key = ?`)와 유일 제약이 같은 비교를 쓴다(5.8). `PointHistoryRepositoryTest`가 `Charge-A`·`charge-a`가 두 행이고 `CHARGE-A`는 없음을, 그리고 `information_schema.columns`의 collation을 확인한다.
 - 8.1이 예로 든 `ascii_bin` 대신 `utf8mb4_bin`을 쓴 까닭은 연결 문자 집합과 같아 비교에 문자 집합 변환이 끼지 않기 때문이다. 키는 어차피 ASCII로 걸러지므로 저장 크기는 같고, 유일 인덱스는 128×4바이트로 한도 안이다.
@@ -507,14 +507,16 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 | 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
 | --- | --- | --- | --- |
-| `Idempotency-Key` 없음·형식 오류 | 400 | `INVALID_IDEMPOTENCY_KEY` | `IdempotencyKeyHeader.require` (interfaces). 같은 형식을 `PointChargeRequest`의 `@Pattern`이 Service 입구에서 한 번 더 본다(5.25) |
+| `Idempotency-Key` 없음·형식 오류 | 400 | `INVALID_IDEMPOTENCY_KEY` | `IdempotencyKeyHeader.require` (interfaces). 같은 형식을 `PointChargeRequest`의 `@Pattern`이 Service 입구에서 한 번 더 본다(카탈로그 설계 5.25) |
 | 본문의 토큰 종류·`null`·누락·`Long` 범위 밖 | 400 | `INVALID_POINT_ORDER_REQUEST` | `StrictLongDeserializer`와 `PointChargeRequestBody` (12.3) |
 | 충전액 0·음수 | 400 | 범용 `Bad Request` + "충전액은 1원 이상이어야 합니다." | `PointChargeRequest`의 `@Min(1)`, Service의 `@Validated`. domain의 `InvalidChargeAmountException`은 그 뒤에 있어 HTTP로 닿지 않는다 |
 | 충전 후 잔액 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `PointAccount.charge` → `Money.plus`. `RuleViolationException`의 기존 400 매핑 |
 | 같은 성공 키에 다른 충전액 | 409 | `IDEMPOTENCY_KEY_CONFLICT` | `PointService.charge` |
-| 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointService`. fixture와 데이터의 불일치(5.9) |
+| 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointService`. fixture와 데이터의 불일치(5.9, 6절 끝) |
 
 6절 초안은 "금액 범위 오류"도 `INVALID_POINT_ORDER_REQUEST`로 적었다. 구현은 그 행을 둘로 나눴다. 토큰의 종류와 `Long` 범위는 HTTP가 새 code로 거절하고, 1원 이상이라는 업무 규칙은 카탈로그의 가격·재고와 같은 길(Request 제약 → 범용 400 + 규칙 메시지, 카탈로그 설계 5.18)로 거절한다. 규칙을 HTTP DTO에 한 번 더 적어 code를 맞추는 것보다 규칙이 적히는 자리를 늘리지 않는 쪽을 택했다. 9절의 흐름("HTTP에서 토큰·필수 필드·키 형식, application에서 양수·범위")과도 같다. 클라이언트가 두 400을 구별해야 하는 요구가 생기면 다시 본다.
+
+카탈로그 설계 5.18과 다른 점이 하나 있다. 카탈로그는 Controller가 Request를 `@Valid`로 받아 HTTP 요청이 Service의 `@Validated`까지 가지 않지만, 충전은 HTTP 입력 DTO가 Request를 만들므로 Controller 쪽 입구가 없고 HTTP 요청의 충전액 0도 Service 입구의 `ConstraintViolationException`으로 거절된다. 응답은 같은 400과 메시지다(`ApiControllerAdvice.handleConstraintViolation`). Controller에 `Validator`를 주입해 입구를 하나 더 두는 것은 같은 제약을 두 번 읽는 것 말고 얻는 것이 없어 두지 않았다. 모든 호출이 지나는 가장 안쪽 입구가 Service다(카탈로그 설계 5.25).
 
 ### 12.5 사용자 fixture와 계정
 

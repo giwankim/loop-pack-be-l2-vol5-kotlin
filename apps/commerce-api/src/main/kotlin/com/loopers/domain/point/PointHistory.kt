@@ -1,6 +1,7 @@
 package com.loopers.domain.point
 
 import com.loopers.domain.BaseEntity
+import com.loopers.domain.shared.IdempotencyKey
 import com.loopers.domain.shared.Money
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
@@ -22,7 +23,8 @@ import jakarta.persistence.UniqueConstraint
  * [account]는 읽기용 참조이며 DB 외래 키의 자리다(설계 12.1). 계정은 이력 컬렉션을 갖지 않는다.
  * 결제(PAYMENT)의 이력과 주문 참조는 주문 확정 조각에서 더한다.
  *
- * 충전 키 열은 대소문자를 구분해 견주고 유일 제약도 그 비교로 지킨다. `Charge-A`와 `charge-a`는 다른 키다(설계 5.8, 12.2).
+ * 충전 키 열은 대소문자를 구분해 견주고 유일 제약도 그 비교로 지킨다. `Charge-A`와 `charge-a`는 다른 키다.
+ * 열의 정의는 [IdempotencyKey]가 정한다(설계 5.8, 12.2).
  */
 @Entity
 @Table(
@@ -62,15 +64,10 @@ class PointHistory private constructor(
     val balanceAfter: Money = balanceAfter
 
     /** 충전 요청의 `Idempotency-Key`. 계정 안에서 유일하며 대소문자를 구분한다. */
-    @Column(name = "charge_key", nullable = false, updatable = false, columnDefinition = CHARGE_KEY_COLUMN)
+    @Column(name = "charge_key", nullable = false, updatable = false, columnDefinition = IdempotencyKey.COLUMN_DEFINITION)
     val chargeKey: String = chargeKey
 
     companion object {
-        const val CHARGE_KEY_MAX_LENGTH = 128
-
-        /** 기본 collation(`utf8mb4_general_ci`)은 대소문자를 무시하므로 열에서 binary collation을 못 박는다(설계 12.2). */
-        const val CHARGE_KEY_COLUMN = "varchar($CHARGE_KEY_MAX_LENGTH) character set utf8mb4 collate utf8mb4_bin"
-
         /** 성공한 충전의 기록. [PointAccount.charge]만 부른다. */
         internal fun charge(account: PointAccount, amount: Money, balanceAfter: Money, chargeKey: String): PointHistory =
             PointHistory(

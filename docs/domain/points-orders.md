@@ -21,7 +21,7 @@
 
 ### 규칙
 
-- 사용자마다 계정 하나. 사용자 fixture와 함께 만들고, 조회나 충전이 없는 계정을 만들어 주지 않는다. 사용자는 있는데 계정이 없으면 application이 `POINT_ACCOUNT_MISSING`(500)이다(설계 5.9, 12.5).
+- 사용자마다 계정 하나. 사용자 fixture와 함께 만들고, 조회나 충전이 없는 계정을 만들어 주지 않는다. 사용자는 있는데 계정이 없으면 application이 `POINT_ACCOUNT_MISSING`(500)이다(설계 5.9, 6절 끝, 12.5).
 - 잔액은 0 이상이다. `Money`가 지킨다. 상품 가격의 상한은 잔액에 적용되지 않고 `Long` 범위만 지킨다(설계 5.7).
 - 충전액은 1원 이상이다. 어기면 `InvalidChargeAmountException`. 충전 후 잔액이 `Long` 범위를 넘으면 `InvalidMoneyException`. 어느 쪽이든 잔액은 그대로다.
 
@@ -70,7 +70,7 @@
 
 ## 충전 키 (chargeKey)
 
-값이며 따로 타입을 두지 않는다. 허용 형식은 `PointChargeRequest.CHARGE_KEY_PATTERN` = `[A-Za-z0-9_-]{1,128}` 하나다.
+값이며 따로 타입을 두지 않는다. 허용 형식은 `domain.shared.IdempotencyKey.PATTERN` = `[A-Za-z0-9_-]{1,128}` 하나이며, 길이와 저장 열의 정의도 그 object에 있다(설계 12.2). 주문 생성 키와 공유한다.
 
 - HTTP `Idempotency-Key` 헤더가 없거나 형식을 어기면 interfaces(`IdempotencyKeyHeader.require`)가 `INVALID_IDEMPOTENCY_KEY`(400)로 거절한다. 같은 형식을 `PointChargeRequest`의 `@Pattern`이 Service 입구에서 한 번 더 본다(설계 12.4).
 - 공백을 떼거나 대소문자를 바꾸지 않는다.

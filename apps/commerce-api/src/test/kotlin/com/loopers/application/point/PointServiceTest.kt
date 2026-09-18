@@ -8,6 +8,7 @@ import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
 import com.loopers.utils.countPointHistories
+import com.loopers.utils.pointHistoryRow
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
@@ -39,13 +40,13 @@ class PointServiceTest(
 
         val info = pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 10_000))
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
 
         assertAll(
             { assertThat(info.balance).isEqualTo(10_000L) },
-            { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(account.id, "charge-001")).isOne() },
-            { assertThat(historyRow(account.id, "charge-001")).containsExactly("CHARGE", 10_000L, 10_000L) },
+            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L) },
+            { assertThat(entityManager.countPointHistories(accountId, "charge-001")).isOne() },
+            { assertThat(entityManager.pointHistoryRow(accountId, "charge-001")).containsExactly("CHARGE", 10_000L, 10_000L) },
         )
     }
 
@@ -57,13 +58,13 @@ class PointServiceTest(
 
         val info = pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-002", amount = 500))
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
 
         assertAll(
             { assertThat(info.balance).isEqualTo(10_500L) },
-            { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_500L) },
-            { assertThat(entityManager.countPointHistories(account.id)).isEqualTo(2L) },
-            { assertThat(historyRow(account.id, "charge-002")).containsExactly("CHARGE", 500L, 10_500L) },
+            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_500L) },
+            { assertThat(entityManager.countPointHistories(accountId)).isEqualTo(2L) },
+            { assertThat(entityManager.pointHistoryRow(accountId, "charge-002")).containsExactly("CHARGE", 500L, 10_500L) },
         )
     }
 
@@ -76,12 +77,12 @@ class PointServiceTest(
 
         val replayed = pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 10_000))
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
 
         assertAll(
             { assertThat(replayed).isEqualTo(first) },
-            { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(account.id)).isOne() },
+            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L) },
+            { assertThat(entityManager.countPointHistories(accountId)).isOne() },
         )
     }
 
@@ -111,12 +112,12 @@ class PointServiceTest(
             pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 20_000))
         }
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.IDEMPOTENCY_KEY_CONFLICT) },
-            { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(account.id)).isOne() },
+            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L) },
+            { assertThat(entityManager.countPointHistories(accountId)).isOne() },
         )
     }
 
@@ -145,11 +146,11 @@ class PointServiceTest(
 
         val info = pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-a", amount = 2_000))
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
 
         assertAll(
             { assertThat(info.balance).isEqualTo(3_000L) },
-            { assertThat(entityManager.countPointHistories(account.id)).isEqualTo(2L) },
+            { assertThat(entityManager.countPointHistories(accountId)).isEqualTo(2L) },
         )
     }
 
@@ -206,10 +207,10 @@ class PointServiceTest(
             },
         )
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
+        val accountId = accountIdOf(user.id)
         assertAll(
-            { assertThat(entityManager.balanceOf(account.id)).isZero() },
-            { assertThat(entityManager.countPointHistories(account.id)).isZero() },
+            { assertThat(entityManager.balanceOf(accountId)).isZero() },
+            { assertThat(entityManager.countPointHistories(accountId)).isZero() },
         )
     }
 
@@ -255,14 +256,14 @@ class PointServiceTest(
             pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-002", amount = 1))
         }
         entityManager.flushAndClear()
-        val account = pointAccountRepository.findByUserId(user.id)!!
-        val balanceAfterFailure = entityManager.balanceOf(account.id)
-        val historiesAfterFailure = entityManager.countPointHistories(account.id)
+        val accountId = accountIdOf(user.id)
+        val balanceAfterFailure = entityManager.balanceOf(accountId)
+        val historiesAfterFailure = entityManager.countPointHistories(accountId)
 
         assertAll(
             { assertThat(balanceAfterFailure).isEqualTo(Long.MAX_VALUE) },
             { assertThat(historiesAfterFailure).isOne() },
-            { assertThat(entityManager.countPointHistories(account.id, "charge-002")).isZero() },
+            { assertThat(entityManager.countPointHistories(accountId, "charge-002")).isZero() },
         )
     }
 
@@ -290,7 +291,7 @@ class PointServiceTest(
         )
     }
 
-    /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9). */
+    /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */
     @Test
     fun `an existing user without an account is an internal error for both charging and reading, and no account is created`() {
         val user = userFixture.registerUserWithoutAccount()
@@ -309,16 +310,5 @@ class PointServiceTest(
         )
     }
 
-    /** 이력 한 행의 종류·금액·직후 잔액. */
-    private fun historyRow(accountId: Long, chargeKey: String): List<Any?> {
-        val row = entityManager
-            .createNativeQuery(
-                "select type, amount, balance_after from point_history " +
-                    "where point_account_id = :accountId and charge_key = :chargeKey",
-            )
-            .setParameter("accountId", accountId)
-            .setParameter("chargeKey", chargeKey)
-            .singleResult as Array<*>
-        return listOf(row[0], (row[1] as Number).toLong(), (row[2] as Number).toLong())
-    }
+    private fun accountIdOf(userId: Long): Long = pointAccountRepository.findByUserId(userId)!!.id
 }

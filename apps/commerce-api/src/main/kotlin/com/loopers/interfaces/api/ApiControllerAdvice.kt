@@ -44,7 +44,11 @@ class ApiControllerAdvice {
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message.ifBlank { null })
     }
 
-    /** `@Validated` Service의 메서드 검증이 거른 입력. Controller를 거치지 않은 호출에서만 여기까지 온다. */
+    /**
+     * `@Validated` Service의 메서드 검증이 거른 입력. Controller가 Request를 본문으로 바로 받는 카탈로그에서는
+     * Controller를 거치지 않은 호출에서만 여기까지 온다. HTTP 입력 DTO가 Request를 만드는 포인트·주문에서는
+     * HTTP 요청도 여기로 온다(포인트·주문 설계 12.4).
+     */
     @ExceptionHandler
     fun handleConstraintViolation(e: ConstraintViolationException): ResponseEntity<ApiResponse<*>> {
         val message = e.constraintViolations

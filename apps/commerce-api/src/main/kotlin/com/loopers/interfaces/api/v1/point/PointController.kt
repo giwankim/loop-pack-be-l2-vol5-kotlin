@@ -23,11 +23,11 @@ class PointController(
     @PostMapping("/charge")
     override fun charge(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
-        @RequestHeader(IdempotencyKeyHeader.NAME, required = false) idempotencyKey: String?,
+        @RequestHeader(IdempotencyKeyHeader.NAME, required = false) chargeKey: String?,
         @RequestBody body: PointChargeRequestBody,
     ): ApiResponse<PointAccountResponse> {
         val requester = UserIdHeader.require(userId)
-        val request = body.toRequest(chargeKey = IdempotencyKeyHeader.require(idempotencyKey))
+        val request = body.toRequest(chargeKey = IdempotencyKeyHeader.require(chargeKey))
         return pointService.charge(requester, request)
             .let { PointAccountResponse.from(it) }
             .let { ApiResponse.success(it) }
