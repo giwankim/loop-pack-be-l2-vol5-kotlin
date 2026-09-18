@@ -2,6 +2,10 @@ package com.loopers.infrastructure.product
 
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.shared.PageSlice
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Slice
+import org.springframework.data.domain.Sort
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
@@ -16,4 +20,20 @@ class ProductRepositoryImpl(
     override fun save(product: Product): Product = productJpaRepository.save(product)
 
     override fun findById(id: Long): Product? = productJpaRepository.findByIdOrNull(id)
+
+    /**
+     * Spring Data의 `Slice`가 `size + 1`개를 읽어 다음 조각의 존재를 정한다(설계 5.5). 총 개수를 세는 쿼리는 나가지 않는다.
+     * 등록 시각이 같은 상품은 나중에 받은 식별자가 앞선다.
+     */
+    override fun findAll(brandId: Long?, page: Int, size: Int): PageSlice<Product> {
+        val pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id"))
+        val found = brandId
+            ?.let { productJpaRepository.findAllByBrandId(it, pageable) }
+            ?: productJpaRepository.findAllBy(pageable)
+        return found.toPageSlice()
+    }
+
+    /** 조각의 위치와 크기는 [PageRequest]가 정한 값 그대로이므로 Spring의 조각에서 읽는다. */
+    private fun Slice<Product>.toPageSlice(): PageSlice<Product> =
+        PageSlice(items = content, page = number, size = size, hasNext = hasNext())
 }

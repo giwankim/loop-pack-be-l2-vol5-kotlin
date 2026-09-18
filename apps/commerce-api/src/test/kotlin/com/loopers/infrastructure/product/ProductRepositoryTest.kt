@@ -107,6 +107,97 @@ class ProductRepositoryTest(
         assertThat(productRepository.findById(999L)).isNull()
     }
 
+    @Test
+    fun `findAll returns the products of every brand, latest registered first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        val first = productRepository.save(product(brand))
+        val second = productRepository.save(product(other))
+        val third = productRepository.save(product(brand))
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    @Test
+    fun `findAll leaves out deleted products`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val live = productRepository.save(product(brand))
+        productRepository.save(product(brand).apply { delete() })
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(live.id)
+    }
+
+    @Test
+    fun `findAll with a brandId keeps only that brand's products`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        val mine = productRepository.save(product(brand))
+        productRepository.save(product(other))
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(mine.id)
+    }
+
+    @Test
+    fun `findAll with an unknown brandId is empty`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        productRepository.save(product(brand))
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = 999L, page = 0, size = 20)
+
+        assertThat(slice.items).isEmpty()
+        assertThat(slice.hasNext).isFalse()
+    }
+
+    @Test
+    fun `findAll reports hasNext while a later slice remains`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        repeat(3) { productRepository.save(product(brand)) }
+        entityManager.flushAndClear()
+
+        val first = productRepository.findAll(brandId = null, page = 0, size = 2)
+        val second = productRepository.findAll(brandId = null, page = 1, size = 2)
+
+        assertAll(
+            { assertThat(first.items).hasSize(2) },
+            { assertThat(first.hasNext).isTrue() },
+            { assertThat(first.page).isZero() },
+            { assertThat(first.size).isEqualTo(2) },
+            { assertThat(second.items).hasSize(1) },
+            { assertThat(second.hasNext).isFalse() },
+            { assertThat(second.page).isEqualTo(1) },
+        )
+    }
+
+    /**
+     * `@EntityGraph`가 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
+     * 삭제된 브랜드에 달린 살아 있는 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 지금은 브랜드 삭제가 없어
+     * 닿을 수 없는 상태이고, #6이 살아 있는 상품이 남은 브랜드의 삭제를 거절해 계속 닿을 수 없게 만든다(설계 7).
+     */
+    @Test
+    fun `findAll leaves out a live product whose brand was deleted`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val live = productRepository.save(product(brand))
+        brand.delete()
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+
+        assertAll(
+            { assertThat(productRepository.findById(live.id)).isNotNull() },
+            { assertThat(slice.items).isEmpty() },
+        )
+    }
+
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
         Product(brand = brand, name = "티셔츠", price = Money(price), stock = Stock(stock))
 }

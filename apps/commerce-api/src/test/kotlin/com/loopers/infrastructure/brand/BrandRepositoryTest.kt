@@ -100,7 +100,7 @@ class BrandRepositoryTest(
         )
     }
 
-    /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다(설계 5.22). */
+    /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다(설계 5.23). */
     @Test
     fun `existsByNameAndIdNot is false for the brand's own name`() {
         val brand = brandRepository.save(Brand("루퍼스"))

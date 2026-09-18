@@ -1,21 +1,21 @@
 package com.loopers.interfaces.api.v1.brand
 
+import com.loopers.application.brand.BrandListRequest
 import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.application.brand.BrandUpdateRequest
-import com.loopers.application.shared.PageQuery
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.PageResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
@@ -34,13 +34,12 @@ class BrandAdminController(
             .let { ApiResponse.success(it) }
     }
 
-    /** 기본값은 [PageQuery] 하나가 들고 있으므로, 없는 파라미터는 null로 받아 그대로 넘긴다. */
+    /** 쿼리 문자열을 [BrandListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
     @GetMapping
     override fun getBrands(
-        @RequestParam(required = false) page: Int?,
-        @RequestParam(required = false) size: Int?,
+        @ModelAttribute @Valid request: BrandListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
-        return brandService.findAll(PageQuery.of(page, size))
+        return brandService.findAll(request)
             .let { PageResponse.from(it, BrandAdminResponse::from) }
             .let { ApiResponse.success(it) }
     }

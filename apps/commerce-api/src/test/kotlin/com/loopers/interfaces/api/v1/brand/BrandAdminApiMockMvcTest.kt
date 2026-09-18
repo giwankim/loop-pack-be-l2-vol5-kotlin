@@ -45,7 +45,7 @@ class BrandAdminApiMockMvcTest(
     companion object {
         private const val ENDPOINT = "/api-admin/v1/brands"
         private val ADMIN = user("admin").roles("ADMIN")
-        private val CUSTOMER = user("customer").roles("USER")
+        private val USER = user("user").roles("USER")
     }
 
     @Test
@@ -95,8 +95,8 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `registering as a customer returns 403 and saves nothing`() {
-        postBrand(name = "루퍼스", principal = CUSTOMER).andExpect {
+    fun `registering as a user returns 403 and saves nothing`() {
+        postBrand(name = "루퍼스", principal = USER).andExpect {
             status { isForbidden() }
         }
 
@@ -124,10 +124,10 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `getting a brand as a customer returns 403`() {
+    fun `getting a brand as a user returns 403`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(CUSTOMER) }
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(USER) }
             .andExpect { status { isForbidden() } }
     }
 
@@ -186,9 +186,17 @@ class BrandAdminApiMockMvcTest(
             }
     }
 
+    /**
+     * 범위는 `BrandListRequest`의 제약이 거르고 메시지는 그 애노테이션에서 온다(설계 5.22).
+     * 어긴 값마다 다른 메시지가 나오므로 어느 경계가 걸렸는지까지 확인한다.
+     */
     @ParameterizedTest
-    @CsvSource("-1, 20", "0, 0", "0, 101")
-    fun `listing with a page or size outside the allowed range returns 400`(page: Int, size: Int) {
+    @CsvSource(
+        "-1, 20, page는 0 이상이어야 합니다",
+        "0, 0, size는 1 이상이어야 합니다",
+        "0, 101, size는 100 이하여야 합니다",
+    )
+    fun `listing with a page or size outside the allowed range returns 400`(page: Int, size: Int, message: String) {
         mockMvc.get(ENDPOINT) {
             with(ADMIN)
             param("page", page.toString())
@@ -197,13 +205,13 @@ class BrandAdminApiMockMvcTest(
             status { isBadRequest() }
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(ErrorType.INVALID_PAGE.message) }
+            jsonPath("$.meta.message") { value(containsString(message)) }
         }
     }
 
     @Test
-    fun `listing as a customer returns 403`() {
-        mockMvc.get(ENDPOINT) { with(CUSTOMER) }
+    fun `listing as a user returns 403`() {
+        mockMvc.get(ENDPOINT) { with(USER) }
             .andExpect { status { isForbidden() } }
     }
 
@@ -280,10 +288,10 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `renaming as a customer returns 403 and keeps the old name`() {
+    fun `renaming as a user returns 403 and keeps the old name`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
-        putBrand(brand.id, name = "무신사", principal = CUSTOMER).andExpect { status { isForbidden() } }
+        putBrand(brand.id, name = "무신사", principal = USER).andExpect { status { isForbidden() } }
 
         assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
     }
@@ -337,10 +345,10 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `deleting as a customer returns 403 and keeps the brand`() {
+    fun `deleting as a user returns 403 and keeps the brand`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
 
-        deleteBrand(brand.id, principal = CUSTOMER).andExpect { status { isForbidden() } }
+        deleteBrand(brand.id, principal = USER).andExpect { status { isForbidden() } }
 
         assertThat(countBrands()).isOne()
     }

@@ -1,5 +1,6 @@
 package com.loopers.interfaces.api.v1.brand
 
+import com.loopers.application.brand.BrandListRequest
 import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
@@ -19,16 +20,14 @@ interface BrandAdminApiSpec {
         request: BrandRegisterRequest,
     ): ApiResponse<BrandAdminResponse>
 
-    /** `page`·`size`의 범위와 기본값을 정하는 곳은 `PageQuery`의 상수들이다. 아래 숫자는 그것을 사람이 읽을 말로 옮긴 사본이다. */
     @Operation(
         summary = "브랜드 목록 조회",
-        description = "삭제되지 않은 브랜드를 최신 등록순으로 한 조각 조회합니다. 총 개수는 세지 않고 다음 조각이 있는지만 알려줍니다.",
+        description = "삭제되지 않은 브랜드를 최신 등록순으로 한 조각 조회합니다. " +
+            "page는 0 이상, size는 1 이상 100 이하이며, 주지 않으면 page=0, size=20입니다. " +
+            "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다.",
     )
     fun getBrands(
-        @Schema(name = "page", description = "0부터 세는 조각 번호. 기본값 0")
-        page: Int?,
-        @Schema(name = "size", description = "한 조각이 담는 최대 개수. 1에서 100 사이이며 기본값 20")
-        size: Int?,
+        request: BrandListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>>
 
     @Operation(

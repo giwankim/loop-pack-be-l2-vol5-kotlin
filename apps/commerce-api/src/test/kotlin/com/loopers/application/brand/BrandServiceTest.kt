@@ -1,6 +1,5 @@
 package com.loopers.application.brand
 
-import com.loopers.application.shared.PageQuery
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -94,7 +93,7 @@ class BrandServiceTest(
         brandService.register(BrandRegisterRequest("둘째"))
         entityManager.flushAndClear()
 
-        val slice = brandService.findAll(PageQuery(page = 0, size = 1))
+        val slice = brandService.findAll(BrandListRequest(page = 0, size = 1))
 
         assertAll(
             { assertThat(slice.items.map { it.name }).containsExactly("둘째") },
@@ -191,7 +190,7 @@ class BrandServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(brandService.findAll(PageQuery.of(page = null, size = null)).items).isEmpty() },
+            { assertThat(brandService.findAll(BrandListRequest()).items).isEmpty() },
             { assertThat(countBrands()).isZero() },
         )
     }

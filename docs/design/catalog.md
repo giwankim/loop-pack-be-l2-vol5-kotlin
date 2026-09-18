@@ -12,7 +12,7 @@
 C4Component
     title commerce-api 컴포넌트 (카탈로그 조각)
 
-    Person(customer, "고객", "브랜드·상품을 보고 좋아요를 누르는 사용자")
+    Person(user, "고객", "브랜드·상품을 보고 좋아요를 누르는 사용자")
     Person(admin, "관리자", "브랜드·상품·재고를 관리하는 역할")
 
     Container_Boundary(api, "commerce-api (Spring Boot)") {
@@ -24,7 +24,7 @@ C4Component
 
     ContainerDb(db, "MySQL", "brand, product, likes 테이블")
 
-    Rel(customer, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
+    Rel(user, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
     Rel(admin, interfaces, "GET·POST·PUT·DELETE /api-admin/v1/…", "HTTPS, ADMIN 역할")
     Rel(interfaces, application, "호출")
     Rel(application, domain, "행동 호출, 저장 약속 사용")
@@ -133,7 +133,7 @@ sequenceDiagram
     participant PF as ProductService
     participant PR as ProductRepository
     participant P as Product
-    actor Customer as 고객
+    actor User as 고객
     participant CC as ProductController
     participant LR as LikeRepository
 
@@ -143,12 +143,12 @@ sequenceDiagram
     PR-->>PF: Product (deletedAt == null)
     PF->>P: updateStock(0)
     Note over P: Stock(0) 생성. 음수면 거절하고 기존 값 유지
-    PF->>PR: save(product)
+    Note over PF,PR: @Transactional 안의 관리 상태 엔티티이므로 더티 체킹이 flush한다. save는 register에만 있다
     PF-->>AC: ProductInfo (stock 0, soldOut true)
     Note over AC: ProductAdminResponse가 stock과 시각을 고르고 soldOut은 버린다
     AC-->>Admin: 200 {id, brandId, name, price, stock: 0, …}
 
-    Customer->>CC: GET /api/v1/products/{id}
+    User->>CC: GET /api/v1/products/{id}
     CC->>PF: find(id)
     PF->>PR: findById(id)
     PR-->>PF: Product (+ brand, ManyToOne)
@@ -156,7 +156,7 @@ sequenceDiagram
     LR-->>PF: likeCount
     PF-->>CC: ProductInfo (soldOut = product.isSoldOut(), likeCount)
     Note over CC: ProductResponse가 soldOut과 brand{id,name}을 고르고 stock은 버린다
-    CC-->>Customer: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
+    CC-->>User: 200 {id, name, price, soldOut: true, brand: {id, name}, likeCount}
 ```
 
 같은 저장된 상품을 읽고 같은 `ProductInfo`를 받지만 응답 JSON이 다르다. 관리자는 수량을 보고 고객은 품절 여부만 본다. `ProductService`는 누가 부르는지 모르고 한 가지 `ProductInfo`만 트랜잭션 안에서 채운다. 어느 필드를 내보낼지는 역할별 컨트롤러 옆의 응답 DTO(`ProductAdminResponse`, `ProductResponse`)가 고른다. `Product`는 두 응답의 존재를 모르고 `isSoldOut()`만 안다. 언제 `Info`를 두는지는 5.7에 있다.
@@ -204,7 +204,7 @@ sequenceDiagram
 | `FORBIDDEN` (신규 status) | 403 | path userId가 요청자와 다름 |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
 | `BRAND_NAME_DUPLICATED`, `BRAND_HAS_PRODUCTS` | 409, code는 CONFLICT와 같음 | 이름 중복, 삭제 조건 |
-| `INVALID_PAGE`, `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 목록 입력 |
+| ~~`INVALID_PAGE`, `INVALID_SORT`~~ | — | 두지 않았다. 목록 입력은 Request 제약이 거른다(5.22) |
 
 도메인 규칙의 거절은 `ErrorType`에 행을 두지 않는다. `RuleViolationException`의 하위 예외(`InvalidNameException`, `InvalidMoneyException`, `InvalidPriceException`, `InvalidStockException`)이며 `ApiControllerAdvice`가 한 곳에서 400 `BAD_REQUEST`로 옮긴다. 까닭은 5.12에 있다.
 
@@ -299,6 +299,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: 도메인이 가진 예외로 거절한다. 추상 `RuleViolationException` 아래 규칙마다 하위 예외를 두고, advice가 상위 타입 하나로 400에 옮긴다.
 - 선택: C (2026-09-17). 규칙이 한 곳에 남고 HTTP 응답(400, `Bad Request`, 메시지)은 그대로다. 표식 인터페이스는 `@ExceptionHandler`가 `Throwable` 하위 클래스만 받으므로 쓰지 않는다. 하위 예외가 여러 패키지에 놓이므로 `sealed`가 아니라 `abstract`다.
 - 수정 (2026-09-17, 같은 날 저녁): 도메인 예외(C)는 그대로 두고, 그 앞에 B를 입력 검사로 더했다. "규칙이 한 곳에 남는다"는 이 결정의 이점은 포기했다. 까닭과 역할 나눔은 5.18에 있다.
+- 수정 (2026-09-18, #5): 재고 변경 API도 같은 자리를 따른다. 스펙(#5)은 음수 재고를 `InvalidStockException`으로 적었지만, 그것은 `ErrorType.INVALID_STOCK` 행을 두지 않겠다는 뜻이다(이 절). 5.18이 뒤에 더해졌으므로 `ProductStockUpdateRequest`의 `@Min(0)`이 먼저 거른다. HTTP 응답(400, `Bad Request`, "재고는 0 이상이어야 합니다.")과 기존 재고 유지는 어느 쪽이든 같고, `InvalidStockException`은 도메인의 마지막 울타리로 남아 `ProductTest`와 `ApiControllerAdviceTest`가 지킨다. #4가 이름·가격에 대해 정한 것과 같은 모양이다.
 - 다시 볼 조건: 규칙마다 다른 응답 code가 필요할 때(하위 예외별 핸들러 추가).
 
 ### 5.13 브랜드 이름 비교의 대소문자
@@ -366,7 +367,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - Controller 검사는 `MethodArgumentNotValidException`, Service 검사는 `ConstraintViolationException`으로 나온다. `ApiControllerAdvice`가 둘 다 400 `Bad Request`로 옮기고, 메시지는 필드 이름 순으로 이어 하나로 준다. Controller가 먼저 거르므로 HTTP 요청이 Service 검사까지 가는 일은 없다.
   - `@Validated`는 Service에 CGLIB 프록시를 하나 더 씌운다. kotlin-spring 플러그인이 `@Service`(`@Component` 메타)를 여는 덕에 `final` 문제는 없다.
   - `spring-boot-starter-validation`은 루트에 `runtimeOnly`라 commerce-api에 `implementation`으로 더했다.
-- 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들인다. API 문서(`BrandAdminApiSpec`, `ProductAdminApiSpec`)는 HTTP 입구가 실제로 거는 규칙을 적는다: 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하, 뗀 값을 저장한다. (처음에는 "뗀 뒤 100자"로 두었으나 2026-09-18에 고쳤다. 문서가 API가 하지 않는 일을 말하고 있었다.) 도메인 문서(`docs/domain/catalog.md`)와 `InvalidNameException`의 KDoc은 뗀 뒤 규칙을 그대로 둔다. 그 규칙은 도메인의 것이고, HTTP 등록으로는 Controller 제약이 먼저 거절해 `InvalidNameException`에 닿지 않는다(#2·#4에 반영). 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
+- 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들인다. 어긋나는 방향은 늘 한쪽이다. 제약은 받은 문자열 그대로를 재고 도메인은 뗀 값을 재므로, 프레임이 도메인보다 느슨해지는 일은 없고 공백으로 부풀린 이름은 입구에서 걸린다. API 문서(`BrandAdminApiSpec`, `ProductAdminApiSpec`)는 HTTP 입구가 실제로 거는 규칙을 적는다: 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하, 뗀 값을 저장한다. (처음에는 "뗀 뒤 100자"로 두었으나 2026-09-18에 고쳤다. 문서가 API가 하지 않는 일을 말하고 있었다.) 도메인 문서(`docs/domain/catalog.md`)와 `InvalidNameException`의 KDoc은 뗀 뒤 규칙을 그대로 둔다. 그 규칙은 도메인의 것이고, HTTP 등록으로는 Controller 제약이 먼저 거절해 `InvalidNameException`에 닿지 않는다(#2·#4에 반영). 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
 - 다시 볼 조건: trim 뒤 길이를 재야 할 때(커스텀 제약이나 Request에서 trim). 필드별 오류 목록을 응답에 실어야 할 때(`meta.message` 하나가 아니라 필드 배열).
 
 ### 5.19 이름 값 객체의 철회
@@ -389,27 +390,39 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 비용: 개념마다 위임만 하는 클래스가 하나 더 있고, 조회를 더할 때 저장 약속·`JpaRepository`·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다.
 - 다시 볼 조건: 위임 클래스가 셋을 넘어 되풀이가 지루해지거나, domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환을 `Optional`로 바꾼다.
 
-### 5.21 페이지 입력과 슬라이스의 자리
+### 5.21 목록 조각의 타입과 자리
 
-- 문제: #3이 공통 페이지 입력(`page`, `size`)과 슬라이스 응답 `{items, page, size, hasNext}`를 처음 만든다. 둘 다 브랜드만의 것이 아니라 #5·#7·#10의 목록이 함께 쓴다. domain의 저장 약속이 조각을 돌려주려면 조각 타입이 domain에 있어야 하는데, 페이지 범위를 어긴 입력은 `ErrorType.INVALID_PAGE`로 거절해야 하고 domain은 `ErrorType`을 모른다.
-- 대안 A: 둘 다 `application/shared`에 둔다. 저장 약속은 `List<Brand>`를 `size + 1`개 돌려주고 Service가 조각을 만든다. domain에 페이지 타입이 없다. 대신 `hasNext`를 정하는 곳이 저장소 밖이라 저장소 테스트가 경계를 직접 확인하지 못한다.
+- 문제: #3이 목록 응답 `{items, page, size, hasNext}`를 처음 만들고 #5·#7·#10의 목록이 함께 쓴다. 저장 약속이 조각을 돌려주려면 조각 타입이 있어야 하는데 `org.springframework.data.domain.Slice`를 쓰면 domain이 Spring Data에 의존한다(5.20이 막은 것과 같은 의존). 페이지 입력(`page`, `size`)에도 자리가 필요하다.
+- 대안 A: 조각과 페이지 입력을 둘 다 `application/shared`에 둔다. 저장 약속은 `List<Brand>`를 `size + 1`개 돌려주고 Service가 조각을 만든다. domain에 페이지 타입이 없는 대신 `hasNext`를 정하는 곳이 저장소 밖이라 저장소 테스트가 경계를 직접 확인하지 못하고, 조각을 세는 요령이 유스케이스마다 되풀이된다.
 - 대안 B: 둘 다 `support`에 둔다. `ErrorType`·`CoreException` 옆이라 어느 계층에서나 보인다. 그러나 domain이 support에 의존하게 되어 "domain이 의존해도 되는 것: 없음"이 깨진다. `LayeredArchitectureTest`는 support에 `whereLayer` 규칙이 없어 이것을 잡지 못한다.
-- 대안 C: 조각(`PageSlice`)은 `domain/shared`, 페이지 입력(`PageQuery`)은 `application/shared`에 나눠 둔다. 저장 약속은 `findAll(page: Int, size: Int): PageSlice<Brand>`로 원시값을 받고 조각을 돌려준다.
-- 선택: C (2026-09-18).
-  - 조각은 저장소가 읽은 결과의 모양이고 `Money`처럼 여러 개념이 함께 쓰므로 `domain/shared`에 둔다. `hasNext`를 저장소가 정하므로 `BrandRepositoryTest`가 "size와 정확히 같을 때"와 "하나 더 있을 때"를 직접 확인한다(#3의 인수 조건).
-  - 페이지 범위(0 이상, 1..100)는 도메인 불변식이 아니라 API가 정한 입력 한계다. `PageQuery`가 만들어질 때 검사하고 `CoreException(ErrorType.INVALID_PAGE)`로 거절한다. 유효한 입력만 저장 약속에 닿으므로 저장 약속은 원시값 둘을 받는다.
-- 5.18(Bean Validation)을 쓰지 않은 까닭: 5.18의 제약은 `@RequestBody` 본문에 붙고 오류를 `BAD_REQUEST`의 일반 메시지로 옮긴다. 페이지는 쿼리 파라미터이고, 스펙이 이름 붙인 오류(`INVALID_PAGE`)를 돌려주기로 되어 있다. 두 검사가 같은 400 status·code를 쓰므로 응답의 모양은 다르지 않고 message만 `ErrorType`에서 온다.
-- 기본값은 `PageQuery`의 상수 하나가 들고 있다. Controller는 `@RequestParam(required = false) page: Int?`로 받아 `PageQuery.of(page, size)`에 넘긴다. `@RequestParam(defaultValue = "0")`은 기본값을 애노테이션의 문자열로 한 번 더 적게 만든다. 기본값을 채우는 길도 `of` 하나다. 생성자에 기본 인자를 두면 같은 기본값이 두 곳에 적히고, 그 한 벌은 테스트만 쓴다.
-- 범위 숫자가 세 곳에 적히는 것(`PageQuery`의 상수, `ErrorType.INVALID_PAGE`의 메시지, `BrandAdminApiSpec`의 `@Schema`)은 감수한다. `support`는 `application`을 볼 수 없어 `ErrorType`이 상수를 참조할 수 없고, `@Schema`는 애노테이션이라 문자열을 조립할 자리가 좁다. 대신 두 사본이 KDoc으로 `PageQuery`를 출처로 가리켜, 범위를 바꿀 때 함께 고칠 곳을 찾을 수 있게 한다.
+- 대안 C: 조각(`PageSlice`)은 `domain/shared`에 두고 infrastructure가 Spring Data의 `Slice`를 여기로 옮긴다. 페이지 입력은 개념별 목록 Request가 들고 `application/<개념>`에 둔다.
+- 선택: C (2026-09-18, #3과 #5).
+  - 조각은 저장소가 읽은 결과의 모양이고 `Money`처럼 여러 개념이 함께 쓰므로 `domain/shared/PageSlice.kt`에 둔다. `hasNext`를 저장소가 정하므로 `BrandRepositoryTest`가 "size와 정확히 같을 때"와 "하나 더 있을 때"를 직접 확인한다(#3의 인수 조건). `size + 1`을 읽는 요령은 `*RepositoryImpl` 한 곳에만 있다.
+  - `map`이 항목만 다른 타입으로 옮겨 `PageSlice<Product>` → `PageSlice<ProductInfo>`가 한 줄이다. 항목이 지연 로딩되는 연관을 읽으면 옮기는 일이 트랜잭션 안에서 끝나야 하므로 `map`은 봉투가 아니라 조각이 가진다.
+  - 페이지 범위(`page` 0 이상, `size` 1..100)는 도메인 불변식이 아니라 API가 정한 입력 한계다. 개념별 목록 Request의 Bean Validation 제약이 거른다(5.22). 유효한 입력만 저장 약속에 닿으므로 저장 약속은 원시값 둘을 받는다.
+- 철회 (2026-09-18): #3은 처음 `application/shared/PageQuery`를 두고 생성자 `init`에서 범위를 검사해 `CoreException(ErrorType.INVALID_PAGE)`를 던졌다. 그 선택을 적으며 "5.18의 제약은 `@RequestBody` 본문에 붙는다. 페이지는 쿼리 파라미터이므로 5.18을 쓸 수 없다"고 했는데, 전제가 틀렸다. `@ModelAttribute @Valid`가 쿼리 문자열을 Request에 그대로 바인딩하고, #5의 `ProductAdminController.getProducts`가 이미 그렇게 돌고 있었다. 남은 근거였던 "스펙이 `INVALID_PAGE`를 이름 붙였다"는 4장 오류 코드 표에 걸려 있었고 #5가 그 두 행을 지웠으므로 근거가 함께 없어졌다. 한 층에 검사 방식을 둘 두는 대신 5.22 하나로 모은다. `application/shared/PageQuery`와 `PageQueryTest`, `ErrorType.INVALID_PAGE`가 함께 사라졌다.
+- `init` 불변식이 지키던 것("범위를 어긴 조각 입력은 만들어질 수 없다")은 Request 제약 + Service 입구의 `@Validated`·`@Valid`가 대신 지킨다. 6장이 그 자리를 이미 테스트 경계로 적어 두었다.
+- 이름: 입력/조각/봉투를 `<개념>ListRequest`/`PageSlice`/`PageResponse`로 맞춘다. 조각이 `Slice`가 아닌 까닭은 Spring Data의 `org.springframework.data.domain.Slice`, 그리고 `LayeredArchitectureTest`가 쓰는 ArchUnit의 `Slice`와 한 트리에서 겹치지 않게 하려는 것이다. 겹치던 동안 `ProductRepositoryImpl`이 `as SpringSlice` 별칭을 써야 했고, 이름을 바꾸면서 그 별칭이 없어졌다.
+- 처음에는 `Slice`·`PageRequest`·`SliceResponse`로 두고 "한 파일에 둘이 함께 나오지 않으므로 별칭을 두지 않는다"고 적었으나 2026-09-18에 고쳤다. 그 전제도 틀렸다. `BrandRepositoryImpl`은 한 파일에서 Spring Data의 `PageRequest`와 domain의 조각을 함께 쓰고, `BrandJpaRepository`와 `BrandRepositoryImpl`은 같은 패키지에서 `Slice`라는 한 이름으로 서로 다른 두 타입을 가리켰다. 두 파일의 KDoc이 쓴 `[Slice]` 링크도 각자 다른 곳을 가리켰다. 별칭을 고르지 않은 까닭은 별칭이 파일마다 다시 적어야 하는 것이고, 이름을 그대로 두면 다음 목록(#7·#10)이 같은 자리에서 같은 선택을 되풀이해야 하기 때문이다.
 - 구현: Spring Data의 `Slice<Brand>`를 돌려주는 파생 조회(`findAllByOrderByCreatedAtDescIdDesc`)가 `size + 1`개를 읽고 넘치는 하나를 버리며 count 쿼리를 보내지 않는다. `BrandRepositoryImpl`이 그 결과를 domain의 `PageSlice`로 옮긴다. 삭제 필터는 `Brand`의 `@SQLRestriction`이 붙인다. Spring Data의 `PageRequest.of(page, size + 1)`로 하나 더 읽으면 offset이 `page * (size + 1)`이 되어 두 번째 조각부터 행을 건너뛴다. `BrandRepositoryTest`의 `page = 1` 사례가 이 실수를 잡는다.
 - 총 개수를 세지 않는다는 약속은 반환 타입 하나에 걸려 있다. `Page<Brand>`로 바꿔도 컴파일되고 `hasNext`도 맞아서, 세어 보지 않으면 count 쿼리가 말없이 늘어난다. `BrandRepositoryTest`가 Hibernate 통계(`spring.jpa.properties.hibernate.generate_statistics`)로 한 조각을 읽는 데 쓰인 조회가 하나뿐임을 확인한다. `Page`로 바꾸면 그 테스트만 깨진다(2026-09-18에 더함).
-- 이름: 조각 타입은 `PageSlice`, 페이지 입력은 `PageQuery`, 응답 봉투는 `PageResponse`다. (처음에는 `Slice`·`PageRequest`·`SliceResponse`로 두고 "한 파일에 둘이 함께 나오지 않으므로 별칭을 두지 않는다"고 적었으나 2026-09-18에 고쳤다. 전제가 틀렸다. `BrandRepositoryImpl`은 한 파일에서 Spring Data의 `PageRequest`와 domain의 조각을 함께 쓰고, `BrandJpaRepository`와 `BrandRepositoryImpl`은 같은 패키지에서 `Slice`라는 한 이름으로 서로 다른 두 타입을 가리켰다. 두 파일의 KDoc이 쓴 `[Slice]` 링크도 각자 다른 곳을 가리켰다.)
-- `Page`를 앞에 붙인 까닭: 이 저장소는 `조각`을 두 뜻으로 쓴다. 목록의 한 조각과, 아키텍처 테스트가 말하는 패키지 조각(`domainSlicesOnlyReadEachOther`)이다. `PageSlice`는 Spring Data의 `Slice`와 그 두 번째 뜻에서 동시에 떨어진다. 별칭(`import ... as SpringSlice`)을 고르지 않은 까닭은 별칭이 파일마다 다시 적어야 하는 것이고, 이름을 그대로 두면 다음 목록(#5·#7·#10)이 같은 자리에서 같은 선택을 되풀이해야 하기 때문이다.
-- 응답 봉투는 `interfaces/api/PageResponse`에 둔다. `ApiResponse` 옆이고 개념 패키지 밖이다. 목록이 어느 개념의 것이든 봉투는 같고 항목만 역할별 응답 DTO로 바뀌므로(`PageResponse.from(slice, BrandAdminResponse::from)`) 브랜드·상품 어느 조각에도 속하지 않는다. `interfaces`의 순환 검사는 `api`를 한 조각으로 보고, `brand → api` 한 방향이라 `ApiResponse`와 같다.
+- 응답 봉투는 `interfaces/api/PageResponse`에 둔다. `ApiResponse` 옆이고 개념 패키지 밖이다. `from(slice, transform)`이 조각을 봉투로 옮기면서 항목을 응답 DTO로 바꾼다. 목록이 어느 개념의 것이든 봉투는 같고 항목만 역할별 응답 DTO로 바뀌므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. `interfaces`의 순환 검사는 `api`를 한 조각으로 보고, `brand → api` 한 방향이라 `ApiResponse`와 같다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다.
+- 대가: 같은 네 필드가 domain과 interfaces에 하나씩 있다. `ApiResponse`가 domain 타입을 그대로 내보내지 않기 위한 값이고, 항목의 타입이 층마다 다르므로(`Product`, `ProductInfo`, `ProductAdminResponse`) 봉투도 따라간다.
 - 용어집: `슬라이스`와 `페이지`는 `CONTEXT.md`에 넣지 않았다. 재고·금액과 달리 고객·관리자가 말하는 개념이 아니라 목록 응답의 모양이다. 목록의 뜻이 달라지면(예: 총 개수를 주기로 하면) 그때 다시 본다.
-- 다시 볼 조건: 커서 기반 페이지로 바꿀 때(`page` 대신 마지막 키), 또는 목록마다 다른 `size` 상한이 필요할 때. 조각을 만드는 저장소가 셋을 넘어 `PageSlice` 변환이 되풀이되면 공용 확장 함수로 뺀다.
+- 다시 볼 조건: 커서 기반 페이지로 바꿀 때(`page` 대신 마지막 키), 총 개수가 필요해질 때(5.5), 또는 목록마다 다른 `size` 상한이 필요할 때. 조각을 만드는 저장소가 셋을 넘어 `PageSlice` 변환이 되풀이되면 공용 확장 함수로 뺀다.
 
-### 5.22 이름 수정의 순서
+### 5.22 목록 입력의 검사
+
+- 문제: `page`와 `size`에 범위가 없으면 `page=-1`이 `PageRequest.of`에서 `IllegalArgumentException`으로 터져 500이 된다. 설계 4의 오류 코드 표는 `INVALID_PAGE`·`INVALID_SORT`를 `ErrorType` 행으로 적어 두었다.
+- 대안 A: 표대로 `ErrorType` 행을 더하고 Service가 범위를 손으로 검사해 `CoreException`을 던진다.
+- 대안 B: `ProductListRequest`에 Bean Validation 제약(`@Min(0) page`, `@Min(1) @Max(100) size`)을 붙인다. 다른 모든 Request와 같은 모양이다(5.18).
+- 선택: B (2026-09-18, #5). 두 대안의 HTTP 응답은 400 `Bad Request`로 같다. 오류 코드 표는 5.18보다 먼저 쓰였고, 5.18이 입력 검사를 Request 제약으로 정한 뒤로는 A가 같은 층에 두 번째 검사 방식을 들이는 것이 된다. `ErrorType`에 두 행을 더하지 않았다.
+- 쿼리 문자열은 `@ModelAttribute @Valid`로 `ProductListRequest`에 바로 바인딩한다. 본문이 없는 요청에서 `@RequestBody`가 앉을 자리이며, 기본값(`page=0`, `size=20`)은 Kotlin 생성자 기본값이 준다.
+- #3의 브랜드 목록도 같은 모양을 따른다. `BrandListRequest`가 같은 제약과 기본값을 들고 `BrandAdminController.getBrands`가 `@ModelAttribute @Valid`로 받는다. #3이 먼저 두었던 공용 `PageQuery`는 5.21이 적은 대로 철회했다. 개념마다 Request가 하나씩 생기는 대신 목록 입력이 다른 모든 입력과 같은 모양이 되고(5.17), 범위 숫자와 메시지가 한 파일에 모인다 (2026-09-18, #3).
+- `sort`는 관리자 목록에 없다. `INVALID_SORT`가 필요한지는 고객 목록(#7)에서 정한다.
+- 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
+
+### 5.23 이름 수정의 순서
 
 - 문제: `PUT /api-admin/v1/brands/{brandId}`는 거절되면(공백, 길이, 중복) 기존 이름이 그대로여야 한다. 중복을 물으려면 저장될 이름, 곧 앞뒤 공백을 뗀 이름이 필요한데(5.11과 같은 이유), 5.19가 `Name`을 지운 뒤로 그 이름을 만드는 곳은 `Brand`뿐이다.
 - 대안 A: `brand.update(name)`으로 먼저 바꾸고 중복이면 예외를 던져 트랜잭션 롤백에 맡긴다. 그러나 예외를 던지기 전에 영속성 컨텍스트의 브랜드는 이미 새 이름을 들고 있다. 조회가 auto-flush를 부르면 거절된 이름이 DB에 닿고, 같은 트랜잭션 안에서 다시 읽는 테스트는 거절된 이름을 본다. "기존 이름이 그대로다"가 객체가 아니라 롤백에 기대게 된다.
@@ -434,8 +447,9 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | Request 제약이 Service 입구에서 거절 | application 통합 테스트. `ConstraintViolationException`과 저장 안 됨 | 두 검증 예외의 400 변환은 `ApiControllerAdviceTest`가 advice를 직접 불러 확인 |
 | 브랜드 삭제 조건, 이름 중복, 요청자 구분 | application 통합 테스트. `@SpringBootTest` + `@Transactional`, flush/clear 후 재조회 | fake 저장소는 두지 않는다(2026-09-17). 실제 SQL을 보내고 `count()`로 "저장하지 않음"을 확인 |
 | 삭제 필터, 좋아요 수 집계, 정렬·동률, `hasNext` | repository·DB 통합 테스트, flush/clear 후 재조회 | 읽기 경로마다 "삭제된 대상은 없는 대상". `@DataJpaTest`가 `*RepositoryImpl`을 `@Import`해야 하므로 테스트는 infrastructure 패키지에 둔다(5.20). domain 패키지의 테스트는 Spring·DB 없이 끝나고 구현 클래스를 모른다 |
+| 목록 입력이 저장소까지 이어짐, `Slice` 항목이 `Info`로 옮겨짐 | application 통합 테스트 | 저장소 테스트가 삭제 필터·브랜드 필터·`hasNext`를 이미 지키므로 이 자리는 되풀이가 아니라 이어짐만 본다: 기본값(`page=0`, `size=20`)이 조각에 닿는지, `brandName`이 트랜잭션 안에서 채워지는지. HTTP 테스트는 그 위에서 쿼리 문자열이 실제로 바인딩되는지를 두 번째 조각으로 확인한다 |
 | 고객·관리자 응답 필드, 401·403·404·409 | HTTP 테스트. 관리자는 MockMvc + `user().roles("ADMIN")` + `csrf()` | 거절 시 기존 값 유지 확인 |
-| 페이지 범위 거절과 기본값 | application 단위 테스트(`PageQueryTest`). Spring·DB 없음 | `INVALID_PAGE`는 `PageQuery`를 만들 때 난다(5.21) |
+| 페이지 범위 거절과 기본값 | HTTP 테스트. 범위를 어긴 쿼리 문자열은 400, 파라미터가 없으면 응답의 `page`·`size`가 기본값 | 제약이 목록 Request에 있으므로(5.22) "만들 때 터진다"를 볼 단위 테스트 자리가 없다. 거절은 `@ModelAttribute @Valid`가 바인딩한 뒤에 난다 |
 | 목록이 총 개수를 세지 않는지 | repository·DB 통합 테스트. Hibernate 통계로 조회 수를 센다 | 한 조각에 조회 하나. 반환 타입을 `Page`로 바꾸면 이 테스트만 깨진다(5.21) |
 | 관리자 변경이 고객 조회에 보이는지 | HTTP 테스트. 한 클래스에서 관리자 `PUT` 뒤 고객 `GET` | 두 요청 사이에 flush/clear를 넣는다. 같은 트랜잭션이라 비우지 않으면 고객 조회가 1차 캐시의 그 객체를 받아 수정이 DB에 닿았는지와 무관하게 통과한다. 고객 API 테스트도 `AdminSecurityConfig`를 `@Import`한다. 체인이 하나도 없으면 Boot 기본 체인이 모든 경로에 인증을 요구하고, 이 빈이 있으면 고객 경로는 어느 체인에도 걸리지 않아 그대로 지나간다(5.10) |
 
@@ -445,5 +459,6 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
 - 브랜드 삭제는 아직 삭제 시각만 찍는다. 살아 있는 상품이 남으면 409로 거절하는 조건은 #6에서 더한다. 4장 표의 그 칸은 이 조각의 목표이지 지금 동작이 아니다.
-- MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 그런 자리에서는 `clearPersistenceContext`(`flushAndClear`)로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
-- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록(#7)에서 브랜드를 읽으면 상품마다 조회가 붙으므로 fetch join으로 읽을지는 #7에서 정한다.
+- MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 관리자가 바꾼 이름을 고객 조회가 읽는 자리도 같다. 그런 자리에서는 `flushAndClear`로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
+- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로, 관리자 목록(#5)은 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`로 브랜드를 함께 읽는다. `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다. 고객 목록(#7)은 좋아요 수까지 모아야 하므로 읽는 방법을 거기서 다시 정한다.
+- `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 지금은 브랜드 삭제 자체가 없어 닿을 수 없는 상태이고, #6이 살아 있는 상품이 남은 브랜드의 삭제를 거절해 계속 닿을 수 없게 만든다. `ProductRepositoryTest`의 `findAll leaves out a live product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, #6에서 조합이 바뀌면 그 테스트가 먼저 말한다.

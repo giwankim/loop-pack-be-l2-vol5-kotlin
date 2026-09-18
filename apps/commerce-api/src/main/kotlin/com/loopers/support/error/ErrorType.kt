@@ -13,16 +13,4 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     BRAND_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "브랜드를 찾을 수 없습니다."),
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "상품을 찾을 수 없습니다."),
     BRAND_NAME_DUPLICATED(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "같은 이름의 브랜드가 이미 있습니다."),
-
-    /**
-     * 목록 입력. 범용 에러와 status·code를 공유하고 message만 다르다.
-     *
-     * 아래 메시지의 범위를 정하는 곳은 `application/shared`의 `PageQuery` 상수들이다.
-     * `support`는 `application`을 볼 수 없어 상수를 참조하지 못하므로 숫자를 옮겨 적는다. 바꿀 때는 함께 고친다.
-     */
-    INVALID_PAGE(
-        HttpStatus.BAD_REQUEST,
-        HttpStatus.BAD_REQUEST.reasonPhrase,
-        "페이지는 0 이상이어야 하고 크기는 1에서 100 사이여야 합니다.",
-    ),
 }

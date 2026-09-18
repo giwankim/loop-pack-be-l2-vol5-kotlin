@@ -5,6 +5,7 @@ import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
+import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -31,8 +32,38 @@ class ProductService(
     }
 
     @Transactional(readOnly = true)
-    fun find(id: Long): ProductInfo {
-        val product = productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
+    fun find(id: Long): ProductInfo = ProductInfo.from(findOrThrow(id))
+
+    @Transactional
+    fun update(id: Long, @Valid request: ProductUpdateRequest): ProductInfo {
+        val product = findOrThrow(id)
+        product.update(name = request.name, price = Money(request.price))
         return ProductInfo.from(product)
     }
+
+    @Transactional
+    fun updateStock(id: Long, @Valid request: ProductStockUpdateRequest): ProductInfo {
+        val product = findOrThrow(id)
+        product.updateStock(request.quantity)
+        return ProductInfo.from(product)
+    }
+
+    /**
+     * 늦게 등록된 상품이 앞서는 한 조각. 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 트랜잭션 안에서 끝난다.
+     */
+    @Transactional(readOnly = true)
+    fun findAll(@Valid request: ProductListRequest): PageSlice<ProductInfo> =
+        productRepository
+            .findAll(brandId = request.brandId, page = request.page, size = request.size)
+            .map(ProductInfo::from)
+
+    /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
+    @Transactional
+    fun delete(id: Long) {
+        findOrThrow(id).delete()
+    }
+
+    /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. */
+    private fun findOrThrow(id: Long): Product =
+        productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
 }

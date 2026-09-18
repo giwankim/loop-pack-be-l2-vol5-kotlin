@@ -33,7 +33,7 @@ class Product(
 
     /** 앞뒤 공백을 뗀 이름. 비어 있지 않고 [NAME_MAX_LENGTH]자 이하다. */
     @Column(nullable = false, length = NAME_MAX_LENGTH)
-    var name: String = name.trim()
+    var name: String = validatedName(name)
         protected set
 
     @Embedded
@@ -47,12 +47,19 @@ class Product(
         protected set
 
     init {
-        if (this.name.isEmpty()) {
-            throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
-        }
-        if (this.name.length > NAME_MAX_LENGTH) {
-            throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
-        }
+        validatePrice(price)
+    }
+
+    /** 이름과 가격을 바꾼다. 브랜드는 바뀌지 않는다. 하나라도 거절되면 둘 다 기존 값으로 남는다. */
+    fun update(name: String, price: Money) {
+        val validated = validatedName(name)
+        validatePrice(price)
+        this.name = validated
+        this.price = price
+    }
+
+    /** 가격이 지켜야 할 범위. 생성과 수정이 같은 규칙을 쓴다. */
+    private fun validatePrice(price: Money) {
         if (price < MIN_PRICE || price > MAX_PRICE) {
             throw InvalidPriceException("상품 가격은 ${MIN_PRICE.amount}원 이상 ${MAX_PRICE.amount}원 이하여야 합니다.")
         }
@@ -72,5 +79,20 @@ class Product(
         const val MAX_PRICE_AMOUNT = 1_000_000_000L
         val MIN_PRICE = Money(MIN_PRICE_AMOUNT)
         val MAX_PRICE = Money(MAX_PRICE_AMOUNT)
+
+        /**
+         * 앞뒤 공백을 뗀 이름이 지켜야 할 규칙. 뗀 값을 돌려주므로 생성과 수정이 이름을 한 번만 정리한다.
+         * `name` 프로퍼티의 초기값이 부르는 자리라 인스턴스 메서드가 아니라 여기에 둔다.
+         */
+        private fun validatedName(name: String): String {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) {
+                throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
+            }
+            if (trimmed.length > NAME_MAX_LENGTH) {
+                throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
+            }
+            return trimmed
+        }
     }
 }

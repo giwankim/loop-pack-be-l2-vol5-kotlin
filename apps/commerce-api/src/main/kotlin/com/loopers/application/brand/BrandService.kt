@@ -1,6 +1,5 @@
 package com.loopers.application.brand
 
-import com.loopers.application.shared.PageQuery
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.shared.PageSlice
@@ -28,11 +27,11 @@ class BrandService(private val brandRepository: BrandRepository) {
         brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
 
     @Transactional(readOnly = true)
-    fun findAll(query: PageQuery): PageSlice<Brand> = brandRepository.findAll(query.page, query.size)
+    fun findAll(@Valid request: BrandListRequest): PageSlice<Brand> = brandRepository.findAll(request.page, request.size)
 
     /**
      * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 중복을 본다.
-     * 물어볼 이름은 저장될 이름이어야 해서 [Brand.normalizeName]으로 먼저 다듬는다(설계 5.22).
+     * 물어볼 이름은 저장될 이름이어야 해서 [Brand.normalizeName]으로 먼저 다듬는다(설계 5.23).
      */
     @Transactional
     fun update(id: Long, @Valid request: BrandUpdateRequest): Brand {
@@ -57,7 +56,7 @@ class BrandService(private val brandRepository: BrandRepository) {
      * 삭제되지 않은 다른 브랜드가 [name]을 쓰고 있으면 거절한다. 같은지는 컬럼 collation이 정하므로
      * 대소문자만 다른 이름도 겹친 것으로 본다(설계 5.13).
      *
-     * [excludingId]는 수정이 자기 행을 중복으로 보지 않게 빼는 브랜드다. 등록에는 뺄 자기가 없어 비운다(설계 5.22).
+     * [excludingId]는 수정이 자기 행을 중복으로 보지 않게 빼는 브랜드다. 등록에는 뺄 자기가 없어 비운다(설계 5.23).
      */
     private fun checkDuplicateName(name: String, excludingId: Long? = null) {
         val taken =
