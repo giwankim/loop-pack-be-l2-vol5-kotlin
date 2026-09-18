@@ -18,4 +18,5 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
 
     /** 요청자. 새 status가 필요하므로 code도 새로 갖는다(설계 4 오류 코드). */
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, HttpStatus.UNAUTHORIZED.reasonPhrase, "요청자를 확인할 수 없습니다."),
+    FORBIDDEN(HttpStatus.FORBIDDEN, HttpStatus.FORBIDDEN.reasonPhrase, "다른 사용자의 것은 다룰 수 없습니다."),
 }

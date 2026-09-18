@@ -3,6 +3,7 @@ package com.loopers.infrastructure.product
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort
@@ -159,7 +160,7 @@ class ProductRepositoryTest(
         val second = productRepository.save(product(brand))
         val third = productRepository.save(product(brand))
         entityManager.flushAndClear()
-        listOf(first, second, third).forEach { shareCreatedAt(it.id) }
+        listOf(first, second, third).forEach { shareCreatedAt(table = "product", id = it.id) }
         entityManager.clear()
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
@@ -292,18 +293,150 @@ class ProductRepositoryTest(
         assertThat(productRepository.existsByBrandId(999L)).isFalse()
     }
 
+    /**
+     * 차례를 정하는 것은 상품을 등록한 시각이 아니라 좋아요를 누른 시각이다. 등록 차례와 누른 차례를 달리 두어
+     * 어느 시각으로 줄을 세우는지가 드러나게 한다.
+     */
+    @Test
+    fun `findAllLikedBy returns the products the user liked, the most recently liked first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registeredFirst = productRepository.save(product(brand))
+        val registeredSecond = productRepository.save(product(brand))
+        val registeredThird = productRepository.save(product(brand))
+        listOf(registeredSecond, registeredThird, registeredFirst).forEach { like(userId = 1L, productId = it.id) }
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id })
+            .containsExactly(registeredFirst.id, registeredThird.id, registeredSecond.id)
+    }
+
+    /** 누른 시각이 같으면 나중에 누른 좋아요가 앞선다. 동률을 native 쿼리로 만드는 까닭은 상품 목록과 같다. */
+    @Test
+    fun `findAllLikedBy breaks a tie in the like time with the later like first`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val first = productRepository.save(product(brand))
+        val second = productRepository.save(product(brand))
+        val third = productRepository.save(product(brand))
+        val likes = listOf(first, second, third).map { like(userId = 1L, productId = it.id) }
+        entityManager.flushAndClear()
+        likes.forEach { shareCreatedAt(table = "likes", id = it.id) }
+        entityManager.clear()
+
+        val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+    }
+
+    /** 삭제된 상품은 없는 상품이므로 남은 좋아요가 목록을 되살리지 않는다. 좋아요 행은 그대로 있다(ADR 0001). */
+    @Test
+    fun `findAllLikedBy leaves out deleted products`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val active = productRepository.save(product(brand))
+        val deleted = productRepository.save(product(brand))
+        like(userId = 1L, productId = active.id)
+        like(userId = 1L, productId = deleted.id)
+        deleted.delete()
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
+
+        assertAll(
+            { assertThat(slice.items.map { it.id }).containsExactly(active.id) },
+            { assertThat(slice.hasNext).isFalse() },
+        )
+    }
+
+    @Test
+    fun `findAllLikedBy leaves out the products another user liked`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val mine = productRepository.save(product(brand))
+        val theirs = productRepository.save(product(brand))
+        like(userId = 1L, productId = mine.id)
+        like(userId = 2L, productId = theirs.id)
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(mine.id)
+    }
+
+    @Test
+    fun `findAllLikedBy leaves out a product the user never liked`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val liked = productRepository.save(product(brand))
+        productRepository.save(product(brand))
+        like(userId = 1L, productId = liked.id)
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(liked.id)
+    }
+
+    @Test
+    fun `findAllLikedBy reports hasNext while a later slice remains`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        repeat(3) { like(userId = 1L, productId = productRepository.save(product(brand)).id) }
+        entityManager.flushAndClear()
+
+        val first = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 2)
+        val second = productRepository.findAllLikedBy(userId = 1L, page = 1, size = 2)
+
+        assertAll(
+            { assertThat(first.items).hasSize(2) },
+            { assertThat(first.hasNext).isTrue() },
+            { assertThat(first.page).isZero() },
+            { assertThat(first.size).isEqualTo(2) },
+            { assertThat(second.items).hasSize(1) },
+            { assertThat(second.hasNext).isFalse() },
+            { assertThat(second.page).isEqualTo(1) },
+        )
+    }
+
+    @Test
+    fun `findAllLikedBy is empty for a user without likes`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        like(userId = 1L, productId = productRepository.save(product(brand)).id)
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAllLikedBy(userId = 999L, page = 0, size = 20)
+
+        assertAll(
+            { assertThat(slice.items).isEmpty() },
+            { assertThat(slice.hasNext).isFalse() },
+        )
+    }
+
+    /** 브랜드 이름을 읽어야 하므로 좋아요 목록도 상품마다 브랜드를 따로 조회하지 않는다(설계 7). */
+    @Test
+    fun `findAllLikedBy reads the brand together with the product`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        like(userId = 1L, productId = productRepository.save(product(brand)).id)
+        entityManager.flushAndClear()
+
+        val found = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20).items.single()
+
+        assertThat(Hibernate.isInitialized(found.brand)).isTrue()
+    }
+
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
         Product(brand = brand, name = "티셔츠", price = Money(price), stock = Stock(stock))
 
+    /** 좋아요 관계 하나. 좋아요는 사용자와 상품을 식별자로만 가리키므로(설계 2) 사용자 행 없이 만든다. */
+    private fun like(userId: Long, productId: Long): Like =
+        Like(userId = userId, productId = productId).also { entityManager.persist(it) }
+
     /**
-     * 등록 시각을 모든 상품이 같은 값으로 갖게 한다. `created_at`은 `@Column(updatable = false)`지만
+     * 생성 시각을 모든 행이 같은 값으로 갖게 한다. `created_at`은 `@Column(updatable = false)`지만
      * 그것은 JPA의 UPDATE만 막는 것이고 native 쿼리는 영속성 컨텍스트를 거치지 않는다.
      */
-    private fun shareCreatedAt(productId: Long) {
+    private fun shareCreatedAt(table: String, id: Long) {
         entityManager
-            .createNativeQuery("update product set created_at = :at where id = :id")
+            .createNativeQuery("update $table set created_at = :at where id = :id")
             .setParameter("at", SHARED_CREATED_AT)
-            .setParameter("id", productId)
+            .setParameter("id", id)
             .executeUpdate()
     }
 

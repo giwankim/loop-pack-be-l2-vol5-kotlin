@@ -34,6 +34,10 @@ class ProductRepositoryImpl(
         return found.toPageSlice()
     }
 
+    /** 차례는 쿼리가 적으므로 [PageRequest]에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리의 것을 덮는다. */
+    override fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<Product> =
+        productJpaRepository.findAllLikedBy(userId, PageRequest.of(page, size)).toPageSlice()
+
     override fun existsByBrandId(brandId: Long): Boolean = productJpaRepository.existsByBrandId(brandId)
 
     /**

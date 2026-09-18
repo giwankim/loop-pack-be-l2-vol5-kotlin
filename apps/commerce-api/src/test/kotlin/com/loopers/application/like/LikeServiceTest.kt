@@ -14,6 +14,7 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
+import jakarta.validation.ConstraintViolationException
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -189,6 +190,122 @@ class LikeServiceTest(
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
             { assertThat(entityManager.countLikes(user.id, product.id)).isOne() },
+        )
+    }
+
+    /**
+     * 요청자 구분. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없고,
+     * 같은 상품을 둘이 눌러도 각자의 목록에는 자기 관계만 오른다.
+     */
+    @Test
+    fun `the like list gives the requester's own likes only`() {
+        val user = userRepository.save(User())
+        val other = userRepository.save(User())
+        val mine = registerProduct()
+        val theirs = registerProduct()
+        likeService.like(userId = user.id, productId = mine.id)
+        likeService.like(userId = other.id, productId = theirs.id)
+        entityManager.flushAndClear()
+
+        val slice = likeService.findLikedProducts(user.id, LikeListRequest())
+
+        assertThat(slice.items.map { it.id }).containsExactly(mine.id)
+    }
+
+    /** 삭제된 상품은 없는 상품이라 목록에서 빠진다. 좋아요 행은 남아 있어 취소할 수 있다(ADR 0001). */
+    @Test
+    fun `the like list leaves out a product that was deleted after it was liked`() {
+        val user = userRepository.save(User())
+        val active = registerProduct()
+        val deleted = registerProduct()
+        likeService.like(userId = user.id, productId = active.id)
+        likeService.like(userId = user.id, productId = deleted.id)
+        deleted.delete()
+        entityManager.flushAndClear()
+
+        val slice = likeService.findLikedProducts(user.id, LikeListRequest())
+
+        assertAll(
+            { assertThat(slice.items.map { it.id }).containsExactly(active.id) },
+            { assertThat(entityManager.countLikes(user.id, deleted.id)).isOne() },
+        )
+    }
+
+    /**
+     * 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.product.ProductRepositoryTest]가 SQL로 이미 고정한다.
+     * 여기서는 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 값이 항목에 실리는지를 본다(설계 6).
+     * 좋아요 수는 상품에 걸린 관계의 개수이므로 요청자의 것만 세지 않는다.
+     */
+    @Test
+    fun `the like list carries the default page and size into the slice and fills the brand name and like count`() {
+        val user = userRepository.save(User())
+        val other = userRepository.save(User())
+        val product = registerProduct()
+        likeService.like(userId = user.id, productId = product.id)
+        likeService.like(userId = other.id, productId = product.id)
+        entityManager.flushAndClear()
+
+        val slice = likeService.findLikedProducts(user.id, LikeListRequest())
+
+        assertAll(
+            { assertThat(slice.page).isEqualTo(LikeListRequest.DEFAULT_PAGE) },
+            { assertThat(slice.size).isEqualTo(LikeListRequest.DEFAULT_SIZE) },
+            { assertThat(slice.hasNext).isFalse() },
+            { assertThat(slice.items.single().brandName).isEqualTo("루퍼스") },
+            { assertThat(slice.items.single().name).isEqualTo("티셔츠") },
+            { assertThat(slice.items.single().likeCount).isEqualTo(2L) },
+        )
+    }
+
+    @Test
+    fun `the like list of a user without likes is empty`() {
+        val user = userRepository.save(User())
+        registerProduct()
+        entityManager.flushAndClear()
+
+        val slice = likeService.findLikedProducts(user.id, LikeListRequest())
+
+        assertAll(
+            { assertThat(slice.items).isEmpty() },
+            { assertThat(slice.hasNext).isFalse() },
+        )
+    }
+
+    /** 요청자가 없으면 목록도 볼 수 없다. 누르기·취소와 같은 검사다(설계 5.27). */
+    @Test
+    fun `listing likes as an unknown user throws UNAUTHORIZED`() {
+        val exception = assertThrows<CoreException> { likeService.findLikedProducts(999L, LikeListRequest()) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
+    }
+
+    @Test
+    fun `listing likes outside the page and size bounds is rejected by request validation`() {
+        val user = userRepository.save(User())
+        entityManager.flushAndClear()
+
+        assertAll(
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> {
+                        likeService.findLikedProducts(user.id, LikeListRequest(page = -1))
+                    }.constraintViolations.map { it.message },
+                ).containsExactly("page는 0 이상이어야 합니다.")
+            },
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> {
+                        likeService.findLikedProducts(user.id, LikeListRequest(size = 0))
+                    }.constraintViolations.map { it.message },
+                ).containsExactly("size는 1 이상이어야 합니다.")
+            },
+            {
+                assertThat(
+                    assertThrows<ConstraintViolationException> {
+                        likeService.findLikedProducts(user.id, LikeListRequest(size = 101))
+                    }.constraintViolations.map { it.message },
+                ).containsExactly("size는 100 이하여야 합니다.")
+            },
         )
     }
 

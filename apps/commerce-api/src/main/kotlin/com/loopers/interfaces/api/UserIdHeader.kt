@@ -16,4 +16,21 @@ object UserIdHeader {
     const val NAME = "X-USER-ID"
 
     fun require(userId: Long?): Long = userId ?: throw CoreException(ErrorType.UNAUTHORIZED)
+
+    /**
+     * 요청자를 읽고, 경로가 가리키는 사용자가 요청자 자신인지 본다. 다르면 403이다.
+     * 요청자는 자기 좋아요·포인트·주문만 다룰 수 있다(CONTEXT.md 요청자).
+     *
+     * 경로의 사용자와 헤더의 요청자는 둘 다 HTTP가 실어 준 값이라 그 비교도 여기서 한다. application에는
+     * 요청자 하나만 넘어가므로 남의 것을 다룰 길이 애초에 없다(설계 5.30).
+     *
+     * 헤더가 없는 것은 견주어 볼 요청자가 없는 것이므로 경로와 무관하게 401이다.
+     */
+    fun requireSelf(userId: Long?, pathUserId: Long): Long {
+        val requesterId = require(userId)
+        if (requesterId != pathUserId) {
+            throw CoreException(ErrorType.FORBIDDEN)
+        }
+        return requesterId
+    }
 }
