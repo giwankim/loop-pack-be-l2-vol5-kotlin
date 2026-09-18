@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.v1.brand
 
-import com.loopers.application.brand.BrandRegisterRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -42,7 +42,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `a customer reads a brand without any identification`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect {
@@ -68,7 +68,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `reading a deleted brand returns 404`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
@@ -84,7 +84,7 @@ class BrandApiMockMvcTest(
      */
     @Test
     fun `a name an admin changed shows up in the customer detail`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         mockMvc.put("$ADMIN_ENDPOINT/${brand.id}") {
             with(ADMIN)

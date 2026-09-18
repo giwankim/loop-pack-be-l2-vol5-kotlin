@@ -21,7 +21,7 @@ class ProductService(
     private val brandRepository: BrandRepository,
 ) {
     @Transactional
-    fun register(@Valid request: ProductRegisterRequest): ProductInfo {
+    fun register(@Valid request: ProductAdminRegisterRequest): ProductInfo {
         val brand = brandRepository.findById(request.brandId) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
         val product = Product(
             brand = brand,
@@ -36,14 +36,14 @@ class ProductService(
     fun find(id: Long): ProductInfo = ProductInfo.from(findOrThrow(id))
 
     @Transactional
-    fun update(id: Long, @Valid request: ProductUpdateRequest): ProductInfo {
+    fun update(id: Long, @Valid request: ProductAdminUpdateRequest): ProductInfo {
         val product = findOrThrow(id)
         product.update(name = request.name, price = Money(request.price))
         return ProductInfo.from(product)
     }
 
     @Transactional
-    fun updateStock(id: Long, @Valid request: ProductStockUpdateRequest): ProductInfo {
+    fun updateStock(id: Long, @Valid request: ProductAdminStockUpdateRequest): ProductInfo {
         val product = findOrThrow(id)
         product.updateStock(request.quantity)
         return ProductInfo.from(product)

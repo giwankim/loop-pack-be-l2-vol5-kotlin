@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Min
 /**
  * 상품 목록 입력. [brandId]가 없으면 모든 브랜드의 상품을 본다.
  * 조각의 크기에 상한을 두는 것은 한 번에 읽는 양을 API가 정하기 위해서다. 제약이 붙는 자리와 까닭은
- * [ProductRegisterRequest]와 같다(설계 5.18).
+ * [ProductAdminRegisterRequest]와 같다(설계 5.18).
  *
  * 고객 쪽이 기본이라 수식어가 없고 관리자 쪽만 [ProductAdminListRequest]로 갈린다(CONTEXT.md 고객).
  * 페이지 값의 범위는 역할에 따라 달라지지 않으므로 두 입력이 이 companion의 상수를 함께 쓴다.

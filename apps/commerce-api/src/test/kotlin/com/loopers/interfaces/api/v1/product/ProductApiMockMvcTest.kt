@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.v1.product
 
-import com.loopers.application.brand.BrandRegisterRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductRegisterRequest
+import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -46,7 +46,7 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `a customer reads a product without any identification`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val productId = registerProduct(brand.id, name = "티셔츠", price = 12_000, stock = 7)
 
         mockMvc.get("$ENDPOINT/$productId")
@@ -65,7 +65,7 @@ class ProductApiMockMvcTest(
     /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.ProductInfo]에서 온다. */
     @Test
     fun `the customer detail leaves out the stock count and the timestamps`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val productId = registerProduct(brand.id, stock = 7)
 
         mockMvc.get("$ENDPOINT/$productId")
@@ -90,7 +90,7 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `reading a deleted product returns 404`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val productId = registerProduct(brand.id)
         productService.delete(productId)
         entityManager.flushAndClear()
@@ -106,7 +106,7 @@ class ProductApiMockMvcTest(
      */
     @Test
     fun `stock an admin set to zero shows up as sold out in the customer detail`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val productId = registerProduct(brand.id, stock = 7)
 
         mockMvc.get("$ENDPOINT/$productId").andExpect { jsonPath("$.data.soldOut") { value(false) } }
@@ -133,7 +133,7 @@ class ProductApiMockMvcTest(
      */
     @Test
     fun `a customer lists products latest registered first without asking for a sort`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val firstId = registerProduct(brand.id, name = "티셔츠", price = 3_000)
         val secondId = registerProduct(brand.id, name = "후드티", price = 30_000)
         entityManager.flushAndClear()
@@ -153,7 +153,7 @@ class ProductApiMockMvcTest(
     /** 싼 상품을 먼저 등록해 두 기준이 서로 다른 차례를 내놓게 한다. 같은 차례라면 기준이 닿았는지 알 수 없다. */
     @Test
     fun `the sort in the query string reaches the list order`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val cheapId = registerProduct(brand.id, name = "양말", price = 3_000)
         val dearId = registerProduct(brand.id, name = "코트", price = 30_000)
         entityManager.flushAndClear()
@@ -197,7 +197,7 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `listing under an unknown brand is empty rather than not found`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         registerProduct(brand.id)
         entityManager.flushAndClear()
 
@@ -211,8 +211,8 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `listing keeps only the asked brand's products`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
-        val other = brandService.register(BrandRegisterRequest("나이키"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val other = brandService.register(BrandAdminRegisterRequest("나이키"))
         val mineId = registerProduct(brand.id, name = "티셔츠")
         registerProduct(other.id, name = "운동화")
         entityManager.flushAndClear()
@@ -236,6 +236,6 @@ class ProductApiMockMvcTest(
         stock: Int = 1,
     ): Long =
         productService.register(
-            ProductRegisterRequest(brandId = brandId, name = name, price = price, stock = stock),
+            ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock),
         ).id
 }

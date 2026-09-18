@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api
 
-import com.loopers.application.brand.BrandRegisterRequest
-import com.loopers.application.product.ProductRegisterRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
+import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.domain.product.InvalidStockException
 import com.loopers.interfaces.api.v1.brand.BrandAdminController
 import jakarta.validation.ConstraintViolationException
@@ -26,7 +26,7 @@ class ApiControllerAdviceTest {
     @Test
     fun `constraint violations from a validated service become one 400 message ordered by property`() {
         val validator = Validation.buildDefaultValidatorFactory().validator
-        val violations = validator.validate(ProductRegisterRequest(brandId = 1L, name = " ", price = 0, stock = -1))
+        val violations = validator.validate(ProductAdminRegisterRequest(brandId = 1L, name = " ", price = 0, stock = -1))
         val exception = ConstraintViolationException(violations)
 
         val response = advice.handleConstraintViolation(exception)
@@ -60,7 +60,7 @@ class ApiControllerAdviceTest {
             addError(FieldError("request", "stock", "재고는 0 이상이어야 합니다."))
             addError(FieldError("request", "name", "이름은 공백일 수 없습니다."))
         }
-        val registerMethod = BrandAdminController::class.java.getMethod("register", BrandRegisterRequest::class.java)
+        val registerMethod = BrandAdminController::class.java.getMethod("register", BrandAdminRegisterRequest::class.java)
         val exception = MethodArgumentNotValidException(MethodParameter(registerMethod, 0), bindingResult)
 
         val response = advice.handleMethodArgumentNotValid(exception)

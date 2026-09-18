@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api.v1.brand
 
-import com.loopers.application.brand.BrandListRequest
-import com.loopers.application.brand.BrandRegisterRequest
-import com.loopers.application.brand.BrandUpdateRequest
+import com.loopers.application.brand.BrandAdminListRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
+import com.loopers.application.brand.BrandAdminUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.PageResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -17,7 +17,7 @@ interface BrandAdminApiSpec {
             "앞뒤 공백을 뗀 값이 저장됩니다. 삭제되지 않은 브랜드와 겹칠 수 없습니다.",
     )
     fun register(
-        request: BrandRegisterRequest,
+        request: BrandAdminRegisterRequest,
     ): ApiResponse<BrandAdminResponse>
 
     @Operation(
@@ -27,7 +27,7 @@ interface BrandAdminApiSpec {
             "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다.",
     )
     fun getBrands(
-        request: BrandListRequest,
+        request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>>
 
     @Operation(
@@ -47,7 +47,7 @@ interface BrandAdminApiSpec {
     fun update(
         @Schema(name = "brandId", description = "수정할 브랜드의 ID")
         brandId: Long,
-        request: BrandUpdateRequest,
+        request: BrandAdminUpdateRequest,
     ): ApiResponse<BrandAdminResponse>
 
     @Operation(

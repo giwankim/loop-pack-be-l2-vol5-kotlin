@@ -1,10 +1,10 @@
 package com.loopers.interfaces.api.v1.product
 
 import com.loopers.application.product.ProductAdminListRequest
-import com.loopers.application.product.ProductRegisterRequest
+import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.application.product.ProductService
-import com.loopers.application.product.ProductStockUpdateRequest
-import com.loopers.application.product.ProductUpdateRequest
+import com.loopers.application.product.ProductAdminStockUpdateRequest
+import com.loopers.application.product.ProductAdminUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.PageResponse
 import jakarta.validation.Valid
@@ -28,7 +28,7 @@ class ProductAdminController(
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
-        @RequestBody @Valid request: ProductRegisterRequest,
+        @RequestBody @Valid request: ProductAdminRegisterRequest,
     ): ApiResponse<ProductAdminResponse> {
         return productService.register(request)
             .let { ProductAdminResponse.from(it) }
@@ -57,7 +57,7 @@ class ProductAdminController(
     @PutMapping("/{productId}")
     override fun updateProduct(
         @PathVariable("productId") productId: Long,
-        @RequestBody @Valid request: ProductUpdateRequest,
+        @RequestBody @Valid request: ProductAdminUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
         return productService.update(productId, request)
             .let { ProductAdminResponse.from(it) }
@@ -67,7 +67,7 @@ class ProductAdminController(
     @PutMapping("/{productId}/stock")
     override fun updateStock(
         @PathVariable("productId") productId: Long,
-        @RequestBody @Valid request: ProductStockUpdateRequest,
+        @RequestBody @Valid request: ProductAdminStockUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
         return productService.updateStock(productId, request)
             .let { ProductAdminResponse.from(it) }

@@ -1,9 +1,9 @@
 package com.loopers.interfaces.api.v1.brand
 
-import com.loopers.application.brand.BrandListRequest
-import com.loopers.application.brand.BrandRegisterRequest
+import com.loopers.application.brand.BrandAdminListRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
-import com.loopers.application.brand.BrandUpdateRequest
+import com.loopers.application.brand.BrandAdminUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.PageResponse
 import jakarta.validation.Valid
@@ -27,17 +27,17 @@ class BrandAdminController(
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
-        @RequestBody @Valid request: BrandRegisterRequest,
+        @RequestBody @Valid request: BrandAdminRegisterRequest,
     ): ApiResponse<BrandAdminResponse> {
         return brandService.register(request)
             .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
-    /** 쿼리 문자열을 [BrandListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
+    /** 쿼리 문자열을 [BrandAdminListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
     @GetMapping
     override fun getBrands(
-        @ModelAttribute @Valid request: BrandListRequest,
+        @ModelAttribute @Valid request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
         return brandService.findAll(request)
             .let { PageResponse.from(it, BrandAdminResponse::from) }
@@ -56,7 +56,7 @@ class BrandAdminController(
     @PutMapping("/{brandId}")
     override fun update(
         @PathVariable("brandId") brandId: Long,
-        @RequestBody @Valid request: BrandUpdateRequest,
+        @RequestBody @Valid request: BrandAdminUpdateRequest,
     ): ApiResponse<BrandAdminResponse> {
         return brandService.update(brandId, request)
             .let { BrandAdminResponse.from(it) }

@@ -43,7 +43,7 @@ C4Component
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
 
-패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14). 이름은 값 객체가 아니라 `String`이며 엔티티가 검사한다(5.19). infrastructure는 개념마다 Spring Data 인터페이스 `<개념>JpaRepository`와 domain의 저장 약속을 구현하는 `@Component` `<개념>RepositoryImpl` 둘을 둔다(5.20).
+패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductAdminRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14). 이름은 값 객체가 아니라 `String`이며 엔티티가 검사한다(5.19). infrastructure는 개념마다 Spring Data 인터페이스 `<개념>JpaRepository`와 domain의 저장 약속을 구현하는 `@Component` `<개념>RepositoryImpl` 둘을 둔다(5.20).
 
 ### 요청자와 관리자 경계
 
@@ -270,7 +270,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - `Info`를 두는 기준: Service는 연관이 없는 엔티티 하나로 답이 끝나면 그 엔티티를 돌려준다(`BrandService` → `Brand`). 연관을 건너 읽거나(`Product` → `Brand`, `@ManyToOne`) 다른 저장소의 값을 더해야 하면(좋아요 수) 트랜잭션 안에서 `Info`로 옮겨 돌려준다. `open-in-view: false`라 트랜잭션 밖의 지연 로딩은 실패하기 때문이다. 필드를 그대로 베끼기만 하는 `Info`는 두지 않는다.
 - 받아들이는 비용: 관리자 상세도 `likeCount`를 위한 count 쿼리 한 번을 치른다. 등록 응답은 새 상품에 좋아요가 없다는 불변식으로 0을 넣는다. `ProductInfo`는 직렬화되지 않으므로 고객 JSON에서 `stock`이 빠지는 것은 `ProductResponse.from`의 명시적 필드 선택과 HTTP 테스트가 지킨다. 컨트롤러가 `Info`를 그대로 돌려주지 않는다.
 - 반례 대입: "브랜드 응답이 바뀌면 어떤 객체까지 바뀌는가?" — 고객 상품 응답 DTO와 `ProductInfo.brandName`만 바뀐다. `Product`, `Brand`는 그대로다.
-- 응답 타입의 꼴(2026-09-18): 템플릿의 `ExampleV1Dto.ExampleResponse`처럼 `object`로 감싸지 않고 `ProductAdminResponse`, `BrandAdminResponse`를 최상위 `data class`로 둔다. 감싸는 `object`는 요청과 응답을 한 엔드포인트 묶음으로 모으는 이름 공간이었는데, 요청이 5.17에서 application의 `ProductRegisterRequest`로 내려가 구성원이 하나만 남았다. 패키지 `interfaces.api.v1.product`가 이미 이름 공간이다. 이름은 층을 가로질러 `<애그리거트><수식어><종류>` 하나로 맞춘다(`ProductRegisterRequest`, `ProductInfo`, `ProductAdminResponse`). 목록용 요약 응답이 생기면 `ProductAdminSummaryResponse`를 같은 최상위 클래스로 두고, 한 파일에 둘 이상이 모이면 파일 이름을 `ProductAdminResponses.kt`로 바꾼다. Kotlin 코딩 컨벤션대로 여러 최상위 선언을 담는 파일은 내용을 설명하는 이름을 갖는다.
+- 응답 타입의 꼴(2026-09-18): 템플릿의 `ExampleV1Dto.ExampleResponse`처럼 `object`로 감싸지 않고 `ProductAdminResponse`, `BrandAdminResponse`를 최상위 `data class`로 둔다. 감싸는 `object`는 요청과 응답을 한 엔드포인트 묶음으로 모으는 이름 공간이었는데, 요청이 5.17에서 application의 `ProductAdminRegisterRequest`로 내려가 구성원이 하나만 남았다. 패키지 `interfaces.api.v1.product`가 이미 이름 공간이다. 이름은 층을 가로질러 `<애그리거트><수식어><종류>` 하나로 맞춘다(`ProductAdminRegisterRequest`, `ProductInfo`, `ProductAdminResponse`). 목록용 요약 응답이 생기면 `ProductAdminSummaryResponse`를 같은 최상위 클래스로 두고, 한 파일에 둘 이상이 모이면 파일 이름을 `ProductAdminResponses.kt`로 바꾼다. Kotlin 코딩 컨벤션대로 여러 최상위 선언을 담는 파일은 내용을 설명하는 이름을 갖는다.
 - 다시 볼 조건: `Brand`에 지연 연관이 생기거나 브랜드 응답이 다른 저장소의 값을 필요로 할 때 `BrandInfo`를 둔다. 한쪽 역할만 쓰는 필드가 별도 조회를 필요로 하게 되면(같은 행 + 집계 하나를 넘어서면) 그 읽기 경로에 자기 조회 모델을 두고 `ProductInfo`를 다시 가른다. 선택적 필드로 버티지 않는다.
 
 ### 5.8 교차 검사의 위치
@@ -303,7 +303,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: 도메인이 가진 예외로 거절한다. 추상 `RuleViolationException` 아래 규칙마다 하위 예외를 두고, advice가 상위 타입 하나로 400에 옮긴다.
 - 선택: C (2026-09-17). 규칙이 한 곳에 남고 HTTP 응답(400, `Bad Request`, 메시지)은 그대로다. 표식 인터페이스는 `@ExceptionHandler`가 `Throwable` 하위 클래스만 받으므로 쓰지 않는다. 하위 예외가 여러 패키지에 놓이므로 `sealed`가 아니라 `abstract`다.
 - 수정 (2026-09-17, 같은 날 저녁): 도메인 예외(C)는 그대로 두고, 그 앞에 B를 입력 검사로 더했다. "규칙이 한 곳에 남는다"는 이 결정의 이점은 포기했다. 까닭과 역할 나눔은 5.18에 있다.
-- 수정 (2026-09-18, #5): 재고 변경 API도 같은 자리를 따른다. 스펙(#5)은 음수 재고를 `InvalidStockException`으로 적었지만, 그것은 `ErrorType.INVALID_STOCK` 행을 두지 않겠다는 뜻이다(이 절). 5.18이 뒤에 더해졌으므로 `ProductStockUpdateRequest`의 `@Min(0)`이 먼저 거른다. HTTP 응답(400, `Bad Request`, "재고는 0 이상이어야 합니다.")과 기존 재고 유지는 어느 쪽이든 같고, `InvalidStockException`은 도메인의 마지막 울타리로 남아 `ProductTest`와 `ApiControllerAdviceTest`가 지킨다. #4가 이름·가격에 대해 정한 것과 같은 모양이다.
+- 수정 (2026-09-18, #5): 재고 변경 API도 같은 자리를 따른다. 스펙(#5)은 음수 재고를 `InvalidStockException`으로 적었지만, 그것은 `ErrorType.INVALID_STOCK` 행을 두지 않겠다는 뜻이다(이 절). 5.18이 뒤에 더해졌으므로 `ProductAdminStockUpdateRequest`의 `@Min(0)`이 먼저 거른다. HTTP 응답(400, `Bad Request`, "재고는 0 이상이어야 합니다.")과 기존 재고 유지는 어느 쪽이든 같고, `InvalidStockException`은 도메인의 마지막 울타리로 남아 `ProductTest`와 `ApiControllerAdviceTest`가 지킨다. #4가 이름·가격에 대해 정한 것과 같은 모양이다.
 - 다시 볼 조건: 규칙마다 다른 응답 code가 필요할 때(하위 예외별 핸들러 추가).
 
 ### 5.13 브랜드 이름 비교의 대소문자
@@ -353,13 +353,13 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 - 문제: `ProductService.register`는 브랜드 ID, 이름, 가격, 재고 네 값을 받는다. 상품에 필드가 늘면 Service 시그니처와 Controller의 풀어 넘기는 코드가 같이 자란다.
 - 대안 A: 원시값 파라미터를 그대로 둔다. interfaces의 `RegisterRequest`가 HTTP 본문을 받고 Controller가 필드를 풀어 Service에 넘긴다.
-- 대안 B: application에 `ProductRegisterRequest`를 두고 Controller가 HTTP 본문을 이 타입으로 바로 바인딩해 Service에 넘긴다. interfaces에는 응답 DTO만 남는다. splearn의 `MemberRegisterRequest`·`CourseCreateRequest`와 같은 자리·이름이다.
+- 대안 B: application에 `ProductAdminRegisterRequest`를 두고 Controller가 HTTP 본문을 이 타입으로 바로 바인딩해 Service에 넘긴다. interfaces에는 응답 DTO만 남는다. splearn의 `MemberRegisterRequest`·`CourseCreateRequest`와 같은 자리·이름이다.
 - 대안 C: application에 `ProductCommand.Register`를 두고 interfaces의 `RegisterRequest`가 이를 만들어 넘긴다. 두 계층에 같은 필드의 타입이 하나씩 생긴다.
 - 선택: B (2026-09-17). 이름은 `<개념><동사>Request`, 자리는 Service와 같은 패키지. 원시값만 들고 값 객체 변환(`Money`, `Stock`)은 Service가 한다. 규칙 검사는 값 객체와 엔티티에 그대로 있다. HTTP 본문의 모양은 바뀌지 않는다.
   - C의 `RegisterRequest`는 `Command`를 필드 그대로 베끼는 타입이다. 5.7이 `Info`에 두지 않기로 한 것과 같은 이유로 두지 않는다.
   - interfaces가 application의 입력 타입에 의존하는 것은 허용 방향(interfaces → application)이다. 반대 방향이 아니므로 `LayeredArchitectureTest`는 그대로다.
 - 대가: HTTP 본문의 모양이 application의 입력과 하나로 묶인다. 본문만 바꾸고 유스케이스 입력은 두어야 할 때 그때 interfaces에 요청 DTO를 다시 두고 변환한다.
-- `BrandService.register`도 값이 하나지만 `BrandRegisterRequest`로 같은 모양을 따른다. 입력 검사(5.18)가 Request에 붙으므로 검사가 붙을 자리를 같은 모양으로 맞춘다.
+- `BrandService.register`도 값이 하나지만 `BrandAdminRegisterRequest`로 같은 모양을 따른다. 입력 검사(5.18)가 Request에 붙으므로 검사가 붙을 자리를 같은 모양으로 맞춘다.
 
 ### 5.18 입력 검사의 자리
 
@@ -422,7 +422,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 B: `ProductListRequest`에 Bean Validation 제약(`@Min(0) page`, `@Min(1) @Max(100) size`)을 붙인다. 다른 모든 Request와 같은 모양이다(5.18).
 - 선택: B (2026-09-18, #5). 두 대안의 HTTP 응답은 400 `Bad Request`로 같다. 오류 코드 표는 5.18보다 먼저 쓰였고, 5.18이 입력 검사를 Request 제약으로 정한 뒤로는 A가 같은 층에 두 번째 검사 방식을 들이는 것이 된다. `ErrorType`에 두 행을 더하지 않았다.
 - 쿼리 문자열은 `@ModelAttribute @Valid`로 `ProductListRequest`에 바로 바인딩한다. 본문이 없는 요청에서 `@RequestBody`가 앉을 자리이며, 기본값(`page=0`, `size=20`)은 Kotlin 생성자 기본값이 준다.
-- #3의 브랜드 목록도 같은 모양을 따른다. `BrandListRequest`가 같은 제약과 기본값을 들고 `BrandAdminController.getBrands`가 `@ModelAttribute @Valid`로 받는다. #3이 먼저 두었던 공용 `PageQuery`는 5.21이 적은 대로 철회했다. 개념마다 Request가 하나씩 생기는 대신 목록 입력이 다른 모든 입력과 같은 모양이 되고(5.17), 범위 숫자와 메시지가 한 파일에 모인다 (2026-09-18, #3).
+- #3의 브랜드 목록도 같은 모양을 따른다. `BrandAdminListRequest`가 같은 제약과 기본값을 들고 `BrandAdminController.getBrands`가 `@ModelAttribute @Valid`로 받는다. #3이 먼저 두었던 공용 `PageQuery`는 5.21이 적은 대로 철회했다. 개념마다 Request가 하나씩 생기는 대신 목록 입력이 다른 모든 입력과 같은 모양이 되고(5.17), 범위 숫자와 메시지가 한 파일에 모인다 (2026-09-18, #3).
 - `sort`는 관리자 목록에 없다. `INVALID_SORT`는 고객 목록에서 두기로 했다(5.24, 2026-09-18, #7). `INVALID_PAGE`는 두지 않은 채로 남는다.
 - 여기서 A를 물리친 것은 "두 번 검사하는 것"이 아니라 "같은 규칙을 두 가지 방식으로 적는 것"이다. 이 둘은 다른 축이다(5.25).
 - 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
@@ -451,7 +451,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.apiValue` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
 - `INVALID_SORT`는 두고 `INVALID_PAGE`는 두지 않는 것이 엇갈려 보이지만, 갈린 기준은 "Bean Validation이 그 규칙을 그대로 말할 수 있는가"다. 범위는 말할 수 있고 낱말은 말할 수 없다.
 - `sort`는 고객 목록 입력에만 있다. 관리자 목록은 정렬을 고르지 않으므로 요청 타입을 둘로 나눴다. 두 타입이 페이지 세 필드를 겹쳐 갖는 대신, 관리자 API가 조용히 넓어지지 않는다.
-- 이름은 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)다. CONTEXT.md의 고객 항목이 "코드에 별도 이름이 없고, 고객 쪽이 기본이며 관리자 쪽에만 Admin을 붙인다"이고 `Customer`를 _Avoid_에 적었으므로, 수식어가 붙는 쪽은 관리자다. 응답 DTO(`ProductResponse`/`ProductAdminResponse`)와 컨트롤러가 이미 그렇게 갈려 있다. 이 저장소에서 `Admin`이 application의 타입 이름에 붙는 첫 자리인데, 역할로 갈리는 입력이 여기서 처음 생겼기 때문이고 `ProductInfo`는 그대로 역할을 모른다(5.7). 페이지 값의 범위는 역할에 따라 다르지 않으므로 상수는 `ProductListRequest`의 companion 하나에 둔다.
+- 이름은 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)다. CONTEXT.md의 고객 항목이 "코드에 별도 이름이 없고, 고객 쪽이 기본이며 관리자 쪽에만 Admin을 붙인다"이고 `Customer`를 _Avoid_에 적었으므로, 수식어가 붙는 쪽은 관리자다. 응답 DTO(`ProductResponse`/`ProductAdminResponse`)와 컨트롤러가 이미 그렇게 갈려 있다. 페이지 값의 범위는 역할에 따라 다르지 않으므로 상수는 `ProductListRequest`의 companion 하나에 둔다.
+- 같은 규칙을 application의 Request 전부에 밀었다(5.26). `ProductInfo`는 그대로 역할을 모른다(5.7). 응답은 역할마다 필드가 다르지만 입력은 어느 API가 받느냐로 갈리므로, 역할이 이름에 적히는 자리가 Request와 Response 양쪽이 된다.
 - 실제로 읽을 컬럼은 `ProductRepositoryImpl`이 안다. 가격은 `Money`가 `@Embeddable`이라 경로가 `price.amount`이며, `ProductSort`는 컬럼을 모른다.
 - 다시 볼 조건: 정렬 기준이 목록마다 달라질 때(내 좋아요 목록이 다른 기준을 받을 때). 그때는 목록마다 열거를 나눌지, 하나를 나눠 쓸지 다시 본다.
 
@@ -463,8 +464,19 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 규칙이 적힌 방식이 여럿인 것: 같은 규칙을 애노테이션으로 한 번, Service 본문의 `if`로 또 한 번 적는다. 둘이 따로 움직여 어긋난다.
 - 5.22가 물리친 것은 뒤쪽이다. 앞쪽은 이 저장소가 일부러 하는 일이다. 층은 서로를 거치지 않고도 불릴 수 있다. 이 저장소만 해도 `commerce-api` 말고 `commerce-batch`와 `commerce-streamer`가 있어, 배치 태스크릿이나 컨슈머가 Controller 없이 application을 바로 부를 수 있다. 바깥 층의 검사는 그 층을 지나온 호출만 지킨다.
 - 그래서 `sort`의 거절은 Service 본문에 있다(5.24). 모든 호출자가 지나는 가장 안쪽 길목이라, HTTP 호출도 함께 지켜진다. 같은 낱말 검사를 Controller 쪽 제약으로 한 번 더 두는 것은 보태는 것이 아니라 이미 덮인 자리 바깥에 하나를 더 두는 것이다.
-- 이미 코드에 적혀 있던 것: `ProductRegisterRequest`의 "제약 애노테이션은 Controller(`@Valid`)와 Service(`@Validated`)가 같은 규칙으로 먼저 거른다", `ApiControllerAdvice.handleConstraintViolation`의 "Controller를 거치지 않은 호출에서만 여기까지 온다".
+- 이미 코드에 적혀 있던 것: `ProductAdminRegisterRequest`의 "제약 애노테이션은 Controller(`@Valid`)와 Service(`@Validated`)가 같은 규칙으로 먼저 거른다", `ApiControllerAdvice.handleConstraintViolation`의 "Controller를 거치지 않은 호출에서만 여기까지 온다".
 - 다시 볼 조건: 층을 거치지 않는 호출이 없어질 때(app이 하나로 줄 때). 그때는 안쪽 검사를 줄일지 다시 본다.
+
+### 5.26 application Request의 역할 수식어
+
+- 문제: 5.24가 상품 목록 입력을 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)로 갈랐다. 그때까지 application의 Request는 여덟 중 일곱이 관리자 전용인데 모두 수식어가 없었으므로, 새 이름 하나만 `Admin`을 달면 일곱 중 하나만 표시된 상태가 된다.
+- 대안 A: 겹치는 자리에만 붙인다. 수식어는 가려내려고 있는 것이고 고객 쪽 짝이 있는 것은 상품 목록뿐이다. 다른 티켓의 코드를 건드리지 않는다.
+- 대안 B: 관리자 API가 받는 Request 전부에 붙인다. CONTEXT.md의 규칙을 예외 없이 적용한 모양이다.
+- 선택: B (2026-09-18, #7). `BrandAdminListRequest`, `BrandAdminRegisterRequest`, `BrandAdminUpdateRequest`, `ProductAdminRegisterRequest`, `ProductAdminUpdateRequest`, `ProductAdminStockUpdateRequest`로 여섯을 더 바꿨다. 이름이 어느 API의 입력인지 말하므로, 다음에 고객 쪽 짝이 생겨도 그때 가서 기존 이름을 옮길 일이 없다. A였다면 짝이 생길 때마다 관리자 쪽 이름이 뒤늦게 바뀌고, 그 변경이 늘 다른 티켓의 코드를 건드린다.
+- 수식어가 붙는 것은 관리자 쪽이다. 고객 쪽이 기본이라 `ProductListRequest`에는 아무것도 붙지 않는다(CONTEXT.md 고객, `Customer`는 _Avoid_).
+- `ProductInfo`에는 붙지 않는다. Request는 어느 API가 받는지로 갈리지만 `Info`는 두 역할이 함께 읽는 하나이고, 무엇을 내보낼지는 응답 DTO가 고른다(5.7).
+- 대가: #3과 #5가 이미 커밋한 파일 이름이 바뀐다. 동작은 그대로이고 190개 테스트가 그것을 지킨다.
+- 다시 볼 조건: 관리자도 고객도 아닌 세 번째 호출자가 생길 때(배치가 자기 입력을 가질 때). 그때는 수식어가 역할이 아니라 표면을 가리키는지 다시 본다.
 
 ## 6. 테스트 경계
 

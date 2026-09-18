@@ -25,7 +25,7 @@ class BrandServiceTest(
 ) {
     @Test
     fun `registering an untaken name saves a brand that can be fetched back`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
         val found = brandService.find(registered.id)
@@ -42,10 +42,10 @@ class BrandServiceTest(
 
     @Test
     fun `registering a name that matches an existing brand throws BRAND_NAME_DUPLICATED and saves nothing`() {
-        val existing = brandService.register(BrandRegisterRequest("루퍼스"))
+        val existing = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.register(BrandRegisterRequest(" 루퍼스 ")) }
+        val exception = assertThrows<CoreException> { brandService.register(BrandAdminRegisterRequest(" 루퍼스 ")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -57,10 +57,10 @@ class BrandServiceTest(
 
     @Test
     fun `registering a name that differs from an existing brand only in letter case throws BRAND_NAME_DUPLICATED`() {
-        brandService.register(BrandRegisterRequest("Loopers"))
+        brandService.register(BrandAdminRegisterRequest("Loopers"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.register(BrandRegisterRequest("LOOPERS")) }
+        val exception = assertThrows<CoreException> { brandService.register(BrandAdminRegisterRequest("LOOPERS")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -71,7 +71,7 @@ class BrandServiceTest(
 
     @Test
     fun `registering a blank name is rejected by request validation before the domain and saves nothing`() {
-        val exception = assertThrows<ConstraintViolationException> { brandService.register(BrandRegisterRequest("   ")) }
+        val exception = assertThrows<ConstraintViolationException> { brandService.register(BrandAdminRegisterRequest("   ")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -89,11 +89,11 @@ class BrandServiceTest(
 
     @Test
     fun `listing brands returns the live ones newest first as a slice`() {
-        brandService.register(BrandRegisterRequest("첫째"))
-        brandService.register(BrandRegisterRequest("둘째"))
+        brandService.register(BrandAdminRegisterRequest("첫째"))
+        brandService.register(BrandAdminRegisterRequest("둘째"))
         entityManager.flushAndClear()
 
-        val slice = brandService.findAll(BrandListRequest(page = 0, size = 1))
+        val slice = brandService.findAll(BrandAdminListRequest(page = 0, size = 1))
 
         assertAll(
             { assertThat(slice.items.map { it.name }).containsExactly("둘째") },
@@ -105,10 +105,10 @@ class BrandServiceTest(
 
     @Test
     fun `updating a brand replaces its name`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
-        brandService.update(registered.id, BrandUpdateRequest(" 무신사 "))
+        brandService.update(registered.id, BrandAdminUpdateRequest(" 무신사 "))
         entityManager.flushAndClear()
 
         assertThat(brandService.find(registered.id).name).isEqualTo("무신사")
@@ -116,11 +116,11 @@ class BrandServiceTest(
 
     @Test
     fun `updating to a name another live brand uses throws BRAND_NAME_DUPLICATED and keeps the old name`() {
-        brandService.register(BrandRegisterRequest("루퍼스"))
-        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+        brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandAdminRegisterRequest("무신사"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.update(renamed.id, BrandUpdateRequest("루퍼스")) }
+        val exception = assertThrows<CoreException> { brandService.update(renamed.id, BrandAdminUpdateRequest("루퍼스")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -132,13 +132,13 @@ class BrandServiceTest(
     /** 삭제된 브랜드는 없는 브랜드이므로 그 이름은 비어 있다. 등록뿐 아니라 수정도 그 이름을 가져갈 수 있어야 한다. */
     @Test
     fun `a deleted brand frees its name for a rename`() {
-        val deleted = brandService.register(BrandRegisterRequest("루퍼스"))
-        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+        val deleted = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandAdminRegisterRequest("무신사"))
         entityManager.flushAndClear()
         brandService.delete(deleted.id)
         entityManager.flushAndClear()
 
-        brandService.update(renamed.id, BrandUpdateRequest("루퍼스"))
+        brandService.update(renamed.id, BrandAdminUpdateRequest("루퍼스"))
         entityManager.flushAndClear()
 
         assertThat(brandService.find(renamed.id).name).isEqualTo("루퍼스")
@@ -146,10 +146,10 @@ class BrandServiceTest(
 
     @Test
     fun `updating a brand to its own name in a different letter case is not a duplicate`() {
-        val registered = brandService.register(BrandRegisterRequest("Loopers"))
+        val registered = brandService.register(BrandAdminRegisterRequest("Loopers"))
         entityManager.flushAndClear()
 
-        brandService.update(registered.id, BrandUpdateRequest("LOOPERS"))
+        brandService.update(registered.id, BrandAdminUpdateRequest("LOOPERS"))
         entityManager.flushAndClear()
 
         assertThat(brandService.find(registered.id).name).isEqualTo("LOOPERS")
@@ -157,11 +157,11 @@ class BrandServiceTest(
 
     @Test
     fun `updating a blank name is rejected by request validation before the domain and keeps the old name`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            brandService.update(registered.id, BrandUpdateRequest("   "))
+            brandService.update(registered.id, BrandAdminUpdateRequest("   "))
         }
         entityManager.flushAndClear()
 
@@ -173,14 +173,14 @@ class BrandServiceTest(
 
     @Test
     fun `updating an unknown brand throws BRAND_NOT_FOUND`() {
-        val exception = assertThrows<CoreException> { brandService.update(999L, BrandUpdateRequest("루퍼스")) }
+        val exception = assertThrows<CoreException> { brandService.update(999L, BrandAdminUpdateRequest("루퍼스")) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }
 
     @Test
     fun `a deleted brand is gone from the detail and from the list`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
 
         brandService.delete(registered.id)
@@ -190,14 +190,14 @@ class BrandServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(brandService.findAll(BrandListRequest()).items).isEmpty() },
+            { assertThat(brandService.findAll(BrandAdminListRequest()).items).isEmpty() },
             { assertThat(countBrands()).isZero() },
         )
     }
 
     @Test
     fun `deleting a brand twice throws BRAND_NOT_FOUND the second time`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
         brandService.delete(registered.id)
         entityManager.flushAndClear()
@@ -209,12 +209,12 @@ class BrandServiceTest(
 
     @Test
     fun `a deleted brand frees its name for a new brand`() {
-        val registered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val registered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         entityManager.flushAndClear()
         brandService.delete(registered.id)
         entityManager.flushAndClear()
 
-        val reregistered = brandService.register(BrandRegisterRequest("루퍼스"))
+        val reregistered = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         assertThat(reregistered.id).isNotEqualTo(registered.id)
     }

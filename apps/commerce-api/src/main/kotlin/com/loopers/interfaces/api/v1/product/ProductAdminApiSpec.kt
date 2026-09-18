@@ -1,9 +1,9 @@
 package com.loopers.interfaces.api.v1.product
 
 import com.loopers.application.product.ProductAdminListRequest
-import com.loopers.application.product.ProductRegisterRequest
-import com.loopers.application.product.ProductStockUpdateRequest
-import com.loopers.application.product.ProductUpdateRequest
+import com.loopers.application.product.ProductAdminRegisterRequest
+import com.loopers.application.product.ProductAdminStockUpdateRequest
+import com.loopers.application.product.ProductAdminUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.PageResponse
 import io.swagger.v3.oas.annotations.Operation
@@ -18,7 +18,7 @@ interface ProductAdminApiSpec {
             "앞뒤 공백을 뗀 값이 저장됩니다. 가격은 1원 이상 1,000,000,000원 이하, 재고는 0 이상입니다.",
     )
     fun register(
-        request: ProductRegisterRequest,
+        request: ProductAdminRegisterRequest,
     ): ApiResponse<ProductAdminResponse>
 
     @Operation(
@@ -48,7 +48,7 @@ interface ProductAdminApiSpec {
     fun updateProduct(
         @Schema(name = "상품 ID", description = "수정할 상품의 ID")
         productId: Long,
-        request: ProductUpdateRequest,
+        request: ProductAdminUpdateRequest,
     ): ApiResponse<ProductAdminResponse>
 
     @Operation(
@@ -59,7 +59,7 @@ interface ProductAdminApiSpec {
     fun updateStock(
         @Schema(name = "상품 ID", description = "재고를 바꿀 상품의 ID")
         productId: Long,
-        request: ProductStockUpdateRequest,
+        request: ProductAdminStockUpdateRequest,
     ): ApiResponse<ProductAdminResponse>
 
     @Operation(

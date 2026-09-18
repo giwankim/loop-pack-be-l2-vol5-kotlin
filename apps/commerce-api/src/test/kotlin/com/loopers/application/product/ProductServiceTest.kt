@@ -29,7 +29,7 @@ class ProductServiceTest(
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val registered =
-            productService.register(ProductRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7))
+            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7))
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -52,7 +52,7 @@ class ProductServiceTest(
     fun `finding a product with zero stock reports it as sold out`() {
         val brand = brandRepository.save(Brand("루퍼스"))
         val registered =
-            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = 0))
+            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = 0))
         entityManager.flushAndClear()
 
         val found = productService.find(registered.id)
@@ -66,7 +66,7 @@ class ProductServiceTest(
     @Test
     fun `registering under an unknown brand throws BRAND_NOT_FOUND and saves nothing`() {
         val exception = assertThrows<CoreException> {
-            productService.register(ProductRegisterRequest(brandId = 999L, name = "티셔츠", price = 12_000, stock = 7))
+            productService.register(ProductAdminRegisterRequest(brandId = 999L, name = "티셔츠", price = 12_000, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -82,7 +82,7 @@ class ProductServiceTest(
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
-            productService.register(ProductRegisterRequest(brandId = deleted.id, name = "티셔츠", price = 12_000, stock = 7))
+            productService.register(ProductAdminRegisterRequest(brandId = deleted.id, name = "티셔츠", price = 12_000, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -97,7 +97,7 @@ class ProductServiceTest(
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 0, stock = 7))
+            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 0, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -112,7 +112,7 @@ class ProductServiceTest(
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductRegisterRequest(brandId = brand.id, name = "   ", price = 12_000, stock = 7))
+            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "   ", price = 12_000, stock = 7))
         }
         entityManager.flushAndClear()
 
@@ -127,7 +127,7 @@ class ProductServiceTest(
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = -1))
+            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = -1))
         }
         entityManager.flushAndClear()
 
@@ -150,7 +150,7 @@ class ProductServiceTest(
         val registered = register(brand.id, name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
-        productService.update(registered.id, ProductUpdateRequest(name = " 후드티 ", price = 25_000))
+        productService.update(registered.id, ProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -167,7 +167,7 @@ class ProductServiceTest(
         val registered = register(brand.id, stock = 7)
         entityManager.flushAndClear()
 
-        productService.updateStock(registered.id, ProductStockUpdateRequest(quantity = 0))
+        productService.updateStock(registered.id, ProductAdminStockUpdateRequest(quantity = 0))
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -294,11 +294,11 @@ class ProductServiceTest(
     fun `updating, setting the stock of, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
         assertAll(
             {
-                assertThat(errorTypeOf { productService.update(999L, ProductUpdateRequest("후드티", 25_000)) })
+                assertThat(errorTypeOf { productService.update(999L, ProductAdminUpdateRequest("후드티", 25_000)) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             {
-                assertThat(errorTypeOf { productService.updateStock(999L, ProductStockUpdateRequest(3)) })
+                assertThat(errorTypeOf { productService.updateStock(999L, ProductAdminStockUpdateRequest(3)) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             { assertThat(errorTypeOf { productService.delete(999L) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
@@ -314,11 +314,11 @@ class ProductServiceTest(
 
         assertAll(
             {
-                assertThat(errorTypeOf { productService.update(deleted.id, ProductUpdateRequest("후드티", 25_000)) })
+                assertThat(errorTypeOf { productService.update(deleted.id, ProductAdminUpdateRequest("후드티", 25_000)) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             {
-                assertThat(errorTypeOf { productService.updateStock(deleted.id, ProductStockUpdateRequest(3)) })
+                assertThat(errorTypeOf { productService.updateStock(deleted.id, ProductAdminStockUpdateRequest(3)) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             { assertThat(errorTypeOf { productService.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
@@ -332,7 +332,7 @@ class ProductServiceTest(
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.update(registered.id, ProductUpdateRequest(name = "후드티", price = 0))
+            productService.update(registered.id, ProductAdminUpdateRequest(name = "후드티", price = 0))
         }
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
@@ -351,7 +351,7 @@ class ProductServiceTest(
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.updateStock(registered.id, ProductStockUpdateRequest(quantity = -1))
+            productService.updateStock(registered.id, ProductAdminStockUpdateRequest(quantity = -1))
         }
         entityManager.flushAndClear()
 
@@ -386,7 +386,7 @@ class ProductServiceTest(
     }
 
     private fun register(brandId: Long, name: String = "티셔츠", price: Long = 12_000, stock: Int = 7): ProductInfo =
-        productService.register(ProductRegisterRequest(brandId = brandId, name = name, price = price, stock = stock))
+        productService.register(ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock))
 
     /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
     private fun errorTypeOf(call: () -> Unit): ErrorType =

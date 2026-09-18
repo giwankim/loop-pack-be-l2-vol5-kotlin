@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.v1.brand
 
 import com.jayway.jsonpath.JsonPath
-import com.loopers.application.brand.BrandRegisterRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -82,7 +82,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `registering a name taken by a live brand returns 409 and saves nothing`() {
-        brandService.register(BrandRegisterRequest("루퍼스"))
+        brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postBrand(name = "루퍼스").andExpect {
             status { isConflict() }
@@ -125,7 +125,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand as a user returns 403`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(USER) }
             .andExpect { status { isForbidden() } }
@@ -133,7 +133,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand anonymously returns 403`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isForbidden() } }
@@ -141,8 +141,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin lists live brands newest first as a slice`() {
-        brandService.register(BrandRegisterRequest("첫째"))
-        brandService.register(BrandRegisterRequest("둘째"))
+        brandService.register(BrandAdminRegisterRequest("첫째"))
+        brandService.register(BrandAdminRegisterRequest("둘째"))
 
         mockMvc.get(ENDPOINT) {
             with(ADMIN)
@@ -161,7 +161,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing without paging parameters uses the first page of twenty`() {
-        brandService.register(BrandRegisterRequest("루퍼스"))
+        brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         mockMvc.get(ENDPOINT) { with(ADMIN) }
             .andExpect {
@@ -174,8 +174,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing a deleted brand leaves it out`() {
-        val deleted = brandService.register(BrandRegisterRequest("무신사"))
-        brandService.register(BrandRegisterRequest("루퍼스"))
+        val deleted = brandService.register(BrandAdminRegisterRequest("무신사"))
+        brandService.register(BrandAdminRegisterRequest("루퍼스"))
         brandService.delete(deleted.id)
 
         mockMvc.get(ENDPOINT) { with(ADMIN) }
@@ -187,7 +187,7 @@ class BrandAdminApiMockMvcTest(
     }
 
     /**
-     * 범위는 `BrandListRequest`의 제약이 거르고 메시지는 그 애노테이션에서 온다(설계 5.22).
+     * 범위는 `BrandAdminListRequest`의 제약이 거르고 메시지는 그 애노테이션에서 온다(설계 5.22).
      * 어긴 값마다 다른 메시지가 나오므로 어느 경계가 걸렸는지까지 확인한다.
      */
     @ParameterizedTest
@@ -217,7 +217,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin renames a brand and reads the new name back`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         putBrand(brand.id, name = " 무신사 ").andExpect {
             status { isOk() }
@@ -231,8 +231,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name a live brand uses returns 409 and keeps the old name`() {
-        brandService.register(BrandRegisterRequest("루퍼스"))
-        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+        brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandAdminRegisterRequest("무신사"))
 
         putBrand(renamed.id, name = "루퍼스").andExpect {
             status { isConflict() }
@@ -246,7 +246,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a blank name returns 400 and keeps the old name`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         putBrand(brand.id, name = "   ").andExpect {
             status { isBadRequest() }
@@ -259,7 +259,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name over a hundred chars returns 400 and keeps the old name`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         putBrand(brand.id, name = "가".repeat(101)).andExpect {
             status { isBadRequest() }
@@ -280,7 +280,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming a deleted brand returns 404`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
@@ -289,7 +289,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming as a user returns 403 and keeps the old name`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         putBrand(brand.id, name = "무신사", principal = USER).andExpect { status { isForbidden() } }
 
@@ -298,7 +298,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin deletes a brand and it disappears from the detail and the list`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         deleteBrand(brand.id).andExpect {
             status { isOk() }
@@ -316,7 +316,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand stamps the row instead of erasing it`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         deleteBrand(brand.id).andExpect { status { isOk() } }
         entityManager.flushAndClear()
@@ -329,7 +329,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand twice returns 404 the second time`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         deleteBrand(brand.id).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
@@ -346,7 +346,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting as a user returns 403 and keeps the brand`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         deleteBrand(brand.id, principal = USER).andExpect { status { isForbidden() } }
 

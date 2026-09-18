@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.v1.product
 
 import com.jayway.jsonpath.JsonPath
-import com.loopers.application.brand.BrandRegisterRequest
+import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
@@ -45,7 +45,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin registers a product under a live brand and can fetch it back`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         val result = postProduct(brandId = brand.id, price = 12_000, stock = 7).andExpect {
             status { isCreated() }
@@ -85,7 +85,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering a price above 1_000_000_000 won returns 400 and saves nothing`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, price = 1_000_000_001).andExpect {
             status { isBadRequest() }
@@ -99,7 +99,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering a blank name returns 400 and saves nothing`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, name = "   ").andExpect {
             status { isBadRequest() }
@@ -113,7 +113,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering a negative stock returns 400 and saves nothing`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, stock = -1).andExpect {
             status { isBadRequest() }
@@ -127,7 +127,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `registering as a user returns 403 and saves nothing`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postProduct(brandId = brand.id, principal = USER).andExpect {
             status { isForbidden() }
@@ -149,7 +149,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin updates the name and price and the brand stays`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, price = 12_000)
 
         putProduct(id, body = """{"name": " 후드티 ", "price": 25000}""").andExpect {
@@ -164,8 +164,8 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `a brandId in the update body is ignored and the product keeps its brand`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
-        val other = brandService.register(BrandRegisterRequest("나이키"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val other = brandService.register(BrandAdminRegisterRequest("나이키"))
         val id = registerProduct(brand.id)
 
         // 수정 입력에 brandId가 없으므로 본문에 실어도 바인딩되지 않는다. Boot가 모르는 필드를 버리므로 거절도 아니다.
@@ -178,7 +178,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `an update rejected for its price returns 400 and a re-read shows the stored values`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, name = "티셔츠", price = 12_000)
 
         putProduct(id, body = """{"name": "후드티", "price": 0}""").andExpect {
@@ -195,7 +195,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `an update rejected for its name returns 400 and a re-read shows the stored values`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, name = "티셔츠", price = 12_000)
 
         putProduct(id, body = """{"name": "  ", "price": 25000}""").andExpect {
@@ -212,7 +212,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin sets the stock to a final quantity, zero included`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, stock = 7)
 
         putStock(id, quantity = 0).andExpect {
@@ -225,7 +225,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `a negative stock returns 400 and a re-read shows the stored stock`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, stock = 7)
 
         putStock(id, quantity = -1).andExpect {
@@ -240,7 +240,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin deletes a product and it stops existing for every admin call`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id)
 
         deleteProduct(id).andExpect {
@@ -273,8 +273,8 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `admin lists the products of one brand as a latest-first slice`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
-        val other = brandService.register(BrandRegisterRequest("나이키"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val other = brandService.register(BrandAdminRegisterRequest("나이키"))
         val first = registerProduct(brand.id, name = "티셔츠")
         registerProduct(other.id, name = "운동화")
         val second = registerProduct(brand.id, name = "후드티")
@@ -313,7 +313,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `listing without paging parameters falls back to the first slice of twenty`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         registerProduct(brand.id)
 
         getProducts("brandId" to brand.id.toString()).andExpect {
@@ -326,7 +326,7 @@ class ProductAdminApiMockMvcTest(
 
     @Test
     fun `writing as a user returns 403`() {
-        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id)
 
         putProduct(id, body = """{"name": "후드티", "price": 25000}""", principal = USER)
