@@ -175,8 +175,6 @@ class ProductRepositoryTest(
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
     }
 
-    /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
-
     /**
      * 좋아요를 가장 먼저 등록한 상품에 몰아 주어, 기준이 `latest`나 id 내림차순으로 새면 차례가 뒤집히게 한다.
      */
@@ -194,9 +192,18 @@ class ProductRepositoryTest(
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
-        assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id)
+        assertAll(
+            { assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id) },
+            // group by가 붙는 유일한 기준이라 브랜드를 함께 읽는 일이 여기서만 깨질 수 있다.
+            // 프록시로 남으면 항목마다 조회가 붙고, 트랜잭션 밖에서는 아예 읽히지 않는다(설계 5.7).
+            { assertThat(slice.items).allSatisfy { assertThat(Hibernate.isInitialized(it.brand)).isTrue() } },
+        )
     }
 
+    /**
+     * 좋아요 수가 같을 때 차례를 정하는 것이 id임을 본다. 등록 시각까지 같게 맞추지 않으면 동률 규칙이
+     * `createdAt` 내림차순으로 새도 id 차례와 겹쳐 이 테스트가 지나간다(`latest`의 동률 테스트와 같은 요령).
+     */
     @Test
     fun `findAll sorted by likes breaks a tie with the later id first`() {
         val brand = brandRepository.save(Brand("루퍼스"))
@@ -206,6 +213,8 @@ class ProductRepositoryTest(
         entityManager.flushAndClear()
         listOf(first, second, third).forEach { likedBy(it, users = 2) }
         entityManager.flushAndClear()
+        listOf(first, second, third).forEach { shareCreatedAt(table = "product", id = it.id) }
+        entityManager.clear()
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
@@ -268,6 +277,7 @@ class ProductRepositoryTest(
         )
     }
 
+    /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
     @Test
     fun `findAll with a deleted brand's id is empty`() {
         val brand = brandRepository.save(Brand("루퍼스"))
