@@ -22,7 +22,7 @@ C4Component
         Component(infrastructure, "infrastructure", "JPA Repository 구현", "domain의 저장 약속을 JPA로 구현")
     }
 
-    ContainerDb(db, "MySQL", "brand, product, likes 테이블")
+    ContainerDb(db, "MySQL", "brand, product, likes, users 테이블")
 
     Rel(user, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
     Rel(admin, interfaces, "GET·POST·PUT·DELETE /api-admin/v1/…", "HTTPS, ADMIN 역할")
@@ -121,8 +121,9 @@ classDiagram
 
 - 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 저장소에 물어서 판단한다.
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
-- `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001).
-- `ProductSort`의 `LIKES_DESC`는 아직 없다. 좋아요가 생기는 티켓에서 더한다. `apiValue`와 `from`은 #7에서 생겼다(5.24).
+- `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
+- `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
+- `ProductSort`의 `LIKES_DESC`는 아직 없다. #9에서 더한다. `apiValue`와 `from`은 #7에서 생겼다(5.24).
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -262,6 +263,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 A: 멱등. 두 번 눌러도 200, 없는 관계를 취소해도 200.
 - 대안 B: 엄격. 두 번 누르면 409, 없는 관계 취소는 404.
 - 선택: A. 클라이언트는 원하는 최종 상태를 말한다. 유일 제약은 그대로 두되 오류로 드러내지 않는다.
+- 구현(2026-09-18, #8): `LikeService.like`는 관계가 있는지 묻고 없을 때만 저장한다. 같은 쌍을 동시에 두 번 누르면 둘 다 "없음"을 보고 INSERT해 뒤의 것이 유일 제약에 걸려 500이 된다. 다시 부르면 200이므로 지금은 받아들인다. `INSERT IGNORE`나 제약 위반을 잡아 성공으로 바꾸는 것은 좋아요가 동시에 몰리는 것이 실제로 관찰될 때 본다(7).
 
 ### 5.7 고객·관리자 응답 모델
 
@@ -478,6 +480,29 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대가: #3과 #5가 이미 커밋한 파일 이름이 바뀐다. 동작은 그대로이고 190개 테스트가 그것을 지킨다.
 - 다시 볼 조건: 관리자도 고객도 아닌 세 번째 호출자가 생길 때(배치가 자기 입력을 가질 때). 그때는 수식어가 역할이 아니라 표면을 가리키는지 다시 본다.
 
+### 5.27 요청자 식별의 자리
+
+- 문제: 좋아요 누르기·취소는 `X-USER-ID` 헤더의 사용자 식별자로 요청자를 식별한다(1장 요청자와 관리자 경계). "헤더가 없다"와 "그 사용자가 없다"는 둘 다 401인데, 앞의 것은 HTTP만 아는 사실이고 뒤의 것은 저장소를 봐야 하는 사실이라 한 곳에서 둘 다 볼 수 없다.
+- 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 interfaces의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 `LikeService`가 `UserRepository.existsById`로 본다.
+- 대안 B: 헤더를 필수로 받고 Spring의 `MissingRequestHeaderException`을 `ApiControllerAdvice`가 401로 옮긴다. 컨트롤러가 가장 짧다. 그러나 그 예외는 어느 헤더가 빠졌든 같은 타입이라, advice가 헤더 이름을 보고 401과 400을 가르게 된다.
+- 대안 C: `@RequesterId` 같은 애노테이션과 `HandlerMethodArgumentResolver`를 두고 식별을 컨트롤러 밖으로 뺀다. 세 엔드포인트(누르기, 취소, 내 목록)가 같은 선언을 쓴다. 그러나 resolver를 등록하는 `WebMvcConfigurer`가 한 층에 더 생기고, 식별자 하나를 읽는 일에 비해 장치가 크다.
+- 선택: A (2026-09-18, #8). 헤더의 존재는 interfaces가, 사용자의 존재는 application이 본다. 층은 서로를 거치지 않고도 불릴 수 있으므로(5.25) 사용자 존재 검사는 Controller가 아니라 Service에 있어야 하고, 헤더가 없다는 사실은 Service가 알 수 없으므로 컨트롤러가 본다. `UserIdHeader`는 헤더 이름과 "없으면 401" 하나를 모아 두 컨트롤러 메서드와 #10이 같은 말을 되풀이하지 않게 한다.
+- 요청자에는 코드 이름이 없다(CONTEXT.md 요청자, `Requester`는 _Avoid_). 사용자 식별자(`userId`)로 나타난다.
+- 사용자 테이블: `User`는 `users` 테이블의 실습용 행이다. 브랜드·상품이 단수 이름을 쓰는 것과 달리 복수인 까닭은 `user`가 SQL 표준의 예약어라서다. MySQL은 허용하지만 `like`처럼 피한다. 삭제 상태는 두지 않는다. 사용자를 만들거나 지우는 API가 이 조각에 없다.
+- 헤더가 있으나 숫자가 아닌 값은 Spring의 타입 변환이 거절해 400이다. 401이 아닌 것은 요청자가 없는 것이 아니라 요청이 잘못된 것이기 때문이다.
+- 다시 볼 조건: 요청자가 식별자 하나를 넘어 역할이나 토큰을 갖게 될 때, 또는 식별이 필요한 엔드포인트가 넷을 넘을 때. 그때는 C로 간다.
+
+### 5.28 좋아요 수의 집계
+
+- 문제: 상품 상세와 목록 항목의 `likeCount`. CONTEXT.md는 관계에서 세어 구하고 따로 저장하지 않는다고 정했다. 남는 것은 어디서 어떻게 세는가다.
+- 대안 A: `Product`에 `likeCount` 컬럼을 두고 누르기·취소가 증감한다. 읽기가 가장 싸다. 그러나 CONTEXT.md와 어긋나고, 상품 행에 쓰기 경합이 생기며, 관계와 수가 어긋날 수 있다.
+- 대안 B: 상품 조회 쿼리가 `likes`를 join해 함께 센다. 조회 한 번이다. 그러나 `ProductRepository`가 좋아요를 알게 되고, 상품 저장소의 반환 타입이 엔티티가 아닌 튜플이 된다.
+- 대안 C: `LikeRepository`가 센다. 상세는 `countByProductId` 한 번, 목록은 조각의 식별자 목록에 대해 `countByProductIds` 한 번(`group by product_id`). `ProductService`가 두 저장소의 답을 `ProductInfo`로 합친다.
+- 선택: C (2026-09-18, #8). 저장소는 각자 자기 애그리거트만 알고, 합치는 일은 이미 `ProductInfo`를 채우는 application이 한다(5.7). 목록은 조각 크기와 무관하게 조회 두 번이다. 항목마다 세면 조각 크기만큼 늘어난다.
+- `countByProductIds`는 요청한 식별자마다 값을 돌려준다. 좋아요가 없는 상품은 집계 행이 없으므로 구현이 0을 채운다. 부르는 쪽이 빠진 키를 다루지 않게 하려는 것이다. 빈 목록은 SQL을 보내지 않는다.
+- 등록 응답은 세지 않고 0을 넣는다(5.7). 수정·재고 변경·상세는 센다.
+- 다시 볼 조건: 좋아요 많은순 정렬(#9)은 정렬 키가 좋아요 수라 상품 조회 자체가 세어야 한다. 그때 B의 join이 상품 목록 쿼리에 들어오고, 이 집계는 상세와 다른 정렬의 목록에만 남을지 함께 바뀔지 정한다.
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
@@ -493,6 +518,9 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | 고객·관리자 응답 필드, 401·403·404·409 | HTTP 테스트. 관리자는 MockMvc + `user().roles("ADMIN")` + `csrf()` | 거절 시 기존 값 유지 확인 |
 | 페이지 범위 거절과 기본값 | HTTP 테스트. 범위를 어긴 쿼리 문자열은 400, 파라미터가 없으면 응답의 `page`·`size`가 기본값 | 제약이 목록 Request에 있으므로(5.22) "만들 때 터진다"를 볼 단위 테스트 자리가 없다. 거절은 `@ModelAttribute @Valid`가 바인딩한 뒤에 난다 |
 | 목록이 총 개수를 세지 않는지 | repository·DB 통합 테스트. Hibernate 통계로 조회 수를 센다 | 한 조각에 조회 하나. 반환 타입을 `Page`로 바꾸면 이 테스트만 깨진다(5.21) |
+| 좋아요 멱등(두 번 누르기, 없는 관계 취소), 삭제 상품 거절·취소 허용, 요청자 없음 | application 통합 테스트(`LikeServiceTest`). 관계는 `likes` 테이블을 native SQL로 센다 | 저장 약속을 거치지 않고 세는 까닭은 "행이 하나다", "행이 지워졌다"가 테이블의 사실이기 때문이다(ADR 0001) |
+| 좋아요 유일 제약, 행 삭제 뒤 재조회 없음, 삭제 뒤 다시 누르기, 상품 여러 개의 집계와 0 채움 | repository·DB 통합 테스트(`LikeRepositoryTest`) | 유일 제약 위반은 IDENTITY라 저장 즉시 난다. 사용자·상품 행 없이 식별자만으로 만든다 |
+| 헤더 → 요청자, 401·404, 누르기 → 상세 `likeCount` 1 → 취소 → 0 | HTTP 테스트(`LikeApiMockMvcTest`). 헤더 없음과 없는 사용자를 따로 본다 | 두 401은 서로 다른 층이 거절한다(5.27). 한쪽만 테스트하면 다른 쪽이 빠져도 모른다 |
 | 관리자 변경이 고객 조회에 보이는지 | HTTP 테스트. 한 클래스에서 관리자 `PUT` 뒤 고객 `GET` | 두 요청 사이에 flush/clear를 넣는다. 같은 트랜잭션이라 비우지 않으면 고객 조회가 1차 캐시의 그 객체를 받아 수정이 DB에 닿았는지와 무관하게 통과한다. 고객 API 테스트도 `AdminSecurityConfig`를 `@Import`한다. 체인이 하나도 없으면 Boot 기본 체인이 모든 경로에 인증을 요구하고, 이 빈이 있으면 고객 경로는 어느 체인에도 걸리지 않아 그대로 지나간다(5.10) |
 
 ## 7. 남은 것
@@ -502,5 +530,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
 - MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 관리자가 바꾼 이름을 고객 조회가 읽는 자리도 같다. 그런 자리에서는 `flushAndClear`로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
 - `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로, 관리자 목록(#5)은 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`로 브랜드를 함께 읽는다. `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다. 고객 목록(#7)은 좋아요 수까지 모아야 하므로 읽는 방법을 거기서 다시 정한다.
-- 고객 상품 응답에 `likeCount`가 아직 없다. #7은 좋아요가 없는 상태의 목록·상세까지이고, 4장 표의 그 칸과 3장 흐름의 `likeCount`는 좋아요 티켓의 목표다. `ProductSort.LIKES_DESC`도 같이 생긴다. 그때 `ProductInfo`와 `ProductResponse`가 함께 늘어난다.
+- `ProductSort.LIKES_DESC`는 #9의 목표다. `likeCount`는 #8에서 `ProductInfo`와 `ProductResponse`에 들어왔고 상세·목록의 집계 방식은 5.28에 있다. 좋아요 많은순은 정렬 키가 좋아요 수라 상품 목록 쿼리가 스스로 세어야 하므로, #9는 5.28의 다시 볼 조건을 연다.
+- 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
+- `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.
 - `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다.

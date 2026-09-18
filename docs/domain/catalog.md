@@ -162,17 +162,34 @@ DB 유일 제약: `(user_id, product_id)`.
 
 | 유스케이스 | 흐름 |
 | --- | --- |
-| `LikeService.like(userId, productId)` | 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
-| `LikeService.unlike(userId, productId)` | 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
-| `LikeService.getMyLikes(userId, page)` | 사용자의 관계를 최신순으로 → 삭제되지 않은 상품만 골라 상품 항목으로 조합 |
+| `LikeService.like(userId, productId)` | 요청자(사용자) 존재 확인 → 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
+| `LikeService.unlike(userId, productId)` | 요청자 존재 확인 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
+| `LikeService.getMyLikes(userId, page)` | 사용자의 관계를 최신순으로 → 삭제되지 않은 상품만 골라 상품 항목으로 조합. #10 |
+
+### 저장 약속
+
+`LikeRepository`: `save`, `existsByUserIdAndProductId`, `findByUserIdAndProductId`, `delete`(행 삭제), `countByProductId`, `countByProductIds`(식별자마다 개수, 없는 상품은 0).
+
+### 협력
+
+- 상품 상세·수정·재고 변경: `ProductService`가 상품을 읽은 뒤 `countByProductId`로 좋아요 수를 세어 `ProductInfo`에 싣는다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
+- 상품 목록: 조각의 상품 식별자 목록에 대해 `countByProductIds` 한 번으로 센다. 항목마다 세지 않는다(설계 5.28).
 
 ## 사용자 (User)와 요청자
 
 `User`는 실습용 데이터다. 이 조각에서 사용자를 만들거나 바꾸는 API는 없다. 요청자는 `X-USER-ID` 헤더에서 온 사용자 식별자다.
 
+### 속성
+
+| 이름 | 타입 | 뜻 |
+| --- | --- | --- |
+| `id` | `Long` | 식별자. `BaseEntity` |
+
+테이블 `users`. 식별자 말고 속성이 없고 삭제 상태도 두지 않는다(설계 5.27). 저장 약속 `UserRepository`는 `save`와 `existsById`뿐이다.
+
 ### 규칙
 
-- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`.
+- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`LikeService`)이 본다(설계 5.27).
 - 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`.
 - 브랜드·상품 조회는 요청자가 없어도 된다.
 
