@@ -498,6 +498,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - `StrictLongDeserializer`는 `VALUE_NUMBER_INT`만 받고 `Long` 범위를 넘는 정수는 `InputCoercionException`을 잡아 거절한다. 거절은 `CoreException(INVALID_POINT_ORDER_REQUEST)`이며 Jackson이 `JsonMappingException`으로, Spring이 `HttpMessageNotReadableException`으로 감싼다. `ApiControllerAdvice.handleHttpMessageNotReadable`이 근본 원인이 `CoreException`이면 그 `ErrorType`으로 답하도록 한 줄을 더했다.
 - `null` 토큰은 deserializer를 거치지 않고 null이 되고, 빠진 필드도 null이다. DTO의 `amount: Long?`가 둘을 한 자리에서 같은 code로 거절한다. Kotlin 모듈의 "필수 필드 누락" 예외에 기대면 code가 범용 `Bad Request`가 되어 버린다.
 - 알 수 없는 필드는 기존 정책대로 무시한다. 카탈로그가 숫자 문자열과 소수 표기를 계속 받는 것은 `ProductAdminApiMockMvcTest`가 붙들어 둔다.
+- 검사 순서의 한 귀퉁이: Spring이 `@RequestBody`를 핸들러에 들어가기 전에 읽으므로, 본문이 잘못된 요청은 `X-USER-ID`가 없어도 401이 아니라 400 `INVALID_POINT_ORDER_REQUEST`다. 요청자 확인은 핸들러 안(`UserIdHeader.require`)에서 한다. 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 없어 그대로 두었고, 테스트도 한 가지 잘못만 보낸다. 401을 앞세우려면 본문을 직접 읽는 인자 해석기가 필요하다.
 
 주문 생성(#13)의 `quantity`(Int)·`productId`(Long)와 `items` 배열도 같은 자리에서 같은 방식으로 가린다. `Int`용 deserializer가 필요하면 `StrictLongDeserializer` 옆에 둔다.
 
