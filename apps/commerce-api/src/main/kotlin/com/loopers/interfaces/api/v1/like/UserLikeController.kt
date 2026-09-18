@@ -36,8 +36,8 @@ class UserLikeController(
         @PathVariable("userId") pathUserId: Long,
         @ModelAttribute @Valid request: LikeListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
-        val requesterId = UserIdHeader.requireSelf(userId, pathUserId)
-        return likeService.findLikedProducts(requesterId, request)
+        return likeService
+            .findLikedProducts(userId = UserIdHeader.requireSelf(userId, pathUserId), request = request)
             .let { PageResponse.from(it, ProductResponse::from) }
             .let { ApiResponse.success(it) }
     }

@@ -312,21 +312,27 @@ class ProductRepositoryTest(
             .containsExactly(registeredFirst.id, registeredThird.id, registeredSecond.id)
     }
 
-    /** 누른 시각이 같으면 나중에 누른 좋아요가 앞선다. 동률을 native 쿼리로 만드는 까닭은 상품 목록과 같다. */
+    /**
+     * 누른 시각이 같으면 나중에 누른 좋아요가 앞선다. 동률을 깨는 것은 좋아요의 식별자이고 상품의 것이 아니므로,
+     * 등록 차례와 누른 차례를 어긋나게 두어 둘이 같은 답을 내지 않게 한다. 같은 차례로 누르면 상품 id 내림차순으로
+     * 깨도 지나간다. 동률을 native 쿼리로 만드는 까닭은 상품 목록과 같다.
+     */
     @Test
     fun `findAllLikedBy breaks a tie in the like time with the later like first`() {
         val brand = brandRepository.save(Brand("루퍼스"))
-        val first = productRepository.save(product(brand))
-        val second = productRepository.save(product(brand))
-        val third = productRepository.save(product(brand))
-        val likes = listOf(first, second, third).map { like(userId = 1L, productId = it.id) }
+        val registeredFirst = productRepository.save(product(brand))
+        val registeredSecond = productRepository.save(product(brand))
+        val registeredThird = productRepository.save(product(brand))
+        val likes = listOf(registeredThird, registeredFirst, registeredSecond)
+            .map { like(userId = 1L, productId = it.id) }
         entityManager.flushAndClear()
         likes.forEach { shareCreatedAt(table = "likes", id = it.id) }
         entityManager.clear()
 
         val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
 
-        assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
+        assertThat(slice.items.map { it.id })
+            .containsExactly(registeredSecond.id, registeredFirst.id, registeredThird.id)
     }
 
     /** 삭제된 상품은 없는 상품이므로 남은 좋아요가 목록을 되살리지 않는다. 좋아요 행은 그대로 있다(ADR 0001). */

@@ -25,12 +25,12 @@ object UserIdHeader {
      * 요청자 하나만 넘어가므로 남의 것을 다룰 길이 애초에 없다(설계 5.30).
      *
      * 헤더가 없는 것은 견주어 볼 요청자가 없는 것이므로 경로와 무관하게 401이다.
+     * 둘이 같음을 확인한 뒤이므로 어느 쪽을 돌려주어도 같은 값이다.
      */
     fun requireSelf(userId: Long?, pathUserId: Long): Long {
-        val requesterId = require(userId)
-        if (requesterId != pathUserId) {
+        if (require(userId) != pathUserId) {
             throw CoreException(ErrorType.FORBIDDEN)
         }
-        return requesterId
+        return pathUserId
     }
 }

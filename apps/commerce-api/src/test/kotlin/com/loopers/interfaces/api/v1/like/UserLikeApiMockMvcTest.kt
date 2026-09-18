@@ -98,7 +98,7 @@ class UserLikeApiMockMvcTest(
         likeService.like(userId = otherUserId, productId = productId)
         entityManager.flushAndClear()
 
-        getLikes(pathUserId = otherUserId, userId = userId).andExpect {
+        getLikes(userId = userId, pathUserId = otherUserId).andExpect {
             status { isForbidden() }
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Forbidden") }
@@ -119,9 +119,24 @@ class UserLikeApiMockMvcTest(
         }
     }
 
+    /**
+     * 헤더가 없고 경로마저 남의 것이면 401과 403이 둘 다 답할 수 있다. 401이 먼저인 것은 견줄 요청자가 없기 때문이고,
+     * 자기 경로로만 확인하면 두 갈래가 같은 답을 내어 차례가 뒤바뀌어도 모른다(설계 5.30).
+     */
+    @Test
+    fun `reading another user's like list without the user header returns 401 rather than 403`() {
+        val otherUserId = registerUser()
+        entityManager.flushAndClear()
+
+        mockMvc.get("$USERS/$otherUserId/likes").andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.meta.errorCode") { value("Unauthorized") }
+        }
+    }
+
     @Test
     fun `reading the like list of a user that does not exist returns 401`() {
-        getLikes(pathUserId = 999L, userId = 999L).andExpect {
+        getLikes(userId = 999L, pathUserId = 999L).andExpect {
             status { isUnauthorized() }
             jsonPath("$.meta.errorCode") { value("Unauthorized") }
         }
@@ -170,7 +185,8 @@ class UserLikeApiMockMvcTest(
         }
     }
 
-    private fun getLikes(pathUserId: Long, userId: Long, vararg query: Pair<String, String>): ResultActionsDsl =
+    /** 파라미터의 차례는 [UserIdHeader.requireSelf]와 같게 둔다. 둘 다 `Long`이라 차례가 어긋나면 알아채기 어렵다. */
+    private fun getLikes(userId: Long, pathUserId: Long, vararg query: Pair<String, String>): ResultActionsDsl =
         mockMvc.get("$USERS/$pathUserId/likes") {
             header(UserIdHeader.NAME, userId)
             query.forEach { (name, value) -> param(name, value) }

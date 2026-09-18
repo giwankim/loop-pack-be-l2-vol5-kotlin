@@ -14,8 +14,9 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
-import jakarta.validation.ConstraintViolationException
+import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
+import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -198,7 +199,7 @@ class LikeServiceTest(
      * 같은 상품을 둘이 눌러도 각자의 목록에는 자기 관계만 오른다.
      */
     @Test
-    fun `the like list gives the requester's own likes only`() {
+    fun `the like list gives only the user's own likes`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
         val mine = registerProduct()
@@ -257,18 +258,33 @@ class LikeServiceTest(
         )
     }
 
+    /**
+     * 조각에 몇 개가 담기든 조회는 셋이다. 요청자 확인 하나, 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나.
+     * 항목마다 브랜드를 읽거나 좋아요를 세면 조각 크기만큼 늘어난다(설계 5.28, 5.29).
+     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.product.ProductServiceTest]와 같다.
+     */
     @Test
-    fun `the like list of a user without likes is empty`() {
+    fun `the like list reads a slice of any size in three queries`() {
         val user = userRepository.save(User())
-        registerProduct()
+        val products = List(3) { registerProduct() }
+        products.forEach { likeService.like(userId = user.id, productId = it.id) }
         entityManager.flushAndClear()
+        val statistics = entityManager.statistics
+        statistics.isStatisticsEnabled = true
+        statistics.clear()
 
-        val slice = likeService.findLikedProducts(user.id, LikeListRequest())
+        try {
+            val slice = likeService.findLikedProducts(user.id, LikeListRequest())
 
-        assertAll(
-            { assertThat(slice.items).isEmpty() },
-            { assertThat(slice.hasNext).isFalse() },
-        )
+            assertAll(
+                { assertThat(slice.items).hasSize(3) },
+                { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
+                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
+                { assertThat(statistics.prepareStatementCount).isEqualTo(3L) },
+            )
+        } finally {
+            statistics.isStatisticsEnabled = false
+        }
     }
 
     /** 요청자가 없으면 목록도 볼 수 없다. 누르기·취소와 같은 검사다(설계 5.27). */
