@@ -113,12 +113,13 @@
 
 ### 저장 약속
 
-`OrderRepository`: `save`, `findByIdAndUserId`, `findByUserIdAndCreationKey`. 없으면 null이다. 주문을 지우는 약속은 없다.
+`OrderRepository`: `save`, `findByIdAndUserId`, `findByUserIdAndCreationKey`, `findAllByUserId`. 없으면 null이다. 주문을 지우는 약속은 없다. `findAllByUserId`는 한 사용자의 주문 한 조각을 최신순으로 주며, 만든 시각이 같으면 나중에 받은 식별자가 앞선다.
 
 ### 협력
 
 - 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 같은 생성 키의 주문 조회 → 있으면 정규화한 의도를 견줘 최초 `DRAFT` 응답 재생(같음) 또는 `IDEMPOTENCY_KEY_CONFLICT`(다름) → 없으면 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문·품목·생성 키는 한 트랜잭션이다.
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
+- 목록 조회: `OrderService.findAll` → 요청자 존재 확인 → `findAllByUserId` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
 
 ## 주문 품목 (OrderLineItem)
 
@@ -156,4 +157,4 @@
 
 ## 사용자 (User)와 요청자
 
-카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·상세 조회 모두 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`·`OrderService`)이 본다. 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`로 요청자의 것만 읽는다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).
+카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·상세·목록 조회 모두 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`·`OrderService`)이 본다. 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`·`findAllByUserId`로 요청자의 것만 읽는다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).

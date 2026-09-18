@@ -1,8 +1,10 @@
 package com.loopers.interfaces.api.v1.order
 
 import com.loopers.application.order.OrderCreateRequest
+import com.loopers.application.order.OrderListRequest
 import com.loopers.interfaces.api.ApiResponse
 import com.loopers.interfaces.api.IdempotencyKeyHeader
+import com.loopers.interfaces.api.PageResponse
 import com.loopers.interfaces.api.UserIdHeader
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -29,6 +31,18 @@ interface OrderApiSpec {
         creationKey: String?,
         request: OrderCreateRequest,
     ): ApiResponse<OrderResponse>
+
+    @Operation(
+        summary = "내 주문 목록",
+        description = "요청자가 만든 주문을 최신순으로 조회합니다. 만든 시각이 같으면 나중에 받은 주문이 앞섭니다. " +
+            "항목은 상세와 같은 주문 응답이며 품목은 상품 ID 오름차순입니다. " +
+            "page는 0 이상, size는 1~100이며 벗어나면 400입니다. 총 개수는 주지 않고 hasNext만 줍니다. 정렬 옵션은 없습니다.",
+    )
+    fun findAll(
+        @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
+        userId: Long?,
+        request: OrderListRequest,
+    ): ApiResponse<PageResponse<OrderResponse>>
 
     @Operation(summary = "내 주문 상세", description = "저장된 주문 스냅샷을 조회합니다. 없거나 다른 사용자의 주문은 모두 404입니다.")
     fun find(

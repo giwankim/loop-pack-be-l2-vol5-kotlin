@@ -607,3 +607,38 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 - 로그도 돌아왔다. `OrderControllerAdvice.invalidRequest()`는 예외를 받지 않고 버려 주문의 거절이 아무 줄도 남기지 않았다. 공용 handler는 모두 `log.warn`한다.
 - `ConstraintViolationException` handler는 옮기지 않고 지웠다. 본문 제약은 Controller의 `@Valid`가, 키는 `IdempotencyKeyHeader`가 먼저 보므로 HTTP로는 닿지 않는다. Controller를 거치지 않는 호출은 공용 handler가 받는다.
 - 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableBodies`), 역직렬화기가 거르는 33개(`malformedBodies`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. 검사하는 입력은 그대로이고 나누는 기준만 응답 계약에 맞췄다.
+
+## 14. 내 주문 목록 구현 — Issue #15
+
+[Issue #15](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/15)는 `GET /api/v1/orders`를 구현한다. 저장된 스냅샷만 읽으므로 확정 엔드포인트가 없어도 두 상태를 모두 확인할 수 있다. 관리자 목록과 포인트 이력 조회는 후속 티켓에 남는다.
+
+- 목록의 항목은 상세와 같은 `OrderResponse`다. 봉투는 다른 목록과 같은 `PageResponse`이고 총 개수는 주지 않는다(카탈로그 설계 5.5). 입력은 `OrderListRequest`로 바로 받으며 `page`·`size`의 범위와 메시지는 `LikeListRequest`와 같다(5.17, 5.18, 5.22). 정렬 기준은 받지 않는다. 주문 목록의 차례는 하나뿐이다(설계 6).
+- 차례는 `createdAt` 내림차순, 같으면 `id` 내림차순이다. 필터가 사용자 하나고 차례가 주문의 컬럼 둘이라 QueryDSL이 아니라 메서드 이름으로 짠 파생 쿼리다. 상품 목록이 QueryDSL을 쓰는 까닭(브랜드 필터와 세 정렬 기준)이 여기에는 없다(카탈로그 설계 5.32). `Order`에 이미 있는 `idx_orders_user_created`가 이 차례 그대로다.
+- `Slice`의 위치·크기·`hasNext`를 `PageSlice`로 옮기는 두 줄이 `ProductRepositoryImpl`에도 똑같이 있었다. 옮기는 규칙이 하나이므로 자리도 하나여야 해서 `infrastructure/shared`의 `Slice<T>.toPageSlice()`로 모았다. domain이 아니라 infrastructure인 까닭은 `Slice`가 Spring Data의 타입이고 domain은 그것을 모르기 때문이다. `PageRequest`에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리 이름의 것을 덮는다.
+
+### 14.1 조각은 주문만 센다
+
+**선택: 주문 루트만 페이징하고 품목은 뒤따라 읽는다.** 품목을 `join fetch`로 함께 읽으면서 `limit`을 걸면 안 된다.
+
+`limit`은 주문이 아니라 조인으로 부풀려진 행에 걸린다. 품목이 셋인 주문 하나가 세 행이므로 `size=20`은 주문 20개가 아니다. Hibernate는 이것을 알아채고 조건을 SQL에서 떼어 전체 결과를 읽은 뒤 메모리에서 자른다(`HHH90003004`). 오류가 아니라 경고 한 줄이라 조각의 모양은 맞아 보이고, 주문이 쌓인 뒤에야 그 사용자의 주문을 전부 읽고 있었다는 것이 드러난다. 설계 9의 "collection fetch join에 직접 page를 걸어 행 개수와 주문 개수를 혼동하지 않도록 한다"가 이것이다.
+
+품목은 읽기 트랜잭션 안에서 뒤따라 읽는다. 주문마다 조회가 붙지 않는 것은 `jpa.yml`의 `default_batch_fetch_size: 100`이 아직 읽지 않은 컬렉션을 `in` 하나로 모아 읽어 주기 때문이고, 그 값이 `MAX_SIZE`와 같아 어떤 조각이든 품목 조회는 한 번이다. 저장소가 스스로 두 번째 쿼리를 적는 길도 있지만, 이미 모든 애그리거트에 걸린 설정이 하는 일을 한 곳에서만 다시 적는 셈이 된다.
+
+전역 설정에 기대는 약속이므로 조회 횟수로 붙들어 둔다. `OrderServiceTest`의 `a slice filled to the maximum size still reads its items in one query`가 `MAX_SIZE`만큼 채운 조각에서 요청자 확인 하나, 주문 루트 하나, 품목 하나를 센다. 크기를 상한까지 올리는 까닭은 품목 조회가 하나로 끝나는 근거가 `default_batch_fetch_size`와 `MAX_SIZE`가 같다는 것이기 때문이다. 두 값은 Gradle 모듈이 다르고 한쪽은 YAML이라 서로를 모르므로, 기본 크기로만 확인하면 그 경계를 넘겨보지 않은 채 약속만 적어 두는 셈이 된다. 어느 쪽이 바뀌어도 이 테스트가 먼저 말한다. 좋아요 목록이 조회 셋을 세는 것과 같은 자리다(카탈로그 설계 5.28, 5.29).
+
+`open-in-view`가 꺼져 있으므로 옮기는 일은 `OrderService.findAll`의 읽기 트랜잭션 안에서 끝나야 한다. `PageSlice.map`이 그 일을 맡는 까닭이 이것이고, 상품 목록이 `ProductInfoAssembler`에 맡기는 것과 같은 이유다.
+
+### 14.2 테스트가 나뉘는 자리
+
+| 자리 | 확인하는 것 |
+| --- | --- |
+| `OrderRepositoryTest` (새 파일, `@DataJpaTest`) | 요청자의 주문만 오르는지, 최신순과 `id` 동률 깨기, 품목이 여럿인 주문으로 쪽을 넘겨도 주문이 겹치거나 빠지지 않고 품목이 잘리지 않는지, 빈 쪽 |
+| `OrderServiceTest` (새 파일) | 기본 `page`·`size`가 조각까지 닿는지, 저장된 품목이 항목에 실리는지, 없는 사용자 401, 범위 밖 입력의 제약 메시지, 상한까지 채운 조각의 조회 세 번 |
+| `OrderApiMockMvcTest` | 공개 계약. 목록 항목이 상세 응답과 글자까지 같은지, 타인의 주문이 빠지는지, `DRAFT`·`CONFIRMED`의 결제 필드, 봉투의 기본값, 쿼리 문자열이 조각에 닿는지, 범위 밖 400, 요청자 없음 401, 빈 목록 |
+
+- 품목의 차례를 보는 곳에서는 품목을 상품 ID의 거꾸로 넣는다. 넣은 차례가 이미 상품 ID 차례이면 응답이 그대로여도 차례를 확인한 것이 아니다.
+- 만든 시각은 `Order`가 스스로 정하므로 동률을 요청으로 만들 수 없다. 저장한 뒤 SQL로 시각을 겹쳐 놓고 남은 차례를 식별자가 가르는지 본다. 저장소와 HTTP 두 자리에서 모두 확인한다.
+- `CONFIRMED` 항목은 13과 같이 DB fixture로 상태 형태를 만든다. 확정 흐름의 검증은 후속 티켓의 책임이고, 운영 코드에 fixture용 API를 더하지 않는다.
+- 목록 항목을 필드마다 다시 세지 않고 상세의 JSON과 그대로 견준다. 두 응답이 말없이 어긋날 수 없게 하려는 것이며, 같은 테스트가 상품 이름 변경·삭제 뒤에도 스냅샷이 그대로인지 함께 본다(ADR 0002).
+
+동시 요청, 커서 페이지네이션, 상태·기간 필터, 관리자 목록은 이 구현에 포함하지 않는다.

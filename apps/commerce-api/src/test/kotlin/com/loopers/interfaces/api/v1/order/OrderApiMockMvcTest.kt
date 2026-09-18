@@ -16,10 +16,12 @@ import com.loopers.utils.DatabaseCleanUp
 import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.hamcrest.Matchers.containsString
 import org.hibernate.SessionFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
@@ -491,6 +493,149 @@ class OrderApiMockMvcTest(
         create(body(product())).andExpect { status { isCreated() } }
     }
 
+    /**
+     * 목록의 항목은 상세와 같은 주문 응답이다. 필드를 하나씩 다시 세지 않고 상세의 JSON과 그대로 견준다.
+     * 두 응답이 말없이 어긋날 수 없게 하려는 것이며, 스냅샷이 카탈로그의 변경을 따라가지 않는 것도 함께 본다(ADR 0002).
+     */
+    @Test
+    fun `the order list returns only the requester's orders from the newest with the same entries as the detail`() {
+        val shirt = product("티셔츠", 1_000)
+        val socks = product("양말", 2_000)
+        // 품목을 상품 ID의 거꾸로 보낸다. 응답이 보낸 차례 그대로면 품목의 차례를 확인한 것이 아니다.
+        val older = create("""{"items":[{"productId":$socks,"quantity":1},{"productId":$shirt,"quantity":2}]}""", "older")
+            .andExpect { status { isCreated() } }.json()["data"]
+        val newer = create(body(socks), "newer").andExpect { status { isCreated() } }.json()["data"]
+        val otherUser = userRepository.save(User()).id
+        val foreign = create(body(shirt), "foreign", otherUser).andExpect { status { isCreated() } }
+            .json()["data"]["orderId"].longValue()
+        productService.update(shirt, ProductAdminUpdateRequest("바뀐 이름", 9_000))
+        productService.delete(socks)
+
+        val listed = list().andExpect {
+            status { isOk() }
+            jsonPath("$.meta.result") { value("SUCCESS") }
+            jsonPath("$.data.page") { value(0) }
+            jsonPath("$.data.size") { value(20) }
+            jsonPath("$.data.hasNext") { value(false) }
+            jsonPath("$.data.items.length()") { value(2) }
+        }.json()["data"]["items"]
+
+        assertAll(
+            { assertThat(listed[0]).isEqualTo(newer) },
+            { assertThat(listed[1]).isEqualTo(older) },
+            { assertThat(listed[1]["items"][0]["productName"].textValue()).isEqualTo("티셔츠") },
+            { assertThat(listed[1]["items"][0]["unitPrice"].longValue()).isEqualTo(1_000) },
+            { assertThat(listed[1]["items"][0]["quantity"].intValue()).isEqualTo(2) },
+            { assertThat(listed[1]["items"][1]["productId"].longValue()).isEqualTo(socks) },
+            { assertThat(listed[1]["totalAmount"].longValue()).isEqualTo(4_000) },
+            { assertThat(listed.map { it["orderId"].longValue() }).doesNotContain(foreign) },
+            {
+                val foreignList = list(requester = otherUser).json()["data"]["items"]
+                assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
+            },
+        )
+    }
+
+    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정 동작은 후속 티켓의 책임이라 상태를 DB fixture로 만든다(설계 13). */
+    @Test
+    fun `the order list shows draft and confirmed entries with their stored payment fields`() {
+        val id = product()
+        create(body(id), "draft").andExpect { status { isCreated() } }
+        val confirmed = create(body(id, 2), "confirmed").andExpect { status { isCreated() } }
+            .json()["data"]["orderId"].longValue()
+        jdbc.update(
+            "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
+                "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
+            confirmed,
+        )
+
+        list().andExpect {
+            status { isOk() }
+            jsonPath("$.data.items[0].status") { value("CONFIRMED") }
+            jsonPath("$.data.items[0].paidAmount") { value(2_000) }
+            jsonPath("$.data.items[0].confirmedAt") { value("2026-09-18T00:00:00.123456Z") }
+            jsonPath("$.data.items[1].status") { value("DRAFT") }
+            jsonPath("$.data.items[1].paidAmount") { doesNotExist() }
+            jsonPath("$.data.items[1].confirmedAt") { doesNotExist() }
+        }
+    }
+
+    /**
+     * 쪽을 넘겨도 주문이 겹치거나 빠지지 않고 품목도 잘리지 않는다. 품목이 둘인 주문으로 확인한다.
+     * 만든 시각이 같은 둘은 나중에 받은 식별자가 앞선다. 시각은 주문이 스스로 정하므로 SQL로 겹쳐 놓는다.
+     */
+    @Test
+    fun `the page and size in the query string reach the order slice and equal creation times break by id`() {
+        val shirt = product("티셔츠")
+        val socks = product("양말", 2_000)
+        val twoItems = """{"items":[{"productId":$shirt,"quantity":1},{"productId":$socks,"quantity":1}]}"""
+        val oldest = create(twoItems, "oldest").andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
+        val tied = create(twoItems, "tied").andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
+        val tiedLater = create(twoItems, "tied-later").andExpect { status { isCreated() } }
+            .json()["data"]["orderId"].longValue()
+        jdbc.update("update orders set created_at = '2026-09-17 10:00:00.000000' where id = ?", oldest)
+        jdbc.update("update orders set created_at = '2026-09-18 10:00:00.000000' where id in (?, ?)", tied, tiedLater)
+
+        val pages = (0..3).map { page ->
+            list("page" to "$page", "size" to "1").andExpect {
+                status { isOk() }
+                jsonPath("$.data.page") { value(page) }
+                jsonPath("$.data.size") { value(1) }
+            }.json()["data"]
+        }
+
+        assertAll(
+            { assertThat(pages[0]["items"][0]["orderId"].longValue()).isEqualTo(tiedLater) },
+            { assertThat(pages[1]["items"][0]["orderId"].longValue()).isEqualTo(tied) },
+            { assertThat(pages[2]["items"][0]["orderId"].longValue()).isEqualTo(oldest) },
+            { assertThat(pages.take(2).map { it["hasNext"].booleanValue() }).containsOnly(true) },
+            { assertThat(pages[2]["hasNext"].booleanValue()).isFalse() },
+            { assertThat(pages.take(3).map { it["items"][0]["items"].size() }).containsOnly(2) },
+            { assertThat(pages[3]["items"].size()).isZero() },
+            { assertThat(pages[3]["hasNext"].booleanValue()).isFalse() },
+        )
+    }
+
+    @Test
+    fun `listing orders outside the page and size bounds returns 400`() {
+        listOf(
+            ("page" to "-1") to "page는 0 이상이어야 합니다",
+            ("size" to "0") to "size는 1 이상이어야 합니다",
+            ("size" to "101") to "size는 100 이하여야 합니다",
+        ).forEach { (query, message) ->
+            list(query).andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value(containsString(message)) }
+            }
+        }
+    }
+
+    @Test
+    fun `listing orders needs a requester and a user without orders gets an empty page`() {
+        create(body(product())).andExpect { status { isCreated() } }
+        listOf(null, Long.MAX_VALUE).forEach { requester ->
+            list(requester = requester).andExpect {
+                status { isUnauthorized() }
+                jsonPath("$.meta.errorCode") { value("Unauthorized") }
+            }
+        }
+
+        // 헤더가 사용자 식별자로 읽히지 않는 것은 요청자 확인보다 앞선 HTTP의 사실이라 400이다(설계 13.1).
+        mockMvc.get("/api/v1/orders") { header(UserIdHeader.NAME, "abc") }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+        }
+
+        list(requester = userRepository.save(User()).id).andExpect {
+            status { isOk() }
+            jsonPath("$.data.items") { isEmpty() }
+            jsonPath("$.data.page") { value(0) }
+            jsonPath("$.data.size") { value(20) }
+            jsonPath("$.data.hasNext") { value(false) }
+        }
+    }
+
     private fun body(id: Long, quantity: Int = 1): String = """{"items":[{"productId":$id,"quantity":$quantity}]}"""
 
     private fun items(id: Long, quantities: String): String = quantities.split(',')
@@ -511,6 +656,12 @@ class OrderApiMockMvcTest(
 
     private fun detail(orderId: Long, requester: Long? = userId): ResultActionsDsl =
         mockMvc.get("/api/v1/orders/$orderId") { if (requester != null) header(UserIdHeader.NAME, requester) }
+
+    private fun list(vararg query: Pair<String, String>, requester: Long? = userId): ResultActionsDsl =
+        mockMvc.get("/api/v1/orders") {
+            if (requester != null) header(UserIdHeader.NAME, requester)
+            query.forEach { (name, value) -> param(name, value) }
+        }
 
     private fun ResultActionsDsl.json(): JsonNode = objectMapper.readTree(andReturn().response.contentAsString)
 }
