@@ -544,3 +544,19 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 | 재요청 재생·409·사용자별 키·실패 키 재사용·계정 없음·요청자 없음·Request 제약 | `PointServiceTest` (`@SpringBootTest` + `@Transactional`) | 잔액과 이력은 `PointRows`가 SQL로 읽는다 |
 | 잔액과 이력이 함께 커밋·롤백 | `PointServiceTransactionTest` (`@SpringBootTest`, 트랜잭션 없음, `DatabaseCleanUp`) | `@SpykBean PointHistoryRepository`가 `save`를 실제로 실행한 뒤 던진다. 이력의 INSERT가 나간 뒤의 실패라 두 변경이 한 트랜잭션이 아니면 어느 한쪽이 남는다. 새 트랜잭션에서 읽고, 같은 키로 다시 충전해 키가 남지 않았음을 본다 |
 | 인수 흐름, 재생 본문 동일, 401·400·409·500의 status와 code, JSON 토큰 8종, 키 형식 5종, 거절 뒤 상태 불변, 카탈로그 회귀 | `PointApiMockMvcTest`, `ProductAdminApiMockMvcTest` | 재생 비교는 두 응답 본문 문자열을 flush/clear 사이에 두고 견준다 |
+
+## 13. DRAFT 생성·내 상세 구현 — Issue #13
+
+[Issue #13](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/13)은 `POST /api/v1/orders`와 `GET /api/v1/orders/{orderId}`를 구현한다. 포인트 계정을 조회하거나 만들지 않으며, 주문 확정 행위와 목록·관리자 조회는 후속 티켓에 남긴다.
+
+- `Order`가 `OrderLineItem`을 소유한다. 품목의 상품 식별자·이름·단가·수량·금액과 주문 합계는 생성 후 바뀌지 않는다. 상품 객체 연관은 없고, 현재 상품을 읽지 않아도 상세를 구성한다. 카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다.
+- nullable `paidAmount`·`confirmedAt`과 `DRAFT`·`CONFIRMED` 저장 형태를 함께 둔다. 상태와 결제 필드의 일치, 양수 금액·수량은 MySQL CHECK로도 확인한다. 이 티켓의 공개 API에는 확정 동작이 없다.
+- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 원본 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사하고(5.18), 합산 넘침은 정규화 과정에서 거절한다. 주문 전용 advice가 본문·검증·금액 오류를 `INVALID_POINT_ORDER_REQUEST`로 바꾼다.
+- `OrderService`는 사용자·키·입력을 확인한 다음 성공 주문부터 찾는다. 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
+- 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
+- `orders.creation_key`는 `ascii_bin`을 명시하고 사용자·키 유일 제약을 둔다. 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
+- `OrderApiMockMvcTest`는 테스트 전체를 트랜잭션으로 감싸지 않는다. 요청마다 서비스 트랜잭션이 종료되고 다음 요청은 새 영속성 컨텍스트에서 읽는다. FK 메타데이터·잘못된 참조·물리 삭제 제한·유일 제약을 실제 MySQL에서 검사한다. 두 번째 품목 저장을 거절하는 임시 CHECK를 넣어 앞서 저장한 주문·첫 품목·키까지 롤백되는지 확인하고, 제약을 없앤 뒤 같은 키로 성공하는지 검증한다. CONFIRMED 응답 검사는 DB fixture로 상태 형태를 준비하며 실제 확정 흐름 검증은 후속 티켓의 책임이다.
+
+동시 요청의 중복 삽입 복구·잠금·버전 관리와 기존 DB의 스키마 전환은 이 구현에 포함하지 않는다.
+
+검증에서는 기존 주문이 있는 스키마에 Hibernate의 drop/export를 실행해 관련 테이블이 모두 삭제되고 세 FK가 다시 생성되며 새 주문 생성도 성공함을 확인했다. 현재 테이블 구성에 대한 회귀 테스트이며, 이후 스칼라 FK를 추가하면 삭제 순서도 다시 검증한다.

@@ -25,6 +25,8 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
      * 계정 없음은 fixture와 데이터의 불일치라 범용 500과 status·code를 공유한다(설계 6 끝).
      * 키 메시지의 128자는 domain의 `IdempotencyKey.MAX_LENGTH`와 같다. support는 domain을 참조할 수 없어 글자로 적는다.
      */
+    ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),
+    ORDER_PRODUCT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "ORDER_PRODUCT_NOT_AVAILABLE", "주문할 수 없는 상품입니다."),
     INVALID_IDEMPOTENCY_KEY(
         HttpStatus.BAD_REQUEST,
         "INVALID_IDEMPOTENCY_KEY",
