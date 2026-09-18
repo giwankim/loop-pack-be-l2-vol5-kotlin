@@ -7,6 +7,7 @@ import com.loopers.application.product.ProductInfo
  * 남은 수량 대신 품절 여부만 준다(설계 5.7). 품절 여부는 `Product`가 정한 값을 그대로 옮기며 여기서 세지 않는다.
  *
  * 고객이 상품을 볼 때 브랜드 이름을 함께 보므로 브랜드를 [ProductBrandResponse]로 안에 담는다.
+ * 좋아요 수도 고객만 본다. 관계를 세어 `ProductInfo`에 실린 값을 그대로 옮기며 여기서 세지 않는다.
  */
 data class ProductResponse(
     val id: Long,
@@ -14,6 +15,7 @@ data class ProductResponse(
     val price: Long,
     val soldOut: Boolean,
     val brand: ProductBrandResponse,
+    val likeCount: Long,
 ) {
     companion object {
         fun from(info: ProductInfo): ProductResponse =
@@ -23,6 +25,7 @@ data class ProductResponse(
                 price = info.price,
                 soldOut = info.soldOut,
                 brand = ProductBrandResponse(id = info.brandId, name = info.brandName),
+                likeCount = info.likeCount,
             )
     }
 }

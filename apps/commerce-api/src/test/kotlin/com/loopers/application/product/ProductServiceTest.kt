@@ -2,6 +2,8 @@ package com.loopers.application.product
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.like.Like
+import com.loopers.domain.like.LikeRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 class ProductServiceTest(
     private val productService: ProductService,
     private val brandRepository: BrandRepository,
+    private val likeRepository: LikeRepository,
     private val entityManager: EntityManager,
 ) {
     @Test
@@ -43,9 +46,40 @@ class ProductServiceTest(
             { assertThat(found.price).isEqualTo(12_000L) },
             { assertThat(found.stock).isEqualTo(7) },
             { assertThat(found.soldOut).isFalse() },
+            { assertThat(found.likeCount).isZero() },
             { assertThat(found.createdAt).isNotNull() },
             { assertThat(found.updatedAt).isNotNull() },
         )
+    }
+
+    /** 좋아요 수는 관계에서 센다. 사용자 행은 필요 없다. 좋아요는 사용자를 식별자로만 가리킨다(설계 2). */
+    @Test
+    fun `finding a product counts the likes on it`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val registered = register(brand.id)
+        val other = register(brand.id, name = "후드티")
+        likeRepository.save(Like(userId = 1L, productId = registered.id))
+        likeRepository.save(Like(userId = 2L, productId = registered.id))
+        likeRepository.save(Like(userId = 1L, productId = other.id))
+        entityManager.flushAndClear()
+
+        val found = productService.find(registered.id)
+
+        assertThat(found.likeCount).isEqualTo(2L)
+    }
+
+    @Test
+    fun `listing carries each product's own like count and zero for a product without likes`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val liked = register(brand.id, name = "티셔츠")
+        val unliked = register(brand.id, name = "후드티")
+        likeRepository.save(Like(userId = 1L, productId = liked.id))
+        likeRepository.save(Like(userId = 2L, productId = liked.id))
+        entityManager.flushAndClear()
+
+        val slice = productService.findAll(ProductListRequest())
+
+        assertThat(slice.items.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
     }
 
     @Test

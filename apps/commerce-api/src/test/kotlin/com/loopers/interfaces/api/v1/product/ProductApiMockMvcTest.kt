@@ -59,6 +59,7 @@ class ProductApiMockMvcTest(
                 jsonPath("$.data.soldOut") { value(false) }
                 jsonPath("$.data.brand.id") { value(brand.id) }
                 jsonPath("$.data.brand.name") { value("루퍼스") }
+                jsonPath("$.data.likeCount") { value(0) }
             }
     }
 
@@ -144,6 +145,7 @@ class ProductApiMockMvcTest(
             jsonPath("$.data.items[1].id") { value(firstId) }
             jsonPath("$.data.items[0].brand.name") { value("루퍼스") }
             jsonPath("$.data.items[0].soldOut") { value(false) }
+            jsonPath("$.data.items[0].likeCount") { value(0) }
             jsonPath("$.data.page") { value(0) }
             jsonPath("$.data.size") { value(20) }
             jsonPath("$.data.hasNext") { value(false) }

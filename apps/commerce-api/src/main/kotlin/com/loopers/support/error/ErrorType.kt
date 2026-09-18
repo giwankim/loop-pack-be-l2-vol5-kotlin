@@ -15,4 +15,7 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     BRAND_NAME_DUPLICATED(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "같은 이름의 브랜드가 이미 있습니다."),
     BRAND_HAS_PRODUCTS(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "삭제되지 않은 상품이 남아 있는 브랜드는 삭제할 수 없습니다."),
     INVALID_SORT(HttpStatus.BAD_REQUEST, HttpStatus.BAD_REQUEST.reasonPhrase, "알 수 없는 정렬 값입니다."),
+
+    /** 요청자. 새 status가 필요하므로 code도 새로 갖는다(설계 4 오류 코드). */
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED, HttpStatus.UNAUTHORIZED.reasonPhrase, "요청자를 확인할 수 없습니다."),
 }
