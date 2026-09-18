@@ -140,6 +140,18 @@ class LikeApiMockMvcTest(
         }
     }
 
+    /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. Spring의 타입 변환이 거절한다(설계 5.27). */
+    @Test
+    fun `liking with a user header that is not a number returns 400`() {
+        val productId = registerProduct()
+        entityManager.flushAndClear()
+
+        mockMvc.post("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, "abc") }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+        }
+    }
+
     @Test
     fun `liking as a user that does not exist returns 401 and saves nothing`() {
         val productId = registerProduct()

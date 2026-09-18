@@ -10,6 +10,7 @@ import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
+import org.hibernate.SessionFactory
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
@@ -80,6 +81,33 @@ class ProductServiceTest(
         val slice = productService.findAll(ProductListRequest())
 
         assertThat(slice.items.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+    }
+
+    /**
+     * 목록의 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다(설계 5.28). 항목마다 세면 조각 크기만큼 SQL이 늘어난다.
+     * 조각 조회 하나와 집계 하나, 둘이어야 한다. 통계는 컨텍스트를 새로 띄우지 않으려고 실행 중에 켠다.
+     */
+    @Test
+    fun `listing counts the likes of the whole slice in one query`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val products = listOf("티셔츠", "후드티", "양말").map { register(brand.id, name = it) }
+        products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
+        entityManager.flushAndClear()
+        val statistics = entityManager.entityManagerFactory.unwrap(SessionFactory::class.java).statistics
+        statistics.isStatisticsEnabled = true
+        statistics.clear()
+
+        try {
+            val slice = productService.findAll(ProductListRequest())
+
+            assertAll(
+                { assertThat(slice.items).hasSize(3) },
+                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
+                { assertThat(statistics.prepareStatementCount).isEqualTo(2L) },
+            )
+        } finally {
+            statistics.isStatisticsEnabled = false
+        }
     }
 
     @Test
