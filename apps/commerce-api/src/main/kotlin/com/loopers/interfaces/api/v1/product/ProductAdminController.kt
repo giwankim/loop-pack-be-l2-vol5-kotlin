@@ -6,7 +6,7 @@ import com.loopers.application.product.ProductService
 import com.loopers.application.product.ProductStockUpdateRequest
 import com.loopers.application.product.ProductUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.interfaces.api.SliceResponse
+import com.loopers.interfaces.api.PageResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -39,10 +39,9 @@ class ProductAdminController(
     @GetMapping
     override fun getProducts(
         @ModelAttribute @Valid request: ProductListRequest,
-    ): ApiResponse<SliceResponse<ProductAdminResponse>> {
+    ): ApiResponse<PageResponse<ProductAdminResponse>> {
         return productService.findAll(request)
-            .map(ProductAdminResponse::from)
-            .let { SliceResponse.from(it) }
+            .let { PageResponse.from(it, ProductAdminResponse::from) }
             .let { ApiResponse.success(it) }
     }
 

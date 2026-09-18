@@ -5,7 +5,7 @@ import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
-import com.loopers.domain.shared.Slice
+import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -52,7 +52,7 @@ class ProductService(
      * 늦게 등록된 상품이 앞서는 한 조각. 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 트랜잭션 안에서 끝난다.
      */
     @Transactional(readOnly = true)
-    fun findAll(@Valid request: ProductListRequest): Slice<ProductInfo> =
+    fun findAll(@Valid request: ProductListRequest): PageSlice<ProductInfo> =
         productRepository
             .findAll(brandId = request.brandId, page = request.page, size = request.size)
             .map(ProductInfo::from)

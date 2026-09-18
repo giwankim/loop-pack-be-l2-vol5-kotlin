@@ -394,10 +394,11 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 - 문제: 저장 약속이 조각을 돌려줘야 하는데 `org.springframework.data.domain.Slice`를 쓰면 domain이 Spring Data에 의존한다(5.20이 막은 것과 같은 의존).
 - 대안 A: 저장 약속이 `List<Product>`를 돌려주고 application이 `size + 1`개를 받아 다음 조각의 존재를 스스로 센다. 조각을 세는 요령이 유스케이스마다 되풀이된다.
-- 대안 B: domain에 `Slice<T>(items, page, size, hasNext)`를 두고 infrastructure가 Spring Data의 `Slice`를 여기에 옮긴다.
-- 선택: B (2026-09-18, #5). `domain/shared/Slice.kt`에 두어 브랜드·좋아요 목록도 같은 타입을 쓴다. `map`이 항목만 다른 타입으로 옮겨 `Slice<Product>` → `Slice<ProductInfo>`가 한 줄이다. `size + 1`을 읽는 요령은 `ProductRepositoryImpl` 한 곳에만 있다.
-- interfaces에는 `SliceResponse<T>`를 `ApiResponse` 옆에 둔다. 개념을 가리지 않는 봉투이므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다.
+- 대안 B: domain에 `PageSlice<T>(items, page, size, hasNext)`를 두고 infrastructure가 Spring Data의 `Slice`를 여기에 옮긴다.
+- 선택: B (2026-09-18, #5). `domain/shared/PageSlice.kt`에 두어 브랜드·좋아요 목록도 같은 타입을 쓴다. `map`이 항목만 다른 타입으로 옮겨 `PageSlice<Product>` → `PageSlice<ProductInfo>`가 한 줄이다. 항목이 지연 로딩되는 연관을 읽으면 옮기는 일이 트랜잭션 안에서 끝나야 하므로 `map`은 봉투가 아니라 조각이 가진다. `size + 1`을 읽는 요령은 `ProductRepositoryImpl` 한 곳에만 있다.
+- interfaces에는 `PageResponse<T>`를 `ApiResponse` 옆에 둔다. `from(slice, transform)`이 조각을 봉투로 옮기면서 항목을 응답 DTO로 바꾼다. 개념을 가리지 않는 봉투이므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다.
 - 대가: 같은 네 필드가 domain과 interfaces에 하나씩 있다. `ApiResponse`가 domain 타입을 그대로 내보내지 않기 위한 값이고, 항목의 타입이 층마다 다르므로(`Product`, `ProductInfo`, `ProductAdminResponse`) 봉투도 따라간다.
+- 이름: `Slice`가 아니라 `PageSlice`인 까닭은 Spring Data의 `org.springframework.data.domain.Slice`, 그리고 `LayeredArchitectureTest`가 쓰는 ArchUnit의 `Slice`와 한 트리에서 겹치지 않게 하려는 것이다. 겹치던 동안 `ProductRepositoryImpl`이 `as SpringSlice` 별칭을 써야 했고, 이름을 바꾸면서 그 별칭이 없어졌다. 입력/조각/봉투를 `PageQuery`/`PageSlice`/`PageResponse`로 맞춘다 (2026-09-18, #3).
 - 다시 볼 조건: 커서 기반 페이징으로 바꿀 때(`page` 대신 커서). 총 개수가 필요해질 때(5.5).
 
 ### 5.22 목록 입력의 검사

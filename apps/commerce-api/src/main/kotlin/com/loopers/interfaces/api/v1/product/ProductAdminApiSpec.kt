@@ -5,7 +5,7 @@ import com.loopers.application.product.ProductRegisterRequest
 import com.loopers.application.product.ProductStockUpdateRequest
 import com.loopers.application.product.ProductUpdateRequest
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.interfaces.api.SliceResponse
+import com.loopers.interfaces.api.PageResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -29,7 +29,7 @@ interface ProductAdminApiSpec {
     )
     fun getProducts(
         request: ProductListRequest,
-    ): ApiResponse<SliceResponse<ProductAdminResponse>>
+    ): ApiResponse<PageResponse<ProductAdminResponse>>
 
     @Operation(
         summary = "상품 상세 조회",
