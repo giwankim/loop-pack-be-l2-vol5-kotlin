@@ -6,10 +6,12 @@ import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.shared.IdempotencyKey
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Pattern
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
@@ -22,10 +24,18 @@ class OrderService(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
 ) {
+    /**
+     * 생성 키의 형식은 [IdempotencyKey] 하나다. HTTP에서는 [com.loopers.interfaces.api.IdempotencyKeyHeader]가 먼저 거르고,
+     * Controller를 거치지 않는 호출도 같은 규칙을 받도록 제약을 여기에도 둔다(카탈로그 설계 5.25, 설계 12.4).
+     */
     @Transactional
-    fun create(userId: Long, creationKey: String?, @Valid request: OrderCreateRequest): OrderInfo {
+    fun create(
+        userId: Long,
+        @Pattern(regexp = IdempotencyKey.PATTERN, message = "주문 생성 키는 ${IdempotencyKey.RULE}이어야 합니다.")
+        creationKey: String,
+        @Valid request: OrderCreateRequest,
+    ): OrderInfo {
         checkUserExists(userId)
-        if (creationKey == null || !CREATION_KEY.matches(creationKey)) throw CoreException(ErrorType.INVALID_IDEMPOTENCY_KEY)
         val items = request.normalizedItems()
         orderRepository.findByUserIdAndCreationKey(userId, creationKey)?.let { order ->
             if (order.items.map { OrderCreateRequest.Item(it.productId, it.quantity) } != items) {
@@ -52,9 +62,5 @@ class OrderService(
 
     private fun checkUserExists(userId: Long) {
         if (!userRepository.existsById(userId)) throw CoreException(ErrorType.UNAUTHORIZED)
-    }
-
-    companion object {
-        private val CREATION_KEY = Regex("[A-Za-z0-9_-]{1,128}")
     }
 }

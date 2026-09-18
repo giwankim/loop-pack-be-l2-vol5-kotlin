@@ -2,6 +2,7 @@ package com.loopers.interfaces.api.v1.order
 
 import com.loopers.application.order.OrderCreateRequest
 import com.loopers.interfaces.api.ApiResponse
+import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -20,7 +21,7 @@ interface OrderApiSpec {
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
         userId: Long?,
         @Parameter(
-            name = "Idempotency-Key",
+            name = IdempotencyKeyHeader.NAME,
             `in` = ParameterIn.HEADER,
             required = true,
             description = "1~128자의 ASCII 영문·숫자·하이픈·밑줄. 대소문자를 구분합니다.",

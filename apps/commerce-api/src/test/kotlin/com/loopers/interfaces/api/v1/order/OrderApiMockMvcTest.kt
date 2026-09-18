@@ -10,6 +10,7 @@ import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
+import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
 import jakarta.persistence.EntityManagerFactory
@@ -349,6 +350,14 @@ class OrderApiMockMvcTest(
             "order_line_item.order_id->orders",
             "order_line_item.product_id->product",
         )
+        // 생성 키는 충전 키와 같은 열 정의를 쓴다(IdempotencyKey.COLUMN_DEFINITION, 설계 12.2).
+        val keyColumn = jdbc.queryForMap(
+            "select character_set_name, collation_name, character_maximum_length from information_schema.columns " +
+                "where table_schema = database() and table_name = 'orders' and column_name = 'creation_key'",
+        )
+        assertThat(keyColumn).containsEntry("character_set_name", "utf8mb4")
+            .containsEntry("collation_name", "utf8mb4_bin")
+            .containsEntry("character_maximum_length", 128L)
         assertConstraint(
             "insert into orders (user_id, creation_key, status, total_amount, created_at) " +
                 "values (?, 'bad-user', 'DRAFT', 1000, now(6))",
@@ -454,7 +463,7 @@ class OrderApiMockMvcTest(
     private fun create(body: String, key: String? = "create-1", requester: Long? = userId): ResultActionsDsl =
         mockMvc.post("/api/v1/orders") {
             if (requester != null) header(UserIdHeader.NAME, requester)
-            if (key != null) header("Idempotency-Key", key)
+            if (key != null) header(IdempotencyKeyHeader.NAME, key)
             contentType = MediaType.APPLICATION_JSON
             content = body
         }

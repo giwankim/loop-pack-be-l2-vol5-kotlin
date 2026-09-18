@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 표기와 예외 규칙은 [카탈로그 도메인](./catalog.md)과 같다. 구조와 API, 결정은 [`docs/design/points-orders.md`](../design/points-orders.md)에 있다.
 
-2026-09-18 기준 충전과 잔액 조회(#12)까지 구현되었다. 주문·결제 이력은 #13–#16에서 더한다.
+2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13)까지 구현되었다. 주문 확정과 결제 이력, 목록·관리자 조회는 #14–#16에서 더한다.
 
 ## 포인트 계정 (PointAccount)
 
@@ -76,6 +76,84 @@
 - 공백을 떼거나 대소문자를 바꾸지 않는다.
 - 범위는 사용자 + 작업 종류다. 다른 사용자의 같은 키, 같은 사용자의 충전과 주문 생성에 쓴 같은 키는 서로 무관하다. 충전의 키는 `point_history`에, 생성의 키는 주문에 남으므로 저장 위치가 다르다(ADR 0004).
 
+## 주문 (Order)
+
+애그리거트 루트. `BaseEntity`를 상속하지 않는다. 카탈로그의 논리 삭제 행위를 물려받으면 주문을 지울 수 있게 되는데, 주문을 지우는 유스케이스가 없다(설계 13).
+
+### 속성
+
+| 이름 | 타입 | 뜻 |
+| --- | --- | --- |
+| `id` | `Long` | 식별자 |
+| `userId` | `Long` | 주문한 사용자. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(설계 13) |
+| `creationKey` | `String` | 생성 키. 사용자 안에서 유일, 대소문자 구분 |
+| `items` | `List<OrderLineItem>` | 주문 품목. `productId` 오름차순이며 상품별로 하나씩이다 |
+| `totalAmount` | `Money` | 품목 금액의 합. 생성 후 바뀌지 않는다 |
+| `status` | `OrderStatus` | `DRAFT` 또는 `CONFIRMED` |
+| `paidAmount` | `Money?` | 확정으로 결제한 금액. `DRAFT`에는 없다 |
+| `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
+| `createdAt` | `Instant` | 생성 시각. 마이크로초로 잘라 저장한다 |
+
+테이블 `orders`. `(user_id, creation_key)` 유일(`uk_orders_user_creation_key`), `users`로 외래 키(`fk_orders_user`), 조회용 인덱스 `idx_orders_user_created`·`idx_orders_created`. `creation_key`는 충전 키와 같은 열 정의를 쓴다(`IdempotencyKey.COLUMN_DEFINITION`, 설계 12.2). 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
+
+### 규칙
+
+- 품목은 하나 이상이고 상품별로 하나씩이다. 어기면 `InvalidOrderException`.
+- 생성 정보(품목의 상품·이름·단가·수량·금액과 총액, 생성 시각, 생성 키)는 생성 후 바뀌지 않는다(ADR 0002).
+- `DRAFT`는 재고도 포인트도 건드리지 않는다. 재고 0이거나 잔액이 부족한 상태에서도 생성된다(설계 5.7, Q12).
+- 총액은 품목 금액의 합이며 `Money`가 `Long` 범위를 지킨다. 넘치면 `InvalidMoneyException`이고 주문은 저장되지 않는다.
+- `DRAFT`에는 `paidAmount`·`confirmedAt`이 없고 `CONFIRMED`에는 둘 다 있으며 `paidAmount`는 총액과 같다. 확정 행위 자체는 #14가 더한다.
+- 생성 시각은 MySQL `datetime(6)`과 정밀도를 맞춰 첫 응답과 저장 후 재생이 같은 값을 준다. `updatedAt`에 기대지 않는다.
+
+### 행위
+
+| 메서드 | 하는 일 | 거절 |
+| --- | --- | --- |
+| `Order(userId, creationKey, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException`, `InvalidMoneyException` |
+
+### 저장 약속
+
+`OrderRepository`: `save`, `findByIdAndUserId`, `findByUserIdAndCreationKey`. 없으면 null이다. 주문을 지우는 약속은 없다.
+
+### 협력
+
+- 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 같은 생성 키의 주문 조회 → 있으면 정규화한 의도를 견줘 최초 `DRAFT` 응답 재생(같음) 또는 `IDEMPOTENCY_KEY_CONFLICT`(다름) → 없으면 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문·품목·생성 키는 한 트랜잭션이다.
+- 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
+
+## 주문 품목 (OrderLineItem)
+
+주문이 소유한다. `BaseEntity`를 상속하지 않고 생성자가 `internal`이라 `Order`만 만든다.
+
+### 속성
+
+| 이름 | 타입 | 뜻 |
+| --- | --- | --- |
+| `id` | `Long` | 식별자 |
+| `order` | `Order` | 속한 주문. `@ManyToOne(fetch = LAZY)`. DB 외래 키의 자리 |
+| `productId` | `Long` | 대상 상품. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(Q14, Q21) |
+| `productName` | `String` | 생성 당시의 상품 이름 |
+| `unitPrice` | `Money` | 생성 당시의 상품 가격. 양수 |
+| `quantity` | `Int` | 합산한 구매 수량. 양수 |
+| `lineAmount` | `Money` | `unitPrice` × `quantity` |
+
+테이블 `order_line_item`. `(order_id, product_id)` 유일(`uk_order_line_item_product`), `orders`로 외래 키(`fk_order_line_item_order`), `product`로 외래 키(`fk_order_line_item_product`). 단가·수량·금액이 양수인지는 DB `CHECK`도 본다.
+
+### 규칙
+
+- 이름과 단가는 생성 당시의 값이다. 이후 상품의 이름·가격이 바뀌어도 이 품목은 그대로다(ADR 0002).
+- 상품을 객체로 참조하지 않는 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 논리 삭제된 상품의 주문을 읽을 수 없게 되기 때문이다(설계 12.1). 상품이 삭제되어도 주문과 그 스냅샷은 읽힌다.
+- 같은 상품의 입력 수량은 합산해 한 품목으로 남긴다. 음수·0인 입력을 합산으로 감출 수 없다(설계 5.2).
+- 합산 수량은 양의 `Int` 범위, 금액은 `Long` 범위다. 넘치면 거절하고 주문의 일부만 저장하지 않는다.
+
+## 주문 생성 키 (creationKey)
+
+충전 키와 같은 값이며 같은 형식·같은 열 정의를 쓴다(`domain.shared.IdempotencyKey`, 설계 12.2). 남는 자리만 다르다. 생성의 키는 주문에 남는다(ADR 0004).
+
+- HTTP `Idempotency-Key` 헤더가 없거나 형식을 어기면 interfaces(`IdempotencyKeyHeader.require`)가 `INVALID_IDEMPOTENCY_KEY`(400)로 거절한다. 같은 형식을 `OrderService.create`의 `@Pattern`이 Service 입구에서 한 번 더 본다(설계 12.4).
+- 같은 키의 비교 대상은 합산·정렬한 상품별 수량이다. 상품의 현재 가격·이름은 견주지 않는다. 같으면 최초 `DRAFT` 응답과 201을 재생하고, 다르면 `IDEMPOTENCY_KEY_CONFLICT`(409)다(설계 5.8).
+- 저장된 주문이 이미 `CONFIRMED`여도 생성 재요청의 응답은 최초 `DRAFT`와 불변 생성 정보다. 현재 상태는 상세 조회로 본다(ADR 0004).
+- 실패한 요청은 키를 쓰지 않는다. 성공한 키는 만료되지 않는다(Q15).
+
 ## 사용자 (User)와 요청자
 
-카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회도 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`)이 본다. 요청자는 자기 잔액만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없다.
+카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·상세 조회 모두 요청자가 있어야 하며, 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`PointService`·`OrderService`)이 본다. 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`로 요청자의 것만 읽는다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).

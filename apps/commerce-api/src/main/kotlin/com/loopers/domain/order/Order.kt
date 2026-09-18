@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.domain.shared.IdempotencyKey
 import com.loopers.domain.shared.Money
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.CascadeType
@@ -41,7 +42,7 @@ class Order(
         name = "creation_key",
         nullable = false,
         updatable = false,
-        columnDefinition = "varchar(128) character set ascii collate ascii_bin",
+        columnDefinition = IdempotencyKey.COLUMN_DEFINITION,
     )
     val creationKey: String,
     products: List<OrderProduct>,

@@ -552,11 +552,28 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - `Order`가 `OrderLineItem`을 소유한다. 품목의 상품 식별자·이름·단가·수량·금액과 주문 합계는 생성 후 바뀌지 않는다. 상품 객체 연관은 없고, 현재 상품을 읽지 않아도 상세를 구성한다. 카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다.
 - nullable `paidAmount`·`confirmedAt`과 `DRAFT`·`CONFIRMED` 저장 형태를 함께 둔다. 상태와 결제 필드의 일치, 양수 금액·수량은 MySQL CHECK로도 확인한다. 이 티켓의 공개 API에는 확정 동작이 없다.
 - application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 원본 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사하고(5.18), 합산 넘침은 정규화 과정에서 거절한다. 주문 전용 advice가 본문·검증·금액 오류를 `INVALID_POINT_ORDER_REQUEST`로 바꾼다.
-- `OrderService`는 사용자·키·입력을 확인한 다음 성공 주문부터 찾는다. 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
+- `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
-- `orders.creation_key`는 `ascii_bin`을 명시하고 사용자·키 유일 제약을 둔다. 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
+- `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
 - `OrderApiMockMvcTest`는 테스트 전체를 트랜잭션으로 감싸지 않는다. 요청마다 서비스 트랜잭션이 종료되고 다음 요청은 새 영속성 컨텍스트에서 읽는다. FK 메타데이터·잘못된 참조·물리 삭제 제한·유일 제약을 실제 MySQL에서 검사한다. 두 번째 품목 저장을 거절하는 임시 CHECK를 넣어 앞서 저장한 주문·첫 품목·키까지 롤백되는지 확인하고, 제약을 없앤 뒤 같은 키로 성공하는지 검증한다. CONFIRMED 응답 검사는 DB fixture로 상태 형태를 준비하며 실제 확정 흐름 검증은 후속 티켓의 책임이다.
 
 동시 요청의 중복 삽입 복구·잠금·버전 관리와 기존 DB의 스키마 전환은 이 구현에 포함하지 않는다.
 
 검증에서는 기존 주문이 있는 스키마에 Hibernate의 drop/export를 실행해 관련 테이블이 모두 삭제되고 세 FK가 다시 생성되며 새 주문 생성도 성공함을 확인했다. 현재 테이블 구성에 대한 회귀 테스트이며, 이후 스칼라 FK를 추가하면 삭제 순서도 다시 검증한다.
+
+### 13.1 #12와 공유하는 자리
+
+#13은 #12가 아직 없던 `75aa245` 위에서 작성돼 멱등성 키를 스스로 다뤘다. week2로 rebase하며 #12가 이미 둔 자리로 옮긴 것이다. 규칙이 적히는 자리를 늘리지 않는다는 기준(12.4)과 같다.
+
+| 옮긴 것 | 전 | 후 |
+| --- | --- | --- |
+| 키 형식 | `OrderService`의 `Regex("[A-Za-z0-9_-]{1,128}")` | `IdempotencyKey.PATTERN`을 읽는 `@Pattern` 제약 |
+| 헤더 이름·거절 | Controller의 `"Idempotency-Key"` 문자열, Service의 null·형식 검사 | `IdempotencyKeyHeader.NAME`과 `IdempotencyKeyHeader.require` |
+| 키 열 | `varchar(128) character set ascii collate ascii_bin` | `IdempotencyKey.COLUMN_DEFINITION` (`utf8mb4_bin`) |
+
+- 형식·길이·열 정의가 한 object에 있으므로 충전과 생성의 키가 갈라질 수 없다. `IdempotencyKey`의 KDoc이 처음부터 두 키가 공유하는 형식이라 적었고 12.2도 생성 키가 같은 object를 쓴다고 적었다.
+- `ascii_bin` 대신 `utf8mb4_bin`을 쓰는 까닭은 12.2와 같다. 대소문자 구분은 두 collation이 모두 지키지만, 연결 문자 집합과 같아야 비교에 문자 집합 변환이 끼지 않는다. 키는 어차피 ASCII로 걸러지므로 저장 크기는 같다. 대소문자 구분은 `keys are case sensitive and scoped to the user`가 행위로, 열 정의는 `foreign keys and user key and order product uniqueness are enforced by MySQL`이 `information_schema`로 붙들어 둔다.
+- 검사 순서가 한 군데 바뀌었다. 키 형식을 Controller가 보게 되어, 잘못된 키와 없는 사용자를 함께 보낸 요청은 401이 아니라 400 `INVALID_IDEMPOTENCY_KEY`다. 헤더의 형식은 HTTP만 아는 사실이라 요청자 확인보다 앞선다는 12.4의 자리 그대로다. 본문이 요청자 확인보다 앞서는 것(12.3 끝)과 같은 까닭이며, 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 여전히 없다. 테스트는 한 가지 잘못만 보낸다.
+- Service 입구의 `@Pattern`은 남겼다. Controller를 거치지 않는 호출도 같은 규칙을 받아야 한다(카탈로그 설계 5.25). 충전이 `PointChargeRequest`의 필드 제약으로 하는 일을, 생성 키는 Request에 실리지 않으므로 메서드 파라미터 제약으로 한다.
+
+아직 옮기지 않은 것이 둘 있다. `OrderControllerAdvice`는 `75aa245`의 `ApiControllerAdvice`가 입력 오류를 모두 범용 `Bad Request`로만 답해 새 code를 실을 자리가 없어 둔 것이고, #12가 `handleHttpMessageNotReadable`에 근본 원인 `CoreException`을 푸는 자리를 만들어 본문 경로는 공용 advice로도 된다. 다만 advice는 `MethodArgumentNotValidException`·`ConstraintViolationException`·`RuleViolationException`도 받아 `RuleViolationException`의 메시지를 범용 400으로 주는 12.4와 다른 답을 하므로, 주문의 오류 계약을 하나로 볼지 정한 뒤 옮긴다. `OrderCreateRequestDeserializer`도 `StrictLongDeserializer`와 하는 일이 겹치지만, `items`가 배열인지처럼 컨테이너의 모양을 보는 일은 필드 단위 역직렬화기로 적을 수 없어 남겼다(12.3 끝). 둘 다 응답 code를 바꾸는 일이라 테스트의 기대와 함께 정한다.
