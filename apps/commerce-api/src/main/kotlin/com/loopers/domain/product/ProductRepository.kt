@@ -15,4 +15,7 @@ interface ProductRepository {
      * 어느 기준이든 동률은 id 내림차순으로 깬다.
      */
     fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<Product>
+
+    /** [brandId] 브랜드에 상품이 하나라도 남아 있는지. 삭제된 상품은 없는 상품이므로 세지 않는다. 브랜드 삭제 조건이 묻는다. */
+    fun existsByBrandId(brandId: Long): Boolean
 }

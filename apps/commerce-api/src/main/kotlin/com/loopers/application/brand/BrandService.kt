@@ -2,6 +2,7 @@ package com.loopers.application.brand
 
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -12,7 +13,10 @@ import org.springframework.validation.annotation.Validated
 
 @Service
 @Validated
-class BrandService(private val brandRepository: BrandRepository) {
+class BrandService(
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
+) {
     /** 브랜드를 먼저 만들어 이름을 정리한 뒤, 정리된 이름으로 중복을 본다. 입력 그대로 조회하면 앞뒤 공백만 다른 이름이 중복을 빠져나간다. */
     @Transactional
     fun register(@Valid request: BrandAdminRegisterRequest): Brand {
@@ -43,10 +47,19 @@ class BrandService(private val brandRepository: BrandRepository) {
         return brandRepository.save(brand)
     }
 
-    /** 삭제 시각을 찍는다. 살아 있는 상품이 남은 브랜드를 거절하는 조건은 아직 없다(#6). */
+    /**
+     * 삭제 시각을 찍는다. 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다. 재고가 0인 상품도 남은 상품이다.
+     *
+     * 이 조건은 [Brand] 안의 불변식이 아니다. 브랜드는 자기 상품을 모르고, 답은 상품 저장소에만 있다(설계 5.1, 5.8).
+     * 거절되면 브랜드가 그대로 남아야 하므로 [Brand.delete] 앞에서 묻는다. 뒤에서 물으면 찍힌 삭제 시각이
+     * 영속성 컨텍스트에 남아 flush 때 저장된다.
+     */
     @Transactional
     fun delete(id: Long) {
         val brand = find(id)
+        if (productRepository.existsByBrandId(brand.id)) {
+            throw CoreException(ErrorType.BRAND_HAS_PRODUCTS)
+        }
         brand.delete()
 
         brandRepository.save(brand)

@@ -3,6 +3,8 @@ package com.loopers.interfaces.api.v1.brand
 import com.jayway.jsonpath.JsonPath
 import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
+import com.loopers.application.product.ProductAdminRegisterRequest
+import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -40,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional
 class BrandAdminApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val brandService: BrandService,
+    private val productService: ProductService,
     private val entityManager: EntityManager,
 ) {
     companion object {
@@ -353,6 +356,43 @@ class BrandAdminApiMockMvcTest(
         assertThat(countBrands()).isOne()
     }
 
+    @Test
+    fun `deleting a brand that still has a live product returns 409 and leaves the row unstamped`() {
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        registerProduct(brand.id)
+        entityManager.flushAndClear()
+
+        deleteBrand(brand.id).andExpect {
+            status { isConflict() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Conflict") }
+            jsonPath("$.meta.message") { value(ErrorType.BRAND_HAS_PRODUCTS.message) }
+        }
+        entityManager.flushAndClear()
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.name") { value("루퍼스") }
+            }
+        assertThat(countStampedBrands(brand.id)).isZero()
+    }
+
+    @Test
+    fun `deleting a brand goes through once its last product is deleted`() {
+        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val product = registerProduct(brand.id)
+        entityManager.flushAndClear()
+        productService.delete(product.id)
+        entityManager.flushAndClear()
+
+        deleteBrand(brand.id).andExpect { status { isOk() } }
+        entityManager.flushAndClear()
+
+        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
+            .andExpect { status { isNotFound() } }
+    }
+
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
     private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN) = mockMvc.post(ENDPOINT) {
         principal?.let { with(it) }
@@ -391,6 +431,9 @@ class BrandAdminApiMockMvcTest(
                 .setParameter("id", brandId)
                 .singleResult as Number
             ).toLong()
+
+    private fun registerProduct(brandId: Long) =
+        productService.register(ProductAdminRegisterRequest(brandId = brandId, name = "티셔츠", price = 10_000, stock = 1))
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
     private fun countBrands(): Long =

@@ -39,7 +39,7 @@
 - 등록: `BrandService.register` → `Brand(name)`(trim, 공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 중복 조회가 뗀 이름을 봐야 하므로 브랜드를 먼저 만들고 그 이름으로 묻는다.
 - 수정: `BrandService.update` → 살아 있는 브랜드 조회 → `Brand.normalizeName(name)`으로 저장될 이름을 얻음 → 그 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)` → 저장. 브랜드를 바꾸기 전에 거절이 끝나므로 거절된 이름은 브랜드에 닿지 않는다(설계 5.22).
 - 목록: `BrandService.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
-- 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → 살아 있는 상품이 있는지 조회 → `brand.delete()` → 저장. 상품 조회는 #6에서 더한다.
+- 삭제: `BrandService.delete` → 살아 있는 브랜드 조회 → `ProductRepository.existsByBrandId`로 남은 상품이 있는지 조회 → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
 
 ## 상품 (Product)
 

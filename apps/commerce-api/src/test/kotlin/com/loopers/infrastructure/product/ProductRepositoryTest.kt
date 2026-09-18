@@ -240,8 +240,8 @@ class ProductRepositoryTest(
 
     /**
      * `@EntityGraph`가 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
-     * 삭제된 브랜드에 달린 살아 있는 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 지금은 브랜드 삭제가 없어
-     * 닿을 수 없는 상태이고, #6이 살아 있는 상품이 남은 브랜드의 삭제를 거절해 계속 닿을 수 없게 만든다(설계 7).
+     * 삭제된 브랜드에 달린 살아 있는 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제 거절이
+     * 막고 있어 실제로는 닿을 수 없다. 저장소는 그 거절을 모르므로 여기서만 만들 수 있다(설계 7).
      */
     @Test
     fun `findAll leaves out a live product whose brand was deleted`() {
@@ -256,6 +256,40 @@ class ProductRepositoryTest(
             { assertThat(productRepository.findById(live.id)).isNotNull() },
             { assertThat(slice.items).isEmpty() },
         )
+    }
+
+    @Test
+    fun `existsByBrandId is true while the brand has a product`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        productRepository.save(product(brand))
+        entityManager.flushAndClear()
+
+        assertThat(productRepository.existsByBrandId(brand.id)).isTrue()
+    }
+
+    /** 브랜드 삭제 조건이 기대는 사실이다. 삭제된 상품이 남은 상품으로 세어지면 그 브랜드는 영영 삭제할 수 없다. */
+    @Test
+    fun `existsByBrandId does not count deleted products`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        productRepository.save(product(brand).apply { delete() })
+        entityManager.flushAndClear()
+
+        assertThat(productRepository.existsByBrandId(brand.id)).isFalse()
+    }
+
+    @Test
+    fun `existsByBrandId does not count another brand's products`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val other = brandRepository.save(Brand("나이키"))
+        productRepository.save(product(other))
+        entityManager.flushAndClear()
+
+        assertThat(productRepository.existsByBrandId(brand.id)).isFalse()
+    }
+
+    @Test
+    fun `existsByBrandId is false for an unknown brand`() {
+        assertThat(productRepository.existsByBrandId(999L)).isFalse()
     }
 
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =

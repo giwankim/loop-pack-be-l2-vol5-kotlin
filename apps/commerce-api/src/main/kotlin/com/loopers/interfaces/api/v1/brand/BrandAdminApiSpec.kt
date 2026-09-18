@@ -52,7 +52,8 @@ interface BrandAdminApiSpec {
 
     @Operation(
         summary = "브랜드 삭제",
-        description = "브랜드에 삭제 시각을 찍습니다. 삭제된 브랜드는 목록·상세·수정·삭제에서 없는 브랜드입니다.",
+        description = "브랜드에 삭제 시각을 찍습니다. 삭제되지 않은 상품이 하나라도 남아 있으면 409로 거절하고 브랜드를 그대로 둡니다. " +
+            "재고가 0인 상품도 남은 상품입니다. 삭제된 브랜드는 목록·상세·수정·삭제에서 없는 브랜드입니다.",
     )
     fun delete(
         @Schema(name = "brandId", description = "삭제할 브랜드의 ID")

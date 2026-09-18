@@ -13,5 +13,6 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     BRAND_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "브랜드를 찾을 수 없습니다."),
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "상품을 찾을 수 없습니다."),
     BRAND_NAME_DUPLICATED(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "같은 이름의 브랜드가 이미 있습니다."),
+    BRAND_HAS_PRODUCTS(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "삭제되지 않은 상품이 남아 있는 브랜드는 삭제할 수 없습니다."),
     INVALID_SORT(HttpStatus.BAD_REQUEST, HttpStatus.BAD_REQUEST.reasonPhrase, "알 수 없는 정렬 값입니다."),
 }

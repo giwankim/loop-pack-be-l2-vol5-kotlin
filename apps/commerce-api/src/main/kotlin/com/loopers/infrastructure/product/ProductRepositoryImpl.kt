@@ -34,6 +34,8 @@ class ProductRepositoryImpl(
         return found.toPageSlice()
     }
 
+    override fun existsByBrandId(brandId: Long): Boolean = productJpaRepository.existsByBrandId(brandId)
+
     /**
      * 정렬 기준을 실제로 읽을 프로퍼티로 옮긴다. 어느 기준이든 마지막은 id 내림차순이라 동률이 남지 않는다.
      *
