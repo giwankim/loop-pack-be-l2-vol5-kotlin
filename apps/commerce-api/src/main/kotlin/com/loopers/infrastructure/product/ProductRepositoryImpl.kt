@@ -6,11 +6,11 @@ import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.QProduct.product
 import com.loopers.domain.shared.PageSlice
+import com.loopers.infrastructure.shared.toPageSlice
 import com.querydsl.core.types.OrderSpecifier
 import com.querydsl.jpa.impl.JPAQuery
 import com.querydsl.jpa.impl.JPAQueryFactory
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Slice
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
@@ -76,10 +76,6 @@ class ProductRepositoryImpl(
                 .groupBy(product, product.brand)
                 .orderBy(like.count().desc(), ID_DESC)
     }
-
-    /** 조각의 위치와 크기는 [PageRequest]가 정한 값 그대로이므로 Spring의 조각에서 읽는다. */
-    private fun Slice<Product>.toPageSlice(): PageSlice<Product> =
-        PageSlice(items = content, page = number, size = size, hasNext = hasNext())
 
     companion object {
         /** 나중에 받은 식별자가 앞선다. 모든 정렬 기준이 마지막에 쓰는 동률 규칙이다. */
