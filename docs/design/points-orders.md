@@ -465,3 +465,79 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 게시 명세는 사용자 이야기 50개, API·구현 결정, 테스트 결정, 제외 사항을 담는다. 테스트는 기존 MockMvc 요청 경계와 실제 application·repository·MySQL 연결을 중심으로 하고, 필요한 제약·원자성 검증만 기존 domain/저장 경계에서 보완한다. 명세 게시를 기능 구현이나 실행 검증의 완료로 표시하지 않는다.
 
 답변으로 용어가 정해지면 `CONTEXT.md`를 즉시 갱신한다. API·규칙·구조·검증 기준은 이 문서에 쌓고, 되돌리는 비용이 크며 대안 사이의 실제 선택 이유가 필요한 결정만 ADR로 남긴다.
+
+## 12. 구현 기록 — #12 충전과 잔액 조회
+
+2026-09-18에 [#12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/12)를 구현하며 8절의 초안을 코드로 옮길 때 정한 것이다. 규칙은 [포인트 도메인](../domain/points-orders.md)에, 용어는 `CONTEXT.md`에 있다. 주문 조각(#13–#16)은 아직이며 이 절은 충전과 잔액 조회만 다룬다.
+
+### 12.1 사용자 참조와 물리 FK의 자리
+
+**선택: `PointAccount.user`는 `@OneToOne(fetch = LAZY)` 연관이고 `userId`는 그 프록시의 식별자를 읽는 파생 프로퍼티다.** `PointHistory.account`도 `@ManyToOne(fetch = LAZY)` 연관이다.
+
+- Q21의 물리 FK와 Q23의 migration 보류를 함께 만족하는 길은 연관뿐이다. `ddl-auto=create`는 연관에서만 외래 키를 만들고, 스칼라 열에 FK를 덧붙일 JPA 애노테이션은 없다. 8.2에서 본 대로 `import.sql`의 `alter table`은 반복 `create`에서 drop 순서를 깨뜨린다.
+- 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
+- `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountJpaRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
+- 만들어진 제약은 `fk_point_account_user`, `uk_point_account_user_id`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다.
+- 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
+
+다시 볼 조건: 사용자에 삭제 상태가 생겨 `@SQLRestriction`이 붙으면, 계정 조회가 삭제된 사용자의 계정을 숨기게 되므로 스칼라 `userId` + 명시적 schema로 옮길지 정한다. OrderLineItem→Product의 FK(#13)는 이 방식으로는 만들 수 없어 그때 초기화 방법을 다시 정한다.
+
+### 12.2 충전 키 열의 비교
+
+**선택: `charge_key`는 `varchar(128) character set utf8mb4 collate utf8mb4_bin`이다.** `PointHistory.CHARGE_KEY_COLUMN`이 `columnDefinition`으로 못 박는다.
+
+- 서버 기본 collation `utf8mb4_general_ci`는 대소문자를 무시한다. 열이 스스로 binary collation을 가져야 조회(`where charge_key = ?`)와 유일 제약이 같은 비교를 쓴다(5.8). `PointHistoryRepositoryTest`가 `Charge-A`·`charge-a`가 두 행이고 `CHARGE-A`는 없음을, 그리고 `information_schema.columns`의 collation을 확인한다.
+- 8.1이 예로 든 `ascii_bin` 대신 `utf8mb4_bin`을 쓴 까닭은 연결 문자 집합과 같아 비교에 문자 집합 변환이 끼지 않기 때문이다. 키는 어차피 ASCII로 걸러지므로 저장 크기는 같고, 유일 인덱스는 128×4바이트로 한도 안이다.
+- `columnDefinition`은 MySQL 문법이다. 이 저장소는 MySQL만 쓰고(`jpa.yml`) 테스트도 MySQL 컨테이너다.
+
+### 12.3 엄격한 JSON 입력의 자리
+
+**선택: interfaces의 `PointChargeRequestBody`가 본문을 받고, 필드의 `@JsonDeserialize(using = StrictLongDeserializer::class)`가 토큰의 종류를 가린 뒤 `toRequest(chargeKey)`로 application의 `PointChargeRequest`를 만든다.** 카탈로그처럼 application Request를 본문으로 바로 받지 않는 첫 자리다.
+
+- Q20이 전역 ObjectMapper를 바꾸지 않기로 했으므로 정책은 새 요청 경계에만 붙어야 한다. Request에 `@JsonDeserialize`를 두면 Jackson 정책이 application에 들어간다(7절 "Request/Info에 Jackson 입력 정책을 넣지 않는다"). 그래서 HTTP 전용 DTO가 하나 더 있다.
+- `StrictLongDeserializer`는 `VALUE_NUMBER_INT`만 받고 `Long` 범위를 넘는 정수는 `InputCoercionException`을 잡아 거절한다. 거절은 `CoreException(INVALID_POINT_ORDER_REQUEST)`이며 Jackson이 `JsonMappingException`으로, Spring이 `HttpMessageNotReadableException`으로 감싼다. `ApiControllerAdvice.handleHttpMessageNotReadable`이 근본 원인이 `CoreException`이면 그 `ErrorType`으로 답하도록 한 줄을 더했다.
+- `null` 토큰은 deserializer를 거치지 않고 null이 되고, 빠진 필드도 null이다. DTO의 `amount: Long?`가 둘을 한 자리에서 같은 code로 거절한다. Kotlin 모듈의 "필수 필드 누락" 예외에 기대면 code가 범용 `Bad Request`가 되어 버린다.
+- 알 수 없는 필드는 기존 정책대로 무시한다. 카탈로그가 숫자 문자열과 소수 표기를 계속 받는 것은 `ProductAdminApiMockMvcTest`가 붙들어 둔다.
+
+주문 생성(#13)의 `quantity`(Int)·`productId`(Long)와 `items` 배열도 같은 자리에서 같은 방식으로 가린다. `Int`용 deserializer가 필요하면 `StrictLongDeserializer` 옆에 둔다.
+
+### 12.4 오류 코드의 구체화
+
+6절의 초안 가운데 이번 조각이 쓴 행과 그 자리다.
+
+| 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
+| --- | --- | --- | --- |
+| `Idempotency-Key` 없음·형식 오류 | 400 | `INVALID_IDEMPOTENCY_KEY` | `IdempotencyKeyHeader.require` (interfaces). 같은 형식을 `PointChargeRequest`의 `@Pattern`이 Service 입구에서 한 번 더 본다(5.25) |
+| 본문의 토큰 종류·`null`·누락·`Long` 범위 밖 | 400 | `INVALID_POINT_ORDER_REQUEST` | `StrictLongDeserializer`와 `PointChargeRequestBody` (12.3) |
+| 충전액 0·음수 | 400 | 범용 `Bad Request` + "충전액은 1원 이상이어야 합니다." | `PointChargeRequest`의 `@Min(1)`, Service의 `@Validated`. domain의 `InvalidChargeAmountException`은 그 뒤에 있어 HTTP로 닿지 않는다 |
+| 충전 후 잔액 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `PointAccount.charge` → `Money.plus`. `RuleViolationException`의 기존 400 매핑 |
+| 같은 성공 키에 다른 충전액 | 409 | `IDEMPOTENCY_KEY_CONFLICT` | `PointService.charge` |
+| 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointService`. fixture와 데이터의 불일치(5.9) |
+
+6절 초안은 "금액 범위 오류"도 `INVALID_POINT_ORDER_REQUEST`로 적었다. 구현은 그 행을 둘로 나눴다. 토큰의 종류와 `Long` 범위는 HTTP가 새 code로 거절하고, 1원 이상이라는 업무 규칙은 카탈로그의 가격·재고와 같은 길(Request 제약 → 범용 400 + 규칙 메시지, 카탈로그 설계 5.18)로 거절한다. 규칙을 HTTP DTO에 한 번 더 적어 code를 맞추는 것보다 규칙이 적히는 자리를 늘리지 않는 쪽을 택했다. 9절의 흐름("HTTP에서 토큰·필수 필드·키 형식, application에서 양수·범위")과도 같다. 클라이언트가 두 400을 구별해야 하는 요구가 생기면 다시 본다.
+
+### 12.5 사용자 fixture와 계정
+
+**선택: 테스트 컴포넌트 `com.loopers.utils.UserFixture`(src/test)가 `registerUser()`로 사용자와 0원 계정을 함께 만든다.** 운영 코드에는 사용자를 만드는 API도 계정을 만드는 자리도 없다(Q17).
+
+- `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiMockMvcTest`가 `count(*)`로 확인).
+- 좋아요 테스트는 계정 없이 `userRepository.save(User())`로 사용자를 만든다. 포인트를 쓰지 않는 자리라 그대로 두었다. 주문 확정(#14)이 좋아요와 포인트를 함께 쓰는 테스트를 만들면 그때 `UserFixture`로 모은다.
+
+### 12.6 이력의 범위
+
+**선택: `PointHistoryType`은 `CHARGE`뿐이고 `charge_key`는 `not null`이다.** 결제 이력(`PAYMENT`), `order_id`, 그리고 그때 필요한 `charge_key`의 nullable 전환은 주문 확정 조각(#14)이 한다.
+
+- 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 조각에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
+- `PointHistory`의 생성자는 private이고 `PointAccount.charge`가 `PointHistory.charge` 팩토리로 만든다. "이력의 잔액은 그 충전 직후의 잔액"을 계정이 지키게 하려는 것이다. 계정은 이력 컬렉션을 갖지 않는다(7절).
+- Hibernate가 `type` 열을 MySQL `enum('CHARGE')`로 만든다. `PAYMENT`를 더하면 `ddl-auto=create`가 열 정의를 다시 만든다.
+
+### 12.7 테스트 경계
+
+| 확인할 것 | 테스트 | 비고 |
+| --- | --- | --- |
+| 0원 시작, 충전이 잔액을 늘리고 CHARGE 이력을 돌려줌, 0원·넘침 거절과 잔액 유지, 가격 상한 무관 | domain 단위 테스트 `PointAccountTest` | Spring·DB 없음 |
+| 사용자당 계정 하나, 사용자 FK, 프록시로 `userId` 읽기 | `PointAccountRepositoryTest` (`@DataJpaTest`) | 유일·FK 위반은 IDENTITY라 저장 즉시 난다. 없는 사용자는 `getReference` 프록시로 INSERT까지 보낸다. 제약 이름과 열은 `information_schema` |
+| 키의 대소문자 구분(조회·유일), 계정 FK, 열 collation | `PointHistoryRepositoryTest` | 프록시 계정의 `charge`는 계정을 읽으려다 먼저 실패하므로 FK 테스트만 `PointHistory.charge` 팩토리를 직접 부른다(`internal`) |
+| 재요청 재생·409·사용자별 키·실패 키 재사용·계정 없음·요청자 없음·Request 제약 | `PointServiceTest` (`@SpringBootTest` + `@Transactional`) | 잔액과 이력은 `PointRows`가 SQL로 읽는다 |
+| 잔액과 이력이 함께 커밋·롤백 | `PointServiceTransactionTest` (`@SpringBootTest`, 트랜잭션 없음, `DatabaseCleanUp`) | `@SpykBean PointHistoryRepository`가 `save`를 실제로 실행한 뒤 던진다. 이력의 INSERT가 나간 뒤의 실패라 두 변경이 한 트랜잭션이 아니면 어느 한쪽이 남는다. 새 트랜잭션에서 읽고, 같은 키로 다시 충전해 키가 남지 않았음을 본다 |
+| 인수 흐름, 재생 본문 동일, 401·400·409·500의 status와 code, JSON 토큰 8종, 키 형식 5종, 거절 뒤 상태 불변, 카탈로그 회귀 | `PointApiMockMvcTest`, `ProductAdminApiMockMvcTest` | 재생 비교는 두 응답 본문 문자열을 flush/clear 사이에 두고 견준다 |
