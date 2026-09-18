@@ -184,13 +184,13 @@ class ProductRepositoryTest(
     @Test
     fun `findAll leaves out deleted products`() {
         val brand = brandRepository.save(Brand("루퍼스"))
-        val live = productRepository.save(product(brand))
+        val active = productRepository.save(product(brand))
         productRepository.save(product(brand).apply { delete() })
         entityManager.flushAndClear()
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
-        assertThat(slice.items.map { it.id }).containsExactly(live.id)
+        assertThat(slice.items.map { it.id }).containsExactly(active.id)
     }
 
     @Test
@@ -240,20 +240,20 @@ class ProductRepositoryTest(
 
     /**
      * `@EntityGraph`가 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
-     * 삭제된 브랜드에 달린 살아 있는 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제 거절이
+     * 삭제된 브랜드에 달렸지만 자신은 삭제되지 않은 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제 거절이
      * 막고 있어 실제로는 닿을 수 없다. 저장소는 그 거절을 모르므로 여기서만 만들 수 있다(설계 7).
      */
     @Test
-    fun `findAll leaves out a live product whose brand was deleted`() {
+    fun `findAll leaves out an active product whose brand was deleted`() {
         val brand = brandRepository.save(Brand("루퍼스"))
-        val live = productRepository.save(product(brand))
+        val active = productRepository.save(product(brand))
         brand.delete()
         entityManager.flushAndClear()
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertAll(
-            { assertThat(productRepository.findById(live.id)).isNotNull() },
+            { assertThat(productRepository.findById(active.id)).isNotNull() },
             { assertThat(slice.items).isEmpty() },
         )
     }

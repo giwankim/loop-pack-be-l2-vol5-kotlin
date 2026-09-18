@@ -94,7 +94,7 @@ class BrandServiceTest(
     }
 
     @Test
-    fun `listing brands returns the live ones newest first as a slice`() {
+    fun `listing brands returns the active ones newest first as a slice`() {
         brandService.register(BrandAdminRegisterRequest("첫째"))
         brandService.register(BrandAdminRegisterRequest("둘째"))
         entityManager.flushAndClear()
@@ -121,7 +121,7 @@ class BrandServiceTest(
     }
 
     @Test
-    fun `updating to a name another live brand uses throws BRAND_NAME_DUPLICATED and keeps the old name`() {
+    fun `updating to a name another active brand uses throws BRAND_NAME_DUPLICATED and keeps the old name`() {
         brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val renamed = brandService.register(BrandAdminRegisterRequest("무신사"))
         entityManager.flushAndClear()
@@ -226,7 +226,7 @@ class BrandServiceTest(
     }
 
     @Test
-    fun `deleting a brand that still has a live product throws BRAND_HAS_PRODUCTS and keeps the brand`() {
+    fun `deleting a brand that still has an active product throws BRAND_HAS_PRODUCTS and keeps the brand`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         saveProduct(brand)
         entityManager.flushAndClear()

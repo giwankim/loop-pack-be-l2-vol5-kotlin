@@ -87,7 +87,7 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `existsByNameAndIdNot is true when another live brand uses the name`() {
+    fun `existsByNameAndIdNot is true when another active brand uses the name`() {
         val other = brandRepository.save(Brand("루퍼스"))
         val renaming = brandRepository.save(Brand("무신사"))
         entityManager.flushAndClear()
@@ -124,7 +124,7 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `findAll returns live brands with the newest registration first`() {
+    fun `findAll returns active brands with the newest registration first`() {
         saveRegisteredAt("첫째", registeredAt = FIRST_REGISTERED_AT)
         saveRegisteredAt("둘째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
         saveRegisteredAt("셋째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
@@ -155,7 +155,7 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `findAll has no next slice when the live brands fill the page exactly`() {
+    fun `findAll has no next slice when the active brands fill the page exactly`() {
         saveBrands(count = 2)
 
         val slice = brandRepository.findAll(page = 0, size = 2)
@@ -169,7 +169,7 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `findAll has a next slice when one more live brand follows the page`() {
+    fun `findAll has a next slice when one more active brand follows the page`() {
         saveBrands(count = 3)
 
         val slice = brandRepository.findAll(page = 0, size = 2)

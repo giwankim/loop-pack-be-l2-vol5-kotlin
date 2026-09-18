@@ -44,7 +44,7 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
-    fun `admin registers a product under a live brand and can fetch it back`() {
+    fun `admin registers a product under an active brand and can fetch it back`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         val result = postProduct(brandId = brand.id, price = 12_000, stock = 7).andExpect {

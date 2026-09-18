@@ -84,7 +84,7 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `registering a name taken by a live brand returns 409 and saves nothing`() {
+    fun `registering a name taken by an active brand returns 409 and saves nothing`() {
         brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
         postBrand(name = "루퍼스").andExpect {
@@ -143,7 +143,7 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `admin lists live brands newest first as a slice`() {
+    fun `admin lists active brands newest first as a slice`() {
         brandService.register(BrandAdminRegisterRequest("첫째"))
         brandService.register(BrandAdminRegisterRequest("둘째"))
 
@@ -233,7 +233,7 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `renaming to a name a live brand uses returns 409 and keeps the old name`() {
+    fun `renaming to a name an active brand uses returns 409 and keeps the old name`() {
         brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val renamed = brandService.register(BrandAdminRegisterRequest("무신사"))
 
@@ -357,7 +357,7 @@ class BrandAdminApiMockMvcTest(
     }
 
     @Test
-    fun `deleting a brand that still has a live product returns 409 and leaves the row unstamped`() {
+    fun `deleting a brand that still has an active product returns 409 and leaves the row unstamped`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         registerProduct(brand.id)
         entityManager.flushAndClear()

@@ -25,7 +25,7 @@ class ProductServiceTest(
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `registering under a live brand saves a product that can be fetched back`() {
+    fun `registering under an active brand saves a product that can be fetched back`() {
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val registered =
