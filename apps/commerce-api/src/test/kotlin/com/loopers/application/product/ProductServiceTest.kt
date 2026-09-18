@@ -195,31 +195,28 @@ class ProductServiceTest(
         )
     }
 
+    /**
+     * 삭제 필터·브랜드 필터·`hasNext`는 저장소 테스트가 지키므로 여기서 되풀이하지 않는다(설계 6).
+     * 이 자리가 보는 것은 입력의 기본값이 조각에 닿는지와, 항목이 트랜잭션 안에서 브랜드 이름까지 채워지는지다.
+     */
     @Test
-    fun `listing returns the live products of the chosen brand, latest registered first`() {
+    fun `listing carries the default page and size into the slice and fills the brand name`() {
         val brand = brandRepository.save(Brand("루퍼스"))
-        val other = brandRepository.save(Brand("나이키"))
-        val first = register(brand.id, name = "티셔츠")
-        register(other.id, name = "운동화")
-        val second = register(brand.id, name = "후드티")
-        val deleted = register(brand.id, name = "양말")
-        productService.delete(deleted.id)
+        register(brand.id, name = "티셔츠")
+        register(brand.id, name = "후드티")
         entityManager.flushAndClear()
 
-        val slice = productService.findAll(ProductListRequest(brandId = brand.id))
+        val slice = productService.findAll(ProductListRequest())
 
         assertAll(
-            { assertThat(slice.items.map { it.name }).containsExactly("후드티", "티셔츠") },
-            { assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id) },
+            { assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE) },
+            { assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE) },
             { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isEqualTo(20) },
-            { assertThat(slice.hasNext).isFalse() },
         )
     }
 
     @Test
-    fun `updating, restocking, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
+    fun `updating, setting the stock of, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
         assertAll(
             {
                 assertThat(errorTypeOf { productService.update(999L, ProductUpdateRequest("후드티", 25_000)) })
@@ -234,7 +231,7 @@ class ProductServiceTest(
     }
 
     @Test
-    fun `updating, restocking, and deleting a deleted product all throw PRODUCT_NOT_FOUND`() {
+    fun `updating, setting the stock of, and deleting a deleted product all throw PRODUCT_NOT_FOUND`() {
         val brand = brandRepository.save(Brand("루퍼스"))
         val deleted = register(brand.id)
         productService.delete(deleted.id)
@@ -286,24 +283,6 @@ class ProductServiceTest(
         assertAll(
             { assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.") },
             { assertThat(productService.find(registered.id).stock).isEqualTo(7) },
-        )
-    }
-
-    @Test
-    fun `listing without a brandId spans every brand and reports the next slice`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val other = brandRepository.save(Brand("나이키"))
-        register(brand.id, name = "티셔츠")
-        register(other.id, name = "운동화")
-        register(brand.id, name = "후드티")
-        entityManager.flushAndClear()
-
-        val slice = productService.findAll(ProductListRequest(page = 0, size = 2))
-
-        assertAll(
-            { assertThat(slice.items.map { it.name }).containsExactly("후드티", "운동화") },
-            { assertThat(slice.hasNext).isTrue() },
-            { assertThat(slice.size).isEqualTo(2) },
         )
     }
 

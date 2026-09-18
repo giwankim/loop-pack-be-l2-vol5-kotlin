@@ -30,9 +30,10 @@ class ProductRepositoryImpl(
         val found = brandId
             ?.let { productJpaRepository.findAllByBrandId(it, pageable) }
             ?: productJpaRepository.findAllBy(pageable)
-        return found.toSlice(page, size)
+        return found.toSlice()
     }
 
-    private fun SpringSlice<Product>.toSlice(page: Int, size: Int): Slice<Product> =
-        Slice(items = content, page = page, size = size, hasNext = hasNext())
+    /** 조각의 위치와 크기는 [PageRequest]가 정한 값 그대로이므로 Spring의 조각에서 읽는다. */
+    private fun SpringSlice<Product>.toSlice(): Slice<Product> =
+        Slice(items = content, page = number, size = size, hasNext = hasNext())
 }

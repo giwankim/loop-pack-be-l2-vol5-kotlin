@@ -32,18 +32,18 @@ class ProductService(
     }
 
     @Transactional(readOnly = true)
-    fun find(id: Long): ProductInfo = ProductInfo.from(product(id))
+    fun find(id: Long): ProductInfo = ProductInfo.from(findOrThrow(id))
 
     @Transactional
     fun update(id: Long, @Valid request: ProductUpdateRequest): ProductInfo {
-        val product = product(id)
+        val product = findOrThrow(id)
         product.update(name = request.name, price = Money(request.price))
         return ProductInfo.from(product)
     }
 
     @Transactional
     fun updateStock(id: Long, @Valid request: ProductStockUpdateRequest): ProductInfo {
-        val product = product(id)
+        val product = findOrThrow(id)
         product.updateStock(request.quantity)
         return ProductInfo.from(product)
     }
@@ -60,10 +60,10 @@ class ProductService(
     /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
     @Transactional
     fun delete(id: Long) {
-        product(id).delete()
+        findOrThrow(id).delete()
     }
 
-    /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 준다. */
-    private fun product(id: Long): Product =
+    /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. */
+    private fun findOrThrow(id: Long): Product =
         productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
 }

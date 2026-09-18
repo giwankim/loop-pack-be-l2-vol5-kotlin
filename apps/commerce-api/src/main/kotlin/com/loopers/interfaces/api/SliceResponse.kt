@@ -13,9 +13,10 @@ data class SliceResponse<T>(
     val hasNext: Boolean,
 ) {
     companion object {
-        fun <T, R> from(slice: Slice<T>, transform: (T) -> R): SliceResponse<R> =
+        /** 항목을 응답 DTO로 옮기는 일은 [Slice.map]이 하고, 여기서는 옮겨진 조각을 봉투에 담기만 한다. */
+        fun <T> from(slice: Slice<T>): SliceResponse<T> =
             SliceResponse(
-                items = slice.items.map(transform),
+                items = slice.items,
                 page = slice.page,
                 size = slice.size,
                 hasNext = slice.hasNext,

@@ -178,6 +178,26 @@ class ProductRepositoryTest(
         )
     }
 
+    /**
+     * `@EntityGraph`가 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
+     * 삭제된 브랜드에 달린 살아 있는 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 지금은 브랜드 삭제가 없어
+     * 닿을 수 없는 상태이고, #6이 살아 있는 상품이 남은 브랜드의 삭제를 거절해 계속 닿을 수 없게 만든다(설계 7).
+     */
+    @Test
+    fun `findAll leaves out a live product whose brand was deleted`() {
+        val brand = brandRepository.save(Brand("루퍼스"))
+        val live = productRepository.save(product(brand))
+        brand.delete()
+        entityManager.flushAndClear()
+
+        val slice = productRepository.findAll(brandId = null, page = 0, size = 20)
+
+        assertAll(
+            { assertThat(productRepository.findById(live.id)).isNotNull() },
+            { assertThat(slice.items).isEmpty() },
+        )
+    }
+
     private fun product(brand: Brand, price: Long = 10_000, stock: Int = 1) =
         Product(brand = brand, name = "티셔츠", price = Money(price), stock = Stock(stock))
 }

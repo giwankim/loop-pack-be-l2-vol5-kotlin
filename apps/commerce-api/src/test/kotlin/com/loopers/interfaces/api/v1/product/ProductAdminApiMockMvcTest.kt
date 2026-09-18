@@ -194,6 +194,23 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
+    fun `an update rejected for its name returns 400 and a re-read shows the stored values`() {
+        val brand = brandService.register(BrandRegisterRequest("루퍼스"))
+        val id = registerProduct(brand.id, name = "티셔츠", price = 12_000)
+
+        putProduct(id, body = """{"name": "  ", "price": 25000}""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value(containsString("상품 이름")) }
+        }
+
+        mockMvc.get("$ENDPOINT/$id") { with(ADMIN) }.andExpect {
+            jsonPath("$.data.name") { value("티셔츠") }
+            jsonPath("$.data.price") { value(12_000) }
+        }
+    }
+
+    @Test
     fun `admin sets the stock to a final quantity, zero included`() {
         val brand = brandService.register(BrandRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, stock = 7)
@@ -245,7 +262,7 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
-    fun `updating, restocking, and deleting an unknown product all return 404`() {
+    fun `updating, setting the stock of, and deleting an unknown product all return 404`() {
         putProduct(999L, body = """{"name": "후드티", "price": 25000}""").andExpect {
             status { isNotFound() }
             jsonPath("$.meta.message") { value(ErrorType.PRODUCT_NOT_FOUND.message) }

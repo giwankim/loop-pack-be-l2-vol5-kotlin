@@ -41,7 +41,8 @@ class ProductAdminController(
         @ModelAttribute @Valid request: ProductListRequest,
     ): ApiResponse<SliceResponse<ProductAdminResponse>> {
         return productService.findAll(request)
-            .let { SliceResponse.from(it, ProductAdminResponse::from) }
+            .map(ProductAdminResponse::from)
+            .let { SliceResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
 
