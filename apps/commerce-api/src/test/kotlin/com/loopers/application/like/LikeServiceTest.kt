@@ -39,7 +39,7 @@ class LikeServiceTest(
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `liking a live product for the first time saves one like for the user and product`() {
+    fun `liking an active product for the first time saves one like for the user and product`() {
         val user = userRepository.save(User())
         val product = registerProduct()
         entityManager.flushAndClear()

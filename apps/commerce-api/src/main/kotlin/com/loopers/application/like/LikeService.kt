@@ -22,7 +22,7 @@ class LikeService(
     private val userRepository: UserRepository,
 ) {
     /**
-     * 살아 있는 상품에 요청자의 관계를 만든다. 이미 있으면 그대로 두고 성공으로 답한다(설계 5.6).
+     * 삭제되지 않은 상품에 요청자의 관계를 만든다. 이미 있으면 그대로 두고 성공으로 답한다(설계 5.6).
      * 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다.
      */
     @Transactional
