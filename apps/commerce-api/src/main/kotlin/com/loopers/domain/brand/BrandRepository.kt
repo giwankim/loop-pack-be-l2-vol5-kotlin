@@ -1,6 +1,6 @@
 package com.loopers.domain.brand
 
-import com.loopers.domain.shared.Slice
+import com.loopers.domain.shared.PageSlice
 
 /**
  * 브랜드 저장 약속. 삭제된 브랜드는 없는 브랜드이므로 조회는 존재만 묻고, 삭제된 행은 없다고 답한다.
@@ -11,7 +11,7 @@ interface BrandRepository {
     fun findById(id: Long): Brand?
 
     /** 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각 읽는다. */
-    fun findAll(page: Int, size: Int): Slice<Brand>
+    fun findAll(page: Int, size: Int): PageSlice<Brand>
 
     fun existsByName(name: String): Boolean
 

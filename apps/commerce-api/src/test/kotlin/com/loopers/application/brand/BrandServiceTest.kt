@@ -1,6 +1,6 @@
 package com.loopers.application.brand
 
-import com.loopers.application.shared.PageRequest
+import com.loopers.application.shared.PageQuery
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
@@ -94,7 +94,7 @@ class BrandServiceTest(
         brandService.register(BrandRegisterRequest("둘째"))
         entityManager.flushAndClear()
 
-        val slice = brandService.findAll(PageRequest(page = 0, size = 1))
+        val slice = brandService.findAll(PageQuery(page = 0, size = 1))
 
         assertAll(
             { assertThat(slice.items.map { it.name }).containsExactly("둘째") },
@@ -128,6 +128,21 @@ class BrandServiceTest(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
             { assertThat(brandService.find(renamed.id).name).isEqualTo("무신사") },
         )
+    }
+
+    /** 삭제된 브랜드는 없는 브랜드이므로 그 이름은 비어 있다. 등록뿐 아니라 수정도 그 이름을 가져갈 수 있어야 한다. */
+    @Test
+    fun `a deleted brand frees its name for a rename`() {
+        val deleted = brandService.register(BrandRegisterRequest("루퍼스"))
+        val renamed = brandService.register(BrandRegisterRequest("무신사"))
+        entityManager.flushAndClear()
+        brandService.delete(deleted.id)
+        entityManager.flushAndClear()
+
+        brandService.update(renamed.id, BrandUpdateRequest("루퍼스"))
+        entityManager.flushAndClear()
+
+        assertThat(brandService.find(renamed.id).name).isEqualTo("루퍼스")
     }
 
     @Test
@@ -176,7 +191,7 @@ class BrandServiceTest(
 
         assertAll(
             { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(brandService.findAll(PageRequest()).items).isEmpty() },
+            { assertThat(brandService.findAll(PageQuery.of(page = null, size = null)).items).isEmpty() },
             { assertThat(countBrands()).isZero() },
         )
     }

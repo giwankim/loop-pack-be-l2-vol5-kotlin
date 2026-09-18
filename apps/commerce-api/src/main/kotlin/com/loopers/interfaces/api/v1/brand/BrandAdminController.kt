@@ -3,9 +3,9 @@ package com.loopers.interfaces.api.v1.brand
 import com.loopers.application.brand.BrandRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.application.brand.BrandUpdateRequest
-import com.loopers.application.shared.PageRequest
+import com.loopers.application.shared.PageQuery
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.interfaces.api.SliceResponse
+import com.loopers.interfaces.api.PageResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -34,14 +34,14 @@ class BrandAdminController(
             .let { ApiResponse.success(it) }
     }
 
-    /** 기본값은 [PageRequest] 하나가 들고 있으므로, 없는 파라미터는 null로 받아 그대로 넘긴다. */
+    /** 기본값은 [PageQuery] 하나가 들고 있으므로, 없는 파라미터는 null로 받아 그대로 넘긴다. */
     @GetMapping
     override fun getBrands(
         @RequestParam(required = false) page: Int?,
         @RequestParam(required = false) size: Int?,
-    ): ApiResponse<SliceResponse<BrandAdminResponse>> {
-        return brandService.findAll(PageRequest.of(page, size))
-            .let { SliceResponse.from(it, BrandAdminResponse::from) }
+    ): ApiResponse<PageResponse<BrandAdminResponse>> {
+        return brandService.findAll(PageQuery.of(page, size))
+            .let { PageResponse.from(it, BrandAdminResponse::from) }
             .let { ApiResponse.success(it) }
     }
 
