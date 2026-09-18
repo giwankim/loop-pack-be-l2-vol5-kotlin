@@ -186,7 +186,7 @@ class OrderServiceTest(
 
     /** 컨트롤러를 거치지 않는 호출도 같은 페이지 규칙을 받는다(카탈로그 설계 5.25). */
     @Test
-    fun `the admin list rejects a page and a size outside the bounds`() {
+    fun `the admin list rejects a page and a size outside the bounds and accepts the maximum`() {
         assertAll(
             { assertThat(violationsOf(OrderAdminListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.") },
             { assertThat(violationsOf(OrderAdminListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.") },
