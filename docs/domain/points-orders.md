@@ -117,14 +117,18 @@
 
 ### 저장 약속
 
-`OrderRepository`: `save`, `findByIdAndUserId`, `findByUserIdAndCreationKey`, `findAllByUserId`. 없으면 null이다. 주문을 지우는 약속은 없다. `findAllByUserId`는 한 사용자의 주문 한 조각을 최신순으로 주며, 만든 시각이 같으면 나중에 받은 식별자가 앞선다.
+`OrderRepository`: `save`, `findById`, `findByIdAndUserId`, `findByUserIdAndCreationKey`, `findAll(userId, page, size)`. 없으면 null이다. 주문을 지우는 약속은 없다.
+
+`findById`는 소유자를 묻지 않으므로 관리자 조회만 쓴다. `findAll`은 한 조각을 최신순으로 주며 만든 시각이 같으면 나중에 받은 식별자가 앞선다. `userId`가 있으면 그 사용자의 주문만, 없으면 모든 사용자의 주문을 본다. 내 목록과 관리자 목록이 이 하나를 쓴다(설계 16.1). 조각에 오른 주문의 품목은 조회가 함께 읽어 주므로 읽기 트랜잭션을 벗어난 뒤에도 품목이 실려 있다.
 
 ### 협력
 
 - 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 같은 생성 키의 주문 조회 → 있으면 정규화한 의도를 견줘 최초 `DRAFT` 응답 재생(같음) 또는 `IDEMPOTENCY_KEY_CONFLICT`(다름) → 없으면 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문·품목·생성 키는 한 트랜잭션이다.
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
-- 목록 조회: `OrderService.findAll` → 요청자 존재 확인 → `findAllByUserId` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
+- 목록 조회: `OrderService.findAll(userId, OrderListRequest)` → 요청자 존재 확인 → `findAll(userId, …)` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
 - 확정: `OrderService.confirm` → 요청자·소유권 확인 → CONFIRMED면 저장된 결과 반환 → 모든 품목의 상품·브랜드 확인 → 상품별 `Product.deductStock` → `PointAccount.pay` → `Order.confirm` → PAYMENT 저장. 전부 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이다(ADR 0002·0003).
+- 관리자 상세 조회: `OrderService.findForAdmin` → `findById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
+- 관리자 목록 조회: `OrderService.findAll(OrderAdminListRequest)` → 페이지 범위 확인 → 같은 `findAll(userId, …)`에 거를 사용자를 넣거나 비운다. 주문한 사용자의 식별자를 응답에 싣고, 카탈로그가 바뀌거나 상품이 삭제되어도 저장된 이름·단가를 그대로 준다(설계 16).
 
 ## 주문 품목 (OrderLineItem)
 

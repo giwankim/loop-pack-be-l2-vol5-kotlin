@@ -23,7 +23,7 @@
 | 주문 생성 | `POST /api/v1/orders` | 여러 품목·수량·단가·합계를 `DRAFT`로 저장한다. 생성 시 차감하지 않는다. |
 | 주문 확정 | `POST /api/v1/orders/{orderId}/confirm` | 본인의 `DRAFT` 주문에 대해 재고·포인트를 차감하고 결제액·결과를 저장한 뒤 `CONFIRMED`로 바꾼다. |
 | 내 주문 목록·상세 | `GET /api/v1/orders`, `GET /api/v1/orders/{orderId}` | 내 주문의 품목·수량·금액·상태·결제액을 조회한다. |
-| 관리자 주문 목록·상세 | `GET /api-admin/v1/orders`, `GET /api-admin/v1/orders/{orderId}` | 구매자별 주문의 품목·상태·금액·결제 결과를 조회한다. |
+| 관리자 주문 목록·상세 | `GET /api-admin/v1/orders`, `GET /api-admin/v1/orders/{orderId}` | 사용자별 주문의 품목·상태·금액·결제 결과를 조회한다. |
 
 함께 지킬 조건:
 
@@ -204,10 +204,10 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 | `POST /api/v1/orders/{orderId}/confirm` | X-USER-ID, 경로 orderId | 아래 주문 응답. 저장된 CONFIRMED |
 | `GET /api/v1/orders` | X-USER-ID, 선택 page/size | `items: [주문 응답], page, size, hasNext` |
 | `GET /api/v1/orders/{orderId}` | X-USER-ID, 경로 orderId | 현재 주문 응답 |
-| `GET /api-admin/v1/orders` | 관리자 자격, 선택 userId/page/size | 주문 목록. 각 주문에 구매자 userId 포함 |
-| `GET /api-admin/v1/orders/{orderId}` | 관리자 자격, 경로 orderId | 주문 응답과 구매자 userId |
+| `GET /api-admin/v1/orders` | 관리자 자격, 선택 userId/page/size | 주문 목록. 각 주문에 주문한 사용자의 userId 포함 |
+| `GET /api-admin/v1/orders/{orderId}` | 관리자 자격, 경로 orderId | 주문 응답과 주문한 사용자의 userId |
 
-현재 User는 식별자만 가진 실습 데이터이므로 구매자 이름·연락처를 새로 만들지 않는다. `page >= 0`, `1 <= size <= 100`, 기본 size 20이며 범위를 벗어나면 400이다. 별도 정렬 옵션은 추가하지 않는다. 품목은 productId 오름차순으로 응답하는 초안이다.
+현재 User는 식별자만 가진 실습 데이터이므로 주문한 사용자의 이름·연락처를 새로 만들지 않는다. `page >= 0`, `1 <= size <= 100`, 기본 size 20이며 범위를 벗어나면 400이다. 별도 정렬 옵션은 추가하지 않는다. 품목은 productId 오름차순으로 응답하는 초안이다.
 
 ```http
 POST /api/v1/points/charge
@@ -628,6 +628,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 `open-in-view`가 꺼져 있으므로 옮기는 일은 `OrderService.findAll`의 읽기 트랜잭션 안에서 끝나야 한다. `PageSlice.map`이 그 일을 맡는 까닭이 이것이고, 상품 목록이 `ProductInfoAssembler`에 맡기는 것과 같은 이유다.
 
+> 품목을 읽는 방법은 #16에서 바뀌었다. 지연 로딩과 `default_batch_fetch_size`에 기대는 대신 저장소가 품목을 fetch join하는 두 번째 쿼리를 직접 적는다. 조각의 상한과 배치 크기가 어긋날 수 있다는 결합을 없애기 위해서다. 이 절의 나머지(조각은 주문만 센다, `limit`을 fetch join에 걸 수 없다, 조회 횟수로 붙들어 둔다)는 그대로다. 16.1에 옮긴 까닭을 적었다.
+
 ### 14.2 테스트가 나뉘는 자리
 
 | 자리 | 확인하는 것 |
@@ -658,3 +660,70 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 - `PointAccountTest`의 3,000원 잔액에서 4,000원 결제 거절은 실패하는 테스트를 먼저 실행한 뒤 최소 구현을 추가했다. 기존 Product 테스트는 양수 차감·부족·마지막 재고의 규칙을 보완한다.
 
 동시성 제어, 예약·만료, 취소·환불, 외부 결제, migration 도구는 추가하지 않는다. 단일 요청의 원자성과 순차 재요청만 이번 검증의 대상이다.
+
+## 16. 관리자 주문 조회 구현 — Issue #16
+
+[Issue #16](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/16)은 `GET /api-admin/v1/orders`와 `GET /api-admin/v1/orders/{orderId}`를 구현한다. 주문 확정(#14)과 고객 목록(#15)은 week2에 이미 있고, 이 조각은 그 주문을 읽기만 한다. 관리자가 주문을 조회한다는 것은 `CONTEXT.md`에 이미 적혀 있어 새 낱말을 정하지 않았다.
+
+낱말 하나를 도메인 문서에 맞췄다. 2절과 6절의 표가 주문한 사람을 "구매자"라고 불렀는데 `CONTEXT.md`에 없는 말이었고, 도메인 문서는 `Order.userId`를 "주문한 사용자"라고 적는다. 용어집에 새 항목을 만드는 대신 이미 있는 말로 맞추기로 해서, 이 구현의 KDoc과 Swagger 설명은 물론 2절·6절의 표현까지 함께 고쳤다. `CONTEXT.md`의 고객 항목이 "이름이 필요한 자리에는 사용자(User)를 쓴다"이므로 새 역할 이름을 만들 까닭이 없다. 이제 저장소에 "구매자"는 없다.
+
+### 16.1 조각을 두 조회로 나눈 자리
+
+**선택: 목록 조회는 #15가 둔 것 하나이고, 품목은 명시적인 두 번째 쿼리로 읽는다.** 14절이 정한 "조각은 주문만 센다"는 그대로 두고, 품목을 읽는 방법만 바뀌었다.
+
+#16은 #15가 없던 `aaf61fd` 위에서 작성돼 목록 조회를 스스로 두었다. week2로 rebase하며 하나로 합친 것이다. 합친 까닭은 `findAllByUserId(userId, …)`와 `findAll(userId?, …)`가 같은 일을 하는 두 조회였기 때문이다. 거를 사용자가 있는 호출에서는 결과까지 같고, 차례를 정하는 규칙만 한쪽은 파생 쿼리의 메서드 이름에, 다른 쪽은 QueryDSL의 `orderBy`에 적혀 있었다. 규칙이 적히는 자리를 늘리지 않는다는 기준(12.4) 그대로다. 남은 하나는 관리자가 필요한 선택적 필터를 표현할 수 있어야 하므로 QueryDSL 쪽이며, 필터가 조각마다 달라 이름만으로 끝나지 않는다는 카탈로그 5.32의 자리와 같다.
+
+| 합친 것 | #15 | 지금 |
+| --- | --- | --- |
+| 저장소 조회 | `findAllByUserId(userId, page, size)` 파생 쿼리 | `findAll(userId?, page, size)` QueryDSL 하나 |
+| 차례가 적히는 자리 | `…OrderByCreatedAtDescIdDesc` 메서드 이름 | `orderBy(createdAt.desc(), id.desc())` |
+| 품목을 읽는 방법 | 지연 로딩 + `default_batch_fetch_size` | 품목을 fetch join하는 두 번째 쿼리 |
+| 조각을 만드는 세 줄 | `ProductRepositoryImpl`과 각자 | `infrastructure/shared`의 `fetchSlice` 하나 |
+
+품목을 명시적으로 읽는 쪽으로 바꾼 까닭은 14.1이 스스로 적어 둔 약점이다. 품목 조회가 하나로 끝나는 근거가 `jpa.yml`의 `default_batch_fetch_size: 100`과 `MAX_SIZE`가 같다는 것이었고, 두 값은 Gradle 모듈이 다르고 한쪽은 YAML이라 서로를 모른다. 그래서 경계를 넘겨보는 테스트가 필요했다. 명시적인 쿼리는 그 결합을 없앤다. 조각의 크기가 무엇이든, 전역 설정이 무엇이든 품목 조회는 하나다. 14.1이 "이미 모든 애그리거트에 걸린 설정이 하는 일을 다시 적는 셈"이라고 본 대가는 여전히 치르지만, 조각의 상한과 배치 크기가 어긋날 수 있다는 위험보다 작다고 보았다. 상한까지 채운 조각을 세는 #15의 테스트는 그대로 두었다. 이제는 근거가 바뀌어 경계에서도 하나임을 확인하는 테스트다.
+
+`limit`을 주문 테이블만 보는 첫 쿼리에 거는 까닭은 14.1이 적은 그대로다. 품목까지 fetch join한 쿼리에 `limit`을 걸면 Hibernate가 조건을 SQL에서 떼고 전체를 읽은 뒤 메모리에서 자른다(`HHH90003004`). 두 번째 쿼리는 첫 쿼리가 고른 식별자들의 품목만 읽고, 같은 영속성 컨텍스트가 답하므로 첫 쿼리가 돌려준 인스턴스에 품목이 실린다. 최신순 차례도 첫 쿼리의 것이 남는다.
+
+두 번째 조회의 반환은 버린다. 쓰는 것은 컬렉션이 채워지는 일뿐이다. 그래서 `distinct`를 걸지 않는다. fetch join은 품목 열까지 select에 실어 행이 품목 수만큼 늘고 주문이 여러 번 실려 오지만, 목록을 버리므로 루트의 중복이 문제가 되지 않는다. 컬렉션 안의 품목은 Hibernate가 행을 처리하며 채우므로 중복되지 않으며, 품목 셋인 주문의 품목 수를 세는 테스트가 그것을 붙들어 둔다.
+
+조각을 만드는 세 줄(`offset(page * size)`, `limit(size + 1)`, `hasNext = rows.size > size`)은 `ProductRepositoryImpl.findAll`과 글자까지 같았다. `size + 1`을 읽어 다음 조각의 존재를 정한다는 규칙은 `PageSlice`의 KDoc 한 자리에 적혀 있는데 구현은 두 자리에 있었던 것이다. #15가 `Slice`를 옮기는 두 줄을 `infrastructure/shared`로 모았으므로, QueryDSL 쪽도 같은 파일의 `JPAQuery<T>.fetchSlice(page, size)`로 모았다. 상품 목록과 주문 목록이 그 하나를 쓴다.
+
+`QOrder.lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order.lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
+
+### 16.2 저장소와 application의 자리
+
+| 더한 것 | 자리 | 까닭 |
+| --- | --- | --- |
+| `findAll(userId, page, size)` | `OrderRepository` | #15의 조회를 넓혔다. 사용자 필터가 nullable 하나이므로 관리자는 `null`이나 걸러 낼 사용자를, 내 목록은 요청자를 넣어 같은 조회를 쓴다 |
+| `findById(id)` | `OrderRepository` | 소유권을 묻지 않는 조회. 고객의 `findByIdAndUserId`와 나란히 두어 어느 쪽이 소유자를 보는지 이름에 남는다 |
+| `findAll(OrderAdminListRequest)` | `OrderService` | 입력 타입이 관리자임을 말하므로 이름에 수식어가 없다. `ProductService.findAll(ProductAdminListRequest)`와 같은 모양이다 |
+| `findForAdmin(orderId)` | `OrderService` | 이름에 역할을 적었다. `find(userId, orderId)`와 파라미터가 둘 다 `Long`이라, 소유권을 묻지 않는 쪽을 실수로 고객 경로에서 부를 수 있다 |
+| `OrderInfo.userId` | `application/order` | 주문한 사용자의 식별자는 관리자 응답만 싣는다. 고객은 자기 주문만 보므로 `OrderResponse`가 옮기지 않고, 기존 테스트가 고객 응답에 `userId`가 없음을 붙들어 둔다 |
+
+`OrderAdminResponse`와 `OrderResponse`는 같은 `OrderInfo`를 읽어 각자 내보낼 필드를 고른다(카탈로그 설계 5.7). 두 응답이 갈리는 것은 `userId` 하나다. 주문한 사용자의 이름·연락처는 만들지 않았다. 현재 User는 식별자만 가진 실습 데이터다(6절).
+
+품목은 두 응답이 함께 쓰는 `OrderLineItemResponse`다. 처음에는 관리자 응답 안에 품목 타입을 다시 적었는데, 역할에 따라 갈리는 필드가 품목에는 없어 같은 필드와 같은 변환을 두 벌 갖게 되었다. 5.7이 역할별로 고르라고 한 것은 무엇을 내보낼지이고, 고를 것이 없는 타입까지 나눌 까닭은 아니다. 고객 응답의 중첩 타입을 지우고 최상위로 올렸으므로 JSON의 모양은 그대로이며 #13의 주문 테스트 52개가 그것을 지킨다. 한쪽 역할만 다른 품목을 내보내게 되면 그때 가른다.
+
+`OrderAdminListRequest`는 페이지 상수를 갖지 않고 `OrderListRequest`의 companion을 읽는다. 한 기능 안에서 역할이 다른 두 입력이 생기면 수식어가 없는 쪽이 갖고 붙은 쪽이 읽는다. 페이지 값의 범위가 역할에 따라 다르지 않기 때문이며, 카탈로그에서 `ProductAdminListRequest`가 `ProductListRequest`의 companion을 읽는 모양 그대로다(카탈로그 설계 5.24의 마지막 줄).
+
+#16이 먼저 작성될 때는 `OrderListRequest`가 없어 관리자 입력이 상수를 들고 있었고, 고객 목록이 생기면 옮긴다고 적어 두었다. #15가 그 입력을 두었으므로 rebase에서 옮겼다. 주문 기능 밖의 목록과는 여전히 상수를 나눠 갖는다. 개념마다 Request를 따로 두어 한쪽의 범위가 바뀌어도 다른 쪽이 따라가지 않게 하기 때문이고(카탈로그 설계 5.17), `BrandAdminListRequest`와 `LikeListRequest`도 같은 수를 각자 갖는다. `application/order`가 `application/product`를 참조하지 않는 것도 함께 얻는다.
+
+### 16.3 테스트가 나뉘는 자리
+
+세 자리가 각각 다른 것을 붙들어 둔다. 사용자가 확인한 경계다. 저장소와 application의 두 자리는 #15가 같은 이름으로 만든 파일이라 rebase에서 한 클래스로 합쳤다. 한 조회를 둘이 쓰므로 거를 사용자를 넣은 경우와 비운 경우가 나란히 있는 편이 읽기에도 낫다.
+
+| 자리 | 붙들어 두는 것 |
+| --- | --- |
+| `OrderRepositoryTest` | 최신순과 id 동률, 사용자 필터, `offset`·`hasNext`, 빈 조각, 끝을 넘긴 쪽. 품목이 많은 주문이 조각을 밀어내지 않는 것. 거를 사용자가 없는 조각 |
+| `OrderServiceTest` | 내 목록의 조회 셋과 관리자 목록의 조회 둘, 품목 누락 없음, 상한까지 채운 조각, 컨트롤러를 거치지 않는 호출의 페이지 범위 거절, 없는 사용자 401과 없는 주문 `ORDER_NOT_FOUND` |
+| `OrderAdminApiMockMvcTest` | 관리자 경계의 403, 응답 봉투와 필드, userId 필터, DRAFT의 생략과 CONFIRMED의 저장 값, 카탈로그 수정·삭제 후의 스냅샷 |
+
+조회 횟수가 둘과 셋으로 갈리는 것이 두 목록의 차이를 그대로 보여 준다. 내 목록은 요청자가 있는지 먼저 묻고(없으면 401) 관리자 목록은 묻지 않는다. 자격은 관리자 경계가 이미 보았고 거를 사용자는 선택 입력이다.
+
+품목이 조각에 실려 오는지는 쿼리 수가 아니라 `entityManager.clear()` 뒤에 품목을 읽어 확인한다. `default_batch_fetch_size`가 지연 로딩을 모아 주므로 쿼리 수만 세면 fetch join이 없어도 통과한다. 반대로 `OrderServiceTest`의 쿼리 수 둘은 총 개수를 세는 쿼리가 끼어드는 회귀를 붙들어 둔다(카탈로그 설계 5.5).
+
+차례를 보는 테스트는 둘이 필요하다. 준비가 주문을 차례로 만들면 id 차례와 생성 시각 차례가 늘 같아, 시각이 첫 기준이라는 것이 아무 테스트에도 걸리지 않는다. `orderBy`에서 시각을 지워도 통과하는 상태였다. 그래서 나중에 받은 식별자의 시각을 앞으로 돌려 두 차례가 어긋나게 하는 경우를 더했고, 시각을 지운 구현으로 실제로 실패하는 것을 확인했다. 시각이 같을 때 id가 동률을 깨는 것은 모든 행의 시각을 맞춘 다른 경우가 본다. `size` 상한도 거절하는 쪽만 보면 `@Max`를 좁혀도 통과하므로, 상한이 포함이라는 것을 받아들이는 쪽에서 함께 본다.
+
+같은 마이크로초에 만들어진 주문의 차례와 확정된 주문의 저장 형태는 DB fixture로 준비한다. 확정 동작의 검증은 #14의 책임이며, 여기서는 저장된 결제 결과를 관리자 조회가 그대로 싣는지만 본다(13절의 같은 판단). `OrderAdminApiMockMvcTest`도 테스트 전체를 트랜잭션으로 감싸지 않아, 고객 API가 만든 주문을 다음 요청이 새 영속성 컨텍스트에서 읽는다.
+
+운영 인증은 이 티켓에도 없다. 기존 테스트 전용 `AdminSecurityConfig`가 `/api-admin/**`에 ADMIN을 요구하고 자격 없는 요청을 403으로 거절한다.

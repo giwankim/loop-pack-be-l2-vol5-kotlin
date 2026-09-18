@@ -30,7 +30,11 @@ import org.springframework.context.annotation.Import
  * [OrderRepositoryImpl]이 [OrderRepository] 계약을 실제 MySQL에서 지키는지 확인한다.
  * 설정과 정리 방식, 패키지 위치의 이유는 [com.loopers.infrastructure.product.ProductRepositoryTest]와 같다.
  *
- * 주문은 사용자와 상품을 식별자로 가리키고 그 참조에 물리 FK가 있으므로 세 저장소를 함께 등록한다.
+ * 주문은 사용자와 상품을 식별자로만 가리키지만 두 참조에 물리 외래 키가 있으므로(설계 13) 세 저장소를 함께 등록해
+ * 준비 단계가 실제 행을 만든다.
+ *
+ * `findAll`은 내 목록(#15)과 관리자 목록(#16)이 함께 쓴다. 그래서 거를 사용자를 넣은 경우와 넣지 않은 경우를
+ * 한 클래스에서 함께 본다(설계 16.2).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -52,10 +56,10 @@ class OrderRepositoryTest(
 ) {
     /**
      * 만든 시각은 [Order]가 스스로 정하므로 동률을 요청으로 만들 수 없다. 저장한 뒤 SQL로 시각을 겹쳐 놓고
-     * 남은 차례를 식별자가 가르는지 본다.
+     * 남은 차례를 식별자가 가르는지 본다. 남의 주문에는 가장 늦은 시각을 주어, 걸러 내는 일이 차례보다 먼저임을 본다.
      */
     @Test
-    fun `findAllByUserId lists only that user's orders from the newest and breaks equal creation times by id`() {
+    fun `findAll with a user lists only that user's orders from the newest and breaks equal creation times by id`() {
         val owner = userRepository.save(User())
         val other = userRepository.save(User())
         val product = registerProduct()
@@ -70,7 +74,7 @@ class OrderRepositoryTest(
         setCreatedAt(foreign.id, "2026-09-19 10:00:00.000000")
         entityManager.flushAndClear()
 
-        val slice = orderRepository.findAllByUserId(owner.id, page = 0, size = 10)
+        val slice = orderRepository.findAll(userId = owner.id, page = 0, size = 10)
 
         assertAll(
             { assertThat(slice.items.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id) },
@@ -85,7 +89,7 @@ class OrderRepositoryTest(
      * 주문이 잘리거나 품목이 모자라게 실린다. 그래서 품목이 셋인 주문만으로 쪽을 넘긴다.
      */
     @Test
-    fun `findAllByUserId pages multi item orders by order count and keeps every item in product order`() {
+    fun `findAll pages multi item orders by order count and keeps every item in product order`() {
         val owner = userRepository.save(User())
         val shirt = registerProduct("티셔츠")
         val socks = registerProduct("양말")
@@ -94,9 +98,9 @@ class OrderRepositoryTest(
         val second = orderRepository.save(order(owner.id, "second", pants, socks, shirt))
         entityManager.flushAndClear()
 
-        val firstPage = orderRepository.findAllByUserId(owner.id, page = 0, size = 1)
-        val secondPage = orderRepository.findAllByUserId(owner.id, page = 1, size = 1)
-        val thirdPage = orderRepository.findAllByUserId(owner.id, page = 2, size = 1)
+        val firstPage = orderRepository.findAll(owner.id, page = 0, size = 1)
+        val secondPage = orderRepository.findAll(owner.id, page = 1, size = 1)
+        val thirdPage = orderRepository.findAll(owner.id, page = 2, size = 1)
 
         val productIds = listOf(shirt, socks, pants).map { it.id }.sorted()
         assertAll(
@@ -109,6 +113,71 @@ class OrderRepositoryTest(
             { assertThat(thirdPage.items).isEmpty() },
             { assertThat(thirdPage.page).isEqualTo(2) },
             { assertThat(thirdPage.hasNext).isFalse() },
+        )
+    }
+
+    /** 거를 사용자가 없으면 모든 사용자의 주문이 한 조각에 오른다. 관리자 목록이 쓰는 길이다. */
+    @Test
+    fun `findAll without a user gives the orders of every user latest first`() {
+        val product = registerProduct()
+        val first = orderRepository.save(order(userRepository.save(User()).id, "first", product))
+        val second = orderRepository.save(order(userRepository.save(User()).id, "second", product))
+        entityManager.flushAndClear()
+
+        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
+    }
+
+    /**
+     * 차례를 정하는 첫 기준은 만든 시각이고 식별자는 동률만 가른다. 준비가 주문을 차례로 만들면 두 차례가 늘 같아
+     * 시각 기준이 사라져도 아무 테스트가 말하지 않는다. 그래서 나중에 받은 식별자의 시각을 앞으로 돌린다.
+     */
+    @Test
+    fun `findAll puts the later created_at first even when its id is lower`() {
+        val owner = userRepository.save(User())
+        val product = registerProduct()
+        val recent = orderRepository.save(order(owner.id, "recent", product))
+        val backDated = orderRepository.save(order(owner.id, "back-dated", product))
+        entityManager.flushAndClear()
+        setCreatedAt(backDated.id, "2026-09-17 00:00:00.000000")
+        entityManager.flushAndClear()
+
+        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+
+        assertThat(slice.items.map { it.id }).containsExactly(recent.id, backDated.id)
+    }
+
+    /**
+     * `open-in-view=false`이므로 품목은 조회가 돌려주는 조각에 이미 실려 있어야 한다(설계 9 조회).
+     * 조각을 받은 뒤 영속성 컨텍스트를 비워, 조회 밖에서 지연 로딩에 기대지 않는지 확인한다.
+     * `default_batch_fetch_size`가 지연 로딩을 모아 주므로 쿼리 수만 세면 이 약속은 확인되지 않는다(설계 16.1).
+     */
+    @Test
+    fun `findAll loads the items of every order in the slice`() {
+        val owner = userRepository.save(User())
+        val shirt = registerProduct("티셔츠")
+        val pants = registerProduct("바지")
+        orderRepository.save(order(owner.id, "two-items", pants, shirt))
+        orderRepository.save(order(owner.id, "one-item", shirt))
+        entityManager.flushAndClear()
+
+        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+        entityManager.clear()
+
+        assertThat(slice.items.map { order -> order.items.map { it.productId } })
+            .containsExactly(listOf(shirt.id), listOf(shirt.id, pants.id).sorted())
+    }
+
+    @Test
+    fun `findAll gives an empty slice without a next page when nothing matches`() {
+        val slice = orderRepository.findAll(userId = userRepository.save(User()).id, page = 0, size = 20)
+
+        assertAll(
+            { assertThat(slice.items).isEmpty() },
+            { assertThat(slice.hasNext).isFalse() },
+            { assertThat(slice.page).isZero() },
+            { assertThat(slice.size).isEqualTo(20) },
         )
     }
 
