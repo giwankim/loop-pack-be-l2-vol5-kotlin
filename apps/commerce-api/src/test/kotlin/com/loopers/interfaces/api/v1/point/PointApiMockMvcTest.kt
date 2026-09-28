@@ -7,7 +7,6 @@ import com.loopers.support.error.ErrorType
 import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
-import com.loopers.utils.countPointHistories
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -27,9 +26,9 @@ import org.springframework.transaction.annotation.Transactional
  * 고객 포인트 API. 요청자는 `X-USER-ID` 헤더로 식별하며 관리자 경계 밖이라 principal은 싣지 않는다.
  * [AdminSecurityConfig]를 가져오는 까닭은 [com.loopers.interfaces.api.v1.brand.BrandApiMockMvcTest]와 같다.
  *
- * 계정 없음과 충전마다 이력이 하나씩 남는 규칙은 [com.loopers.application.point.PointServiceTest]가 MySQL 위에서 이미 고정한다.
+ * 계정 없음과 충전이 잔액에 더해지는 규칙은 [com.loopers.application.point.PointServiceTest]가 MySQL 위에서 이미 고정한다.
  * 여기서는 헤더가 요청자로 이어지는지, 본문의 JSON 토큰을 어디까지 받는지, 오류가 어느 status와 code로
- * 내려가는지, 거절 뒤 잔액과 이력이 그대로인지를 본다(설계 5.10, 6). 요청 사이를 비우는 까닭은
+ * 내려가는지, 거절 뒤 잔액이 그대로인지를 본다(설계 5.10, 6). 요청 사이를 비우는 까닭은
  * [com.loopers.interfaces.api.v1.product.ProductApiMockMvcTest]와 같다.
  */
 @SpringBootTest
@@ -216,7 +215,7 @@ class PointApiMockMvcTest(
         assertUnchanged(userId)
     }
 
-    /** 충전 후 잔액이 `Long` 범위를 넘으면 domain이 거절한다. 잔액과 이력은 그대로다(설계 5.7). */
+    /** 충전 후 잔액이 `Long` 범위를 넘으면 domain이 거절한다. 잔액은 그대로다(설계 5.7). */
     @Test
     fun `a charge that overflows the balance returns 400 and keeps the balance`() {
         val userId = registerUser()
@@ -229,12 +228,8 @@ class PointApiMockMvcTest(
             jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
         }
         entityManager.flushAndClear()
-        val accountId = accountIdOf(userId)
 
-        assertAll(
-            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(Long.MAX_VALUE) },
-            { assertThat(entityManager.countPointHistories(accountId)).isOne() },
-        )
+        assertThat(entityManager.balanceOf(accountIdOf(userId))).isEqualTo(Long.MAX_VALUE)
     }
 
     /** 상품 가격의 10억 원 상한은 잔액에 적용되지 않는다(설계 5.7). */
@@ -262,12 +257,8 @@ class PointApiMockMvcTest(
 
     private fun accountIdOf(userId: Long): Long = pointAccountRepository.findByUserId(userId)!!.id
 
-    /** 거절 뒤 잔액이 0원 그대로이고 이력이 하나도 없다. */
+    /** 거절 뒤 잔액이 0원 그대로다. */
     private fun assertUnchanged(userId: Long) {
-        val accountId = accountIdOf(userId)
-        assertAll(
-            { assertThat(entityManager.balanceOf(accountId)).isZero() },
-            { assertThat(entityManager.countPointHistories(accountId)).isZero() },
-        )
+        assertThat(entityManager.balanceOf(accountIdOf(userId))).isZero()
     }
 }

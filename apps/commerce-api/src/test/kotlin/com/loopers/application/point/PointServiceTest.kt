@@ -7,9 +7,7 @@ import com.loopers.support.error.ErrorType
 import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
-import com.loopers.utils.countPointHistories
 import com.loopers.utils.flushAndClear
-import com.loopers.utils.lastPointHistoryRow
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
@@ -22,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional
 /**
  * [PointService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.BrandServiceTest]와 같다.
  *
- * 잔액과 이력은 저장 약속을 거치지 않고 테이블을 SQL로 읽는다. "잔액이 그대로다", "이력이 하나다"는 테이블의 사실이다.
+ * 잔액은 저장 약속을 거치지 않고 테이블을 SQL로 읽는다. "잔액이 그대로다"는 테이블의 사실이다.
  * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [PointServiceTransactionTest]가 따로 본다.
  */
 @SpringBootTest
@@ -34,7 +32,7 @@ class PointServiceTest(
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `charging adds to the balance and leaves one CHARGE history with the amount and the balance after`() {
+    fun `charging adds to the balance`() {
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
@@ -45,32 +43,12 @@ class PointServiceTest(
         assertAll(
             { assertThat(info.balance).isEqualTo(10_000L) },
             { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(accountId)).isOne() },
-            { assertThat(entityManager.lastPointHistoryRow(accountId)).containsExactly("CHARGE", 10_000L, 10_000L) },
-        )
-    }
-
-    @Test
-    fun `a second charge adds to the balance and leaves a second history`() {
-        val user = userFixture.registerUser()
-        pointService.charge(user.id, PointChargeRequest(amount = 10_000))
-        entityManager.flushAndClear()
-
-        val info = pointService.charge(user.id, PointChargeRequest(amount = 500))
-        entityManager.flushAndClear()
-        val accountId = accountIdOf(user.id)
-
-        assertAll(
-            { assertThat(info.balance).isEqualTo(10_500L) },
-            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_500L) },
-            { assertThat(entityManager.countPointHistories(accountId)).isEqualTo(2L) },
-            { assertThat(entityManager.lastPointHistoryRow(accountId)).containsExactly("CHARGE", 500L, 10_500L) },
         )
     }
 
     /** 요청마다 새 충전이다. 같은 충전액을 두 번 보내면 두 번 늘어난다(ADR 0005). */
     @Test
-    fun `charging the same amount twice adds it twice and leaves two histories`() {
+    fun `charging the same amount twice adds it twice`() {
         val user = userFixture.registerUser()
         pointService.charge(user.id, PointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
@@ -82,7 +60,6 @@ class PointServiceTest(
         assertAll(
             { assertThat(info.balance).isEqualTo(20_000L) },
             { assertThat(entityManager.balanceOf(accountId)).isEqualTo(20_000L) },
-            { assertThat(entityManager.countPointHistories(accountId)).isEqualTo(2L) },
         )
     }
 
@@ -139,11 +116,7 @@ class PointServiceTest(
             },
         )
         entityManager.flushAndClear()
-        val accountId = accountIdOf(user.id)
-        assertAll(
-            { assertThat(entityManager.balanceOf(accountId)).isZero() },
-            { assertThat(entityManager.countPointHistories(accountId)).isZero() },
-        )
+        assertThat(entityManager.balanceOf(accountIdOf(user.id))).isZero()
     }
 
     @Test
@@ -156,14 +129,8 @@ class PointServiceTest(
             pointService.charge(user.id, PointChargeRequest(amount = 1))
         }
         entityManager.flushAndClear()
-        val accountId = accountIdOf(user.id)
-        val balanceAfterFailure = entityManager.balanceOf(accountId)
-        val historiesAfterFailure = entityManager.countPointHistories(accountId)
 
-        assertAll(
-            { assertThat(balanceAfterFailure).isEqualTo(Long.MAX_VALUE) },
-            { assertThat(historiesAfterFailure).isOne() },
-        )
+        assertThat(entityManager.balanceOf(accountIdOf(user.id))).isEqualTo(Long.MAX_VALUE)
     }
 
     @Test

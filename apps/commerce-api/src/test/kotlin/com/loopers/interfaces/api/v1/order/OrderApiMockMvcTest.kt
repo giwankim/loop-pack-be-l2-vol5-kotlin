@@ -364,7 +364,7 @@ class OrderApiMockMvcTest(
             schema.dropMappedObjects(false)
             val remaining = jdbc.queryForList(
                 "select table_name from information_schema.tables where table_schema = database() " +
-                    "and table_name in ('orders', 'order_line_item', 'product', 'users', 'point_history')",
+                    "and table_name in ('orders', 'order_line_item', 'product', 'users')",
                 String::class.java,
             )
             assertThat(remaining).isEmpty()
@@ -374,15 +374,13 @@ class OrderApiMockMvcTest(
         assertNoOrders()
         val constraints = jdbc.queryForList(
             "select constraint_name from information_schema.referential_constraints where constraint_schema = database() " +
-                "and table_name in ('orders', 'order_line_item', 'point_history')",
+                "and table_name in ('orders', 'order_line_item')",
             String::class.java,
         )
         assertThat(constraints).containsExactlyInAnyOrder(
             "fk_orders_user",
             "fk_order_line_item_order",
             "fk_order_line_item_product",
-            "fk_point_history_point_account",
-            "fk_point_history_order",
         )
         userId = userRepository.save(User()).id
         brandId = brandService.register(BrandAdminRegisterRequest("재생성 브랜드")).id

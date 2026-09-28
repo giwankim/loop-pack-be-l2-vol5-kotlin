@@ -1,7 +1,5 @@
 package com.loopers.domain.point
 
-import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
@@ -13,20 +11,13 @@ import org.junit.jupiter.api.assertThrows
 
 class PointAccountTest {
     @Test
-    fun `paying the entire balance returns a positive payment history with a zero resulting balance`() {
+    fun `paying the entire balance leaves a zero balance`() {
         val account = PointAccount(User())
         account.charge(Money(3_000))
-        val order = order()
 
-        val history = account.pay(Money(3_000), order)
+        account.pay(Money(3_000))
 
-        assertAll(
-            { assertThat(account.balance).isEqualTo(Money.ZERO) },
-            { assertThat(history.type.name).isEqualTo("PAYMENT") },
-            { assertThat(history.amount).isEqualTo(Money(3_000)) },
-            { assertThat(history.balanceAfter).isEqualTo(Money.ZERO) },
-            { assertThat(history.order).isSameAs(order) },
-        )
+        assertThat(account.balance).isEqualTo(Money.ZERO)
     }
 
     @Test
@@ -34,7 +25,7 @@ class PointAccountTest {
         val account = PointAccount(User())
         account.charge(Money(3_000))
 
-        assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO, order()) }
+        assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO) }
 
         assertThat(account.balance).isEqualTo(Money(3_000))
     }
@@ -44,7 +35,7 @@ class PointAccountTest {
         val account = PointAccount(User())
         account.charge(Money(3_000))
 
-        assertThrows<InsufficientPointsException> { account.pay(Money(4_000), order()) }
+        assertThrows<InsufficientPointsException> { account.pay(Money(4_000)) }
 
         assertThat(account.balance).isEqualTo(Money(3_000))
     }
@@ -64,21 +55,6 @@ class PointAccountTest {
         account.charge(Money(500))
 
         assertThat(account.balance).isEqualTo(Money(10_500))
-    }
-
-    /** 충전은 성공한 CHARGE 이력을 함께 낳는다. 이력의 잔액은 그 충전 직후의 잔액이다. */
-    @Test
-    fun `charging returns a CHARGE history carrying the amount and the balance right after`() {
-        val account = PointAccount(User())
-        account.charge(Money(10_000))
-
-        val history = account.charge(Money(500))
-
-        assertAll(
-            { assertThat(history.type).isEqualTo(PointHistoryType.CHARGE) },
-            { assertThat(history.amount).isEqualTo(Money(500)) },
-            { assertThat(history.balanceAfter).isEqualTo(Money(10_500)) },
-        )
     }
 
     @Test
@@ -114,9 +90,4 @@ class PointAccountTest {
 
         assertThat(account.balance).isEqualTo(Money(1_000_000_001))
     }
-
-    private fun order(): Order = Order(
-        userId = 1,
-        products = listOf(OrderProduct(1, "상품", Money(3_000), 1)),
-    )
 }

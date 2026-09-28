@@ -1,7 +1,6 @@
 package com.loopers.domain.point
 
 import com.loopers.domain.BaseEntity
-import com.loopers.domain.order.Order
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import jakarta.persistence.AttributeOverride
@@ -46,25 +45,23 @@ class PointAccount(
         get() = user.id
 
     /**
-     * 양의 충전액만큼 잔액을 늘리고 그 충전의 CHARGE 이력을 돌려준다(CONTEXT.md 충전하다).
+     * 양의 충전액만큼 잔액을 늘린다(CONTEXT.md 충전하다).
      * 충전 후 잔액이 `Long` 범위를 넘으면 [Money]가 거절하고, 0원 이하면 여기서 거절한다. 어느 쪽이든 잔액은 그대로다.
-     *
-     * 이력을 여기서 만드는 까닭은 "이력의 잔액은 그 충전 직후의 잔액"이라는 규칙을 계정이 지키게 하려는 것이다.
-     * 저장은 부르는 쪽이 한다. 계정은 이력 컬렉션을 갖지 않는다(설계 7).
      */
-    fun charge(amount: Money): PointHistory {
+    fun charge(amount: Money) {
         if (amount <= Money.ZERO) {
             throw InvalidChargeAmountException("충전액은 1원 이상이어야 합니다.")
         }
         balance = balance + amount
-        return PointHistory.charge(account = this, amount = amount, balanceAfter = balance)
     }
 
-    /** 결제하고 직후 잔액을 담은 PAYMENT 이력을 돌려준다. 주문과 재고의 변경·저장은 application이 조율한다. */
-    fun pay(amount: Money, order: Order): PointHistory {
+    /**
+     * 결제액만큼 잔액을 줄인다. 어느 주문의 결제인지는 모른다(ADR 0006).
+     * 주문과 재고의 변경·저장은 application이 조율한다.
+     */
+    fun pay(amount: Money) {
         if (amount <= Money.ZERO) throw InvalidPaymentAmountException()
         if (amount > balance) throw InsufficientPointsException()
         balance = balance - amount
-        return PointHistory.payment(account = this, amount = amount, balanceAfter = balance, order = order)
     }
 }

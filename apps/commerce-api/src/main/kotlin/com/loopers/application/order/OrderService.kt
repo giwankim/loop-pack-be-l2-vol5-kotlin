@@ -5,7 +5,6 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.point.PointAccountRepository
-import com.loopers.domain.point.PointHistoryRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.PageSlice
@@ -25,7 +24,6 @@ class OrderService(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
     private val pointAccountRepository: PointAccountRepository,
-    private val pointHistoryRepository: PointHistoryRepository,
 ) {
     /** 요청마다 새 확정 전 주문이다. 같은 품목을 다시 보내면 주문이 하나 더 생긴다(ADR 0005). */
     @Transactional
@@ -63,7 +61,7 @@ class OrderService(
     }
 
     /**
-     * 재고·잔액·PAYMENT 이력·확정 상태를 함께 커밋한다. 실패는 기존 DRAFT를 남긴다(ADR 0003).
+     * 재고·잔액·확정 상태를 함께 커밋한다. 실패는 기존 DRAFT를 남긴다(ADR 0003). 결제의 기록은 확정된 주문이다(ADR 0006).
      * 이미 확정된 본인 주문은 현재 카탈로그·잔액을 읽기 전에 거절한다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005).
      * 단일 요청의 원자성과 순차 재요청만 보장하며 동시 요청의 경합은 이번 범위 밖이다.
      */
@@ -78,9 +76,8 @@ class OrderService(
         val products = order.items.map { item -> item to availableProduct(item.productId) }
         products.forEach { (item, product) -> product.deductStock(item.quantity) }
         val account = pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
-        val history = account.pay(order.totalAmount, order)
+        account.pay(order.totalAmount)
         order.confirm()
-        pointHistoryRepository.save(history)
         return OrderInfo.from(order)
     }
 

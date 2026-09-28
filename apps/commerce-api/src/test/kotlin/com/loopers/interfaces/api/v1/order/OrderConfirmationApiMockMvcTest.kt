@@ -9,16 +9,10 @@ import com.loopers.application.product.ProductAdminStockUpdateRequest
 import com.loopers.application.product.ProductAdminUpdateRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.point.PointHistoryRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.UserFixture
-import com.loopers.utils.assertCheckConstraintRejects
-import com.ninjasquad.springmockk.SpykBean
-import io.mockk.every
-import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -27,7 +21,6 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
@@ -50,12 +43,8 @@ class OrderConfirmationApiMockMvcTest(
     private val productService: ProductService,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
-    private val entityManager: EntityManager,
     transactionManager: PlatformTransactionManager,
 ) {
-    @SpykBean
-    private lateinit var pointHistoryRepository: PointHistoryRepository
-
     private val transaction = TransactionTemplate(transactionManager)
     private var userId = 0L
     private var brandId = 0L
@@ -73,7 +62,7 @@ class OrderConfirmationApiMockMvcTest(
     }
 
     @Test
-    fun `charge create confirm and read back persist one charge and one payment`() {
+    fun `charging creating and confirming deduct stock and points once and read back the confirmed order`() {
         balance(0)
         charge(10_000).andExpect { status { isOk() } }
         val first = product("티셔츠", 1_000, 10)
@@ -106,26 +95,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(3_000)
         assertStock(first, 5)
         assertStock(second, 4)
-        val histories = jdbc.queryForList(
-            "select type, amount, balance_after, order_id from point_history order by id",
-        )
-        assertThat(histories).hasSize(2)
-        assertThat(histories[0]).containsAllEntriesOf(
-            mapOf(
-                "type" to "CHARGE",
-                "amount" to 10_000L,
-                "balance_after" to 10_000L,
-                "order_id" to null,
-            ),
-        )
-        assertThat(histories[1]).containsAllEntriesOf(
-            mapOf(
-                "type" to "PAYMENT",
-                "amount" to 7_000L,
-                "balance_after" to 3_000L,
-                "order_id" to orderId,
-            ),
-        )
     }
 
     private fun product(name: String = "상품", price: Long = 1_000, stock: Int = 10): Long =
@@ -148,7 +117,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 4)
-        assertPaymentCount(0)
         productService.updateStock(second, ProductAdminStockUpdateRequest(5))
         confirm(orderId).andExpect {
             status { isOk() }
@@ -157,12 +125,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(3_000)
         assertStock(first, 8)
         assertStock(second, 0)
-        assertPaymentCount(1)
-    }
-
-    private fun assertPaymentCount(expected: Long) {
-        assertThat(jdbc.queryForObject("select count(*) from point_history where type = 'PAYMENT'", Long::class.java)!!)
-            .isEqualTo(expected)
     }
 
     @Test
@@ -182,7 +144,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(3_000)
         assertStock(first, 2)
         assertStock(second, 2)
-        assertPaymentCount(0)
         charge(1_000).andExpect { status { isOk() } }
         confirm(orderId).andExpect {
             status { isOk() }
@@ -191,7 +152,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(0)
         assertStock(first, 0)
         assertStock(second, 0)
-        assertPaymentCount(1)
     }
 
     @ParameterizedTest
@@ -214,7 +174,6 @@ class OrderConfirmationApiMockMvcTest(
         assertThat(detail(orderId).json()).isEqualTo(confirmed)
         balance(0)
         assertStock(productId, 9)
-        assertPaymentCount(1)
     }
 
     @ParameterizedTest
@@ -242,7 +201,6 @@ class OrderConfirmationApiMockMvcTest(
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 10)
-        assertPaymentCount(0)
     }
 
     /**
@@ -269,7 +227,6 @@ class OrderConfirmationApiMockMvcTest(
         assertThat(detail(orderId).json()).isEqualTo(draft)
         balance(10_000)
         assertStock(short, 1)
-        assertPaymentCount(0)
     }
 
     @Test
@@ -298,14 +255,12 @@ class OrderConfirmationApiMockMvcTest(
         assertThat(detail(orderId).json()).isEqualTo(draft)
         balance(1_000)
         assertStock(productId, 10)
-        assertPaymentCount(0)
         val confirmed = confirm(orderId).andExpect { status { isOk() } }.json()
         assertAccessDenied()
         assertAlreadyConfirmed(orderId)
         assertThat(detail(orderId).json()).isEqualTo(confirmed)
         balance(0)
         assertStock(productId, 9)
-        assertPaymentCount(1)
     }
 
     /** 다시 확정하면 차감 없이 거절된다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005). */
@@ -341,8 +296,6 @@ class OrderConfirmationApiMockMvcTest(
 
         balance(0)
         assertStock(productId, 0)
-        assertPaymentCount(2)
-        assertThat(jdbc.queryForObject("select count(*) from point_history", Long::class.java)!!).isEqualTo(3)
     }
 
     @Test
@@ -356,7 +309,6 @@ class OrderConfirmationApiMockMvcTest(
 
         assertThat(detail(orderId).json()).isEqualTo(draft)
         assertStock(productId, 10)
-        assertPaymentCount(0)
         assertThat(jdbc.queryForObject("select count(*) from point_account where user_id = ?", Long::class.java, userId)!!)
             .isZero()
     }
@@ -366,45 +318,25 @@ class OrderConfirmationApiMockMvcTest(
             .isEqualTo(expected)
     }
 
+    /**
+     * 확정은 저장소를 부르지 않고 커밋의 flush로 쓴다. flush는 엔티티를 읽은 차례로 UPDATE를 보내므로 주문, 상품,
+     * 포인트 계정 차례다. 마지막인 `point_account`의 UPDATE를 임시 CHECK로 거절해, 앞서 나간 주문·재고의 UPDATE까지
+     * 함께 되돌아가는지 본다(설계 18.2).
+     */
     @Test
-    fun `a late persistence failure rolls back flushed stock balance order and history and permits retry`() {
+    fun `a failure on the last write at commit rolls back the earlier stock and order writes and permits retry`() {
         charge(10_000).andExpect { status { isOk() } }
         val first = product("첫 상품", 1_000, 6)
         val second = product("둘째 상품", 2_000, 2)
         val draft = create(listOf(first to 5, second to 1)).andExpect { status { isCreated() } }.json()
         val orderId = draft["data"]["orderId"].longValue()
-        var flushed: Map<String, Any?>? = null
-        every { pointHistoryRepository.save(any()) } answers {
-            callOriginal()
-            entityManager.flush()
-            // Observe actual SQL writes inside the request transaction before simulating the storage failure.
-            assertStock(first, 1)
-            assertStock(second, 1)
-            flushed = jdbc.queryForMap(
-                "select o.status, o.paid_amount, o.confirmed_at, a.balance, h.amount, h.balance_after " +
-                    "from orders o join point_account a on a.user_id = o.user_id " +
-                    "join point_history h on h.order_id = o.id where o.id = ?",
-                orderId,
-            )
-            throw DataIntegrityViolationException("controlled failure after confirmation writes")
-        }
+        jdbc.execute("alter table point_account add constraint fail_paid_balance check (balance <> 3000)")
         try {
             confirm(orderId).andExpect { status { isInternalServerError() } }
         } finally {
-            every { pointHistoryRepository.save(any()) } answers { callOriginal() }
+            jdbc.execute("alter table point_account drop check fail_paid_balance")
         }
 
-        assertThat(flushed).isNotNull
-        assertThat(flushed!!).containsAllEntriesOf(
-            mapOf(
-                "status" to "CONFIRMED",
-                "paid_amount" to 7_000L,
-                "balance" to 3_000L,
-                "amount" to 7_000L,
-                "balance_after" to 3_000L,
-            ),
-        )
-        assertThat(flushed["confirmed_at"]).isNotNull()
         // A new transaction, outside the failed HTTP request, proves rollback rather than test cleanup.
         transaction.executeWithoutResult {
             assertStock(first, 6)
@@ -413,66 +345,12 @@ class OrderConfirmationApiMockMvcTest(
                 .isEqualTo(10_000L)
             assertThat(jdbc.queryForMap("select status, paid_amount, confirmed_at from orders where id = ?", orderId))
                 .containsAllEntriesOf(mapOf("status" to "DRAFT", "paid_amount" to null, "confirmed_at" to null))
-            assertPaymentCount(0)
-            assertThat(jdbc.queryForObject("select count(*) from point_history", Long::class.java)!!).isEqualTo(1)
         }
         assertThat(detail(orderId).andExpect { status { isOk() } }.json()).isEqualTo(draft)
         confirm(orderId).andExpect { status { isOk() } }
         balance(3_000)
         assertStock(first, 1)
         assertStock(second, 1)
-        assertPaymentCount(1)
-    }
-
-    @Test
-    fun `MySQL enforces the payment order foreign key uniqueness and charge or payment history shape`() {
-        charge(3_000).andExpect { status { isOk() } }
-        val productId = product()
-        val orderIds = List(2) {
-            val id = create(listOf(productId to 1)).andExpect { status { isCreated() } }
-                .json()["data"]["orderId"].longValue()
-            confirm(id).andExpect { status { isOk() } }
-            id
-        }
-        val reference = jdbc.queryForMap(
-            "select referenced_table_name, referenced_column_name from information_schema.key_column_usage " +
-                "where table_schema = database() and table_name = 'point_history' and constraint_name = 'fk_point_history_order'",
-        )
-        assertThat(reference).containsAllEntriesOf(mapOf("referenced_table_name" to "orders", "referenced_column_name" to "id"))
-        val deleteRule = jdbc.queryForObject(
-            "select delete_rule from information_schema.referential_constraints " +
-                "where constraint_schema = database() and constraint_name = 'fk_point_history_order'",
-            String::class.java,
-        )
-        assertThat(deleteRule).isEqualTo("RESTRICT")
-        val uniqueColumns = jdbc.queryForList(
-            "select column_name from information_schema.statistics where table_schema = database() " +
-                "and table_name = 'point_history' and index_name = 'uk_point_history_order_id' and non_unique = 0",
-            String::class.java,
-        )
-        assertThat(uniqueColumns).containsExactly("order_id")
-
-        assertThatThrownBy {
-            jdbc.update(
-                "update point_history set order_id = ? where order_id = ?",
-                Long.MAX_VALUE,
-                orderIds[0],
-            )
-        }.isInstanceOf(DataIntegrityViolationException::class.java)
-        assertThatThrownBy { jdbc.update("update point_history set order_id = ? where order_id = ?", orderIds[0], orderIds[1]) }
-            .isInstanceOf(DataIntegrityViolationException::class.java)
-        listOf("order_id = null", "amount = 0", "balance_after = -1").forEach { update ->
-            jdbc.assertCheckConstraintRejects("update point_history set $update where order_id = ?", orderIds[0])
-        }
-        // Use an existing order without a PAYMENT so the CHECK, rather than the unique key, is the rejecting constraint.
-        val draftId = create(listOf(productId to 1)).andExpect { status { isCreated() } }
-            .json()["data"]["orderId"].longValue()
-        jdbc.assertCheckConstraintRejects("update point_history set order_id = ? where type = 'CHARGE'", draftId)
-        // Every rejected update left the rows as they were.
-        assertPaymentCount(2)
-        assertThat(jdbc.queryForMap("select amount, balance_after from point_history where type = 'CHARGE'"))
-            .containsAllEntriesOf(mapOf("amount" to 3_000L, "balance_after" to 3_000L))
-        balance(1_000)
     }
 
     private fun balance(expected: Long) {

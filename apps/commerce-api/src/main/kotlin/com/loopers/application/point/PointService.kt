@@ -2,7 +2,6 @@ package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
-import com.loopers.domain.point.PointHistoryRepository
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
@@ -23,19 +22,17 @@ import org.springframework.validation.annotation.Validated
 @Validated
 class PointService(
     private val pointAccountRepository: PointAccountRepository,
-    private val pointHistoryRepository: PointHistoryRepository,
     private val userRepository: UserRepository,
 ) {
     /**
-     * 충전한다. 잔액 변경과 그 충전의 CHARGE 이력을 한 트랜잭션으로 저장한다(설계 5.5).
+     * 충전한다. 잔액만 바꾸며 충전의 기록은 따로 남기지 않는다(ADR 0006).
      * 요청마다 새 충전이다. 같은 충전액을 다시 보내면 다시 충전된다(ADR 0005).
      */
     @Transactional
     fun charge(userId: Long, @Valid request: PointChargeRequest): PointAccountInfo {
         checkUserExists(userId)
         val account = findAccount(userId)
-        val history = account.charge(Money(request.amount))
-        pointHistoryRepository.save(history)
+        account.charge(Money(request.amount))
         return PointAccountInfo.from(account)
     }
 

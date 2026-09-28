@@ -3,9 +3,9 @@ package com.loopers.utils
 import jakarta.persistence.EntityManager
 
 /**
- * `point_account`·`point_history` 테이블을 저장 약속을 거치지 않고 SQL로 읽는다.
+ * `point_account` 테이블을 저장 약속을 거치지 않고 SQL로 읽는다.
  *
- * "잔액이 그대로다", "이력이 하나다", "실패한 요청은 이력을 남기지 않는다"는 저장소가 아니라 테이블의 사실이다.
+ * "잔액이 그대로다", "조회가 계정을 만들지 않았다"는 저장소가 아니라 테이블의 사실이다.
  * 영속성 컨텍스트도 거치지 않으므로 롤백 뒤의 상태를 다른 트랜잭션에서 그대로 본다. 까닭은 [countLikes]와 같다.
  */
 fun EntityManager.balanceOf(accountId: Long): Long =
@@ -14,20 +14,6 @@ fun EntityManager.balanceOf(accountId: Long): Long =
             .setParameter("id", accountId)
             .singleResult as Number
     ).toLong()
-
-/** 한 계정의 이력 행 수. */
-fun EntityManager.countPointHistories(accountId: Long): Long =
-    countRows("select count(*) from point_history where point_account_id = :accountId", "accountId" to accountId)
-
-/** 한 계정에서 가장 나중에 남은 이력 한 행의 종류·금액·직후 잔액. 없으면 예외다. */
-fun EntityManager.lastPointHistoryRow(accountId: Long): List<Any?> {
-    val row = createNativeQuery(
-        "select type, amount, balance_after from point_history where point_account_id = :accountId order by id desc limit 1",
-    )
-        .setParameter("accountId", accountId)
-        .singleResult as Array<*>
-    return listOf(row[0], (row[1] as Number).toLong(), (row[2] as Number).toLong())
-}
 
 /** 한 사용자의 계정 행 수. 조회나 충전이 계정을 만들지 않았는지 볼 때 쓴다. */
 fun EntityManager.countPointAccounts(userId: Long): Long =
