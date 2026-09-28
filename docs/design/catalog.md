@@ -390,12 +390,18 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.20 저장소 구현의 모양
 
-- 문제: domain의 저장 약속(`BrandRepository`, `ProductRepository`)을 Spring Data JPA로 구현하는 방법. 저장 약속의 메서드 이름은 Spring Data의 `CrudRepository`와 맞춘다(`findById`). 그런데 `JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려준다. 이름과 매개변수가 같고 반환 타입만 다른 두 메서드를 한 인터페이스가 함께 물려받을 수 없어, 저장 약속과 `JpaRepository`를 한 인터페이스로 합칠 수 없다.
-- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. 손으로 쓰는 클래스가 없다. 그러나 domain 인터페이스가 Spring Data에 의존하고, `findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다.
-- 대안 B: infrastructure에 `BrandJpaRepository : JpaRepository<Brand, Long>`과 `@Component BrandRepositoryImpl : BrandRepository`를 따로 둔다. Impl은 일을 모두 `BrandJpaRepository`에 맡기고 `findById`의 `Optional`만 `findByIdOrNull`로 nullable로 바꾼다. 템플릿의 `Example` 패키지가 쓰던 모양이다.
-- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모르고, nullable 반환과 `CrudRepository`의 이름을 둘 다 지킨다. 저장 약속이 `Optional`을 돌려주면 application이 매번 `orElseThrow`나 `orElse(null)`을 붙여야 한다.
-- 비용: 개념마다 위임만 하는 클래스가 하나 더 있고, 조회를 더할 때 저장 약속·`JpaRepository`·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다.
-- 다시 볼 조건: 위임 클래스가 셋을 넘어 되풀이가 지루해지거나, domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환을 `Optional`로 바꾼다.
+- 문제: domain의 저장 약속(`BrandRepository`, `ProductRepository`)을 Spring Data JPA로 구현하는 방법. 저장 약속의 메서드 이름은 Spring Data의 `CrudRepository`와 맞추고(`findById`), 없는 행은 `Optional`이 아니라 nullable(`Brand?`)로 돌려준다. 저장 약속이 `Optional`을 돌려주면 application이 매번 `orElseThrow`나 `orElse(null)`을 붙여야 한다.
+- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. `Repository`는 메서드를 하나도 선언하지 않는 표지라서 저장 약속이 `findById(id: Long): Brand?`를 그대로 선언할 수 있다. 그러나 domain 인터페이스가 Spring Data에 의존하고, 이름만으로 끝나지 않는 목록(`findAll(page, size): PageSlice<Brand>`)은 Spring Data가 만들지 못한다. 목록을 Spring Data에 맡기려면 저장 약속이 `Slice`·`Pageable`을 돌려받아 5.21을 뒤집거나, domain에 조각 인터페이스를 따로 두고 infrastructure가 구현해야 한다.
+- 대안 B: infrastructure에 Spring Data 인터페이스 `BrandJpaRepository`와 `@Component BrandRepositoryImpl : BrandRepository`를 따로 둔다. Impl은 이름만으로 끝나는 일을 `BrandJpaRepository`에 맡기고, Spring Data가 읽은 결과를 domain의 모양으로 옮긴다. 템플릿의 `Example` 패키지가 쓰던 모양이다.
+- 대안 C: infrastructure의 Spring Data 인터페이스가 표지와 저장 약속을 함께 상속한다(`BrandJpaRepository : Repository<Brand, Long>, BrandRepository`). domain은 Spring Data를 모른다. 그러나 Spring Data가 이름에서 만들지 못하는 `findAll(page, size)`에서 애플리케이션 시작이 실패한다. Impl을 남기면 `BrandRepository` 빈이 둘이 되어 타입으로 주입받지 못한다. Spring Data는 저장 약속을 구현한 `BrandRepositoryImpl`을 저장 약속의 패키지(`domain.brand`) 아래에서만 찾으므로, `infrastructure.brand`의 Impl은 조각 구현으로 잡히지 않는다. Impl을 `domain.brand`로 옮기면 모든 메서드가 그리로 가고, Impl이 `BrandJpaRepository`를 받으므로 순환 참조로 시작이 실패한다. 옮기는 일이 있는 개념마다 저장 약속을 이름으로 끝나는 쪽과 손으로 짜는 쪽으로 나눠야 한다.
+- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모른다. domain은 JPA·Hibernate 애노테이션만 들여오고 `org.springframework`는 하나도 들여오지 않는다. 일곱 Impl 중 넷은 위임에 그치지 않고 옮기는 일을 한다. 브랜드는 `Slice`를 `PageSlice`로 옮기고, 상품과 주문은 목록을 QueryDSL로 짜고, 좋아요는 좋아요가 없는 상품의 개수를 0으로 채운다. A와 C는 그 넷에 조각 인터페이스를 따로 요구하면서 위임만 하는 셋(사용자, 포인트 계좌, 포인트 이력)을 없앨 뿐이다.
+- Spring Data 인터페이스는 `JpaRepository`가 아니라 표지 `Repository<X, Long>`을 상속하고, Impl이 부르는 메서드만 선언한다(2026-09-28). 저장(`save`)은 일곱 모두, 단건 조회(`findById(id: Long): X?`)는 브랜드·상품·주문, 삭제(`delete`)는 좋아요, 존재 확인(`existsById`)은 사용자만 선언한다. `JpaRepository`가 물려주던 `deleteAll`, 쪽 없는 `findAll()`, `saveAndFlush`를 Impl이 부를 수 없다.
+  - 이름과 매개변수가 `CrudRepository`의 메서드와 같으면 Spring Data는 파생 조회를 만들지 않고 `SimpleJpaRepository`로 보낸다. 짝을 찾을 때 반환 타입은 따지지 않는다. 그래서 `findById`는 JPQL이 아니라 `EntityManager.find`이고, 영속성 컨텍스트에 있는 엔티티는 조회 없이 돌려주며 auto flush도 일으키지 않는다. `SimpleJpaRepository`가 돌려준 `Optional`은 Spring Data가 풀어 없으면 null이 된다.
+  - 반환 타입을 non-null `X`로 적으면 없을 때 `EmptyResultDataAccessException`을 던진다. 그래서 `X?`로 적는다.
+  - 공통 부모(`@NoRepositoryBean`)에 `save`·`findById`를 모으지 않는다. 줄이려던 물려받는 메서드가 작은 모양으로 돌아오고, 부르는 곳 없는 `findById`가 좋아요·사용자·포인트 이력에 생긴다. `save` 한 줄이 일곱 번 되풀이되는 것이 대가다.
+- 비용: 개념마다 Impl이 하나 더 있고, 조회를 더할 때 저장 약속·Spring Data 인터페이스·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다. `JpaRepository`나 `CrudRepository`를 다시 상속하는 인터페이스도 아직은 ArchUnit 규칙 없이 리뷰가 막는다.
+- 고침 (2026-09-28): 처음에는 문제를 "`JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려주므로 두 인터페이스를 합칠 수 없다"로 적고, A에는 "`findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다"고 적었다. 그 부딪힘은 `findById`를 선언한 `CrudRepository` 쪽의 것이고 표지 `Repository`에는 없다. 부딪힘이 사라진 뒤 B를 지키는 근거는 domain이 Spring Data를 모른다는 것과 Impl이 하는 옮기는 일이다. 다시 볼 조건에 있던 "위임 클래스가 셋을 넘으면"은 포인트·주문 조각에서 Impl이 일곱이 될 때까지 아무도 다시 보지 않았고, 위임만 하는 Impl은 지금도 셋이다. 그래서 지웠다.
+- 다시 볼 조건: domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환은 `X?` 그대로 둔다.
 
 ### 5.21 목록 조각의 타입과 자리
 
@@ -555,7 +561,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: C (2026-09-18, #9). 정렬에 쓰는 수와 응답에 싣는 수가 같은 쿼리에서 나오지 않지만, 그 대가로 저장소의 반환이 기준과 무관하게 `Product`로 남는다.
 - A와 C가 갈리는 자리는 반환 타입 하나뿐이다. "상품 저장소가 좋아요를 알게 된다"는 A를 물리치는 근거가 되지 못한다. C도 `QLike`를 들여와 `likes`를 조인하므로 이미 알고 있다. 상품 저장소가 좋아요를 모르는 선택지는 애초에 없었고, 5.28의 B를 물리친 근거 중 살아남은 것도 같은 절반이다. B와 갈린 자리는 인덱스다. `likes`의 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회는 인덱스가 없는데, 같은 조건에서 MySQL 8.0은 equi-join을 해시 조인으로 푼다. `likes`를 한 번 훑어 해시 테이블을 만들고 훑는 O(N + L)이고, B의 중첩 루프는 O(N × L)이다.
 - QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductRepositoryImpl.findAll`이 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 조각에서 처음 쓰인다.
-- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(`JpaRepository`의 저장·단건 조회와 `existsByBrandId`)만 남는다.
+- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(저장·단건 조회와 `existsByBrandId`)만 남는다.
 - `brandId`가 null이면 QueryDSL이 그 조건을 통째로 버리므로 `:brandId is null` 같은 관용구가 없다. 나가는 SQL에 죽은 조건이 남지 않는다.
 - `hasNext`는 저장소가 정한다. `size + 1`개를 읽어 넘치면 다음 조각이 있고 그 하나는 버린다. `PageSlice`의 KDoc이 이미 그렇게 적혀 있었고, Spring의 `Slice`가 하던 일을 그대로 옮긴 것이다. 총 개수를 세는 쿼리는 여전히 나가지 않는다(5.5).
 - `group by product, product.brand`를 Hibernate 6.6은 식별자로만 편다: `group by p1_0.id, b1_0.id`. MySQL 8.0은 `ONLY_FULL_GROUP_BY`가 켜져 있어도 이것을 받는다. 두 기본 키에서 나머지 컬럼의 함수 종속을 스스로 알아내기 때문이다. 브랜드를 fetch join으로 함께 읽으면서도 `group by`에 브랜드의 모든 컬럼을 적지 않아도 되는 까닭이다.
