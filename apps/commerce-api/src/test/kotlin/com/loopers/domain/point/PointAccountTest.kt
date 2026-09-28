@@ -15,7 +15,7 @@ class PointAccountTest {
     @Test
     fun `paying the entire balance returns a positive payment history with a zero resulting balance`() {
         val account = PointAccount(User())
-        account.charge(Money(3_000), chargeKey = "charge-001")
+        account.charge(Money(3_000))
         val order = order()
 
         val history = account.pay(Money(3_000), order)
@@ -25,7 +25,6 @@ class PointAccountTest {
             { assertThat(history.type.name).isEqualTo("PAYMENT") },
             { assertThat(history.amount).isEqualTo(Money(3_000)) },
             { assertThat(history.balanceAfter).isEqualTo(Money.ZERO) },
-            { assertThat(history.chargeKey).isNull() },
             { assertThat(history.order).isSameAs(order) },
         )
     }
@@ -33,7 +32,7 @@ class PointAccountTest {
     @Test
     fun `paying zero is rejected without changing the balance`() {
         val account = PointAccount(User())
-        account.charge(Money(3_000), chargeKey = "charge-001")
+        account.charge(Money(3_000))
 
         assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO, order()) }
 
@@ -43,7 +42,7 @@ class PointAccountTest {
     @Test
     fun `paying 4000 from a 3000 balance rejects insufficient points and preserves the balance`() {
         val account = PointAccount(User())
-        account.charge(Money(3_000), chargeKey = "charge-001")
+        account.charge(Money(3_000))
 
         assertThrows<InsufficientPointsException> { account.pay(Money(4_000), order()) }
 
@@ -61,23 +60,22 @@ class PointAccountTest {
     fun `charging adds the amount to the balance`() {
         val account = PointAccount(User())
 
-        account.charge(Money(10_000), chargeKey = "charge-001")
-        account.charge(Money(500), chargeKey = "charge-002")
+        account.charge(Money(10_000))
+        account.charge(Money(500))
 
         assertThat(account.balance).isEqualTo(Money(10_500))
     }
 
-    /** 충전은 성공한 CHARGE 이력을 함께 낳는다. 이력의 잔액은 그 충전 직후의 잔액이다(ADR 0004). */
+    /** 충전은 성공한 CHARGE 이력을 함께 낳는다. 이력의 잔액은 그 충전 직후의 잔액이다. */
     @Test
-    fun `charging returns a CHARGE history carrying the key, the amount, and the balance right after`() {
+    fun `charging returns a CHARGE history carrying the amount and the balance right after`() {
         val account = PointAccount(User())
-        account.charge(Money(10_000), chargeKey = "charge-001")
+        account.charge(Money(10_000))
 
-        val history = account.charge(Money(500), chargeKey = "charge-002")
+        val history = account.charge(Money(500))
 
         assertAll(
             { assertThat(history.type).isEqualTo(PointHistoryType.CHARGE) },
-            { assertThat(history.chargeKey).isEqualTo("charge-002") },
             { assertThat(history.amount).isEqualTo(Money(500)) },
             { assertThat(history.balanceAfter).isEqualTo(Money(10_500)) },
         )
@@ -86,9 +84,9 @@ class PointAccountTest {
     @Test
     fun `charging zero throws InvalidChargeAmountException and keeps the balance`() {
         val account = PointAccount(User())
-        account.charge(Money(1_000), chargeKey = "charge-001")
+        account.charge(Money(1_000))
 
-        val exception = assertThrows<InvalidChargeAmountException> { account.charge(Money.ZERO, chargeKey = "charge-002") }
+        val exception = assertThrows<InvalidChargeAmountException> { account.charge(Money.ZERO) }
 
         assertAll(
             { assertThat(exception.message).isEqualTo("충전액은 1원 이상이어야 합니다.") },
@@ -100,9 +98,9 @@ class PointAccountTest {
     @Test
     fun `charging past Long MAX_VALUE throws InvalidMoneyException and keeps the balance`() {
         val account = PointAccount(User())
-        account.charge(Money(Long.MAX_VALUE), chargeKey = "charge-001")
+        account.charge(Money(Long.MAX_VALUE))
 
-        assertThrows<InvalidMoneyException> { account.charge(Money(1), chargeKey = "charge-002") }
+        assertThrows<InvalidMoneyException> { account.charge(Money(1)) }
 
         assertThat(account.balance).isEqualTo(Money(Long.MAX_VALUE))
     }
@@ -112,14 +110,13 @@ class PointAccountTest {
     fun `the balance may exceed the product price cap`() {
         val account = PointAccount(User())
 
-        account.charge(Product.MAX_PRICE + Money(1), chargeKey = "charge-001")
+        account.charge(Product.MAX_PRICE + Money(1))
 
         assertThat(account.balance).isEqualTo(Money(1_000_000_001))
     }
 
     private fun order(): Order = Order(
         userId = 1,
-        creationKey = "create-1",
         products = listOf(OrderProduct(1, "상품", Money(3_000), 1)),
     )
 }

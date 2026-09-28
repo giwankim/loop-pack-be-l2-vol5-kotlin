@@ -38,7 +38,7 @@ class PointAccountRepositoryTest(
     @Test
     fun `findByUserId reads a saved account back with its balance after flush and clear`() {
         val user = userRepository.save(User())
-        val saved = pointAccountRepository.save(PointAccount(user).apply { charge(Money(10_000), chargeKey = "charge-001") })
+        val saved = pointAccountRepository.save(PointAccount(user).apply { charge(Money(10_000)) })
         entityManager.flushAndClear()
 
         val found = pointAccountRepository.findByUserId(user.id)

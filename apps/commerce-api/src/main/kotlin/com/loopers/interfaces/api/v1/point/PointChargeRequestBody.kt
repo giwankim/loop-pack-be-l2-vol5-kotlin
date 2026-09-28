@@ -11,15 +11,11 @@ import com.loopers.support.error.ErrorType
  * 가리는 정책은 HTTP의 것이라 Request에 Jackson 애노테이션을 두지 않으려는 것이다(설계 5.10, 12.3).
  *
  * [amount]가 null인 것은 값이 `null`이거나 빠진 것이다. 둘 다 400 `INVALID_POINT_ORDER_REQUEST`다.
- * 충전 키는 본문이 아니라 헤더에서 오므로 [toRequest]가 받아 Request를 만든다.
  */
 data class PointChargeRequestBody(
     @JsonDeserialize(using = StrictLongDeserializer::class)
     val amount: Long?,
 ) {
-    fun toRequest(chargeKey: String): PointChargeRequest =
-        PointChargeRequest(
-            chargeKey = chargeKey,
-            amount = amount ?: throw CoreException(ErrorType.INVALID_POINT_ORDER_REQUEST),
-        )
+    fun toRequest(): PointChargeRequest =
+        PointChargeRequest(amount = amount ?: throw CoreException(ErrorType.INVALID_POINT_ORDER_REQUEST))
 }

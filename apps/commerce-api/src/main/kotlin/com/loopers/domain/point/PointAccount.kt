@@ -52,12 +52,12 @@ class PointAccount(
      * 이력을 여기서 만드는 까닭은 "이력의 잔액은 그 충전 직후의 잔액"이라는 규칙을 계정이 지키게 하려는 것이다.
      * 저장은 부르는 쪽이 한다. 계정은 이력 컬렉션을 갖지 않는다(설계 7).
      */
-    fun charge(amount: Money, chargeKey: String): PointHistory {
+    fun charge(amount: Money): PointHistory {
         if (amount <= Money.ZERO) {
             throw InvalidChargeAmountException("충전액은 1원 이상이어야 합니다.")
         }
         balance = balance + amount
-        return PointHistory.charge(account = this, amount = amount, balanceAfter = balance, chargeKey = chargeKey)
+        return PointHistory.charge(account = this, amount = amount, balanceAfter = balance)
     }
 
     /** 결제하고 직후 잔액을 담은 PAYMENT 이력을 돌려준다. 주문과 재고의 변경·저장은 application이 조율한다. */

@@ -10,7 +10,6 @@ import com.loopers.application.product.ProductAdminUpdateRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.point.PointHistoryRepository
-import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.UserFixture
@@ -39,7 +38,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 
-/** Each request ends its own transaction; read-back and replay use fresh persistence contexts. */
+/** Each request ends its own transaction; read-back uses fresh persistence contexts. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(AdminSecurityConfig::class)
@@ -74,9 +73,9 @@ class OrderConfirmationApiMockMvcTest(
     }
 
     @Test
-    fun `charge create confirm and read back persist one payment with the original charge and draft replays`() {
+    fun `charge create confirm and read back persist one charge and one payment`() {
         balance(0)
-        val charge = charge(10_000).andExpect { status { isOk() } }.json()
+        charge(10_000).andExpect { status { isOk() } }
         val first = product("티셔츠", 1_000, 10)
         val second = product("바지", 2_000, 5)
         // Split lines must be paid and deducted using their summed quantity.
@@ -103,14 +102,12 @@ class OrderConfirmationApiMockMvcTest(
         assertStock(first, 5)
         assertStock(second, 4)
         assertThat(detail(orderId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
-        assertThat(confirm(orderId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
-        assertThat(create(items).andExpect { status { isCreated() } }.json()).isEqualTo(draft)
-        assertThat(charge(10_000).andExpect { status { isOk() } }.json()).isEqualTo(charge)
+        assertAlreadyConfirmed(orderId)
         balance(3_000)
         assertStock(first, 5)
         assertStock(second, 4)
         val histories = jdbc.queryForList(
-            "select type, amount, balance_after, charge_key, order_id from point_history order by id",
+            "select type, amount, balance_after, order_id from point_history order by id",
         )
         assertThat(histories).hasSize(2)
         assertThat(histories[0]).containsAllEntriesOf(
@@ -118,7 +115,6 @@ class OrderConfirmationApiMockMvcTest(
                 "type" to "CHARGE",
                 "amount" to 10_000L,
                 "balance_after" to 10_000L,
-                "charge_key" to "charge-1",
                 "order_id" to null,
             ),
         )
@@ -127,7 +123,6 @@ class OrderConfirmationApiMockMvcTest(
                 "type" to "PAYMENT",
                 "amount" to 7_000L,
                 "balance_after" to 3_000L,
-                "charge_key" to null,
                 "order_id" to orderId,
             ),
         )
@@ -188,7 +183,7 @@ class OrderConfirmationApiMockMvcTest(
         assertStock(first, 2)
         assertStock(second, 2)
         assertPaymentCount(0)
-        charge(1_000, "charge-2").andExpect { status { isOk() } }
+        charge(1_000).andExpect { status { isOk() } }
         confirm(orderId).andExpect {
             status { isOk() }
             jsonPath("$.data.paidAmount") { value(4_000) }
@@ -278,7 +273,7 @@ class OrderConfirmationApiMockMvcTest(
     }
 
     @Test
-    fun `requester and ownership checks precede both first confirmation and successful replay`() {
+    fun `requester and ownership checks precede both first confirmation and the already confirmed rejection`() {
         charge(1_000).andExpect { status { isOk() } }
         val productId = product()
         val draft = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()
@@ -306,20 +301,33 @@ class OrderConfirmationApiMockMvcTest(
         assertPaymentCount(0)
         val confirmed = confirm(orderId).andExpect { status { isOk() } }.json()
         assertAccessDenied()
+        assertAlreadyConfirmed(orderId)
         assertThat(detail(orderId).json()).isEqualTo(confirmed)
         balance(0)
         assertStock(productId, 9)
         assertPaymentCount(1)
     }
 
+    /** 다시 확정하면 차감 없이 거절된다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005). */
+    private fun assertAlreadyConfirmed(orderId: Long) {
+        confirm(orderId).andExpect {
+            status { isConflict() }
+            jsonPath("$.meta.errorCode") { value("ORDER_ALREADY_CONFIRMED") }
+        }
+    }
+
+    /**
+     * 확정할 수 있는지를 상품·재고·포인트보다 먼저 본다. 잔액을 다 쓰고 상품·브랜드가 삭제돼도 판매 불가나 잔액 부족이 아니라
+     * 이미 확정된 주문이라는 거절이 나온다(ADR 0005).
+     */
     @Test
-    fun `successful confirmation replays after later spending and product and brand deletion`() {
+    fun `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`() {
         charge(3_000).andExpect { status { isOk() } }
         val productId = product(stock = 3)
         val first = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()
         val firstId = first["data"]["orderId"].longValue()
         val confirmed = confirm(firstId).andExpect { status { isOk() } }.json()
-        val second = create(listOf(productId to 2), "create-2").andExpect { status { isCreated() } }.json()
+        val second = create(listOf(productId to 2)).andExpect { status { isCreated() } }.json()
         confirm(second["data"]["orderId"].longValue()).andExpect { status { isOk() } }
         balance(0)
         assertStock(productId, 0)
@@ -327,9 +335,8 @@ class OrderConfirmationApiMockMvcTest(
         brandService.delete(brandId)
 
         repeat(2) {
-            assertThat(confirm(firstId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
+            assertAlreadyConfirmed(firstId)
             assertThat(detail(firstId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
-            assertThat(create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()).isEqualTo(first)
         }
 
         balance(0)
@@ -421,8 +428,8 @@ class OrderConfirmationApiMockMvcTest(
     fun `MySQL enforces the payment order foreign key uniqueness and charge or payment history shape`() {
         charge(3_000).andExpect { status { isOk() } }
         val productId = product()
-        val orderIds = (1..2).map { index ->
-            val id = create(listOf(productId to 1), "create-$index").andExpect { status { isCreated() } }
+        val orderIds = List(2) {
+            val id = create(listOf(productId to 1)).andExpect { status { isCreated() } }
                 .json()["data"]["orderId"].longValue()
             confirm(id).andExpect { status { isOk() } }
             id
@@ -454,19 +461,17 @@ class OrderConfirmationApiMockMvcTest(
         }.isInstanceOf(DataIntegrityViolationException::class.java)
         assertThatThrownBy { jdbc.update("update point_history set order_id = ? where order_id = ?", orderIds[0], orderIds[1]) }
             .isInstanceOf(DataIntegrityViolationException::class.java)
-        listOf("charge_key = 'unexpected'", "order_id = null", "amount = 0", "balance_after = -1").forEach { update ->
+        listOf("order_id = null", "amount = 0", "balance_after = -1").forEach { update ->
             jdbc.assertCheckConstraintRejects("update point_history set $update where order_id = ?", orderIds[0])
         }
-        jdbc.assertCheckConstraintRejects("update point_history set charge_key = null where type = 'CHARGE'")
         // Use an existing order without a PAYMENT so the CHECK, rather than the unique key, is the rejecting constraint.
-        val draftId = create(listOf(productId to 1), "create-3").andExpect { status { isCreated() } }
+        val draftId = create(listOf(productId to 1)).andExpect { status { isCreated() } }
             .json()["data"]["orderId"].longValue()
         jdbc.assertCheckConstraintRejects("update point_history set order_id = ? where type = 'CHARGE'", draftId)
+        // Every rejected update left the rows as they were.
         assertPaymentCount(2)
-        charge(3_000).andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(3_000) }
-        }
+        assertThat(jdbc.queryForMap("select amount, balance_after from point_history where type = 'CHARGE'"))
+            .containsAllEntriesOf(mapOf("amount" to 3_000L, "balance_after" to 3_000L))
         balance(1_000)
     }
 
@@ -477,18 +482,16 @@ class OrderConfirmationApiMockMvcTest(
         }
     }
 
-    private fun charge(amount: Long, key: String = "charge-1"): ResultActionsDsl = mockMvc.post("/api/v1/points/charge") {
+    private fun charge(amount: Long): ResultActionsDsl = mockMvc.post("/api/v1/points/charge") {
         header(UserIdHeader.NAME, userId)
-        header(IdempotencyKeyHeader.NAME, key)
         contentType = MediaType.APPLICATION_JSON
         content = """{"amount":$amount}"""
     }
 
-    private fun create(items: List<Pair<Long, Int>>, key: String = "create-1"): ResultActionsDsl = mockMvc.post(
+    private fun create(items: List<Pair<Long, Int>>): ResultActionsDsl = mockMvc.post(
         "/api/v1/orders",
     ) {
         header(UserIdHeader.NAME, userId)
-        header(IdempotencyKeyHeader.NAME, key)
         contentType = MediaType.APPLICATION_JSON
         content = items.joinToString(prefix = """{"items":[""", postfix = "]}") { (id, quantity) ->
             """{"productId":$id,"quantity":$quantity}"""

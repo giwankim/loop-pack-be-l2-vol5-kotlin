@@ -13,7 +13,4 @@ class PointHistoryRepositoryImpl(
     private val pointHistoryJpaRepository: PointHistoryJpaRepository,
 ) : PointHistoryRepository {
     override fun save(history: PointHistory): PointHistory = pointHistoryJpaRepository.save(history)
-
-    override fun findByAccountIdAndChargeKey(accountId: Long, chargeKey: String): PointHistory? =
-        pointHistoryJpaRepository.findByAccountIdAndChargeKey(accountId, chargeKey)
 }

@@ -63,10 +63,10 @@ class OrderRepositoryTest(
         val owner = userRepository.save(User())
         val other = userRepository.save(User())
         val product = registerProduct()
-        val older = orderRepository.save(order(owner.id, "older", product))
-        val tied = orderRepository.save(order(owner.id, "tied", product))
-        val tiedLater = orderRepository.save(order(owner.id, "tied-later", product))
-        val foreign = orderRepository.save(order(other.id, "foreign", product))
+        val older = orderRepository.save(order(owner.id, product))
+        val tied = orderRepository.save(order(owner.id, product))
+        val tiedLater = orderRepository.save(order(owner.id, product))
+        val foreign = orderRepository.save(order(other.id, product))
         entityManager.flushAndClear()
         setCreatedAt(older.id, "2026-09-17 10:00:00.000000")
         setCreatedAt(tied.id, "2026-09-18 10:00:00.000000")
@@ -94,8 +94,8 @@ class OrderRepositoryTest(
         val shirt = registerProduct("티셔츠")
         val socks = registerProduct("양말")
         val pants = registerProduct("바지")
-        val first = orderRepository.save(order(owner.id, "first", shirt, socks, pants))
-        val second = orderRepository.save(order(owner.id, "second", pants, socks, shirt))
+        val first = orderRepository.save(order(owner.id, shirt, socks, pants))
+        val second = orderRepository.save(order(owner.id, pants, socks, shirt))
         entityManager.flushAndClear()
 
         val firstPage = orderRepository.findAll(owner.id, page = 0, size = 1)
@@ -120,8 +120,8 @@ class OrderRepositoryTest(
     @Test
     fun `findAll without a user gives the orders of every user latest first`() {
         val product = registerProduct()
-        val first = orderRepository.save(order(userRepository.save(User()).id, "first", product))
-        val second = orderRepository.save(order(userRepository.save(User()).id, "second", product))
+        val first = orderRepository.save(order(userRepository.save(User()).id, product))
+        val second = orderRepository.save(order(userRepository.save(User()).id, product))
         entityManager.flushAndClear()
 
         val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
@@ -137,8 +137,8 @@ class OrderRepositoryTest(
     fun `findAll puts the later created_at first even when its id is lower`() {
         val owner = userRepository.save(User())
         val product = registerProduct()
-        val recent = orderRepository.save(order(owner.id, "recent", product))
-        val backDated = orderRepository.save(order(owner.id, "back-dated", product))
+        val recent = orderRepository.save(order(owner.id, product))
+        val backDated = orderRepository.save(order(owner.id, product))
         entityManager.flushAndClear()
         setCreatedAt(backDated.id, "2026-09-17 00:00:00.000000")
         entityManager.flushAndClear()
@@ -158,8 +158,8 @@ class OrderRepositoryTest(
         val owner = userRepository.save(User())
         val shirt = registerProduct("티셔츠")
         val pants = registerProduct("바지")
-        orderRepository.save(order(owner.id, "two-items", pants, shirt))
-        orderRepository.save(order(owner.id, "one-item", shirt))
+        orderRepository.save(order(owner.id, pants, shirt))
+        orderRepository.save(order(owner.id, shirt))
         entityManager.flushAndClear()
 
         val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
@@ -188,8 +188,8 @@ class OrderRepositoryTest(
             .executeUpdate()
     }
 
-    private fun order(userId: Long, creationKey: String, vararg products: Product): Order =
-        Order(userId, creationKey, products.map { OrderProduct(it.id, it.name, it.price, 1) })
+    private fun order(userId: Long, vararg products: Product): Order =
+        Order(userId, products.map { OrderProduct(it.id, it.name, it.price, 1) })
 
     private fun registerProduct(name: String = "티셔츠"): Product {
         val brand = brandRepository.save(Brand("루퍼스"))

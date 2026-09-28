@@ -24,9 +24,6 @@ class OrderRepositoryImpl(
 
     override fun findByIdAndUserId(id: Long, userId: Long): Order? = jpaRepository.findByIdAndUserId(id, userId)
 
-    override fun findByUserIdAndCreationKey(userId: Long, creationKey: String): Order? =
-        jpaRepository.findByUserIdAndCreationKey(userId, creationKey)
-
     /**
      * 조각은 주문만 센다. 품목을 fetch join으로 함께 읽으면 `limit`이 주문이 아니라 조인된 행을 자르므로
      * 품목이 여럿인 주문에서 조각의 크기가 뒤틀린다(설계 9 조회, 14.1).

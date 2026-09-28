@@ -10,7 +10,6 @@ import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
-import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
@@ -74,8 +73,8 @@ class OrderAdminApiMockMvcTest(
         val pants = productId("바지", 2_000)
         val userId = userId()
         val otherUserId = userId()
-        val first = createOrder(userId, "create-1", items(pants to 1, shirt to 2))
-        val second = createOrder(otherUserId, "create-2", items(shirt to 1))
+        val first = createOrder(userId, items(pants to 1, shirt to 2))
+        val second = createOrder(otherUserId, items(shirt to 1))
 
         getOrders().andExpect {
             status { isOk() }
@@ -110,8 +109,8 @@ class OrderAdminApiMockMvcTest(
         val userId = userId()
         val otherUserId = userId()
         // 품목을 상품 ID의 거꾸로 보낸다. 응답이 보낸 차례 그대로면 품목의 차례를 확인한 것이 아니다.
-        val older = createOrder(userId, "create-1", items(socks to 1, shirt to 2))
-        val newer = createOrder(otherUserId, "create-2", items(shirt to 1))
+        val older = createOrder(userId, items(socks to 1, shirt to 2))
+        val newer = createOrder(otherUserId, items(shirt to 1))
 
         val listed = getOrders().andExpect {
             status { isOk() }
@@ -130,9 +129,9 @@ class OrderAdminApiMockMvcTest(
         val userId = userId()
         val otherUserId = userId()
         val quietUserId = userId()
-        val first = createOrder(userId, "create-1", items(productId to 1))
-        createOrder(otherUserId, "create-2", items(productId to 1))
-        val second = createOrder(userId, "create-3", items(productId to 2))
+        val first = createOrder(userId, items(productId to 1))
+        createOrder(otherUserId, items(productId to 1))
+        val second = createOrder(userId, items(productId to 2))
 
         getOrders("userId" to userId.toString()).andExpect {
             status { isOk() }
@@ -162,11 +161,11 @@ class OrderAdminApiMockMvcTest(
         val productId = productId()
         val userId = userId()
         val otherUserId = userId()
-        val oldest = createOrder(userId, "mine-1", items(productId to 1))
-        val foreignOlder = createOrder(otherUserId, "theirs-1", items(productId to 1))
-        val middle = createOrder(userId, "mine-2", items(productId to 1))
-        val foreignNewer = createOrder(otherUserId, "theirs-2", items(productId to 1))
-        val newest = createOrder(userId, "mine-3", items(productId to 1))
+        val oldest = createOrder(userId, items(productId to 1))
+        val foreignOlder = createOrder(otherUserId, items(productId to 1))
+        val middle = createOrder(userId, items(productId to 1))
+        val foreignNewer = createOrder(otherUserId, items(productId to 1))
+        val newest = createOrder(userId, items(productId to 1))
 
         val first = getOrders("userId" to userId.toString(), "size" to "2").andExpect {
             status { isOk() }
@@ -191,7 +190,7 @@ class OrderAdminApiMockMvcTest(
     fun `admin reads any user's order detail and a missing order is not found`() {
         val shirt = productId("티셔츠", 1_000)
         val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(shirt to 3))
+        val orderId = createOrder(userId, items(shirt to 3))
 
         getOrder(orderId).andExpect {
             status { isOk() }
@@ -205,7 +204,6 @@ class OrderAdminApiMockMvcTest(
             jsonPath("$.data.items[0].quantity") { value(3) }
             jsonPath("$.data.paidAmount") { doesNotExist() }
             jsonPath("$.data.confirmedAt") { doesNotExist() }
-            jsonPath("$.data.creationKey") { doesNotExist() }
         }
 
         getOrder(Long.MAX_VALUE).andExpect {
@@ -223,8 +221,8 @@ class OrderAdminApiMockMvcTest(
     fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {
         val productId = productId("티셔츠", 1_000)
         val userId = userId()
-        val draft = createOrder(userId, "create-1", items(productId to 1))
-        val confirmed = createOrder(userId, "create-2", items(productId to 2))
+        val draft = createOrder(userId, items(productId to 1))
+        val confirmed = createOrder(userId, items(productId to 2))
         jdbc.update(
             "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
@@ -254,7 +252,7 @@ class OrderAdminApiMockMvcTest(
     @Test
     fun `reading as a user or without identification returns 403`() {
         val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(productId() to 1))
+        val orderId = createOrder(userId, items(productId() to 1))
 
         listOf(USER, null).forEach { principal ->
             getOrders(principal = principal).andExpect { status { isForbidden() } }
@@ -285,7 +283,7 @@ class OrderAdminApiMockMvcTest(
     fun `orders created in the same microsecond are listed with the later id first`() {
         val productId = productId()
         val userId = userId()
-        val ids = (1..3).map { createOrder(userId, "create-$it", items(productId to it)) }
+        val ids = (1..3).map { createOrder(userId, items(productId to it)) }
         jdbc.update("update orders set created_at = '2026-09-18 00:00:00.000000'")
 
         getOrders("page" to "0", "size" to "2").andExpect {
@@ -307,8 +305,8 @@ class OrderAdminApiMockMvcTest(
     fun `a multi item order fills one page entry and keeps all of its items`() {
         val productIds = List(3) { productId("상품 $it", price = 1_000) }
         val userId = userId()
-        val many = createOrder(userId, "create-1", items(*productIds.map { it to 1 }.toTypedArray()))
-        val one = createOrder(userId, "create-2", items(productIds.first() to 1))
+        val many = createOrder(userId, items(*productIds.map { it to 1 }.toTypedArray()))
+        val one = createOrder(userId, items(productIds.first() to 1))
 
         getOrders("size" to "1").andExpect {
             status { isOk() }
@@ -331,7 +329,7 @@ class OrderAdminApiMockMvcTest(
     fun `catalog edits and soft deletion leave the stored order readable`() {
         val productId = productId("티셔츠", 1_000)
         val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(productId to 2))
+        val orderId = createOrder(userId, items(productId to 2))
         val before = getOrder(orderId).andExpect { status { isOk() } }.json()
 
         productService.update(productId, ProductAdminUpdateRequest("새 이름", 9_000))
@@ -357,10 +355,9 @@ class OrderAdminApiMockMvcTest(
         products.joinToString { (productId, quantity) -> """{"productId":$productId,"quantity":$quantity}""" }
 
     /** 고객 API로 주문을 만들고 그 식별자를 준다. 관리자 조회가 보는 것이 실제로 저장된 주문이어야 한다. */
-    private fun createOrder(userId: Long, creationKey: String, items: String): Long =
+    private fun createOrder(userId: Long, items: String): Long =
         mockMvc.post("/api/v1/orders") {
             header(UserIdHeader.NAME, userId)
-            header(IdempotencyKeyHeader.NAME, creationKey)
             contentType = MediaType.APPLICATION_JSON
             content = """{"items":[$items]}"""
         }.andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()

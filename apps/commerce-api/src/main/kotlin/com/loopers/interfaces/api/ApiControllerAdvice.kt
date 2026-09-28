@@ -3,6 +3,7 @@ package com.loopers.interfaces.api
 import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.exc.InvalidFormatException
 import com.fasterxml.jackson.databind.exc.MismatchedInputException
+import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.point.InsufficientPointsException
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
@@ -34,6 +35,12 @@ class ApiControllerAdvice {
     fun handleInsufficientPoints(e: InsufficientPointsException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.INSUFFICIENT_POINTS)
+    }
+
+    @ExceptionHandler
+    fun handleOrderAlreadyConfirmed(e: OrderAlreadyConfirmedException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.ORDER_ALREADY_CONFIRMED)
     }
 
     @ExceptionHandler

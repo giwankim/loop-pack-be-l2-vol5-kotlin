@@ -19,21 +19,12 @@ fun EntityManager.balanceOf(accountId: Long): Long =
 fun EntityManager.countPointHistories(accountId: Long): Long =
     countRows("select count(*) from point_history where point_account_id = :accountId", "accountId" to accountId)
 
-/** 한 계정의 CHARGE 이력을 충전 키로 센다. 키 비교는 열의 collation을 따르므로 대소문자를 구분한다. */
-fun EntityManager.countPointHistories(accountId: Long, chargeKey: String): Long =
-    countRows(
-        "select count(*) from point_history where point_account_id = :accountId and charge_key = :chargeKey",
-        "accountId" to accountId,
-        "chargeKey" to chargeKey,
-    )
-
-/** CHARGE 이력 한 행의 종류·금액·직후 잔액. 없으면 예외다. */
-fun EntityManager.pointHistoryRow(accountId: Long, chargeKey: String): List<Any?> {
+/** 한 계정에서 가장 나중에 남은 이력 한 행의 종류·금액·직후 잔액. 없으면 예외다. */
+fun EntityManager.lastPointHistoryRow(accountId: Long): List<Any?> {
     val row = createNativeQuery(
-        "select type, amount, balance_after from point_history where point_account_id = :accountId and charge_key = :chargeKey",
+        "select type, amount, balance_after from point_history where point_account_id = :accountId order by id desc limit 1",
     )
         .setParameter("accountId", accountId)
-        .setParameter("chargeKey", chargeKey)
         .singleResult as Array<*>
     return listOf(row[0], (row[1] as Number).toLong(), (row[2] as Number).toLong())
 }

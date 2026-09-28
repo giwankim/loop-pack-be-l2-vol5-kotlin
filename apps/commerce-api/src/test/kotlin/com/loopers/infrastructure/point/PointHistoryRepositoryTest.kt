@@ -11,7 +11,6 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.infrastructure.user.UserRepositoryImpl
 import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.utils.countPointHistories
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -27,8 +26,7 @@ import org.springframework.dao.DataIntegrityViolationException
  * [PointHistoryRepositoryImpl]이 [PointHistoryRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 설정과 패키지 위치의 이유는
  * [com.loopers.infrastructure.brand.BrandRepositoryTest]와 같다.
  *
- * 충전 키의 대소문자 구분은 열의 collation이 정하는 것이라 애플리케이션 코드로는 볼 수 없다. 조회와 유일 제약이
- * 같은 비교를 쓰는지, 계정을 향한 외래 키가 있는지를 여기서 본다(설계 5.8, 12.2).
+ * 저장한 이력이 열마다 그대로 읽히는지, 계정을 향한 외래 키가 있는지를 여기서 본다(설계 12.1).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -46,12 +44,12 @@ class PointHistoryRepositoryTest(
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `findByAccountIdAndChargeKey reads a saved charge back after flush and clear`() {
+    fun `a saved charge reads back after flush and clear`() {
         val account = registerAccount()
-        val saved = pointHistoryRepository.save(account.charge(Money(10_000), chargeKey = "charge-001"))
+        val saved = pointHistoryRepository.save(account.charge(Money(10_000)))
         entityManager.flushAndClear()
 
-        val found = pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "charge-001")
+        val found = entityManager.find(PointHistory::class.java, saved.id)
 
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
@@ -59,70 +57,8 @@ class PointHistoryRepositoryTest(
             { assertThat(found?.type).isEqualTo(PointHistoryType.CHARGE) },
             { assertThat(found?.amount).isEqualTo(Money(10_000)) },
             { assertThat(found?.balanceAfter).isEqualTo(Money(10_000)) },
-            { assertThat(found?.chargeKey).isEqualTo("charge-001") },
             { assertThat(found?.account?.id).isEqualTo(account.id) },
             { assertThat(found?.createdAt).isNotNull() },
-        )
-    }
-
-    @Test
-    fun `findByAccountIdAndChargeKey is null for another account's key and for an unknown key`() {
-        val account = registerAccount()
-        val other = registerAccount()
-        pointHistoryRepository.save(account.charge(Money(10_000), chargeKey = "charge-001"))
-        entityManager.flushAndClear()
-
-        assertAll(
-            { assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(other.id, "charge-001")).isNull() },
-            { assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "charge-002")).isNull() },
-        )
-    }
-
-    /** 키는 대소문자를 구분한다. 서버 기본 collation은 무시하므로 열이 스스로 정해야 한다(설계 5.8). */
-    @Test
-    fun `keys that differ only in case are different keys for both lookup and uniqueness`() {
-        val account = registerAccount()
-        val upper = pointHistoryRepository.save(account.charge(Money(1_000), chargeKey = "Charge-A"))
-        val lower = pointHistoryRepository.save(account.charge(Money(2_000), chargeKey = "charge-a"))
-        entityManager.flushAndClear()
-
-        assertAll(
-            { assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "Charge-A")?.id).isEqualTo(upper.id) },
-            { assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "charge-a")?.id).isEqualTo(lower.id) },
-            { assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "CHARGE-A")).isNull() },
-            { assertThat(entityManager.countPointHistories(account.id, "Charge-A")).isOne() },
-            { assertThat(entityManager.countPointHistories(account.id)).isEqualTo(2L) },
-        )
-    }
-
-    /** 식별자가 IDENTITY라 저장이 곧 INSERT이므로 같은 계정의 같은 키는 flush를 기다리지 않고 바로 거절된다. */
-    @Test
-    fun `saving the same key twice for one account violates the unique constraint`() {
-        val account = registerAccount()
-        pointHistoryRepository.save(account.charge(Money(1_000), chargeKey = "charge-001"))
-
-        assertThrows<DataIntegrityViolationException> {
-            pointHistoryRepository.save(account.charge(Money(1_000), chargeKey = "charge-001"))
-        }
-    }
-
-    @Test
-    fun `different accounts may use the same key`() {
-        val account = registerAccount()
-        val other = registerAccount()
-        pointHistoryRepository.save(account.charge(Money(1_000), chargeKey = "charge-001"))
-        pointHistoryRepository.save(other.charge(Money(2_000), chargeKey = "charge-001"))
-        entityManager.flushAndClear()
-
-        assertAll(
-            {
-                assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(account.id, "charge-001")?.amount)
-                    .isEqualTo(Money(1_000))
-            },
-            {
-                assertThat(pointHistoryRepository.findByAccountIdAndChargeKey(other.id, "charge-001")?.amount)
-                    .isEqualTo(Money(2_000))
-            },
         )
     }
 
@@ -133,14 +69,13 @@ class PointHistoryRepositoryTest(
     @Test
     fun `saving a history for an account that does not exist violates the foreign key`() {
         val missingAccount = entityManager.getReference(PointAccount::class.java, 999L)
-        val history =
-            PointHistory.charge(missingAccount, amount = Money(1_000), balanceAfter = Money(1_000), chargeKey = "charge-001")
+        val history = PointHistory.charge(missingAccount, amount = Money(1_000), balanceAfter = Money(1_000))
 
         assertThrows<DataIntegrityViolationException> { pointHistoryRepository.save(history) }
     }
 
     @Test
-    fun `the account foreign key, the case-sensitive key column, and the unique key exist in the database`() {
+    fun `the account foreign key exists in the database`() {
         val foreignKey = entityManager
             .createNativeQuery(
                 "select referenced_table_name, referenced_column_name from information_schema.key_column_usage " +
@@ -148,25 +83,10 @@ class PointHistoryRepositoryTest(
                     "and constraint_name = 'fk_point_history_point_account'",
             )
             .singleResult as Array<*>
-        val collation = entityManager
-            .createNativeQuery(
-                "select collation_name from information_schema.columns where table_schema = database() " +
-                    "and table_name = 'point_history' and column_name = 'charge_key'",
-            )
-            .singleResult
-        val uniqueColumns = entityManager
-            .createNativeQuery(
-                "select column_name from information_schema.statistics where table_schema = database() " +
-                    "and table_name = 'point_history' and index_name = 'uk_point_history_point_account_id_charge_key' " +
-                    "and non_unique = 0 order by seq_in_index",
-            )
-            .resultList
 
         assertAll(
             { assertThat(foreignKey[0]).isEqualTo("point_account") },
             { assertThat(foreignKey[1]).isEqualTo("id") },
-            { assertThat(collation).isEqualTo("utf8mb4_bin") },
-            { assertThat(uniqueColumns).containsExactly("point_account_id", "charge_key") },
         )
     }
 

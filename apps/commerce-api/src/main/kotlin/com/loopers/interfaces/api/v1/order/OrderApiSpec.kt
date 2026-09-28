@@ -3,7 +3,6 @@ package com.loopers.interfaces.api.v1.order
 import com.loopers.application.order.OrderCreateRequest
 import com.loopers.application.order.OrderListRequest
 import com.loopers.interfaces.api.ApiResponse
-import com.loopers.interfaces.api.IdempotencyKeyHeader
 import com.loopers.interfaces.api.PageResponse
 import com.loopers.interfaces.api.UserIdHeader
 import io.swagger.v3.oas.annotations.Operation
@@ -17,18 +16,11 @@ interface OrderApiSpec {
         summary = "확정 전 주문 생성",
         description = "정수 productId·quantity를 가진 items 배열(1~100개)을 받습니다. 중복 상품의 수량을 합산하며 " +
             "서버의 이름·단가로 DRAFT를 저장합니다. 재고·포인트를 차감하지 않습니다. " +
-            "같은 키와 같은 상품별 수량은 최초 DRAFT와 201을 재생하고, 다른 의도는 409입니다.",
+            "요청마다 새 주문이므로 같은 요청을 다시 보내면 DRAFT가 하나 더 생깁니다.",
     )
     fun create(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
         userId: Long?,
-        @Parameter(
-            name = IdempotencyKeyHeader.NAME,
-            `in` = ParameterIn.HEADER,
-            required = true,
-            description = "1~128자의 ASCII 영문·숫자·하이픈·밑줄. 대소문자를 구분합니다.",
-        )
-        creationKey: String?,
         request: OrderCreateRequest,
     ): ApiResponse<OrderResponse>
 
@@ -54,7 +46,7 @@ interface OrderApiSpec {
     @Operation(
         summary = "내 주문 확정",
         description = "생성 당시 금액으로 재고와 포인트를 함께 차감합니다. 부족하면 409이며 같은 주문으로 재시도할 수 있습니다. " +
-            "이미 확정된 주문은 최초 성공 결과를 반환합니다. 별도 Idempotency-Key는 필요하지 않습니다. " +
+            "이미 확정된 주문은 차감 없이 409(ORDER_ALREADY_CONFIRMED)이며 확정 결과는 상세 조회로 읽습니다. " +
             "없거나 다른 사용자의 주문은 404입니다.",
     )
     fun confirm(

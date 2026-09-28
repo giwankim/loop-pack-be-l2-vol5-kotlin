@@ -28,23 +28,13 @@ class PointService(
 ) {
     /**
      * 충전한다. 잔액 변경과 그 충전의 CHARGE 이력을 한 트랜잭션으로 저장한다(설계 5.5).
-     *
-     * 같은 사용자의 같은 충전 키로 성공한 기록이 있으면 현재 잔액 대신 그때의 결과를 돌려준다. 충전액이 다르면
-     * 다른 의도이므로 거절한다. 실패한 요청은 기록을 남기지 않으므로 키를 쓰지 않는다(설계 5.8, ADR 0004).
-     * 요청자 확인과 입력 검사가 재요청보다 먼저다. 성공 기록을 다른 사용자에게 내주지 않는다.
+     * 요청마다 새 충전이다. 같은 충전액을 다시 보내면 다시 충전된다(ADR 0005).
      */
     @Transactional
     fun charge(userId: Long, @Valid request: PointChargeRequest): PointAccountInfo {
         checkUserExists(userId)
         val account = findAccount(userId)
-        pointHistoryRepository.findByAccountIdAndChargeKey(account.id, request.chargeKey)?.let { first ->
-            if (first.amount != Money(request.amount)) {
-                throw CoreException(ErrorType.IDEMPOTENCY_KEY_CONFLICT)
-            }
-            return PointAccountInfo.replayOf(first)
-        }
-
-        val history = account.charge(Money(request.amount), chargeKey = request.chargeKey)
+        val history = account.charge(Money(request.amount))
         pointHistoryRepository.save(history)
         return PointAccountInfo.from(account)
     }

@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional
  * [com.loopers.application.like.LikeServiceTest]와 같다.
  *
  * 생성과 상세는 [com.loopers.interfaces.api.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
- * 여기서는 조회만 본다. 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.order.OrderRepositoryTest]가 SQL로 고정한다.
+ * 여기서는 조회와, 생성이 요청마다 새 주문이라는 계약만 본다(ADR 0005). 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.order.OrderRepositoryTest]가 SQL로 고정한다.
  *
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과
  * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).
@@ -55,7 +55,7 @@ class OrderServiceTest(
         val shirt = registerProduct("티셔츠", 1_000)
         val socks = registerProduct("양말", 2_000)
         // 품목을 상품 ID의 거꾸로 넣는다. 그대로 실리면 차례를 확인한 것이 아니다.
-        orderRepository.save(order(owner.id, "only", listOf(socks to 1, shirt to 2)))
+        orderRepository.save(order(owner.id, listOf(socks to 1, shirt to 2)))
         entityManager.flushAndClear()
 
         val slice = orderService.findAll(owner.id, OrderListRequest())
@@ -75,6 +75,26 @@ class OrderServiceTest(
             { assertThat(listed.items.map { it.unitPrice }).containsExactly(1_000L, 2_000L) },
             { assertThat(listed.items.map { it.quantity }).containsExactly(2, 1) },
             { assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L) },
+        )
+    }
+
+    /** 요청마다 새 주문이다. 같은 품목을 두 번 보내면 확정 전 주문이 둘 남는다(ADR 0005). */
+    @Test
+    fun `creating the same order twice leaves two drafts`() {
+        val owner = userRepository.save(User())
+        val product = registerProduct()
+        entityManager.flushAndClear()
+        val request = OrderCreateRequest(listOf(OrderCreateRequest.Item(product.id, 1)))
+
+        val first = orderService.create(owner.id, request)
+        val second = orderService.create(owner.id, request)
+        entityManager.flushAndClear()
+
+        val listed = orderService.findAll(owner.id, OrderListRequest()).items
+        assertAll(
+            { assertThat(second.orderId).isNotEqualTo(first.orderId) },
+            { assertThat(listed.map { it.orderId }).containsExactly(second.orderId, first.orderId) },
+            { assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT) },
         )
     }
 
@@ -116,7 +136,7 @@ class OrderServiceTest(
         val owner = userRepository.save(User())
         val product = registerProduct()
         val size = OrderListRequest.MAX_SIZE
-        List(size) { orderRepository.save(order(owner.id, "order-$it", listOf(product to 1))) }
+        List(size) { orderRepository.save(order(owner.id, listOf(product to 1))) }
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
         statistics.isStatisticsEnabled = true
@@ -141,8 +161,8 @@ class OrderServiceTest(
         val mine = userRepository.save(User()).id
         val theirs = userRepository.save(User()).id
         val product = registerProduct()
-        val first = orderRepository.save(order(mine, "mine", listOf(product to 1))).id
-        val second = orderRepository.save(order(theirs, "theirs", listOf(product to 1))).id
+        val first = orderRepository.save(order(mine, listOf(product to 1))).id
+        val second = orderRepository.save(order(theirs, listOf(product to 1))).id
         entityManager.flushAndClear()
 
         val slice = orderService.findAll(OrderAdminListRequest())
@@ -164,8 +184,8 @@ class OrderServiceTest(
     fun `the admin list reads the page of orders and all of their items in two queries`() {
         val owner = userRepository.save(User()).id
         val products = List(3) { registerProduct("상품 $it") }
-        orderRepository.save(order(owner, "three-items", products.map { it to 1 }))
-        orderRepository.save(order(owner, "one-item", listOf(products.first() to 2)))
+        orderRepository.save(order(owner, products.map { it to 1 }))
+        orderRepository.save(order(owner, listOf(products.first() to 2)))
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
         statistics.isStatisticsEnabled = true
@@ -207,7 +227,7 @@ class OrderServiceTest(
         val owner = userRepository.save(User()).id
         val shirt = registerProduct("티셔츠", 1_000)
         val pants = registerProduct("바지", 2_000)
-        val saved = orderRepository.save(order(owner, "two-items", listOf(pants to 1, shirt to 2)))
+        val saved = orderRepository.save(order(owner, listOf(pants to 1, shirt to 2)))
         entityManager.flushAndClear()
 
         val info = orderService.findForAdmin(saved.id)
@@ -240,11 +260,11 @@ class OrderServiceTest(
         assertThrows<ConstraintViolationException> { orderService.findAll(request) }
             .constraintViolations.map { it.message }
 
-    private fun order(userId: Long, creationKey: String, lines: List<Pair<Product, Int>>): Order {
+    private fun order(userId: Long, lines: List<Pair<Product, Int>>): Order {
         val products = lines.map { (product, quantity) ->
             OrderProduct(product.id, product.name, product.price, quantity)
         }
-        return Order(userId, creationKey, products)
+        return Order(userId, products)
     }
 
     private fun registerProduct(name: String = "티셔츠", price: Long = 1_000): Product {

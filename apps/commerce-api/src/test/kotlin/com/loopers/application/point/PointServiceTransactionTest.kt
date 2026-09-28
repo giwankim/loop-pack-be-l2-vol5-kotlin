@@ -44,18 +44,18 @@ class PointServiceTransactionTest(
     fun `a charge commits the balance and the history together so a new transaction sees both`() {
         val user = userFixture.registerUser()
 
-        pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 10_000))
+        pointService.charge(user.id, PointChargeRequest(amount = 10_000))
         val account = pointAccountRepository.findByUserId(user.id)!!
 
         assertAll(
             { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(account.id, "charge-001")).isOne() },
+            { assertThat(entityManager.countPointHistories(account.id)).isOne() },
         )
     }
 
-    /** 이력의 INSERT까지 나간 뒤 실패해도 잔액과 이력이 함께 되돌아가고, 그 키로 다시 충전할 수 있다. */
+    /** 이력의 INSERT까지 나간 뒤 실패해도 잔액과 이력이 함께 되돌아가고, 다시 충전할 수 있다. */
     @Test
-    fun `a failure after the history insert rolls back the balance and the history and leaves the key reusable`() {
+    fun `a failure after the history insert rolls back the balance and the history and a retry charges once`() {
         val user = userFixture.registerUser()
         every { pointHistoryRepository.save(any()) } answers {
             callOriginal()
@@ -63,21 +63,21 @@ class PointServiceTransactionTest(
         }
 
         assertThrows<IllegalStateException> {
-            pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 10_000))
+            pointService.charge(user.id, PointChargeRequest(amount = 10_000))
         }
         val account = pointAccountRepository.findByUserId(user.id)!!
         val balanceAfterFailure = entityManager.balanceOf(account.id)
         val historiesAfterFailure = entityManager.countPointHistories(account.id)
 
         every { pointHistoryRepository.save(any()) } answers { callOriginal() }
-        val retried = pointService.charge(user.id, PointChargeRequest(chargeKey = "charge-001", amount = 10_000))
+        val retried = pointService.charge(user.id, PointChargeRequest(amount = 10_000))
 
         assertAll(
             { assertThat(balanceAfterFailure).isZero() },
             { assertThat(historiesAfterFailure).isZero() },
             { assertThat(retried.balance).isEqualTo(10_000L) },
             { assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L) },
-            { assertThat(entityManager.countPointHistories(account.id, "charge-001")).isOne() },
+            { assertThat(entityManager.countPointHistories(account.id)).isOne() },
         )
     }
 }
