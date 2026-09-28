@@ -12,12 +12,11 @@ import com.querydsl.core.types.OrderSpecifier
 import com.querydsl.jpa.impl.JPAQuery
 import com.querydsl.jpa.impl.JPAQueryFactory
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
 /**
  * [ProductRepository]의 구현. 메서드 이름만으로 끝나는 일과 좋아요 목록은 [ProductJpaRepository]에 맡기고, 상품 목록만 QueryDSL로 짠다.
- * 두 인터페이스를 하나로 합치지 않는 이유는 [com.loopers.infrastructure.brand.BrandRepositoryImpl]과 같다.
+ * 두 인터페이스를 하나로 합치지 않는다(설계 5.20).
  */
 @Component
 class ProductRepositoryImpl(
@@ -26,7 +25,7 @@ class ProductRepositoryImpl(
 ) : ProductRepository {
     override fun save(product: Product): Product = productJpaRepository.save(product)
 
-    override fun findById(id: Long): Product? = productJpaRepository.findByIdOrNull(id)
+    override fun findById(id: Long): Product? = productJpaRepository.findById(id)
 
     /**
      * 브랜드 필터도 정렬 기준도 조각마다 달라지므로 목록은 QueryDSL로 짠다(설계 5.32).

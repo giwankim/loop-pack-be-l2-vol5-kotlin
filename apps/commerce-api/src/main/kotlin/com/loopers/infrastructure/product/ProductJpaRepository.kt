@@ -4,8 +4,8 @@ import com.loopers.domain.product.Product
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.jpa.repository.EntityGraph
-import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.Repository
 
 /**
  * [Product]의 Spring Data JPA 저장소. [ProductRepositoryImpl]이 메서드 이름만으로 끝나는 일과 좋아요 목록을 이것에 맡긴다.
@@ -14,7 +14,15 @@ import org.springframework.data.jpa.repository.Query
  * 상품 목록은 여기 없다. 브랜드 필터와 정렬 기준이 조각마다 달라 [ProductRepositoryImpl]이 QueryDSL로 짠다(설계 5.32).
  * 좋아요 목록은 차례가 하나뿐이라 여기 남는다.
  */
-interface ProductJpaRepository : JpaRepository<Product, Long> {
+interface ProductJpaRepository : Repository<Product, Long> {
+    fun save(product: Product): Product
+
+    /**
+     * `CrudRepository.findById`와 이름·매개변수가 같아 `EntityManager.find`로 간다.
+     * 없으면 null이다. 반환을 non-null로 적으면 없을 때 예외를 던진다(설계 5.20).
+     */
+    fun findById(id: Long): Product?
+
     /**
      * [userId] 사용자가 좋아요를 누른 상품. 차례가 좋아요의 값으로 정해지므로 [Pageable]의 [org.springframework.data.domain.Sort]가
      * 아니라 쿼리가 직접 적는다. 상품이 조회의 root라 [Product]의 `@SQLRestriction`이 붙고 삭제된 상품은 빠진다.
