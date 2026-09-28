@@ -16,7 +16,7 @@ date: 2026-09-18
 ## 생성과 확정의 차이
 
 - DRAFT 생성은 상품의 유효성을 확인하고 스냅샷을 읽은 뒤 Order와 그 구성원인 OrderLineItem을 저장한다. 품목이 여러 개이거나 여러 테이블에 저장되더라도 변경되는 도메인 애그리거트는 Order 하나다. 상품·재고·포인트 계정은 변경하지 않는다.
-- 확정은 Order, PointAccount, 주문에 포함된 각 Product를 변경하고 성공한 포인트 결제 이력을 저장한다. 하나라도 실패하면 해당 확정 시도의 변경을 모두 되돌리고 기존 DRAFT를 유지한다.
+- 확정은 Order, PointAccount, 주문에 포함된 각 Product를 변경하고 성공한 포인트 결제 이력을 저장한다. 하나라도 실패하면 해당 확정 시도의 변경을 모두 되돌리고 기존 DRAFT를 유지한다. 2026-09-28 [ADR 0006](./0006-no-point-history-until-a-reader.md)으로 결제 이력을 걷어 냈다. 결제의 기록은 확정된 주문이며, 한 트랜잭션으로 묶는 결정은 그대로다.
 - 충전·생성의 멱등성 데이터는 같은 작업의 성공 여부와 함께 저장한다. Q22에서 CHARGE 이력에 충전 키·충전액·당시 잔액을, Order에 생성 키와 불변 스냅샷을 보관하기로 했다. 별도 범용 응답 저장 테이블은 두지 않는다([ADR 0004](./0004-replay-success-from-business-records.md)). 2026-09-28 [ADR 0005](./0005-no-request-idempotency-until-a-retrying-caller.md)로 멱등성 데이터를 걷어 냈다.
 
 ## 이번 검증 범위

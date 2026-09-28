@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 표기와 예외 규칙은 [카탈로그 도메인](./catalog.md)과 같다. 구조와 API, 결정은 [`docs/design/points-orders.md`](../design/points-orders.md)에 있다.
 
-2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13), 원자적 주문 확정과 결제 이력(#14), 내 주문 목록 조회(#15), 관리자 조회(#16)까지 구현되었다. 2026-09-28 충전·주문 생성의 `Idempotency-Key`와 성공 재생을 걷어 냈다. 요청마다 새 충전·새 주문이며, 이미 확정된 주문의 재확정은 거절한다([ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md), 설계 17).
+2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13), 원자적 주문 확정과 결제 이력(#14), 내 주문 목록 조회(#15), 관리자 조회(#16)까지 구현되었다. 2026-09-28 충전·주문 생성의 `Idempotency-Key`와 성공 재생을 걷어 냈다. 요청마다 새 충전·새 주문이며, 이미 확정된 주문의 재확정은 거절한다([ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md), 설계 17). 같은 날 포인트 이력도 걷어 냈다. 충전은 잔액만 바꾸고, 결제의 기록은 확정된 주문이다([ADR 0006](../adr/0006-no-point-history-until-a-reader.md), 설계 18).
 
 ## 포인트 계정 (PointAccount)
 
@@ -30,8 +30,8 @@
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `PointAccount(user)` | 그 사용자의 0원 계정을 만든다 | 없음 |
-| `charge(amount)` | 잔액에 `amount`를 더하고 그 충전의 CHARGE `PointHistory`를 돌려준다. 저장은 부르는 쪽이 한다 | `InvalidChargeAmountException`, `InvalidMoneyException` |
-| `pay(amount, order)` | 양의 결제액을 차감하고 주문 참조·직후 잔액을 담은 PAYMENT `PointHistory`를 돌려준다. 주문은 변경하지 않는다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
+| `charge(amount)` | 잔액에 `amount`를 더한다 | `InvalidChargeAmountException`, `InvalidMoneyException` |
+| `pay(amount)` | 양의 결제액을 차감한다. 어느 주문의 결제인지는 모른다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
 
 ### 저장 약속
 
@@ -39,35 +39,8 @@
 
 ### 협력
 
-- 충전: `PointService.charge` → 요청자 존재 확인 → 계정 조회 → `account.charge(amount)` → 돌려받은 이력 저장. 잔액 변경과 이력 저장은 한 트랜잭션이다(설계 5.5). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
+- 충전: `PointService.charge` → 요청자 존재 확인 → 계정 조회 → `account.charge(amount)`. `point_account` 한 행만 바뀐다(설계 18.3). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
 - 잔액 조회: `PointService.findBalance` → 요청자 존재 확인 → 계정 조회 → 현재 잔액.
-
-## 포인트 이력 (PointHistory)
-
-`BaseEntity`를 상속한다. 남긴 뒤 바꾸지 않는 기록이며 별도 애그리거트가 아니다. `PointAccount.charge`·`pay`가 만든다(설계 12.6, 15).
-
-### 속성
-
-| 이름 | 타입 | 뜻 |
-| --- | --- | --- |
-| `id` | `Long` | 식별자 |
-| `account` | `PointAccount` | 잔액이 바뀐 계정. `@ManyToOne(fetch = LAZY)`, 읽기용. DB 외래 키의 자리 |
-| `type` | `PointHistoryType` | 성공의 종류. `CHARGE` 또는 `PAYMENT` |
-| `amount` | `Money` | 잔액을 바꾼 금액. 양수 |
-| `balanceAfter` | `Money` | 이 기록 직후의 잔액. 뒤에 잔액이 바뀌어도 그대로다 |
-| `order` | `Order?` | PAYMENT의 주문. 읽기용 LAZY 연관이며 주문당 유일하고 물리 FK를 가진다. CHARGE에는 없다 |
-
-테이블 `point_history`. `point_account`로 외래 키(`fk_point_history_point_account`).
-
-### 규칙
-
-- 성공해서 잔액이 바뀐 기록만 남긴다. 실패한 시도는 기록을 남기지 않는다(설계 5.4). 같은 충전을 다시 요청하면 새 충전이므로 기록도 하나 더 남는다.
-- 이력의 `balanceAfter`는 그 충전·결제 직후의 계정 잔액과 같다. 계정이 이력을 만들며 지킨다.
-- PAYMENT는 `order_id` 유일 제약(`uk_point_history_order_id`)과 주문 FK(`fk_point_history_order`)를 가진다. 금액은 양수, 직후 잔액은 0 이상이며 CHARGE에는 주문이 없고 PAYMENT에는 있다는 조건은 DB CHECK도 지킨다.
-
-### 저장 약속
-
-`PointHistoryRepository`: `save`. 이력을 바꾸거나 지우는 약속은 없다.
 
 ## 주문 (Order)
 
@@ -116,7 +89,7 @@
 - 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문과 품목은 한 트랜잭션이다. 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
 - 목록 조회: `OrderService.findAll(userId, OrderListRequest)` → 요청자 존재 확인 → `findAll(userId, …)` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
-- 확정: `OrderService.confirm` → 요청자·소유권 확인 → `Order.validateConfirmable`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 모든 품목의 상품·브랜드 확인 → 상품별 `Product.deductStock` → `PointAccount.pay` → `Order.confirm` → PAYMENT 저장. 전부 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이다(ADR 0002·0003).
+- 확정: `OrderService.confirm` → 요청자·소유권 확인 → `Order.validateConfirmable`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 모든 품목의 상품·브랜드 확인 → 상품별 `Product.deductStock` → `PointAccount.pay(총액)` → `Order.confirm`. 재고·잔액·주문의 변경은 커밋에서 함께 나가는 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이며, 같은 주문의 동시 확정도 막지 않는다(ADR 0002·0003, 설계 18.2).
 - 관리자 상세 조회: `OrderService.findForAdmin` → `findById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
 - 관리자 목록 조회: `OrderService.findAll(OrderAdminListRequest)` → 페이지 범위 확인 → 같은 `findAll(userId, …)`에 거를 사용자를 넣거나 비운다. 주문한 사용자의 식별자를 응답에 싣고, 카탈로그가 바뀌거나 상품이 삭제되어도 저장된 이름·단가를 그대로 준다(설계 16).
 
