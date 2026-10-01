@@ -23,6 +23,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException
 
 private val log = KotlinLogging.logger {}
 
+private const val BODY_FORMAT_MESSAGE = "요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요."
+
 @RestControllerAdvice
 class ApiControllerAdvice {
     @ExceptionHandler
@@ -128,9 +130,14 @@ class ApiControllerAdvice {
                 "필드 '$fieldName'의 값 '$value'이(가) 예상 타입($expectedType)과 일치하지 않습니다. $valueIndicationMessage"
             }
 
+            // 경로가 비면 필드에 묶이지 않은 불일치다. 본문 뒤에 붙은 다른 JSON 값(trailing token)이 그렇다.
             is MismatchedInputException -> {
-                val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
-                "필수 필드 '$fieldPath'이(가) 누락되었습니다."
+                if (rootCause.path.isEmpty()) {
+                    BODY_FORMAT_MESSAGE
+                } else {
+                    val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
+                    "필수 필드 '$fieldPath'이(가) 누락되었습니다."
+                }
             }
 
             is DatabindException -> {
@@ -138,7 +145,7 @@ class ApiControllerAdvice {
                 "필드 '$fieldPath'에서 JSON 매핑 오류가 발생했습니다: ${rootCause.originalMessage}"
             }
 
-            else -> "요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요."
+            else -> BODY_FORMAT_MESSAGE
         }
 
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = errorMessage)
