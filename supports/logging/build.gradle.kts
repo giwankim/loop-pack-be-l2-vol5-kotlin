@@ -4,6 +4,7 @@ dependencies {
     // monitoring
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-tracing-bridge-brave")
+    implementation("org.springframework.boot:spring-boot-micrometer-tracing-brave")
     // Slack Appender
     implementation("com.github.maricn:logback-slack-appender:${project.properties["slackAppenderVersion"]}")
     // Kotlin Logging
