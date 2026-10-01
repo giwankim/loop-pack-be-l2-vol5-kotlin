@@ -26,13 +26,6 @@ java {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmToolchain(21)
-        freeCompilerArgs.addAll("-Xjsr305=strict")
-    }
-}
-
 allprojects {
     val projectGroup: String by project
     group = projectGroup
@@ -51,6 +44,13 @@ subprojects {
     apply(plugin = "io.spring.dependency-management")
     apply(plugin = "jacoco")
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
+
+    configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+        jvmToolchain(21)
+        compilerOptions {
+            freeCompilerArgs.addAll("-Xjsr305=strict")
+        }
+    }
 
     dependencyManagement {
         imports {
