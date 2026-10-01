@@ -3,7 +3,6 @@ package com.loopers.job.demo
 import com.loopers.batch.job.demo.DemoJobConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.batch.core.ExitStatus
@@ -30,9 +29,8 @@ class DemoJobE2ETest @Autowired constructor(
     fun beforeEach() {
     }
 
-    @DisplayName("jobParameter 중 requestDate 인자가 주어지지 않았을 때, demoJob 배치는 실패한다.")
     @Test
-    fun shouldFail_whenJobParameterNotFound() {
+    fun `demoJob fails when the requestDate job parameter is missing`() {
         // arrange
         jobOperatorTestUtils.job = job
 
@@ -46,9 +44,8 @@ class DemoJobE2ETest @Autowired constructor(
         )
     }
 
-    @DisplayName("demoJob 배치가 정상적으로 실행된다.")
     @Test
-    fun success() {
+    fun `demoJob completes when given a requestDate`() {
         // arrange
         jobOperatorTestUtils.job = job
 
