@@ -18,25 +18,25 @@ dependencies {
     implementation(project(":supports:monitoring"))
 
     // web
-    implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    implementation(libs.springBootStarterWebmvc)
     // validation: 루트는 runtimeOnly라 애노테이션을 쓰려면 컴파일 경로에도 있어야 한다
-    implementation("org.springframework.boot:spring-boot-starter-validation")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:${project.properties["springDocOpenApiVersion"]}")
+    implementation(libs.springBootStarterValidation)
+    implementation(libs.springBootStarterActuator)
+    implementation(libs.springdoc.openapiStarterWebmvcUi)
 
     // admin boundary: 통합 테스트 전용(src/test AdminSecurityConfig), 운영 코드에는 Spring Security 없음
-    testImplementation("org.springframework.boot:spring-boot-starter-security")
-    testImplementation("org.springframework.boot:spring-boot-starter-security-test")
-    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
-    testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
+    testImplementation(libs.springBootStarterSecurity)
+    testImplementation(libs.springBootStarterSecurityTest)
+    testImplementation(libs.springBootStarterWebmvcTest)
+    testImplementation(libs.springBootStarterDataJpaTest)
 
     // querydsl
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:redis")))
 
     // architecture test
-    testImplementation("com.tngtech.archunit:archunit-junit6:${project.properties["archUnitVersion"]}")
+    testImplementation(libs.archunit.junit6)
 }

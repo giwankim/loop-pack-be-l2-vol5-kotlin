@@ -52,27 +52,27 @@ subprojects {
 
     dependencies {
         // Kotlin
-        runtimeOnly("org.springframework.boot:spring-boot-starter-validation")
-        implementation("org.jetbrains.kotlin:kotlin-reflect")
+        runtimeOnly(libs.springBootStarterValidation)
+        implementation(libs.kotlin.reflect)
         // Spring
-        implementation("org.springframework.boot:spring-boot-starter")
+        implementation(libs.springBootStarter)
         // Serialize
-        implementation("tools.jackson.module:jackson-module-kotlin")
+        implementation(libs.jackson.kotlin)
         // Test
-        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+        testRuntimeOnly(libs.junit.platformLauncher)
         // testcontainers:mysql 이 jdbc 사용함
-        testRuntimeOnly("com.mysql:mysql-connector-j")
-        testImplementation("org.springframework.boot:spring-boot-starter-test")
-        testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
-        testImplementation("com.ninja-squad:springmockk:${project.properties["springMockkVersion"]}")
-        testImplementation("org.mockito:mockito-core:${project.properties["mockitoVersion"]}")
-        testImplementation("org.mockito.kotlin:mockito-kotlin:${project.properties["mockitoKotlinVersion"]}")
-        testImplementation("org.instancio:instancio-junit:${project.properties["instancioJUnitVersion"]}")
-        testImplementation("org.instancio:instancio-kotlin:${project.properties["instancioJUnitVersion"]}")
+        testRuntimeOnly(libs.mysql.connectorJ)
+        testImplementation(libs.springBootStarterTest)
+        testImplementation(libs.kotlin.testJunit5)
+        testImplementation(libs.springmockk)
+        testImplementation(libs.mockito.core)
+        testImplementation(libs.mockito.kotlin)
+        testImplementation(libs.instancio.junit)
+        testImplementation(libs.instancio.kotlin)
         // Testcontainers
-        testImplementation("org.springframework.boot:spring-boot-testcontainers")
-        testImplementation("org.testcontainers:testcontainers")
-        testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+        testImplementation(libs.springBootTestcontainers)
+        testImplementation(libs.testcontainers)
+        testImplementation(libs.testcontainers.junitJupiter)
     }
 
     tasks.withType<Jar>().configureEach { enabled = true }
@@ -102,7 +102,7 @@ subprojects {
     }
 
     configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
-        version.set(properties["ktLintVersion"] as String)
+        version.set(libs.versions.ktlint)
     }
 }
 

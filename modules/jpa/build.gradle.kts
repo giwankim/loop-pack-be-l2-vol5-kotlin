@@ -12,15 +12,15 @@ allOpen {
 
 dependencies {
     // jpa
-    api("org.springframework.boot:spring-boot-starter-data-jpa")
+    api(libs.springBootStarterDataJpa)
     // querydsl
-    api("com.querydsl:querydsl-jpa::jakarta")
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    api(variantOf(libs.querydsl.jpa) { classifier("jakarta") })
+    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
     // jdbc-mysql
-    runtimeOnly("com.mysql:mysql-connector-j")
+    runtimeOnly(libs.mysql.connectorJ)
 
-    testImplementation("org.testcontainers:testcontainers-mysql")
+    testImplementation(libs.testcontainers.mysql)
 
-    testFixturesImplementation("org.springframework.boot:spring-boot-starter-data-jpa")
-    testFixturesImplementation("org.testcontainers:testcontainers-mysql")
+    testFixturesImplementation(libs.springBootStarterDataJpa)
+    testFixturesImplementation(libs.testcontainers.mysql)
 }

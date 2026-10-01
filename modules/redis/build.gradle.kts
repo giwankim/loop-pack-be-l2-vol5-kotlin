@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    api("org.springframework.boot:spring-boot-starter-data-redis")
+    api(libs.springBootStarterDataRedis)
 
-    testFixturesImplementation("org.testcontainers:testcontainers")
+    testFixturesImplementation(libs.testcontainers)
 }

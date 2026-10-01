@@ -12,11 +12,11 @@ dependencies {
     implementation(project(":supports:monitoring"))
 
     // web
-    implementation("org.springframework.boot:spring-boot-starter-webmvc")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation(libs.springBootStarterWebmvc)
+    implementation(libs.springBootStarterActuator)
 
     // querydsl
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

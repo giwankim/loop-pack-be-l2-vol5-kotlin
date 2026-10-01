@@ -1,7 +1,7 @@
 dependencies {
     // spring
-    implementation("org.springframework:spring-web")
-    implementation("org.springframework.boot:spring-boot-jackson")
+    implementation(libs.springWeb)
+    implementation(libs.springBootJackson)
     // jackson
-    implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation(libs.jackson.kotlin)
 }

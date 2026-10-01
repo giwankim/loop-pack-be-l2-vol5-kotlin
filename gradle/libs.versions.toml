@@ -4,6 +4,66 @@ springBoot = "4.1.1"
 springDependencyManagement = "1.1.7"
 # ktlint Gradle 플러그인의 버전이다.
 ktlintGradle = "14.2.0"
+# ktlint 엔진의 버전이다. 라이브러리나 플러그인 항목이 아니라 ktlint 확장의 version 에 넣는다.
+ktlint = "1.8.0"
+springdoc = "3.1.1"
+springmockk = "4.0.2"
+# Boot BOM 은 5.23.0 을 관리하지만, 여기 적은 5.14.0 이 이긴다.
+mockito = "5.14.0"
+mockitoKotlin = "5.4.0"
+instancio = "6.1.0"
+archunit = "1.5.1"
+logbackSlackAppender = "1.6.1"
+kotlinLogging = "8.0.4"
+
+[libraries]
+# Boot 플러그인과 같은 버전 키를 쓴다.
+springBootDependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+
+springdoc-openapiStarterWebmvcUi = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
+springmockk = { module = "com.ninja-squad:springmockk", version.ref = "springmockk" }
+mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockitoKotlin" }
+instancio-junit = { module = "org.instancio:instancio-junit", version.ref = "instancio" }
+instancio-kotlin = { module = "org.instancio:instancio-kotlin", version.ref = "instancio" }
+archunit-junit6 = { module = "com.tngtech.archunit:archunit-junit6", version.ref = "archunit" }
+logbackSlackAppender = { module = "com.github.maricn:logback-slack-appender", version.ref = "logbackSlackAppender" }
+kotlinLogging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
+
+# 아래는 버전이 없다. Boot BOM 이 dependency-management 플러그인으로 버전을 정한다.
+springBootStarter = { module = "org.springframework.boot:spring-boot-starter" }
+springBootStarterValidation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+springBootStarterTest = { module = "org.springframework.boot:spring-boot-starter-test" }
+springBootTestcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+springBootStarterWebmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+springBootStarterActuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+springBootStarterSecurity = { module = "org.springframework.boot:spring-boot-starter-security" }
+springBootStarterSecurityTest = { module = "org.springframework.boot:spring-boot-starter-security-test" }
+springBootStarterWebmvcTest = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+springBootStarterDataJpaTest = { module = "org.springframework.boot:spring-boot-starter-data-jpa-test" }
+springBootStarterBatchJdbc = { module = "org.springframework.boot:spring-boot-starter-batch-jdbc" }
+springBootStarterBatchJdbcTest = { module = "org.springframework.boot:spring-boot-starter-batch-jdbc-test" }
+springBootStarterDataJpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+springBootStarterKafka = { module = "org.springframework.boot:spring-boot-starter-kafka" }
+springBootStarterKafkaTest = { module = "org.springframework.boot:spring-boot-starter-kafka-test" }
+springBootStarterDataRedis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
+springBootJackson = { module = "org.springframework.boot:spring-boot-jackson" }
+springBootMicrometerTracingBrave = { module = "org.springframework.boot:spring-boot-micrometer-tracing-brave" }
+springWeb = { module = "org.springframework:spring-web" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
+kotlin-testJunit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5" }
+jackson-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
+junit-platformLauncher = { module = "org.junit.platform:junit-platform-launcher" }
+mysql-connectorJ = { module = "com.mysql:mysql-connector-j" }
+testcontainers = { module = "org.testcontainers:testcontainers" }
+testcontainers-junitJupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+testcontainers-mysql = { module = "org.testcontainers:testcontainers-mysql" }
+testcontainers-kafka = { module = "org.testcontainers:testcontainers-kafka" }
+# 쓰는 곳에서 variantOf 로 jakarta classifier 를 붙인다. TOML 은 classifier 를 적지 못한다.
+querydsl-apt = { module = "com.querydsl:querydsl-apt" }
+querydsl-jpa = { module = "com.querydsl:querydsl-jpa" }
+micrometer-registryPrometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
+micrometer-tracingBridgeBrave = { module = "io.micrometer:micrometer-tracing-bridge-brave" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

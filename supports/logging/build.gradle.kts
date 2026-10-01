@@ -1,12 +1,12 @@
 dependencies {
     // spring
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation(libs.springBootStarterActuator)
     // monitoring
-    implementation("io.micrometer:micrometer-registry-prometheus")
-    implementation("io.micrometer:micrometer-tracing-bridge-brave")
-    implementation("org.springframework.boot:spring-boot-micrometer-tracing-brave")
+    implementation(libs.micrometer.registryPrometheus)
+    implementation(libs.micrometer.tracingBridgeBrave)
+    implementation(libs.springBootMicrometerTracingBrave)
     // Slack Appender
-    implementation("com.github.maricn:logback-slack-appender:${project.properties["slackAppenderVersion"]}")
+    implementation(libs.logbackSlackAppender)
     // Kotlin Logging
-    api("io.github.oshai:kotlin-logging-jvm:${project.properties["kotlinLoggingVersion"]}")
+    api(libs.kotlinLogging)
 }

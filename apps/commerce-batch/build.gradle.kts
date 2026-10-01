@@ -11,11 +11,11 @@ dependencies {
     implementation(project(":supports:monitoring"))
 
     // batch
-    implementation("org.springframework.boot:spring-boot-starter-batch-jdbc")
-    testImplementation("org.springframework.boot:spring-boot-starter-batch-jdbc-test")
+    implementation(libs.springBootStarterBatchJdbc)
+    testImplementation(libs.springBootStarterBatchJdbcTest)
 
     // querydsl
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

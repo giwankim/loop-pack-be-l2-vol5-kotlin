@@ -3,10 +3,10 @@ plugins {
 }
 
 dependencies {
-    api("org.springframework.boot:spring-boot-starter-kafka")
+    api(libs.springBootStarterKafka)
 
-    testImplementation("org.springframework.boot:spring-boot-starter-kafka-test")
-    testImplementation("org.testcontainers:testcontainers-kafka")
+    testImplementation(libs.springBootStarterKafkaTest)
+    testImplementation(libs.testcontainers.kafka)
 
-    testFixturesImplementation("org.testcontainers:testcontainers-kafka")
+    testFixturesImplementation(libs.testcontainers.kafka)
 }
