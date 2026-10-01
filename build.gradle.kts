@@ -12,12 +12,13 @@ fun getGitHash(): String {
 
 /** --- project configurations --- */
 plugins {
-    kotlin("jvm")
-    kotlin("kapt")
-    kotlin("plugin.spring") apply false
-    id("org.springframework.boot") apply false
-    id("io.spring.dependency-management")
-    id("org.jlleitschuh.gradle.ktlint") apply false
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.kotlin.spring) apply false
+    alias(libs.plugins.kotlin.jpa) apply false
+    alias(libs.plugins.springBoot) apply false
+    alias(libs.plugins.springDependencyManagement)
+    alias(libs.plugins.ktlint) apply false
 }
 
 java {
@@ -31,13 +32,16 @@ allprojects {
 }
 
 subprojects {
-    apply(plugin = "org.jetbrains.kotlin.jvm")
-    apply(plugin = "org.jetbrains.kotlin.kapt")
-    apply(plugin = "org.jetbrains.kotlin.plugin.spring")
-    apply(plugin = "org.springframework.boot")
-    apply(plugin = "io.spring.dependency-management")
+    // 이 블록은 하위 프로젝트가 평가되기 전에 돌아서, 하위 프로젝트에는 아직 libs 확장이 없다. 루트의 카탈로그를 읽는다.
+    val libs = rootProject.libs
+
+    apply(plugin = libs.plugins.kotlin.jvm.get().pluginId)
+    apply(plugin = libs.plugins.kotlin.kapt.get().pluginId)
+    apply(plugin = libs.plugins.kotlin.spring.get().pluginId)
+    apply(plugin = libs.plugins.springBoot.get().pluginId)
+    apply(plugin = libs.plugins.springDependencyManagement.get().pluginId)
     apply(plugin = "jacoco")
-    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+    apply(plugin = libs.plugins.ktlint.get().pluginId)
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(25)

@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.plugin.jpa")
+    alias(libs.plugins.kotlin.jpa)
 }
 
 // plugin.spring(루트)은 Spring 애노테이션이 붙은 클래스만 연다. 엔티티도 열어야 Hibernate 가 LAZY 연관의 프록시를 만든다.
