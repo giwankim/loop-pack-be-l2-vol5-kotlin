@@ -112,7 +112,7 @@ class ApiControllerAdvice {
             }
 
             is InvalidFormatException -> {
-                val fieldName = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
+                val fieldName = rootCause.fieldPath()
 
                 val valueIndicationMessage = when {
                     rootCause.targetType.isEnum -> {
@@ -135,13 +135,13 @@ class ApiControllerAdvice {
                 if (rootCause.path.isEmpty()) {
                     BODY_FORMAT_MESSAGE
                 } else {
-                    val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
+                    val fieldPath = rootCause.fieldPath()
                     "필수 필드 '$fieldPath'이(가) 누락되었습니다."
                 }
             }
 
             is DatabindException -> {
-                val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
+                val fieldPath = rootCause.fieldPath()
                 "필드 '$fieldPath'에서 JSON 매핑 오류가 발생했습니다: ${rootCause.originalMessage}"
             }
 
@@ -184,3 +184,6 @@ class ApiControllerAdvice {
             errorType.status,
         )
 }
+
+/** 오류가 난 필드의 경로. 이름이 없는 단계(배열 원소 등)는 `?`로 적는다. */
+private fun DatabindException.fieldPath(): String = path.joinToString(".") { it.propertyName ?: "?" }
