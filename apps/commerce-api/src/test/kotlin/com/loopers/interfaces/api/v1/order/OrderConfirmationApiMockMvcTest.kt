@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.v1.order
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.application.product.ProductAdminRegisterRequest

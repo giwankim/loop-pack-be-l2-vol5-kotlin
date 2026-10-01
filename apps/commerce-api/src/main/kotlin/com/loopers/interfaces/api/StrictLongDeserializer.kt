@@ -1,10 +1,10 @@
 package com.loopers.interfaces.api
 
-import com.fasterxml.jackson.core.JsonParser
-import com.fasterxml.jackson.core.JsonToken
-import com.fasterxml.jackson.core.exc.InputCoercionException
-import com.fasterxml.jackson.databind.DeserializationContext
-import com.fasterxml.jackson.databind.JsonDeserializer
+import tools.jackson.core.JsonParser
+import tools.jackson.core.JsonToken
+import tools.jackson.core.exc.InputCoercionException
+import tools.jackson.databind.DeserializationContext
+import tools.jackson.databind.ValueDeserializer
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 
@@ -19,9 +19,9 @@ import com.loopers.support.error.ErrorType
  * [ApiControllerAdvice]가 근본 원인을 찾아 그 [ErrorType]으로 답한다. null 토큰은 여기로 오지 않고 null이 되며,
  * 빠진 값과 함께 DTO가 거절한다.
  */
-class StrictLongDeserializer : JsonDeserializer<Long>() {
+class StrictLongDeserializer : ValueDeserializer<Long>() {
     override fun deserialize(p: JsonParser, ctxt: DeserializationContext): Long {
-        if (p.currentToken != JsonToken.VALUE_NUMBER_INT) {
+        if (p.currentToken() != JsonToken.VALUE_NUMBER_INT) {
             throw CoreException(ErrorType.INVALID_POINT_ORDER_REQUEST)
         }
         return try {

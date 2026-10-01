@@ -1,7 +1,7 @@
 package com.loopers.interfaces.api.v1.order
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.application.product.ProductAdminRegisterRequest
@@ -422,7 +422,7 @@ class OrderApiMockMvcTest(
             { assertThat(listed[1]["items"][0]["quantity"].intValue()).isEqualTo(2) },
             { assertThat(listed[1]["items"][1]["productId"].longValue()).isEqualTo(socks) },
             { assertThat(listed[1]["totalAmount"].longValue()).isEqualTo(4_000) },
-            { assertThat(listed.map { it["orderId"].longValue() }).doesNotContain(foreign) },
+            { assertThat(listed.values().map { it["orderId"].longValue() }).doesNotContain(foreign) },
             {
                 val foreignList = list(requester = otherUser).json()["data"]["items"]
                 assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)

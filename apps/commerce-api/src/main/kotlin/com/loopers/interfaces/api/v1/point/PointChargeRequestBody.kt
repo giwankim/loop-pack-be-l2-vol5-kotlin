@@ -1,6 +1,6 @@
 package com.loopers.interfaces.api.v1.point
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import tools.jackson.databind.annotation.JsonDeserialize
 import com.loopers.application.point.PointChargeRequest
 import com.loopers.interfaces.api.StrictLongDeserializer
 import com.loopers.support.error.CoreException

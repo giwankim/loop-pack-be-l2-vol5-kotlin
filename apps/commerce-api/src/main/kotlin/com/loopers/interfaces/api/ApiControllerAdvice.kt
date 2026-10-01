@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api
 
-import com.fasterxml.jackson.databind.JsonMappingException
-import com.fasterxml.jackson.databind.exc.InvalidFormatException
-import com.fasterxml.jackson.databind.exc.MismatchedInputException
+import tools.jackson.databind.DatabindException
+import tools.jackson.databind.exc.InvalidFormatException
+import tools.jackson.databind.exc.MismatchedInputException
 import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.point.InsufficientPointsException
 import com.loopers.domain.product.InsufficientStockException
@@ -110,7 +110,7 @@ class ApiControllerAdvice {
             }
 
             is InvalidFormatException -> {
-                val fieldName = rootCause.path.joinToString(".") { it.fieldName ?: "?" }
+                val fieldName = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
 
                 val valueIndicationMessage = when {
                     rootCause.targetType.isEnum -> {
@@ -129,12 +129,12 @@ class ApiControllerAdvice {
             }
 
             is MismatchedInputException -> {
-                val fieldPath = rootCause.path.joinToString(".") { it.fieldName ?: "?" }
+                val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
                 "필수 필드 '$fieldPath'이(가) 누락되었습니다."
             }
 
-            is JsonMappingException -> {
-                val fieldPath = rootCause.path.joinToString(".") { it.fieldName ?: "?" }
+            is DatabindException -> {
+                val fieldPath = rootCause.path.joinToString(".") { it.propertyName ?: "?" }
                 "필드 '$fieldPath'에서 JSON 매핑 오류가 발생했습니다: ${rootCause.originalMessage}"
             }
 

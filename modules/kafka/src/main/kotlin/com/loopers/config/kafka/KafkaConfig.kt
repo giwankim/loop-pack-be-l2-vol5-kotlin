@@ -1,6 +1,6 @@
 package com.loopers.config.kafka
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.json.JsonMapper
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.context.annotation.Bean
@@ -14,7 +14,7 @@ import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.core.ProducerFactory
 import org.springframework.kafka.listener.ContainerProperties
 import org.springframework.kafka.support.converter.BatchMessagingMessageConverter
-import org.springframework.kafka.support.converter.ByteArrayJsonMessageConverter
+import org.springframework.kafka.support.converter.ByteArrayJacksonJsonMessageConverter
 import java.util.HashMap
 
 @EnableKafka
@@ -53,14 +53,14 @@ class KafkaConfig {
     }
 
     @Bean
-    fun jsonMessageConverter(objectMapper: ObjectMapper): ByteArrayJsonMessageConverter {
-        return ByteArrayJsonMessageConverter(objectMapper)
+    fun jsonMessageConverter(jsonMapper: JsonMapper): ByteArrayJacksonJsonMessageConverter {
+        return ByteArrayJacksonJsonMessageConverter(jsonMapper)
     }
 
     @Bean(BATCH_LISTENER)
     fun defaultBatchListenerContainerFactory(
         kafkaProperties: KafkaProperties,
-        converter: ByteArrayJsonMessageConverter,
+        converter: ByteArrayJacksonJsonMessageConverter,
     ): ConcurrentKafkaListenerContainerFactory<*, *> {
         val consumerConfig = HashMap(kafkaProperties.buildConsumerProperties())
             .apply {
