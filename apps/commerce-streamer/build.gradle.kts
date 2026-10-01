@@ -1,5 +1,6 @@
 plugins {
-    alias(libs.plugins.kotlin.jpa)
+    alias(conventions.plugins.loopers.spring.boot.application)
+    alias(conventions.plugins.loopers.jpa)
 }
 
 dependencies {
@@ -14,9 +15,6 @@ dependencies {
     // web
     implementation(libs.springBootStarterWebmvc)
     implementation(libs.springBootStarterActuator)
-
-    // querydsl
-    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

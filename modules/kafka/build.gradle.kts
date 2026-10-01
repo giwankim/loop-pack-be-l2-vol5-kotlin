@@ -1,4 +1,5 @@
 plugins {
+    alias(conventions.plugins.loopers.kotlin.spring)
     `java-test-fixtures`
 }
 

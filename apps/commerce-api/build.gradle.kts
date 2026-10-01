@@ -1,12 +1,6 @@
 plugins {
-    alias(libs.plugins.kotlin.jpa)
-}
-
-// plugin.spring(루트)은 Spring 애노테이션이 붙은 클래스만 연다. 엔티티도 열어야 Hibernate 가 LAZY 연관의 프록시를 만든다.
-allOpen {
-    annotation("jakarta.persistence.Entity")
-    annotation("jakarta.persistence.MappedSuperclass")
-    annotation("jakarta.persistence.Embeddable")
+    alias(conventions.plugins.loopers.spring.boot.application)
+    alias(conventions.plugins.loopers.jpa)
 }
 
 dependencies {
@@ -19,7 +13,7 @@ dependencies {
 
     // web
     implementation(libs.springBootStarterWebmvc)
-    // validation: 루트는 runtimeOnly라 애노테이션을 쓰려면 컴파일 경로에도 있어야 한다
+    // validation: 기본 컨벤션은 runtimeOnly라 애노테이션을 쓰려면 컴파일 경로에도 있어야 한다
     implementation(libs.springBootStarterValidation)
     implementation(libs.springBootStarterActuator)
     implementation(libs.springdoc.openapiStarterWebmvcUi)
@@ -29,9 +23,6 @@ dependencies {
     testImplementation(libs.springBootStarterSecurityTest)
     testImplementation(libs.springBootStarterWebmvcTest)
     testImplementation(libs.springBootStarterDataJpaTest)
-
-    // querydsl
-    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

@@ -1,5 +1,6 @@
 plugins {
-    alias(libs.plugins.kotlin.jpa)
+    alias(conventions.plugins.loopers.spring.boot.application)
+    alias(conventions.plugins.loopers.jpa)
 }
 
 dependencies {
@@ -13,9 +14,6 @@ dependencies {
     // batch
     implementation(libs.springBootStarterBatchJdbc)
     testImplementation(libs.springBootStarterBatchJdbcTest)
-
-    // querydsl
-    kapt(variantOf(libs.querydsl.apt) { classifier("jakarta") })
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
