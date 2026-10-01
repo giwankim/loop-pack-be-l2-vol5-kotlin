@@ -72,7 +72,7 @@ class ProductRepositoryTest(
         val found = productRepository.findById(saved.id)!!
 
         // 엔티티와 BaseEntity 가 allOpen 으로 열려 있어야 Hibernate 가 Brand 서브클래스 프록시를 만든다
-        // (commerce-api 와 modules/jpa 의 build.gradle.kts). 하나라도 final 이면 HHH000305 를 남기고 곧바로 조회한다.
+        // (build-logic 의 loopers.jpa 컨벤션). 하나라도 final 이면 HHH000305 를 남기고 곧바로 조회한다.
         assertThat(Hibernate.isInitialized(found.brand)).isFalse()
         // 식별자는 프록시가 들고 있으므로 읽어도 초기화되지 않는다.
         assertThat(found.brand.id).isEqualTo(brand.id)
