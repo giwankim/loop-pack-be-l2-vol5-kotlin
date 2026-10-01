@@ -7,7 +7,6 @@ import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.step.Step
 import org.springframework.batch.core.configuration.annotation.JobScope
 import org.springframework.batch.core.job.builder.JobBuilder
-import org.springframework.batch.core.job.parameters.RunIdIncrementer
 import org.springframework.batch.core.repository.JobRepository
 import org.springframework.batch.core.step.builder.StepBuilder
 import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager
@@ -31,7 +30,6 @@ class DemoJobConfig(
     @Bean(JOB_NAME)
     fun demoJob(): Job {
         return JobBuilder(JOB_NAME, jobRepository)
-            .incrementer(RunIdIncrementer())
             .start(categorySyncStep())
             .listener(jobListener)
             .build()
