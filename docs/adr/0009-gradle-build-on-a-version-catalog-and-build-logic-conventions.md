@@ -15,7 +15,10 @@ date: 2026-10-01
   - `loopers.kotlin-spring`은 모든 모듈에 쓴다. Kotlin, 툴체인과 컴파일러 옵션, 테스트, JaCoCo, ktlint, 공통 의존성을 맡는다.
   - `loopers.spring-boot-application`은 앱 세 개에 쓴다.
   - `loopers.jpa`는 QueryDSL kapt를 쓰는 모듈 네 개에 쓴다.
-- Boot 플러그인은 앱에만 걸고, kapt와 `plugin.jpa`는 `loopers.jpa`에만 건다. 라이브러리 모듈에서는 Boot 플러그인이 해 주던 두 가지를 기본 컨벤션이 맡는다. 하나는 BOM을 직접 가져오는 일이고(카탈로그의 `springBootDependencies`, Boot 플러그인과 같은 버전 키), 다른 하나는 `javaParameters`를 켜는 일이다.
+- Boot 플러그인은 앱에만 걸고, kapt와 `plugin.jpa`는 `loopers.jpa`에만 건다. 라이브러리 모듈에서는 Boot 플러그인이 해 주던 일을 기본 컨벤션이 맡는다.
+  - BOM을 직접 가져온다(카탈로그의 `springBootDependencies`, Boot 플러그인과 같은 버전 키).
+  - Kotlin 컴파일에 `javaParameters`를 켠다.
+  - javac에 `-parameters`를 걸고, 인코딩이 없으면 UTF-8로 둔다(kapt가 만든 Q 클래스를 javac가 컴파일한다).
 - build-logic 스크립트는 typesafe-conventions 플러그인으로 카탈로그를 타입 안전하게 읽고, `plugins {}`에서 `alias(libs.plugins.x)`를 쓴다. 플러그인 버전은 `[plugins]` 한 곳에만 있다. 모듈은 이 플러그인이 만들어 주는 `conventions` 카탈로그로 컨벤션을 적용한다(`alias(conventions.plugins.loopers.jpa)`).
 - build-logic은 루트 settings에서 `pluginManagement` 밖의 최상위 `includeBuild`로 넣는다.
 - 루트 `build.gradle.kts`는 지운다.
