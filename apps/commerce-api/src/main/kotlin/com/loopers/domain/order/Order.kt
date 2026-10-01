@@ -3,6 +3,7 @@ package com.loopers.domain.order
 import com.loopers.domain.shared.Money
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.CascadeType
+import jakarta.persistence.CheckConstraint
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
@@ -15,7 +16,6 @@ import jakarta.persistence.Index
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
-import org.hibernate.annotations.Check
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -27,10 +27,13 @@ import java.time.temporal.ChronoUnit
         Index(name = "idx_orders_user_created", columnList = "user_id, created_at DESC, id DESC"),
         Index(name = "idx_orders_created", columnList = "created_at DESC, id DESC"),
     ],
-)
-@Check(
-    constraints = "total_amount > 0 and ((status = 'DRAFT' and paid_amount is null and confirmed_at is null) or " +
-        "(status = 'CONFIRMED' and paid_amount is not null and paid_amount = total_amount and confirmed_at is not null))",
+    check = [
+        CheckConstraint(
+            constraint = "total_amount > 0 and " +
+                "((status = 'DRAFT' and paid_amount is null and confirmed_at is null) or " +
+                "(status = 'CONFIRMED' and paid_amount is not null and paid_amount = total_amount and confirmed_at is not null))",
+        ),
+    ],
 )
 class Order(
     @Column(name = "user_id", nullable = false, updatable = false)
