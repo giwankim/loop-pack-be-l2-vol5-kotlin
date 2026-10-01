@@ -73,11 +73,11 @@ class KafkaConfig {
             }
 
         return ConcurrentKafkaListenerContainerFactory<Any, Any>().apply {
-            consumerFactory = DefaultKafkaConsumerFactory(consumerConfig)
+            setConsumerFactory(DefaultKafkaConsumerFactory(consumerConfig))
             containerProperties.ackMode = ContainerProperties.AckMode.MANUAL
             setBatchMessageConverter(BatchMessagingMessageConverter(converter))
             setConcurrency(3)
-            isBatchListener = true
+            setBatchListener(true)
         }
     }
 }
