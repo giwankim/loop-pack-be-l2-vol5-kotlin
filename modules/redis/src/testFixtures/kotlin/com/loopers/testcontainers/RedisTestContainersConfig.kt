@@ -1,13 +1,17 @@
 package com.loopers.testcontainers
 
-import com.redis.testcontainers.RedisContainer
 import org.springframework.context.annotation.Configuration
+import org.testcontainers.containers.GenericContainer
+import org.testcontainers.utility.DockerImageName
 
 @Configuration
 class RedisTestContainersConfig {
     companion object {
-        private val redisContainer = RedisContainer("redis:latest")
+        private const val REDIS_PORT = 6379
+
+        private val redisContainer: GenericContainer<*> = GenericContainer(DockerImageName.parse("redis:latest"))
             .apply {
+                withExposedPorts(REDIS_PORT)
                 start()
             }
     }
