@@ -69,6 +69,26 @@ class RequestBodyErrorMockMvcTest(
         }
     }
 
+    @Test
+    fun `an array body returns 400 with the general body-format message`() {
+        postProduct(body = """[]""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.") }
+        }
+    }
+
+    @Test
+    fun `a string body returns 400 with the general body-format message`() {
+        postProduct(body = """"티셔츠"""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.") }
+        }
+    }
+
     /** enum이 아닌 타입에는 허용 값 안내가 없어 메시지가 공백으로 끝난다. 지금의 응답이 그렇다. */
     @Test
     fun `a value of the wrong type returns 400 naming the field, the value and the expected type`() {
@@ -93,7 +113,6 @@ class RequestBodyErrorMockMvcTest(
     @Test
     fun `a domain error raised while the body is read returns that error's own type and message`() {
         mockMvc.post(ORDERS) {
-            header(UserIdHeader.NAME, 1L)
             contentType = MediaType.APPLICATION_JSON
             content = """{"items": "티셔츠"}"""
         }.andExpect {
