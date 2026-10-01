@@ -47,6 +47,28 @@ class RequestBodyErrorMockMvcTest(
         }
     }
 
+    @Test
+    fun `content after the JSON body returns 400 with the general body-format message`() {
+        postProduct(body = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}xyz""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.") }
+        }
+    }
+
+    @Test
+    fun `two JSON objects in a row return 400 with the general body-format message`() {
+        postProduct(
+            body = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}{"brandId": 1, "name": "바지"}""",
+        ).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.meta.result") { value("FAIL") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
+            jsonPath("$.meta.message") { value("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.") }
+        }
+    }
+
     /** enum이 아닌 타입에는 허용 값 안내가 없어 메시지가 공백으로 끝난다. 지금의 응답이 그렇다. */
     @Test
     fun `a value of the wrong type returns 400 naming the field, the value and the expected type`() {
