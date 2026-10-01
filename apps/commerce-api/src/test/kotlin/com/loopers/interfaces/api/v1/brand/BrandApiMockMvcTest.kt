@@ -7,7 +7,7 @@ import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType

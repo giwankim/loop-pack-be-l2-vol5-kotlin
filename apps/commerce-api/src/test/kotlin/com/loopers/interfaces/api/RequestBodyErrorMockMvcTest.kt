@@ -3,7 +3,7 @@ package com.loopers.interfaces.api
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
