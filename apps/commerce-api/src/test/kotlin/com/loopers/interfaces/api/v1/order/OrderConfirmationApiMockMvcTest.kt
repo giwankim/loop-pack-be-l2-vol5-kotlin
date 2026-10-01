@@ -86,7 +86,7 @@ class OrderConfirmationApiMockMvcTest(
 
         assertThat(confirmed["data"]["items"]).isEqualTo(draft["data"]["items"])
         assertThat(confirmed["data"]["createdAt"]).isEqualTo(draft["data"]["createdAt"])
-        assertThat(Instant.parse(confirmed["data"]["confirmedAt"].textValue())).isBetween(before, Instant.now())
+        assertThat(Instant.parse(confirmed["data"]["confirmedAt"].stringValue())).isBetween(before, Instant.now())
         balance(3_000)
         assertStock(first, 5)
         assertStock(second, 4)

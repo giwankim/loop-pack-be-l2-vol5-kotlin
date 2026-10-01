@@ -417,7 +417,7 @@ class OrderApiMockMvcTest(
         assertAll(
             { assertThat(listed[0]).isEqualTo(newer) },
             { assertThat(listed[1]).isEqualTo(older) },
-            { assertThat(listed[1]["items"][0]["productName"].textValue()).isEqualTo("티셔츠") },
+            { assertThat(listed[1]["items"][0]["productName"].stringValue()).isEqualTo("티셔츠") },
             { assertThat(listed[1]["items"][0]["unitPrice"].longValue()).isEqualTo(1_000) },
             { assertThat(listed[1]["items"][0]["quantity"].intValue()).isEqualTo(2) },
             { assertThat(listed[1]["items"][1]["productId"].longValue()).isEqualTo(socks) },
