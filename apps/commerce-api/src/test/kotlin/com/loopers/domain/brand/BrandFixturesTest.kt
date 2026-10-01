@@ -26,8 +26,8 @@ class BrandFixturesTest {
 
     /** 만들어지는 것 자체가 생성자의 이름 규칙을 지났다는 뜻이다. Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다. */
     @Test
-    fun `aBrand builds unsaved brands`() {
-        val brands = List(SAMPLES) { aBrand() }
+    fun `createBrand builds unsaved brands`() {
+        val brands = List(SAMPLES) { createBrand() }
 
         assertThat(brands).allSatisfy { brand ->
             assertThat(brand.id).isZero()
@@ -36,15 +36,15 @@ class BrandFixturesTest {
     }
 
     @Test
-    fun `aBrandAdminRegisterRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { aBrandAdminRegisterRequest() }.flatMap { validator.validate(it) }
+    fun `createBrandAdminRegisterRequest satisfies the request's own constraints`() {
+        val violations = List(SAMPLES) { createBrandAdminRegisterRequest() }.flatMap { validator.validate(it) }
 
         assertThat(violations).isEmpty()
     }
 
     @Test
-    fun `aBrandAdminUpdateRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { aBrandAdminUpdateRequest() }.flatMap { validator.validate(it) }
+    fun `createBrandAdminUpdateRequest satisfies the request's own constraints`() {
+        val violations = List(SAMPLES) { createBrandAdminUpdateRequest() }.flatMap { validator.validate(it) }
 
         assertThat(violations).isEmpty()
     }

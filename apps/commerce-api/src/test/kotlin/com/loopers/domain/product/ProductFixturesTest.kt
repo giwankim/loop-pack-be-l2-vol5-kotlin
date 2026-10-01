@@ -1,6 +1,6 @@
 package com.loopers.domain.product
 
-import com.loopers.domain.brand.aBrand
+import com.loopers.domain.brand.createBrand
 import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -49,10 +49,10 @@ class ProductFixturesTest {
 
     /** 만들어지는 것 자체가 생성자의 이름·가격 규칙을 지났다는 뜻이다. Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다. */
     @Test
-    fun `aProduct builds unsaved products of the given brand that are not sold out`() {
-        val brand = aBrand()
+    fun `createProduct builds unsaved products of the given brand that are not sold out`() {
+        val brand = createBrand()
 
-        val products = List(SAMPLES) { aProduct(brand) }
+        val products = List(SAMPLES) { createProduct(brand) }
 
         assertThat(products).allSatisfy { product ->
             assertThat(product.brand).isSameAs(brand)
@@ -63,23 +63,23 @@ class ProductFixturesTest {
     }
 
     @Test
-    fun `aProductAdminRegisterRequest satisfies the request's own constraints and never registers a sold-out product`() {
-        val requests = List(SAMPLES) { aProductAdminRegisterRequest(brandId = BRAND_ID) }
+    fun `createProductAdminRegisterRequest satisfies the request's own constraints and never registers a sold-out product`() {
+        val requests = List(SAMPLES) { createProductAdminRegisterRequest(brandId = BRAND_ID) }
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
         assertThat(requests).allSatisfy { request -> assertThat(request.stock).isPositive() }
     }
 
     @Test
-    fun `aProductAdminUpdateRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { aProductAdminUpdateRequest() }.flatMap { validator.validate(it) }
+    fun `createProductAdminUpdateRequest satisfies the request's own constraints`() {
+        val violations = List(SAMPLES) { createProductAdminUpdateRequest() }.flatMap { validator.validate(it) }
 
         assertThat(violations).isEmpty()
     }
 
     @Test
-    fun `aProductAdminStockUpdateRequest satisfies the request's own constraints and never sells out`() {
-        val requests = List(SAMPLES) { aProductAdminStockUpdateRequest() }
+    fun `createProductAdminStockUpdateRequest satisfies the request's own constraints and never sells out`() {
+        val requests = List(SAMPLES) { createProductAdminStockUpdateRequest() }
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
         assertThat(requests).allSatisfy { request -> assertThat(request.quantity).isPositive() }

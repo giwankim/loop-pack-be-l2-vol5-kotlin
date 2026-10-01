@@ -17,7 +17,7 @@ fun productPrice(): Money = Money(Instancio.gen().longs().range(Product.MIN_PRIC
 fun productStock(): Stock = Stock(Instancio.gen().ints().range(100, 1_000).get())
 
 /** 저장하지 않은 상품. 진짜 생성자를 거친다. 브랜드는 다른 애그리거트라 테스트가 넘긴다. */
-fun aProduct(
+fun createProduct(
     brand: Brand,
     name: String = productName(),
     price: Money = productPrice(),
@@ -25,7 +25,7 @@ fun aProduct(
 ): Product = Product(brand = brand, name = name, price = price, stock = stock)
 
 /** 상품 등록 요청. 등록 규칙을 지나고 품절이 아닌 상품을 만든다. 브랜드 ID는 다른 애그리거트라 테스트가 넘긴다. */
-fun aProductAdminRegisterRequest(
+fun createProductAdminRegisterRequest(
     brandId: Long,
     name: String = productName(),
     price: Long = productPrice().amount,
@@ -33,11 +33,11 @@ fun aProductAdminRegisterRequest(
 ): ProductAdminRegisterRequest = ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock)
 
 /** 상품 수정 요청. 수정 규칙을 지나는 이름과 가격을 가진다. */
-fun aProductAdminUpdateRequest(
+fun createProductAdminUpdateRequest(
     name: String = productName(),
     price: Long = productPrice().amount,
 ): ProductAdminUpdateRequest = ProductAdminUpdateRequest(name = name, price = price)
 
 /** 재고 변경 요청. 품절로 맞추지 않는다. */
-fun aProductAdminStockUpdateRequest(quantity: Int = productStock().quantity): ProductAdminStockUpdateRequest =
+fun createProductAdminStockUpdateRequest(quantity: Int = productStock().quantity): ProductAdminStockUpdateRequest =
     ProductAdminStockUpdateRequest(quantity)

@@ -37,7 +37,7 @@ class BrandTest {
 
     @Test
     fun `update replaces the name with the new one without surrounding whitespace`() {
-        val brand = aBrand()
+        val brand = createBrand()
 
         brand.update("  무신사\t")
 
@@ -47,7 +47,7 @@ class BrandTest {
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
     fun `update to a blank name throws InvalidNameException and keeps the old name`(name: String) {
-        val brand = aBrand(name = "루퍼스")
+        val brand = createBrand(name = "루퍼스")
 
         assertThrows<InvalidNameException> { brand.update(name) }
 
@@ -56,7 +56,7 @@ class BrandTest {
 
     @Test
     fun `update to a name of 101 chars after trimming throws InvalidNameException and keeps the old name`() {
-        val brand = aBrand(name = "루퍼스")
+        val brand = createBrand(name = "루퍼스")
 
         assertThrows<InvalidNameException> { brand.update(" " + "가".repeat(101) + " ") }
 

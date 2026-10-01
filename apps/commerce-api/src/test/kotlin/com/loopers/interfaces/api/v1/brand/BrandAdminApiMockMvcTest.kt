@@ -3,9 +3,9 @@ package com.loopers.interfaces.api.v1.brand
 import com.jayway.jsonpath.JsonPath
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.brand.aBrandAdminRegisterRequest
+import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.product.ProductRepository
-import com.loopers.domain.product.aProduct
+import com.loopers.domain.product.createProduct
 import com.loopers.support.error.ErrorType
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -85,7 +85,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `registering a name taken by an active brand returns 409 and saves nothing`() {
-        brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
+        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         postBrand(name = "루퍼스").andExpect {
             status { isConflict() }
@@ -128,7 +128,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand as a user returns 403`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         mockMvc.get("$ENDPOINT/${brand.id}") { with(USER) }
             .andExpect { status { isForbidden() } }
@@ -136,7 +136,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand anonymously returns 403`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect { status { isForbidden() } }
@@ -144,8 +144,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin lists active brands newest first as a slice`() {
-        brandService.register(aBrandAdminRegisterRequest())
-        brandService.register(aBrandAdminRegisterRequest(name = "둘째"))
+        brandService.register(createBrandAdminRegisterRequest())
+        brandService.register(createBrandAdminRegisterRequest(name = "둘째"))
 
         mockMvc.get(ENDPOINT) {
             with(ADMIN)
@@ -164,7 +164,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing without paging parameters uses the first page of twenty`() {
-        brandService.register(aBrandAdminRegisterRequest())
+        brandService.register(createBrandAdminRegisterRequest())
 
         mockMvc.get(ENDPOINT) { with(ADMIN) }
             .andExpect {
@@ -177,8 +177,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing a deleted brand leaves it out`() {
-        val deleted = brandService.register(aBrandAdminRegisterRequest())
-        brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
+        val deleted = brandService.register(createBrandAdminRegisterRequest())
+        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
         brandService.delete(deleted.id)
 
         mockMvc.get(ENDPOINT) { with(ADMIN) }
@@ -220,7 +220,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin renames a brand and reads the new name back`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         putBrand(brand.id, name = " 무신사 ").andExpect {
             status { isOk() }
@@ -234,8 +234,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name an active brand uses returns 409 and keeps the old name`() {
-        brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
-        val renamed = brandService.register(aBrandAdminRegisterRequest(name = "무신사"))
+        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val renamed = brandService.register(createBrandAdminRegisterRequest(name = "무신사"))
 
         putBrand(renamed.id, name = "루퍼스").andExpect {
             status { isConflict() }
@@ -249,7 +249,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a blank name returns 400 and keeps the old name`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         putBrand(brand.id, name = "   ").andExpect {
             status { isBadRequest() }
@@ -262,7 +262,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name over a hundred chars returns 400 and keeps the old name`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         putBrand(brand.id, name = "가".repeat(101)).andExpect {
             status { isBadRequest() }
@@ -283,7 +283,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming a deleted brand returns 404`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
@@ -292,7 +292,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming as a user returns 403 and keeps the old name`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         putBrand(brand.id, name = "무신사", principal = USER).andExpect { status { isForbidden() } }
 
@@ -301,7 +301,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin deletes a brand and it disappears from the detail and the list`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         deleteBrand(brand.id).andExpect {
             status { isOk() }
@@ -319,7 +319,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand stamps the row instead of erasing it`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         deleteBrand(brand.id).andExpect { status { isOk() } }
         entityManager.flushAndClear()
@@ -332,7 +332,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand twice returns 404 the second time`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
         deleteBrand(brand.id).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
@@ -349,7 +349,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting as a user returns 403 and keeps the brand`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         deleteBrand(brand.id, principal = USER).andExpect { status { isForbidden() } }
 
@@ -358,8 +358,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand that still has an active product returns 409 and leaves the row unstamped`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest(name = "루퍼스"))
-        productRepository.save(aProduct(brand))
+        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        productRepository.save(createProduct(brand))
         entityManager.flushAndClear()
 
         deleteBrand(brand.id).andExpect {
@@ -380,8 +380,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand goes through once its last product is deleted`() {
-        val brand = brandService.register(aBrandAdminRegisterRequest())
-        productRepository.save(aProduct(brand)).delete()
+        val brand = brandService.register(createBrandAdminRegisterRequest())
+        productRepository.save(createProduct(brand)).delete()
         entityManager.flushAndClear()
 
         deleteBrand(brand.id).andExpect { status { isOk() } }
