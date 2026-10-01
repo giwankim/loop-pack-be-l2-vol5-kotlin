@@ -27,8 +27,6 @@ java {
 }
 
 allprojects {
-    val projectGroup: String by project
-    group = projectGroup
     version = if (version == DEFAULT_VERSION) getGitHash() else version
 }
 
