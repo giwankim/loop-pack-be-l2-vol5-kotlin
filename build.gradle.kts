@@ -87,22 +87,13 @@ subprojects {
         jvmArgs("-Xshare:off")
     }
 
+    // jacoco 플러그인이 jacocoTestReport 에 test 태스크의 실행 데이터(build/jacoco/test.exec)를 지연 연결한다.
     tasks.withType<JacocoReport> {
         mustRunAfter("test")
-        executionData(fileTree(layout.buildDirectory.asFile).include("jacoco/*.exec"))
         reports {
             xml.required = true
             csv.required = false
             html.required = false
-        }
-        afterEvaluate {
-            classDirectories.setFrom(
-                files(
-                    classDirectories.files.map {
-                        fileTree(it)
-                    },
-                ),
-            )
         }
     }
 
