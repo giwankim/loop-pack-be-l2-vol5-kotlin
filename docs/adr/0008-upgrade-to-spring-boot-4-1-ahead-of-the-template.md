@@ -17,7 +17,7 @@ date: 2026-10-01
 - Gradle과 빌드는 같은 JDK 25를 쓴다. 모든 모듈의 toolchain이 25이고, `.sdkmanrc`는 Gradle이 뜨는 JVM을 같은 JDK 25로 고정한다. JDK를 내려받는 플러그인은 두지 않는다. kapt, JaCoCo, Mockito, Hibernate는 Java 25에서 따로 설정할 것이 없다. Gradle 9.7.1의 기본 JaCoCo 0.8.14가 Java 25를 지원한다.
 - 배치 메타데이터는 지금처럼 DB에 둔다(`spring-boot-starter-batch-jdbc`). Spring Batch 6이 시퀀스 이름을 바꿨지만(`BATCH_JOB_SEQ` → `BATCH_JOB_INSTANCE_SEQ`) 옮길 실제 DB가 없어 마이그레이션은 두지 않는다.
 - JSON 본문 뒤에 다른 내용이 붙으면(`{…}xyz`) Jackson 3의 기본값대로 400으로 거절한다. 지금은 이 경우에 필수 필드가 빠졌다는 엉뚱한 메시지가 나가므로 메시지를 바로잡는다. `use-jackson2-defaults`는 켜지 않는다.
-- ktlint는 1.8.0으로 올리고 Gradle 플러그인은 최신판(14.2.0)을 쓴다. 1.8.0이 새로 내는 지적 138건 중 134건이 클래스 시그니처의 공백이라 `class-signature` 규칙은 끄고, 나머지 4건은 손으로 고친다.
+- ktlint는 1.8.0으로 올리고 Gradle 플러그인은 최신판(14.2.0)을 쓴다. 1.8.0이 새로 내는 지적 136건 중 134건이 `class-signature` 규칙의 것(시그니처 공백 132건, 상위 타입 줄바꿈 2건)이라 그 규칙은 끄고, 나머지 2건(`ProductRepositoryImpl.kt`의 `when` 분기 사이에 빠진 빈 줄)은 손으로 고친다.
 - 확인된 후속판이 있는 라이브러리는 옮긴다: instancio-junit 6, archunit-junit6, 그리고 Initializr가 쓰는 테스트 스타터. testcontainers-redis는 Testcontainers 2용 판이 없어 일반 컨테이너로 바꾼다.
 - QueryDSL 5.1.0은 Boot가 관리하는 동안 그대로 쓴다. logback-slack-appender는 보관(archived) 상태지만 Boot 4에서도 동작해 그대로 둔다.
 
