@@ -9,10 +9,8 @@ plugins {
 ktlint {
     version = libs.versions.ktlint
     filter {
-        // build/generated-sources 는 통째로 뺀다. typesafe-conventions 의 출력만 빼면 kotlin-dsl 이 만든 접근자에서
-        // 지적이 수천 건 나오고, kotlin-dsl 의 출력만 빼면 generateEntrypointForConventions 에 대한
-        // 선언되지 않은 의존성으로 빌드가 실패한다(Gradle 9.7.1).
-        // 문자열 패턴은 소스 디렉터리 안의 상대 경로에 맞춰 보므로 generated-sources 를 거르지 못한다. 그래서 파일 경로로 거른다.
+        // kotlin-dsl 과 typesafe-conventions 가 만든 build/generated-sources 는 통째로 뺀다(ADR 0009 의 조사 문서 6절).
+        // 문자열 패턴은 소스 디렉터리 안의 상대 경로에 맞춰 보므로 파일 경로로 거른다.
         val generatedSources = layout.buildDirectory.dir("generated-sources").get().asFile
         exclude { it.file.startsWith(generatedSources) }
     }
