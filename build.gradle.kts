@@ -52,17 +52,10 @@ subprojects {
         }
     }
 
-    dependencyManagement {
-        imports {
-            mavenBom("org.springframework.cloud:spring-cloud-dependencies:${project.properties["springCloudDependenciesVersion"]}")
-        }
-    }
-
     dependencies {
         // Kotlin
         runtimeOnly("org.springframework.boot:spring-boot-starter-validation")
         implementation("org.jetbrains.kotlin:kotlin-reflect")
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
         // Spring
         implementation("org.springframework.boot:spring-boot-starter")
         // Serialize
