@@ -9,7 +9,7 @@ import org.junit.jupiter.api.assertAll
 import org.springframework.batch.core.ExitStatus
 import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
-import org.springframework.batch.test.JobLauncherTestUtils
+import org.springframework.batch.test.JobOperatorTestUtils
 import org.springframework.batch.test.context.SpringBatchTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
@@ -23,7 +23,7 @@ import java.time.LocalDate
 class DemoJobE2ETest @Autowired constructor(
     // IDE 정적 분석 상 [SpringBatchTest] 의 주입보다 [SpringBootTest] 의 주입이 우선되어, 해당 컴포넌트는 없으므로 오류처럼 보일 수 있음.
     // [SpringBatchTest] 자체가 Scope 기반으로 주입하기 때문에 정상 동작함.
-    private val jobLauncherTestUtils: JobLauncherTestUtils,
+    private val jobOperatorTestUtils: JobOperatorTestUtils,
     @param:Qualifier(DemoJobConfig.JOB_NAME) private val job: Job,
 ) {
     @BeforeEach
@@ -34,10 +34,10 @@ class DemoJobE2ETest @Autowired constructor(
     @Test
     fun shouldFail_whenJobParameterNotFound() {
         // arrange
-        jobLauncherTestUtils.job = job
+        jobOperatorTestUtils.job = job
 
         // act
-        val jobExecution = jobLauncherTestUtils.launchJob()
+        val jobExecution = jobOperatorTestUtils.startJob()
 
         // assert
         assertAll(
@@ -50,13 +50,13 @@ class DemoJobE2ETest @Autowired constructor(
     @Test
     fun success() {
         // arrange
-        jobLauncherTestUtils.job = job
+        jobOperatorTestUtils.job = job
 
         // act
         val jobParameters = JobParametersBuilder()
             .addLocalDate("requestDate", LocalDate.now())
             .toJobParameters()
-        val jobExecution = jobLauncherTestUtils.launchJob(jobParameters)
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters)
 
         // assert
         assertAll(
