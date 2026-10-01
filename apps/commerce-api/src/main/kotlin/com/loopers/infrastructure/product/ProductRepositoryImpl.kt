@@ -65,7 +65,9 @@ class ProductRepositoryImpl(
      */
     private fun JPAQuery<Product>.orderedBy(sort: ProductSort): JPAQuery<Product> = when (sort) {
         ProductSort.LATEST -> orderBy(product.createdAt.desc(), ID_DESC)
+
         ProductSort.PRICE_ASC -> orderBy(product.price.amount.asc(), ID_DESC)
+
         ProductSort.LIKES_DESC ->
             leftJoin(like).on(like.productId.eq(product.id))
                 .groupBy(product, product.brand)
