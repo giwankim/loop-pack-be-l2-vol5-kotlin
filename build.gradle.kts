@@ -71,12 +71,12 @@ subprojects {
         testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     }
 
-    tasks.withType(Jar::class) { enabled = true }
-    tasks.withType(BootJar::class) { enabled = false }
+    tasks.withType<Jar>().configureEach { enabled = true }
+    tasks.withType<BootJar>().configureEach { enabled = false }
 
     configure(allprojects.filter { it.parent?.name.equals("apps") }) {
-        tasks.withType(Jar::class) { enabled = false }
-        tasks.withType(BootJar::class) { enabled = true }
+        tasks.withType<Jar>().configureEach { enabled = false }
+        tasks.withType<BootJar>().configureEach { enabled = true }
     }
 
     tasks.test {
@@ -88,7 +88,7 @@ subprojects {
     }
 
     // jacoco 플러그인이 jacocoTestReport 에 test 태스크의 실행 데이터(build/jacoco/test.exec)를 지연 연결한다.
-    tasks.withType<JacocoReport> {
+    tasks.withType<JacocoReport>().configureEach {
         mustRunAfter("test")
         reports {
             xml.required = true
