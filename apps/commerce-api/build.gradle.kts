@@ -38,5 +38,5 @@ dependencies {
     testImplementation(testFixtures(project(":modules:redis")))
 
     // architecture test
-    testImplementation("com.tngtech.archunit:archunit-junit5:${project.properties["archUnitVersion"]}")
+    testImplementation("com.tngtech.archunit:archunit-junit6:${project.properties["archUnitVersion"]}")
 }
