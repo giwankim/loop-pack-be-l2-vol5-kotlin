@@ -59,8 +59,7 @@ subprojects {
         // Spring
         implementation("org.springframework.boot:spring-boot-starter")
         // Serialize
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-        implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+        implementation("tools.jackson.module:jackson-module-kotlin")
         // Test
         testRuntimeOnly("org.junit.platform:junit-platform-launcher")
         // testcontainers:mysql 이 jdbc 사용함
@@ -74,7 +73,7 @@ subprojects {
         // Testcontainers
         testImplementation("org.springframework.boot:spring-boot-testcontainers")
         testImplementation("org.testcontainers:testcontainers")
-        testImplementation("org.testcontainers:junit-jupiter")
+        testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     }
 
     tasks.withType(Jar::class) { enabled = true }
