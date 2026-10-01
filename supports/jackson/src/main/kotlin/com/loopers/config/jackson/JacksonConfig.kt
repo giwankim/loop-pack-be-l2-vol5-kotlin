@@ -17,7 +17,9 @@ class JacksonConfig {
     @Bean
     fun jacksonCustomizer() = JsonMapperBuilderCustomizer { builder ->
         // Serialization Features
-        builder.changeDefaultPropertyInclusion { it.withValueInclusion(JsonInclude.Include.NON_NULL) }
+        builder.changeDefaultPropertyInclusion {
+            it.withValueInclusion(JsonInclude.Include.NON_NULL).withContentInclusion(JsonInclude.Include.NON_NULL)
+        }
         builder.enable(
             StreamWriteFeature.AUTO_CLOSE_CONTENT,
             StreamWriteFeature.IGNORE_UNKNOWN,
