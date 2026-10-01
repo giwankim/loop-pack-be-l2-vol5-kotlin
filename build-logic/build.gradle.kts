@@ -11,7 +11,7 @@ ktlint {
     filter {
         // kotlin-dsl 과 typesafe-conventions 가 만든 build/generated-sources 는 통째로 뺀다(ADR 0009 의 조사 문서 6절).
         // 문자열 패턴은 소스 디렉터리 안의 상대 경로에 맞춰 보므로 파일 경로로 거른다.
-        val generatedSources = layout.buildDirectory.dir("generated-sources").get().asFile
-        exclude { it.file.startsWith(generatedSources) }
+        val generatedSources = layout.buildDirectory.dir("generated-sources")
+        exclude { it.file.startsWith(generatedSources.get().asFile) }
     }
 }
