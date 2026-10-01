@@ -3,11 +3,11 @@ package com.loopers.batch.job.demo
 import com.loopers.batch.job.demo.step.DemoTasklet
 import com.loopers.batch.listener.JobListener
 import com.loopers.batch.listener.StepMonitorListener
-import org.springframework.batch.core.job.Job
-import org.springframework.batch.core.step.Step
 import org.springframework.batch.core.configuration.annotation.JobScope
+import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.builder.JobBuilder
 import org.springframework.batch.core.repository.JobRepository
+import org.springframework.batch.core.step.Step
 import org.springframework.batch.core.step.builder.StepBuilder
 import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty

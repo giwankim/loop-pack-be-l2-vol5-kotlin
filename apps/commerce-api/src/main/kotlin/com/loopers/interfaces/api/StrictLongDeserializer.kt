@@ -1,12 +1,12 @@
 package com.loopers.interfaces.api
 
+import com.loopers.support.error.CoreException
+import com.loopers.support.error.ErrorType
 import tools.jackson.core.JsonParser
 import tools.jackson.core.JsonToken
 import tools.jackson.core.exc.InputCoercionException
 import tools.jackson.databind.DeserializationContext
 import tools.jackson.databind.ValueDeserializer
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
 
 /**
  * 정수 표기의 JSON 숫자만 `Long`으로 받는다. `1000`은 받고 `"1000"`, `1000.0`, `1e3`, `true`, 배열·객체는 거절한다.

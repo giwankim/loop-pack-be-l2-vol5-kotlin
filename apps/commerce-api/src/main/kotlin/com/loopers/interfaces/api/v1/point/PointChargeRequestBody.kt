@@ -1,10 +1,10 @@
 package com.loopers.interfaces.api.v1.point
 
-import tools.jackson.databind.annotation.JsonDeserialize
 import com.loopers.application.point.PointChargeRequest
 import com.loopers.interfaces.api.StrictLongDeserializer
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import tools.jackson.databind.annotation.JsonDeserialize
 
 /**
  * 충전 요청의 HTTP 본문. 카탈로그와 달리 application의 Request를 본문으로 바로 받지 않는다. JSON 토큰의 종류를

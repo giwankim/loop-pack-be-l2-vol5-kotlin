@@ -1,6 +1,5 @@
 package com.loopers.config.kafka
 
-import tools.jackson.databind.json.JsonMapper
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.context.annotation.Bean
@@ -15,6 +14,7 @@ import org.springframework.kafka.core.ProducerFactory
 import org.springframework.kafka.listener.ContainerProperties
 import org.springframework.kafka.support.converter.BatchMessagingMessageConverter
 import org.springframework.kafka.support.converter.ByteArrayJacksonJsonMessageConverter
+import tools.jackson.databind.json.JsonMapper
 import java.util.HashMap
 
 @EnableKafka
