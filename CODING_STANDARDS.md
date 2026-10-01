@@ -28,7 +28,8 @@
 
 - 애그리거트마다 `<Aggregate>Fixtures.kt` 하나를 그 애그리거트의 domain 테스트 패키지에 둔다. 값 생성기, 엔티티 fixture, Request fixture가 그 파일에 함께 있다.
 - fixture와 생성기는 최상위 함수다. 저장까지 맡아 저장소를 주입받는 `UserFixture`만 Spring 컴포넌트다. 모든 필드는 생성된 기본값을 가진 이름 있는 파라미터다. 다른 애그리거트를 가리키는 인자(브랜드, 브랜드 ID, 사용자 ID, 상품)만 기본값 없이 받는다.
-- 엔티티·Request fixture의 이름은 `a`/`an`에 타입 이름을 잇는다(`aBrand`, `aProductAdminRegisterRequest`). 생성기의 이름은 규칙을 말한다(`brandName`, `productPrice`).
+- 엔티티·Request fixture의 이름은 `create`에 타입 이름을 잇는다(`createBrand`, `createProductAdminRegisterRequest`). 생성기의 이름은 규칙을 말한다(`brandName`, `productPrice`).
 - 엔티티 fixture는 진짜 생성자를 불러 저장하지 않은 엔티티를 돌려준다. 저장은 테스트가 한다.
+- `create<타입>` 이름은 저장하지 않는 fixture만 쓴다. 저장까지 하는 테스트 도우미는 다른 이름으로 한 일을 드러낸다(사용자와 계정을 저장하는 `UserFixture.registerUser`, 주문 API를 부르는 `postOrder`). 용어집에서 주문의 행위는 `create`라 `createOrder`를 도우미 이름으로 쓰면 fixture와 겹친다.
 - 생성기는 `Instancio.gen()`으로 엔티티 상수가 정한 범위에서 값을 뽑는다. 기본값은 동작을 바꾸는 경계를 피한다(재고는 0이 되지 않는다). Instancio의 Bean Validation 연동은 `instancio.properties`로 켜 두었지만 `Instancio.gen()`은 애노테이션을 읽지 않는다. 범위는 연동이 아니라 생성기가 정한다.
 - 생성기가 있는 fixture 파일마다 같은 패키지에 계약 테스트가 있다. 기본값을 1,000개쯤 뽑아 문서화한 범위를 확인하고, 모든 Request fixture를 그 Request의 제약으로 검증한다. 생성기나 fixture를 더하거나 범위를 바꾸면 계약 테스트도 함께 바꾼다.
