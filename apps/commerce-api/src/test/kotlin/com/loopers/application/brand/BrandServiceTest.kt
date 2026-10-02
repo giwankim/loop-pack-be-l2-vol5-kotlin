@@ -7,6 +7,8 @@ import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -25,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional
  * 상품은 상품 유스케이스가 아니라 저장 약속으로 만든다. 다른 조각의 준비물이라, 상품 등록 규칙이 바뀌어도 브랜드 테스트는 흔들리지 않는다.
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class BrandServiceTest(
     private val brandService: BrandService,

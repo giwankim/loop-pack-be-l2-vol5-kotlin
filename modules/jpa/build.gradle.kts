@@ -14,5 +14,6 @@ dependencies {
     testImplementation(libs.testcontainers.mysql)
 
     testFixturesImplementation(libs.springBootStarterDataJpa)
+    testFixturesImplementation(libs.springBootTest)
     testFixturesImplementation(libs.testcontainers.mysql)
 }

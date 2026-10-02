@@ -4,6 +4,8 @@ import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
@@ -33,7 +35,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class PointApiMockMvcTest(
     private val mockMvc: MockMvc,

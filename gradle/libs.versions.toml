@@ -34,6 +34,7 @@ kotlinLogging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "
 springBootStarter = { module = "org.springframework.boot:spring-boot-starter" }
 springBootStarterValidation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 springBootStarterTest = { module = "org.springframework.boot:spring-boot-starter-test" }
+springBootTest = { module = "org.springframework.boot:spring-boot-test" }
 springBootTestcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
 springBootStarterWebmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
 springBootStarterActuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }

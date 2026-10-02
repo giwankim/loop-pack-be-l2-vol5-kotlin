@@ -6,6 +6,8 @@ import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
@@ -15,12 +17,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
  * [ProductService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.BrandServiceTest]와 같다.
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class ProductServiceTest(
     private val productService: ProductService,

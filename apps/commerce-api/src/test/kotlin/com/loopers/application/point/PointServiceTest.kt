@@ -4,6 +4,8 @@ import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional
  * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [PointServiceTransactionTest]가 따로 본다.
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class PointServiceTest(
     private val pointService: PointService,

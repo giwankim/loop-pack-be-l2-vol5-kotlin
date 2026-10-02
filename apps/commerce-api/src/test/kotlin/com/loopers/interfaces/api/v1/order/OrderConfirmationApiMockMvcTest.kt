@@ -8,6 +8,8 @@ import com.loopers.application.product.ProductAdminUpdateRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.UserFixture
 import org.assertj.core.api.Assertions.assertThat
@@ -34,7 +36,7 @@ import java.time.Instant
 /** Each request ends its own transaction; read-back uses fresh persistence contexts. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderConfirmationApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,

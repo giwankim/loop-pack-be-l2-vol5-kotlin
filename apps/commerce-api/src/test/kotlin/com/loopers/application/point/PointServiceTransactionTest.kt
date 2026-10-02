@@ -1,6 +1,8 @@
 package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccountRepository
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
@@ -9,6 +11,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 
 /**
  * 충전의 커밋을 서비스 트랜잭션 밖에서 본다. 테스트 트랜잭션으로 감싸면 서비스가 그 안에 합류해
@@ -19,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest
  * 본다([com.loopers.interfaces.api.v1.order.OrderConfirmationApiMockMvcTest], 설계 18.1).
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 class PointServiceTransactionTest(
     private val pointService: PointService,
     private val pointAccountRepository: PointAccountRepository,

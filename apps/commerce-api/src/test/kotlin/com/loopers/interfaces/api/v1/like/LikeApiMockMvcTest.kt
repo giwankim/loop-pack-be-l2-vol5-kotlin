@@ -9,6 +9,8 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
@@ -34,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class LikeApiMockMvcTest(
     private val mockMvc: MockMvc,

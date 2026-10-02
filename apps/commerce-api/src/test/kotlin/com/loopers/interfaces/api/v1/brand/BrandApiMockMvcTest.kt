@@ -4,6 +4,8 @@ import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Test
@@ -27,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class BrandApiMockMvcTest(
     private val mockMvc: MockMvc,

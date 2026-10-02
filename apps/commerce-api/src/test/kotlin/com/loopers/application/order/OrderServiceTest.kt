@@ -14,6 +14,8 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional
  * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class OrderServiceTest(
     private val orderService: OrderService,

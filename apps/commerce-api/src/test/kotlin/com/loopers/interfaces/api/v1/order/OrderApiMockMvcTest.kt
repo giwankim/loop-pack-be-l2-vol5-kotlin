@@ -9,6 +9,8 @@ import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.assertCheckConstraintRejects
 import jakarta.persistence.EntityManagerFactory
@@ -38,7 +40,7 @@ import tools.jackson.databind.ObjectMapper
 /** No test transaction: every HTTP request commits or rolls back before the next request reads it. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,

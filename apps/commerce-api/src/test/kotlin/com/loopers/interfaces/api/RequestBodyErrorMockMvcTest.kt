@@ -2,6 +2,8 @@ package com.loopers.interfaces.api
 
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -26,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class RequestBodyErrorMockMvcTest(
     private val mockMvc: MockMvc,

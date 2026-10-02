@@ -6,5 +6,6 @@ plugins {
 dependencies {
     api(libs.springBootStarterDataRedis)
 
+    testFixturesImplementation(libs.springBootTest)
     testFixturesImplementation(libs.testcontainers)
 }

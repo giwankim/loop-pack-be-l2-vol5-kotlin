@@ -7,6 +7,8 @@ import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -37,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class BrandAdminApiMockMvcTest(
     private val mockMvc: MockMvc,

@@ -12,6 +12,8 @@ import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -31,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional
  * 취소가 행을 지운다는 약속은 테이블에서 봐야 한다(ADR 0001).
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class LikeServiceTest(
     private val likeService: LikeService,
