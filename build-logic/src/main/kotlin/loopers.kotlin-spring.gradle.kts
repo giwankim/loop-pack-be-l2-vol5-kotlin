@@ -38,14 +38,8 @@ dependencyManagement {
     }
 }
 
-// Boot 플러그인이 javac 에 거는 설정을 모든 모듈에 건다. kapt 가 만든 QueryDSL Q 클래스를 javac 가 컴파일한다.
-tasks.withType<JavaCompile>().configureEach {
-    if ("-parameters" !in options.compilerArgs) {
-        options.compilerArgs.add("-parameters")
-    }
-    if (options.encoding == null) {
-        options.encoding = "UTF-8"
-    }
+ktlint {
+    version = libs.versions.ktlint
 }
 
 dependencies {
@@ -73,6 +67,16 @@ dependencies {
     testImplementation(libs.testcontainers.junitJupiter)
 }
 
+// Boot 플러그인이 javac 에 거는 설정을 모든 모듈에 건다. kapt 가 만든 QueryDSL Q 클래스를 javac 가 컴파일한다.
+tasks.withType<JavaCompile>().configureEach {
+    if ("-parameters" !in options.compilerArgs) {
+        options.compilerArgs.add("-parameters")
+    }
+    if (options.encoding == null) {
+        options.encoding = "UTF-8"
+    }
+}
+
 tasks.test {
     maxParallelForks = 1
     useJUnitPlatform()
@@ -88,8 +92,4 @@ tasks.withType<JacocoReport>().configureEach {
         csv.required = false
         html.required = false
     }
-}
-
-ktlint {
-    version = libs.versions.ktlint
 }
