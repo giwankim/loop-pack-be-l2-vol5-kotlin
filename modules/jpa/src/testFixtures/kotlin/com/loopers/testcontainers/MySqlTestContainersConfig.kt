@@ -7,7 +7,7 @@ import org.testcontainers.utility.DockerImageName
 @Configuration
 class MySqlTestContainersConfig {
     companion object {
-        private val mySqlContainer: MySQLContainer = MySQLContainer(DockerImageName.parse("mysql:8.0"))
+        private val mySqlContainer: MySQLContainer = MySQLContainer(DockerImageName.parse("mysql:8.4"))
             .apply {
                 withDatabaseName("loopers")
                 withUsername("test")
@@ -16,7 +16,6 @@ class MySqlTestContainersConfig {
                 withCommand(
                     "--character-set-server=utf8mb4",
                     "--collation-server=utf8mb4_general_ci",
-                    "--skip-character-set-client-handshake",
                 )
                 start()
             }

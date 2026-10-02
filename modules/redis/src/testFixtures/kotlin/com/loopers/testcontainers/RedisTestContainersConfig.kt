@@ -9,7 +9,7 @@ class RedisTestContainersConfig {
     companion object {
         private const val REDIS_PORT = 6379
 
-        private val redisContainer: GenericContainer<*> = GenericContainer(DockerImageName.parse("redis:latest"))
+        private val redisContainer: GenericContainer<*> = GenericContainer(DockerImageName.parse("redis:8.10"))
             .apply {
                 withExposedPorts(REDIS_PORT)
                 start()
