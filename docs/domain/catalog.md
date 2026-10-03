@@ -15,13 +15,13 @@
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
-| `name` | `String` | 앞뒤 공백을 뗀 이름 |
+| `name` | `String` | 받은 그대로의 이름 |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각. `BaseEntity` |
 
 ### 규칙
 
-- 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 뗀 값을 저장한다. 어기면 `InvalidNameException`.
-- 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 대소문자를 가리지 않고 본다(`Loopers`와 `loopers`는 같은 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 수정은 자기를 뺀 나머지 브랜드와 본다(대소문자만 바꾸는 수정이 자기 이름과 겹치지 않도록). 어기면 `BRAND_NAME_DUPLICATED`.
+- 이름은 공백뿐일 수 없고, 앞뒤 공백을 포함해 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 받은 그대로 저장한다. 어기면 `InvalidNameException`.
+- 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 컬럼 collation이 정한다. 대소문자와 뒤 공백은 가리지 않고(`Loopers`, `loopers`, `Loopers `는 같은 이름), 앞 공백은 가린다(` Loopers`는 다른 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 수정은 자기를 뺀 나머지 브랜드와 본다(대소문자만 바꾸는 수정이 자기 이름과 겹치지 않도록). 어기면 `BRAND_NAME_DUPLICATED`.
 - 삭제되지 않은 상품이 하나라도 남아 있으면 삭제할 수 없다. 재고 0인 상품도 남은 상품이다. 이것도 application이 상품 저장소에 물어 확인한다. 어기면 `BRAND_HAS_PRODUCTS`.
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
 
@@ -29,15 +29,14 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Brand(name)` | 이름의 앞뒤 공백을 떼고 공백과 길이 상한을 검사하고 만든다 | `InvalidNameException` |
+| `Brand(name)` | 이름의 공백과 길이 상한을 검사하고 받은 그대로 담아 만든다 | `InvalidNameException` |
 | `update(name)` | 이름을 바꾼다. 거절되면 기존 이름이 그대로 남는다 | `InvalidNameException` |
-| `Brand.normalizeName(name)` | 저장될 이름(앞뒤 공백을 뗀 값)을 검사해 돌려준다. 브랜드를 만들거나 바꾸지 않는다 | `InvalidNameException` |
 | `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 삭제 조건은 호출 전에 application이 본다 |
 
 ### 협력
 
-- 등록: `BrandService.register` → `Brand(name)`(trim, 공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 중복 조회가 뗀 이름을 봐야 하므로 브랜드를 먼저 만들고 그 이름으로 묻는다.
-- 수정: `BrandService.update` → 삭제되지 않은 브랜드 조회 → `Brand.normalizeName(name)`으로 저장될 이름을 얻음 → 그 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)` → 저장. 브랜드를 바꾸기 전에 거절이 끝나므로 거절된 이름은 브랜드에 닿지 않는다(설계 5.22).
+- 등록: `BrandService.register` → `Brand(name)`(공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
+- 수정: `BrandService.update` → 삭제되지 않은 브랜드 조회 → 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
 - 목록: `BrandService.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
 - 삭제: `BrandService.delete` → 삭제되지 않은 브랜드 조회 → `ProductRepository.existsByBrandId`로 남은 상품이 있는지 조회 → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
 
@@ -51,14 +50,14 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
 | `brand` | `Brand` | 속한 브랜드. `@ManyToOne(fetch = LAZY)`, 읽기용 |
-| `name` | `String` | 앞뒤 공백을 뗀 이름 |
+| `name` | `String` | 받은 그대로의 이름 |
 | `price` | `Money` | 가격 |
 | `stock` | `Stock` | 재고. `@Embedded` |
 | `deletedAt` | `ZonedDateTime?` | 삭제 시각 |
 
 ### 규칙
 
-- 이름은 앞뒤 공백을 뗀 뒤 비어 있지 않고 100자(`Product.NAME_MAX_LENGTH`) 이하다. 뗀 값을 저장한다. 브랜드와 상한이 같은 것은 우연이라 따로 바뀔 수 있다. 어기면 `InvalidNameException`.
+- 이름은 공백뿐일 수 없고, 앞뒤 공백을 포함해 100자(`Product.NAME_MAX_LENGTH`) 이하다. 받은 그대로 저장한다. 브랜드와 상한이 같은 것은 우연이라 따로 바뀔 수 있다. 어기면 `InvalidNameException`.
 - 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고(`InvalidMoneyException`) `Product`가 1원 이상과 상한을 막는다(`InvalidPriceException`).
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
@@ -68,7 +67,7 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Product(brand, name, price, stock)` | 이름의 앞뒤 공백을 떼고 공백·길이 상한과 가격 범위를 검사하고 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
+| `Product(brand, name, price, stock)` | 이름의 공백·길이 상한과 가격 범위를 검사하고 이름은 받은 그대로 담아 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
 | `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
 | `deductStock(quantity)` | 양수 구매 수량을 차감한다. 거절하면 기존 재고를 유지한다 | `InvalidStockException`, `InsufficientStockException` |
