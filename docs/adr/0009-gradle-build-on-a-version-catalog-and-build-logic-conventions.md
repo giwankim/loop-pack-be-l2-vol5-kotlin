@@ -56,4 +56,4 @@ date: 2026-10-01
 - 라이브러리 모듈의 jar 이름에서 Boot 플러그인이 붙이던 `-plain` 분류자가 빠진다.
 - 정리하기 전까지는 쓰이지 않는 공통 의존성이 테스트가 없는 모듈에도 그대로 실리고, mockito-core는 BOM(5.23.0)보다 낮은 5.14.0에 고정되어 있다.
 
-조사: [Gradle 버전 카탈로그와 컨벤션 플러그인 조사](../research/gradle-version-catalog-and-convention-plugins.md). typesafe-conventions 시험 결과는 그 문서의 6절에 있다.
+조사: [Gradle 버전 카탈로그와 컨벤션 플러그인 조사](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/f685ee017279c69934efb08f310986fc9d739664/docs/research/gradle-version-catalog-and-convention-plugins.md). typesafe-conventions 시험 결과는 그 문서의 6절에 있다.

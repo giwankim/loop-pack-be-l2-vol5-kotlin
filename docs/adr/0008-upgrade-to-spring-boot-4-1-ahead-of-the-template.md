@@ -36,4 +36,4 @@ date: 2026-10-01
 - 빌드하는 기계와 부트 jar를 실행하는 쪽 모두 Java 25가 있어야 한다. JDK 25가 없는 기계에서는 빌드가 toolchain을 찾지 못해 멈춘다.
 - 남겨 둔 것이 있다. Kafka 송수신에는 테스트가 없고, 빌드 스크립트에는 Gradle 10에서 깨질 경고 15건이 남는다. 로그에 trace ID가 찍히는지는 한 번 손으로 확인할 뿐이고, 테스트가 지키지 않는다.
 
-조사: [Spring Boot 4 업그레이드 조사](../research/spring-boot-4-upgrade.md). 시험 빌드: fork의 `prototype/boot4` 브랜치([PROTOTYPE-boot4.md](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/bd84e9f0cf0dabda1c78687b43ab5f2aaf7c8598/PROTOTYPE-boot4.md)).
+조사: [Spring Boot 4 업그레이드 조사](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/f685ee017279c69934efb08f310986fc9d739664/docs/research/spring-boot-4-upgrade.md). 시험 빌드: fork의 `prototype/boot4` 브랜치([PROTOTYPE-boot4.md](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/bd84e9f0cf0dabda1c78687b43ab5f2aaf7c8598/PROTOTYPE-boot4.md)).
