@@ -1,6 +1,6 @@
 # 포인트·주문 설계 인터뷰
 
-상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-10-03 같은 상품의 수량 합산(Q3)을 철회했다(5.2, #55). 같은 상품이 두 번 있는 주문 요청은 400이다. 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
+상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-10-03 같은 상품의 수량 합산(Q3)을 철회했다(5.2, #55). 같은 상품이 두 번 있는 주문 요청은 400이다. 같은 날 엄격한 JSON 입력(Q20)도 철회했다(5.10, #55). 포인트·주문 본문도 카탈로그처럼 Jackson 기본대로 읽는다. 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
 
 ## 1. 근거와 범위
 
@@ -49,7 +49,7 @@
 - ADR 0001과 엔티티의 `@SQLRestriction`은 삭제된 상품·브랜드를 조회에서 숨긴다. Q2·Q10·Q14에 따라 OrderLineItem은 `productId`를 가지고 생성 당시 이름·단가·수량 등은 스냅샷에서 읽는다.
 - 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/interfaces/api/UserIdHeader.kt)가 누락을 401로 처리하고, [LikeService](../../apps/commerce-api/src/main/kotlin/com/loopers/application/like/LikeService.kt)가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다.
 - 기존 `Stock.quantity`는 0 이상의 `Int`다. 상품 가격의 10억 원 상한은 Product만의 규칙이므로 포인트 잔액이나 주문 합계에 자동 적용하지 않는다.
-- 현재 [JacksonConfig](../../supports/jackson/src/main/kotlin/com/loopers/config/jackson/JacksonConfig.kt)는 `ACCEPT_SINGLE_VALUE_AS_ARRAY`를 켜고, 숫자 소수부·문자열의 정수 변환을 막는 명시적 설정은 두지 않았다. Q20에 따라 새 API의 요청 경계에서 엄격히 검사하고 전역 설정은 바꾸지 않는다. `Long`·`Int`와 최솟값 제약만으로 충분하다고 간주하지 않는다.
+- 현재 [JacksonConfig](../../supports/jackson/src/main/kotlin/com/loopers/config/jackson/JacksonConfig.kt)는 `ACCEPT_SINGLE_VALUE_AS_ARRAY`를 켜고, 숫자 소수부·문자열의 정수 변환을 막는 명시적 설정은 두지 않았다. Q20에 따라 새 API의 요청 경계에서 엄격히 검사하고 전역 설정은 바꾸지 않는다. `Long`·`Int`와 최솟값 제약만으로 충분하다고 간주하지 않는다. (2026-10-03(#55)에 Q20을 철회했다. 새 API도 이 설정 그대로 읽는다(5.10).)
 - 기존 목록 계약은 `items/page/size/hasNext`, 0부터 시작하는 page, 기본 size 20·최대 100, 최신순의 `createdAt DESC, id DESC`다. Q19에서 주문에도 재사용하기로 했다.
 - [jpa.yml](../../modules/jpa/src/main/resources/jpa.yml)은 기본 `ddl-auto=none`, local/test는 `create`다. Q23에서 DB migration 검토를 보류했으므로 도구 도입이나 기존 DB 전환을 이번 설계의 선행 조건으로 두지 않는다. 새 FK의 실제 생성·검증에 필요한 최소 초기화는 구현 시 다룬다.
 - [ErrorType](../../apps/commerce-api/src/main/kotlin/com/loopers/support/error/ErrorType.kt)은 HTTP status와 문자열 code를 이미 분리한다. 새 업무 코드를 추가하되 기존 항목의 code는 보존한다. 실제 응답 필드 이름은 [ApiResponse](../../apps/commerce-api/src/main/kotlin/com/loopers/interfaces/api/ApiResponse.kt)의 `meta.errorCode`다.
@@ -85,7 +85,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 | Q17 | Q1, Q7 | 사용자 fixture와 포인트 계정의 초기 상태 | 사용자 fixture를 준비할 때 잔액 0인 계정을 함께 만든다. 조회나 첫 주문이 계정을 생성하지 않는다. |
 | Q18 | Q4, Q9 | 소유권·입력·업무 거절의 오류 계약 | 식별 누락·미존재 사용자는 401, 없거나 남의 주문은 404, 입력 오류는 400, 재고·잔액 부족과 키 내용 충돌은 409. 기존 응답 모양을 유지하고 포인트·주문의 업무 오류는 구별 가능한 meta.errorCode를 부여한다. |
 | Q19 | Q1, Q5, Q10 | 주문 조회·성공 응답 계약 | 생성 201, 확정·조회 200. 기존 Slice 형태·page/size·최신순을 사용하고 목록·상세에 품목을 포함한다. 관리자는 userId로 필터 가능하다. DRAFT에는 paidAmount·confirmedAt을 생략하고 CONFIRMED에는 저장된 값을 제공한다. |
-| Q20 | Q3, Q13 | JSON 정수와 품목 배열의 허용 표현 | 금액·수량에는 정수 표기의 JSON 숫자만 허용하고 숫자 문자열·소수·지수 표기는 거절한다. items는 배열만 허용한다. 기존 카탈로그의 전역 바인딩 계약은 변경하지 않는다. |
+| Q20 | Q3, Q13 | JSON 정수와 품목 배열의 허용 표현 | 금액·수량에는 정수 표기의 JSON 숫자만 허용하고 숫자 문자열·소수·지수 표기는 거절한다. items는 배열만 허용한다. 기존 카탈로그의 전역 바인딩 계약은 변경하지 않는다. **5.10에서 철회(#55).** |
 
 | ID | 선행 결정 | 4차 질문 | 사용자의 선택 |
 | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 - 재고가 0이거나 포인트 잔액이 주문 금액보다 작아도 DRAFT를 만들 수 있다. 상품 유효성·양수 수량·금액 범위 조건은 그대로 검사한다.
 - 각 충전액은 1..Long.MAX_VALUE이며 충전 후 잔액도 Long.MAX_VALUE를 넘을 수 없다. 잔액은 0을 허용한다.
 - 주문 입력 품목은 받은 그대로 1..100개다. 수량은 1..Int.MAX_VALUE이고, 품목 금액·주문 합계도 Long 범위를 넘으면 거절한다. (처음에는 합산 전 개수와 상품별 합산 수량의 범위를 따로 적었다. 2026-10-03(#55)에 합산을 지웠다(5.2).)
-- 클라이언트가 보낸 단가나 합계를 신뢰하지 않고 서버가 상품 가격과 수량으로 계산한다. Q20에 따라 정수 표기의 JSON 숫자만 받는다(5.10).
+- 클라이언트가 보낸 단가나 합계를 신뢰하지 않고 서버가 상품 가격과 수량으로 계산한다. 숫자는 카탈로그처럼 Jackson 기본대로 읽는다(5.10). (처음에는 Q20에 따라 정수 표기의 JSON 숫자만 받았다. 2026-10-03(#55)에 철회했다.)
 
 ### 5.8 키와 첫 성공 응답 — Q9, Q15, Q16
 
@@ -195,6 +195,18 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 
 ### 5.10 엄격한 JSON 입력 — Q20
 
+> 2026-10-03 이 절의 선택을 철회했다(#55). 포인트·주문 본문도 카탈로그처럼 Jackson 기본 바인딩과 기존 `JacksonConfig`로 읽는다. 한 API 안에 입력 정책이 둘이던 것을 하나로 모은 것이다. 지금의 결과는 다음과 같다.
+>
+> | 입력 | 결과 |
+> | --- | --- |
+> | `"amount": "5"` 또는 `"amount": 5.0`, `"quantity": "2"` | 허용. 정수로 읽는다. 상품 ID도 같다. |
+> | `"amount": 1.5` | 허용. 소수부를 버려 1포인트를 충전한다(`PointApiMockMvcTest`가 고정). |
+> | 숫자 필드 누락·`null`·숫자가 아닌 문자열·boolean·배열·`Long`·`Int` 범위 밖 | 400 범용 `Bad Request`. |
+> | `"items"`가 문자열·숫자·boolean·`null` | 400 범용 `Bad Request`. |
+> | `"items": {"productId": 10, "quantity": 2}` | 허용. `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 한 품목 배열로 읽는다(`OrderApiMockMvcTest`가 고정). |
+>
+> 대가는 둘이다. 소수 금액은 오류 없이 버림되어, `1.5`를 보낸 클라이언트는 400 대신 1포인트 충전을 받는다. 품목 객체 하나는 배열로 감싸 받는다. 소수 버림은 카탈로그의 가격·재고가 이미 지던 대가다. 어느 쪽을 거절하려면 `JacksonConfig`를 바꿔 API 전체에 한 번에 적용한다.
+
 | 입력 | 결과 |
 | --- | --- |
 | `"amount": 1000` | 허용. 양수·Long 범위·충전 후 잔액 범위도 검사한다. |
@@ -209,6 +221,8 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 ## 6. API 입력·응답 초안
 
 > 2026-09-28 `Idempotency-Key` 헤더와 두 키 오류 코드를 17절에서 철회했다.
+>
+> 2026-10-03 JSON 형태·필수 값 오류의 전용 code를 5.10과 함께 철회했다(#55). 그 오류는 다른 엔드포인트와 같은 범용 `Bad Request`다.
 
 
 상태 코드·조회 범위·페이지 계약은 확정 사항이다. 아래 필드 이름과 응답 조합은 그 계약을 구체화한 초안이다. 응답은 기존 `ApiResponse`를 사용하며 null 필드는 기존 Jackson 정책에 따라 생략한다.
@@ -290,6 +304,8 @@ domain의 부족 예외를 interfaces에서 구체적으로 매핑한다. 기존
 ## 7. 클래스와 책임 초안
 
 > 2026-09-28 `PointHistory` 행과, PointService·상태 불변식의 이력 항목을 18절에서 철회했다. 결제 결과는 Order의 확정 상태·결제액·시각만으로 나타낸다.
+>
+> 2026-10-03 HTTP 입력 DTO를 5.10과 함께 철회했다(#55). 포인트·주문 Controller도 application Request를 본문으로 바로 받는다(카탈로그 설계 5.17).
 
 기존 layer-first 패키지를 유지한다. `domain/{기능}`, `application/{기능}`, `infrastructure/{기능}`, `interfaces/api/v1/{기능}`을 사용한다. 새로운 domain Service나 전체 패키지 재배치는 필요하지 않다.
 
@@ -339,7 +355,7 @@ classDiagram
 | OrderService | 생성 의도 정규화, 상품 스냅샷 생성, 재요청 판별, 확정 조율 | 확정에서 각 domain 저장소와 행동을 직접 조율한다. PointService를 호출해 별도 커밋하지 않는다. |
 | 조회 application | 소유권·페이지 조건, 저장된 주문·품목 조회, Info 생성 | 트랜잭션 안에서 필요한 데이터를 읽고 엔티티를 HTTP까지 노출하지 않는다. |
 | domain 저장소 포트 / infrastructure 구현 | 기존 저장소 구성과 같은 방향으로 저장·검색 | infrastructure가 application Info를 참조하지 않도록 한다. |
-| 새 HTTP 입력 DTO·응답 DTO | 엄격한 JSON 검증, 헤더·경로 바인딩, ApiResponse 변환 | application Request/Info와 domain에 Jackson 입력 정책·HTTP status를 넣지 않는다. |
+| 새 응답 DTO | 헤더·경로 바인딩, ApiResponse 변환 | application Info와 domain에 HTTP status를 넣지 않는다. 본문은 application Request로 바로 받는다. |
 
 상태 불변식:
 
@@ -421,6 +437,8 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 > 2026-09-28 충전·생성의 성공 기록 조회와 키 저장, 확정의 성공 재생을 17절에서 철회했다. 지금의 흐름은 17.3에 있다.
 >
 > 2026-09-28 충전과 확정의 이력 저장을 18절에서 철회했다. 지금의 흐름은 18.3에 있다.
+>
+> 2026-10-03 충전 1단계의 금액 토큰 확인을 5.10과 함께 철회했다(#55). HTTP는 본문을 Jackson 기본대로 읽는다.
 
 
 ### 충전
@@ -458,6 +476,8 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 > 2026-09-28 이력 수와 이력 롤백을 보던 부분을 18절에서 철회했다. 늦은 실패를 넣는 자리는 18.2에 있다.
 >
 > 2026-10-03 금액·수량 행의 합산 수량 넘침과 원본 품목 행의 합산 사례를 철회했다(#55, 5.2). 같은 상품이 두 번 있는 요청은 400이며 아무것도 저장하지 않는다.
+>
+> 2026-10-03 JSON HTTP 경계 행의 문자열·소수·지수 거절과 단일 items 객체 거절을 철회했다(#55, 5.10).
 
 
 아래는 앞으로 작성·실행할 검증 목록이다. 현재 테스트가 구현되었거나 통과했다는 뜻이 아니다.
@@ -490,6 +510,8 @@ domain 단위 테스트, 실제 DB를 사용하는 application/repository 테스
 > 2026-09-28 상태·일관성 행의 결제 이력과 멱등성 행의 충전 이력을 18절에서 철회했다.
 >
 > 2026-10-03 가격·품목 행의 같은 상품 수량 합산을 철회했다(#55, 5.2).
+>
+> 2026-10-03 경계·검증 행의 엄격한 정수 JSON을 철회했다(#55, 5.10).
 
 Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 없이 명세를 작성·게시하는 to-spec을 요청해, 다음 내용을 [Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)에 정리했다. ready-for-agent 라벨과 게시된 본문이 작성한 명세와 일치함을 확인했다.
 
@@ -537,6 +559,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 12.3 엄격한 JSON 입력의 자리
 
+> 2026-10-03 이 절의 선택을 5.10과 함께 철회했다(#55). `PointChargeRequestBody`와 `StrictLongDeserializer`를 지웠고, `PointController`는 `PointChargeRequest`를 `@Valid @RequestBody`로 바로 받는다. 누락과 `null`은 Kotlin 모듈이, 숫자가 아닌 값과 `Long` 범위 밖은 Jackson이 거절하며 범용 `Bad Request`다. 검사 순서의 귀퉁이는 넓어졌다. 이제 `@Valid`도 핸들러 앞에서 돌므로, 충전액 0이나 `null`을 `X-USER-ID` 없이 보내면 401이 아니라 400이다. 카탈로그와 주문 생성은 이미 그랬다. 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 여전히 없다.
+
 **선택: interfaces의 `PointChargeRequestBody`가 본문을 받고, 필드의 `@JsonDeserialize(using = StrictLongDeserializer::class)`가 토큰의 종류를 가린 뒤 `toRequest(chargeKey)`로 application의 `PointChargeRequest`를 만든다.** 카탈로그처럼 application Request를 본문으로 바로 받지 않는 첫 자리다.
 
 - Q20이 전역 ObjectMapper를 바꾸지 않기로 했으므로 정책은 새 요청 경계에만 붙어야 한다. Request에 `@JsonDeserialize`를 두면 Jackson 정책이 application에 들어간다(7절 "Request/Info에 Jackson 입력 정책을 넣지 않는다"). 그래서 HTTP 전용 DTO가 하나 더 있다.
@@ -550,6 +574,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 ### 12.4 오류 코드의 구체화
 
 > 2026-09-28 `INVALID_IDEMPOTENCY_KEY`·`IDEMPOTENCY_KEY_CONFLICT` 행을 17절에서 철회했다.
+>
+> 2026-10-03 본문 행의 전용 code를 5.10과 함께 철회했다(#55). 그 행은 이제 범용 `Bad Request`다. 충전도 Controller가 Request를 `@Valid`로 받으므로, 아래 끝 문단이 적은 카탈로그 설계 5.18과의 차이도 사라졌다. HTTP 요청의 충전액 0은 `MethodArgumentNotValidException`으로 거절되며 응답은 같은 400과 메시지다.
 
 
 6절의 초안 가운데 이번 조각이 쓴 행과 그 자리다.
@@ -557,8 +583,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 | 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
 | --- | --- | --- | --- |
 | `Idempotency-Key` 없음·형식 오류 | 400 | `INVALID_IDEMPOTENCY_KEY` | `IdempotencyKeyHeader.require` (interfaces). 같은 형식을 `PointChargeRequest`의 `@Pattern`이 Service 입구에서 한 번 더 본다(카탈로그 설계 5.25) |
-| 본문의 토큰 종류·`null`·누락·`Long` 범위 밖 | 400 | `INVALID_POINT_ORDER_REQUEST` | `StrictLongDeserializer`와 `PointChargeRequestBody` (12.3) |
-| 충전액 0·음수 | 400 | 범용 `Bad Request` + "충전액은 1원 이상이어야 합니다." | `PointChargeRequest`의 `@Min(1)`, Service의 `@Validated`. domain의 `InvalidChargeAmountException`은 그 뒤에 있어 HTTP로 닿지 않는다 |
+| 본문의 `null`·누락·숫자가 아닌 값·`Long` 범위 밖 | 400 | 범용 `Bad Request` | Jackson·Kotlin 모듈 → 공용 `handleHttpMessageNotReadable` (5.10) |
+| 충전액 0·음수 | 400 | 범용 `Bad Request` + "충전액은 1원 이상이어야 합니다." | `PointChargeRequest`의 `@Min(1)`, Controller의 `@Valid`와 Service의 `@Validated`. domain의 `InvalidChargeAmountException`은 그 뒤에 있어 HTTP로 닿지 않는다 |
 | 충전 후 잔액 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `PointAccount.charge` → `Money.plus`. `RuleViolationException`의 기존 400 매핑 |
 | 같은 성공 키에 다른 충전액 | 409 | `IDEMPOTENCY_KEY_CONFLICT` | `PointService.charge` |
 | 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointService`. fixture와 데이터의 불일치(5.9, 6절 끝) |
@@ -587,6 +613,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 ### 12.7 테스트 경계
 
 > 2026-09-28 `PointHistoryRepositoryTest` 행과 이력을 보던 항목, 충전의 늦은 실패를 18절에서 철회했다(18.4).
+>
+> 2026-10-03 JSON 토큰 8종을 5.10과 함께 바꿨다(#55). 지금은 숫자 문자열·소수 표기 수락, 소수부 버림, 거절 6종(누락·`null`·숫자가 아닌 문자열·boolean·배열·`Long` 범위 밖)이다.
 
 | 확인할 것 | 테스트 | 비고 |
 | --- | --- | --- |
@@ -600,12 +628,14 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 ## 13. DRAFT 생성·내 상세 구현 — Issue #13
 
 > 2026-10-03 같은 상품의 합산을 철회했다(#55, 5.2). 둘째 항목의 생성 재생은 17절에서 이미 철회했고, 재생을 가르던 합산·정렬된 상품별 수량도 이제 없다.
+>
+> 2026-10-03 주문 전용 역직렬화기를 5.10과 함께 철회했다(#55).
 
 [Issue #13](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/13)은 `POST /api/v1/orders`와 `GET /api/v1/orders/{orderId}`를 구현한다. 포인트 계정을 조회하거나 만들지 않으며, 주문 확정 행위와 목록·관리자 조회는 후속 티켓에 남긴다.
 
 - `Order`가 `OrderLineItem`을 소유한다. 품목의 상품 식별자·이름·단가·수량·금액과 주문 합계는 생성 후 바뀌지 않는다. 상품 객체 연관은 없고, 현재 상품을 읽지 않아도 상세를 구성한다. 카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다.
 - nullable `paidAmount`·`confirmedAt`과 `DRAFT`·`CONFIRMED` 저장 형태를 함께 둔다. 상태와 결제 필드의 일치, 양수 금액·수량은 MySQL CHECK로도 확인한다. 이 티켓의 공개 API에는 확정 동작이 없다.
-- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 받은 품목의 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사한다(5.18). 같은 상품이 두 번 있으면 `Order` 생성자가 거절한다(5.2). (처음에는 합산 넘침도 정규화 과정에서 거절했다. 2026-10-03(#55)에 합산을 지웠다.) 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
+- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). 본문은 카탈로그처럼 Jackson 기본대로 읽는다(5.10). (처음에는 interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받았다. 2026-10-03(#55)에 지웠다.) 받은 품목의 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사한다(5.18). 같은 상품이 두 번 있으면 `Order` 생성자가 거절한다(5.2). (처음에는 합산 넘침도 정규화 과정에서 거절했다. 2026-10-03(#55)에 합산을 지웠다.) 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
 - `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
 - `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
@@ -633,11 +663,13 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - 검사 순서가 한 군데 바뀌었다. 키 형식을 Controller가 보게 되어, 잘못된 키와 없는 사용자를 함께 보낸 요청은 401이 아니라 400 `INVALID_IDEMPOTENCY_KEY`다. 헤더의 형식은 HTTP만 아는 사실이라 요청자 확인보다 앞선다는 12.4의 자리 그대로다. 본문이 요청자 확인보다 앞서는 것(12.3 끝)과 같은 까닭이며, 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 여전히 없다. 테스트는 한 가지 잘못만 보낸다.
 - Service 입구의 `@Pattern`은 남겼다. Controller를 거치지 않는 호출도 같은 규칙을 받아야 한다(카탈로그 설계 5.25). 충전이 `PointChargeRequest`의 필드 제약으로 하는 일을, 생성 키는 Request에 실리지 않으므로 메서드 파라미터 제약으로 한다.
 
-`OrderCreateRequestDeserializer`는 `StrictLongDeserializer`와 하는 일이 겹치지만 남겼다. `items`가 배열인지처럼 컨테이너의 모양을 보는 일은 필드 단위 역직렬화기로 적을 수 없다(12.3 끝). 합칠 때는 `Int`용 역직렬화기를 `StrictLongDeserializer` 옆에 두고 HTTP 입력 DTO를 하나 더 만드는 12.3의 모양이 된다.
+(2026-10-03(#55)에 두 역직렬화기를 모두 지웠다(5.10). 아래는 그 전의 기록이다.) `OrderCreateRequestDeserializer`는 `StrictLongDeserializer`와 하는 일이 겹치지만 남겼다. `items`가 배열인지처럼 컨테이너의 모양을 보는 일은 필드 단위 역직렬화기로 적을 수 없다(12.3 끝). 합칠 때는 `Int`용 역직렬화기를 `StrictLongDeserializer` 옆에 두고 HTTP 입력 DTO를 하나 더 만드는 12.3의 모양이 된다.
 
 ### 13.2 advice를 하나로 모음
 
 > 2026-10-03 오류 표에서 합산 넘침 행을 지우고 상품 중복 행을 더했다(#55, 5.2).
+>
+> 2026-10-03 본문 안의 거절을 `CoreException`으로 실어 보내던 길을 5.10과 함께 철회했다(#55). 역직렬화기 둘과 `handleHttpMessageNotReadable`의 `CoreException` 갈래, `INVALID_POINT_ORDER_REQUEST`를 지웠다. 아래 코드와 그 설명은 그 전의 기록이다. advice가 하나인 것은 그대로다. 오류 표의 본문 행과 테스트 묶음 문단은 지금에 맞춰 고쳤다.
 
 **선택: `@RestControllerAdvice`는 `ApiControllerAdvice` 하나다.** `OrderControllerAdvice`를 지웠고, 주문의 입력 오류는 다른 엔드포인트와 같은 자리에서 같은 규칙으로 답한다.
 
@@ -655,17 +687,17 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 | 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
 | --- | --- | --- | --- |
-| 본문을 읽을 수 없음(빈 본문, `null` 리터럴, 깨진 JSON) | 400 | 범용 `Bad Request` | Spring·Jackson. 역직렬화기가 판단할 기회가 없다 |
-| 토큰의 종류·컨테이너의 모양(`items`가 배열이 아님, 정수 표기가 아닌 수량·상품 ID) | 400 | `INVALID_POINT_ORDER_REQUEST` | `OrderCreateRequestDeserializer` → 공용 `handleHttpMessageNotReadable` |
+| 본문을 읽을 수 없음(빈 본문, `null` 리터럴, 깨진 JSON) | 400 | 범용 `Bad Request` | Spring·Jackson |
+| 값·모양(`items`가 문자열·숫자·boolean·`null`, 숫자로 읽을 수 없거나 범위 밖인 수량·상품 ID, 빠진 필드) | 400 | 범용 `Bad Request` | Jackson·Kotlin 모듈 → 공용 `handleHttpMessageNotReadable` (5.10) |
 | 받은 품목 개수, 양수 상품 ID·수량 | 400 | 범용 `Bad Request` + Request 제약의 메시지 | `OrderCreateRequest`의 `@Size`·`@Positive`, Controller의 `@Valid` |
 | 같은 상품이 두 번 있음 | 400 | 범용 `Bad Request` + `InvalidOrderException`의 메시지 | `Order` 생성자 → 공용 `handleRuleViolation`. 판매할 수 없는 상품의 중복은 404가 먼저다(15) |
 | 품목·주문 금액의 `Long` 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `Money` → 공용 `handleRuleViolation` |
 
-- 업무 규칙은 범용 400에 규칙의 메시지를 실어 답한다. 충전액 0과 충전 후 넘침이 가는 길과 같다(12.4). 12.4가 "금액 범위 오류"를 새 code에서 떼어 낸 판단을 주문도 따르는 것이다. `INVALID_POINT_ORDER_REQUEST`는 JSON의 모양에만 남는다.
+- 업무 규칙은 범용 400에 규칙의 메시지를 실어 답한다. 충전액 0과 충전 후 넘침이 가는 길과 같다(12.4). 12.4가 "금액 범위 오류"를 새 code에서 떼어 낸 판단을 주문도 따르는 것이다. (처음에는 `INVALID_POINT_ORDER_REQUEST`가 JSON의 모양에 남았다. 2026-10-03(#55)에 그것도 범용 400이 되었다.)
 - 그래서 `OrderCreateRequest`의 `@Size`·`@Positive`에 메시지를 적었다. 전에는 주문 전용 advice가 메시지를 버려 비어 있었고, 저장소의 다른 Request는 모두 메시지를 적는다(카탈로그 설계 5.18). 메시지가 없으면 Hibernate Validator의 locale 기본 문장이 그대로 내려간다.
-- 로그도 돌아왔다. `OrderControllerAdvice.invalidRequest()`는 예외를 받지 않고 버려 주문의 거절이 아무 줄도 남기지 않았다. 공용 handler는 모두 `log.warn`한다.
+- 로그도 돌아왔다. `OrderControllerAdvice.invalidRequest()`는 예외를 받지 않고 버려 주문의 거절이 아무 줄도 남기지 않았다. 공용 handler는 모두 `log.warn`한다. (2026-10-03(#55)에 `CoreException` 갈래를 지우며 `handleHttpMessageNotReadable`의 로그도 모든 갈래가 거치는 한 줄로 옮겼다.)
 - `ConstraintViolationException` handler는 옮기지 않고 지웠다. 본문 제약은 Controller의 `@Valid`가, 키는 `IdempotencyKeyHeader`가 먼저 보므로 HTTP로는 닿지 않는다. Controller를 거치지 않는 호출은 공용 handler가 받는다.
-- 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableBodies`), 역직렬화기가 거르는 33개(`malformedBodies`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. 검사하는 입력은 그대로이고 나누는 기준만 응답 계약에 맞췄다.
+- 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableBodies`), Jackson이 거르는 28개(`malformedBodies`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. (처음에는 역직렬화기가 거르는 33개였다. 2026-10-03(#55)에 Jackson이 받는 숫자 문자열·소수·지수 표기 6개와 단일 items 객체를 빼고 숫자가 아닌 문자열 2개를 더했다. 숫자 문자열 수량과 단일 items 객체는 생성되는 것을 따로 본다.)
 
 ## 14. 내 주문 목록 구현 — Issue #15
 
