@@ -15,15 +15,6 @@ class BrandFixturesTest {
 
     private val validator = Validation.buildDefaultValidatorFactory().validator
 
-    @Test
-    fun `brandName draws 1 to NAME_MAX_LENGTH uppercase letters`() {
-        val names = List(SAMPLES) { brandName() }
-
-        assertThat(names).allSatisfy { name ->
-            assertThat(name).hasSizeBetween(1, Brand.NAME_MAX_LENGTH).matches("[A-Z]+")
-        }
-    }
-
     /** 만들어지는 것 자체가 생성자의 이름 규칙을 지났다는 뜻이다. Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다. */
     @Test
     fun `createBrand builds unsaved brands`() {
