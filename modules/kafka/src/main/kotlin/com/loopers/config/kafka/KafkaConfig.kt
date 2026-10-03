@@ -1,8 +1,7 @@
 package com.loopers.config.kafka
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.kafka.clients.consumer.ConsumerConfig
-import org.springframework.boot.autoconfigure.kafka.KafkaProperties
+import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.kafka.annotation.EnableKafka
@@ -14,7 +13,8 @@ import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.core.ProducerFactory
 import org.springframework.kafka.listener.ContainerProperties
 import org.springframework.kafka.support.converter.BatchMessagingMessageConverter
-import org.springframework.kafka.support.converter.ByteArrayJsonMessageConverter
+import org.springframework.kafka.support.converter.ByteArrayJacksonJsonMessageConverter
+import tools.jackson.databind.json.JsonMapper
 import java.util.HashMap
 
 @EnableKafka
@@ -53,14 +53,14 @@ class KafkaConfig {
     }
 
     @Bean
-    fun jsonMessageConverter(objectMapper: ObjectMapper): ByteArrayJsonMessageConverter {
-        return ByteArrayJsonMessageConverter(objectMapper)
+    fun jsonMessageConverter(jsonMapper: JsonMapper): ByteArrayJacksonJsonMessageConverter {
+        return ByteArrayJacksonJsonMessageConverter(jsonMapper)
     }
 
     @Bean(BATCH_LISTENER)
     fun defaultBatchListenerContainerFactory(
         kafkaProperties: KafkaProperties,
-        converter: ByteArrayJsonMessageConverter,
+        converter: ByteArrayJacksonJsonMessageConverter,
     ): ConcurrentKafkaListenerContainerFactory<*, *> {
         val consumerConfig = HashMap(kafkaProperties.buildConsumerProperties())
             .apply {
@@ -73,11 +73,11 @@ class KafkaConfig {
             }
 
         return ConcurrentKafkaListenerContainerFactory<Any, Any>().apply {
-            consumerFactory = DefaultKafkaConsumerFactory(consumerConfig)
+            setConsumerFactory(DefaultKafkaConsumerFactory(consumerConfig))
             containerProperties.ackMode = ContainerProperties.AckMode.MANUAL
             setBatchMessageConverter(BatchMessagingMessageConverter(converter))
             setConcurrency(3)
-            isBatchListener = true
+            setBatchListener(true)
         }
     }
 }

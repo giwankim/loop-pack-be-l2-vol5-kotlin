@@ -14,7 +14,7 @@ interface BrandAdminApiSpec {
     @Operation(
         summary = "브랜드 등록",
         description = "이름으로 브랜드를 등록합니다. 이름은 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하이며 " +
-            "앞뒤 공백을 뗀 값이 저장됩니다. 삭제되지 않은 브랜드와 겹칠 수 없습니다.",
+            "받은 그대로 저장됩니다. 삭제되지 않은 브랜드와 겹칠 수 없고, 대소문자나 뒤 공백만 다른 이름도 겹친 것으로 봅니다.",
     )
     fun register(
         request: BrandAdminRegisterRequest,
@@ -42,7 +42,8 @@ interface BrandAdminApiSpec {
     @Operation(
         summary = "브랜드 수정",
         description = "브랜드의 이름을 바꿉니다. 이름은 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하이며 " +
-            "앞뒤 공백을 뗀 값이 저장됩니다. 삭제되지 않은 다른 브랜드와 겹칠 수 없습니다. 거절되면 기존 이름이 그대로 남습니다.",
+            "받은 그대로 저장됩니다. 삭제되지 않은 다른 브랜드와 겹칠 수 없고, 대소문자나 뒤 공백만 다른 이름도 겹친 것으로 봅니다. " +
+            "거절되면 기존 이름이 그대로 남습니다.",
     )
     fun update(
         @Schema(name = "brandId", description = "수정할 브랜드의 ID")

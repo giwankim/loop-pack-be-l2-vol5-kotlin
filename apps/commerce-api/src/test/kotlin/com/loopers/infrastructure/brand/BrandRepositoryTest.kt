@@ -3,6 +3,7 @@ package com.loopers.infrastructure.brand
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
@@ -10,8 +11,8 @@ import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
@@ -38,7 +39,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findById reads a saved brand back with the same values after flush and clear`() {
-        val saved = brandRepository.save(Brand("루퍼스"))
+        val saved = brandRepository.save(createBrand())
         entityManager.flushAndClear()
 
         val found = brandRepository.findById(saved.id)
@@ -46,7 +47,7 @@ class BrandRepositoryTest(
         assertAll(
             { assertThat(found).isNotNull().isNotSameAs(saved) },
             { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.name).isEqualTo("루퍼스") },
+            { assertThat(found?.name).isEqualTo(saved.name) },
             { assertThat(found?.createdAt).isNotNull() },
             { assertThat(found?.updatedAt).isNotNull() },
             { assertThat(found?.deletedAt).isNull() },
@@ -55,7 +56,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findById returns null for a deleted brand`() {
-        val deleted = saveDeleted("루퍼스")
+        val deleted = saveDeleted(createBrand())
 
         val found = brandRepository.findById(deleted.id)
 
@@ -64,7 +65,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `existsByName is true for a name a saved brand uses and false for an unused one`() {
-        brandRepository.save(Brand("루퍼스"))
+        brandRepository.save(createBrand(name = "루퍼스"))
         entityManager.flushAndClear()
 
         val taken = brandRepository.existsByName("루퍼스")
@@ -78,20 +79,20 @@ class BrandRepositoryTest(
 
     @Test
     fun `existsByName is false when only a deleted brand uses the name`() {
-        saveDeleted("루퍼스")
+        val deleted = saveDeleted(createBrand())
 
-        val taken = brandRepository.existsByName("루퍼스")
+        val taken = brandRepository.existsByName(deleted.name)
 
         assertThat(taken).isFalse()
     }
 
     @Test
     fun `existsByNameAndIdNot is true when another active brand uses the name`() {
-        val other = brandRepository.save(Brand("루퍼스"))
-        val renaming = brandRepository.save(Brand("무신사"))
+        val other = brandRepository.save(createBrand())
+        val renaming = brandRepository.save(createBrand())
         entityManager.flushAndClear()
 
-        val taken = brandRepository.existsByNameAndIdNot("루퍼스", renaming.id)
+        val taken = brandRepository.existsByNameAndIdNot(other.name, renaming.id)
 
         assertAll(
             { assertThat(taken).isTrue() },
@@ -99,13 +100,13 @@ class BrandRepositoryTest(
         )
     }
 
-    /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다(설계 5.23). */
+    /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다. */
     @Test
     fun `existsByNameAndIdNot is false for the brand's own name`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
+        val brand = brandRepository.save(createBrand())
         entityManager.flushAndClear()
 
-        val taken = brandRepository.existsByNameAndIdNot("루퍼스", brand.id)
+        val taken = brandRepository.existsByNameAndIdNot(brand.name, brand.id)
 
         assertThat(taken).isFalse()
     }
@@ -113,20 +114,20 @@ class BrandRepositoryTest(
     /** 삭제된 브랜드는 없는 브랜드이므로 그 이름은 비어 있다. 수정이 그 이름을 가져갈 수 있어야 한다. */
     @Test
     fun `existsByNameAndIdNot is false when only a deleted brand uses the name`() {
-        saveDeleted("루퍼스")
-        val renaming = brandRepository.save(Brand("무신사"))
+        val deleted = saveDeleted(createBrand())
+        val renaming = brandRepository.save(createBrand())
         entityManager.flushAndClear()
 
-        val taken = brandRepository.existsByNameAndIdNot("루퍼스", renaming.id)
+        val taken = brandRepository.existsByNameAndIdNot(deleted.name, renaming.id)
 
         assertThat(taken).isFalse()
     }
 
     @Test
     fun `findAll returns active brands with the newest registration first`() {
-        saveRegisteredAt("첫째", registeredAt = FIRST_REGISTERED_AT)
-        saveRegisteredAt("둘째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
-        saveRegisteredAt("셋째", registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
+        saveRegisteredAt(createBrand(name = "첫째"), registeredAt = FIRST_REGISTERED_AT)
+        saveRegisteredAt(createBrand(name = "둘째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
+        saveRegisteredAt(createBrand(name = "셋째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
 
         val slice = brandRepository.findAll(page = 0, size = 20)
 
@@ -135,8 +136,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll breaks a tie on registration time with the higher id first`() {
-        val first = saveRegisteredAt("첫째", registeredAt = FIRST_REGISTERED_AT)
-        val second = saveRegisteredAt("둘째", registeredAt = FIRST_REGISTERED_AT)
+        val first = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
+        val second = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
 
         val slice = brandRepository.findAll(page = 0, size = 20)
 
@@ -145,8 +146,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll leaves out deleted brands`() {
-        saveRegisteredAt("루퍼스", registeredAt = FIRST_REGISTERED_AT)
-        saveDeleted("무신사")
+        saveRegisteredAt(createBrand(name = "루퍼스"), registeredAt = FIRST_REGISTERED_AT)
+        saveDeleted(createBrand())
 
         val slice = brandRepository.findAll(page = 0, size = 20)
 
@@ -155,7 +156,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll has no next slice when the active brands fill the page exactly`() {
-        saveBrands(count = 2)
+        repeat(2) { brandRepository.save(createBrand()) }
+        entityManager.flushAndClear()
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
@@ -169,7 +171,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAll has a next slice when one more active brand follows the page`() {
-        saveBrands(count = 3)
+        repeat(3) { brandRepository.save(createBrand()) }
+        entityManager.flushAndClear()
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
@@ -179,14 +182,15 @@ class BrandRepositoryTest(
         )
     }
 
+    /** 1분 간격으로 등록한다. 목록은 최신순이므로 가장 먼저 등록한 브랜드만 둘째 조각에 남는다. */
     @Test
     fun `findAll skips the brands the earlier pages already read`() {
-        saveBrands(count = 3)
+        val brands = List(3) { saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
 
         val slice = brandRepository.findAll(page = 1, size = 2)
 
         assertAll(
-            { assertThat(slice.items.map { it.name }).containsExactly("브랜드 0") },
+            { assertThat(slice.items.map { it.id }).containsExactly(brands.first().id) },
             { assertThat(slice.hasNext).isFalse() },
             { assertThat(slice.page).isEqualTo(1) },
         )
@@ -198,7 +202,8 @@ class BrandRepositoryTest(
      */
     @Test
     fun `findAll reads a slice with a single query and never counts the total`() {
-        saveBrands(count = 3)
+        repeat(3) { brandRepository.save(createBrand()) }
+        entityManager.flushAndClear()
         entityManager.statistics.clear()
 
         val slice = brandRepository.findAll(page = 0, size = 2)
@@ -209,17 +214,12 @@ class BrandRepositoryTest(
         )
     }
 
-    /** 최신 등록이 뒤 번호가 되도록 `브랜드 0`부터 1분 간격으로 만든다. */
-    private fun saveBrands(count: Int) {
-        repeat(count) { saveRegisteredAt("브랜드 $it", registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
-    }
-
     /**
      * 등록 시각을 정해 저장한다. [com.loopers.domain.BaseEntity]가 `@PrePersist`에서 지금 시각을 찍으므로,
      * 정렬과 동률을 흔들림 없이 확인하려면 저장한 뒤 벌크 수정으로 시각을 옮겨야 한다.
      */
-    private fun saveRegisteredAt(name: String, registeredAt: ZonedDateTime): Brand {
-        val saved = brandRepository.save(Brand(name))
+    private fun saveRegisteredAt(brand: Brand, registeredAt: ZonedDateTime): Brand {
+        val saved = brandRepository.save(brand)
         entityManager.flush()
         entityManager.createQuery("update Brand b set b.createdAt = :registeredAt where b.id = :id")
             .setParameter("registeredAt", registeredAt)
@@ -229,7 +229,7 @@ class BrandRepositoryTest(
         return saved
     }
 
-    private fun saveDeleted(name: String): Brand =
-        brandRepository.save(Brand(name).apply { delete() })
+    private fun saveDeleted(brand: Brand): Brand =
+        brandRepository.save(brand.apply { delete() })
             .also { entityManager.flushAndClear() }
 }

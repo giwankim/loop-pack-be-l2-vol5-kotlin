@@ -23,22 +23,11 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     /**
      * 포인트·주문. 클라이언트가 구별해 다뤄야 하는 거절은 code도 새로 갖는다(설계 6 오류 코드).
      * 계정 없음은 fixture와 데이터의 불일치라 범용 500과 status·code를 공유한다(설계 6 끝).
-     * 키 메시지의 128자는 domain의 `IdempotencyKey.MAX_LENGTH`와 같다. support는 domain을 참조할 수 없어 글자로 적는다.
      */
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),
     ORDER_PRODUCT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "ORDER_PRODUCT_NOT_AVAILABLE", "주문할 수 없는 상품입니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "재고가 부족합니다."),
     INSUFFICIENT_POINTS(HttpStatus.CONFLICT, "INSUFFICIENT_POINTS", "포인트가 부족합니다."),
-    INVALID_IDEMPOTENCY_KEY(
-        HttpStatus.BAD_REQUEST,
-        "INVALID_IDEMPOTENCY_KEY",
-        "Idempotency-Key 헤더는 1자 이상 128자 이하의 영문·숫자·하이픈·밑줄이어야 합니다.",
-    ),
-    IDEMPOTENCY_KEY_CONFLICT(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_CONFLICT", "같은 Idempotency-Key로 다른 요청을 보냈습니다."),
-    INVALID_POINT_ORDER_REQUEST(
-        HttpStatus.BAD_REQUEST,
-        "INVALID_POINT_ORDER_REQUEST",
-        "요청 본문이 잘못되었습니다. 금액과 수량은 정수 표기의 JSON 숫자여야 하고 빠질 수 없습니다.",
-    ),
+    ORDER_ALREADY_CONFIRMED(HttpStatus.CONFLICT, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다."),
     POINT_ACCOUNT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "사용자의 포인트 계정이 없습니다."),
 }

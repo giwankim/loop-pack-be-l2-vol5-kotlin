@@ -2,7 +2,6 @@ package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
-import com.loopers.domain.point.PointHistoryRepository
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
@@ -23,29 +22,17 @@ import org.springframework.validation.annotation.Validated
 @Validated
 class PointService(
     private val pointAccountRepository: PointAccountRepository,
-    private val pointHistoryRepository: PointHistoryRepository,
     private val userRepository: UserRepository,
 ) {
     /**
-     * 충전한다. 잔액 변경과 그 충전의 CHARGE 이력을 한 트랜잭션으로 저장한다(설계 5.5).
-     *
-     * 같은 사용자의 같은 충전 키로 성공한 기록이 있으면 현재 잔액 대신 그때의 결과를 돌려준다. 충전액이 다르면
-     * 다른 의도이므로 거절한다. 실패한 요청은 기록을 남기지 않으므로 키를 쓰지 않는다(설계 5.8, ADR 0004).
-     * 요청자 확인과 입력 검사가 재요청보다 먼저다. 성공 기록을 다른 사용자에게 내주지 않는다.
+     * 충전한다. 잔액만 바꾸며 충전의 기록은 따로 남기지 않는다(ADR 0006).
+     * 요청마다 새 충전이다. 같은 충전액을 다시 보내면 다시 충전된다(ADR 0005).
      */
     @Transactional
     fun charge(userId: Long, @Valid request: PointChargeRequest): PointAccountInfo {
         checkUserExists(userId)
         val account = findAccount(userId)
-        pointHistoryRepository.findByAccountIdAndChargeKey(account.id, request.chargeKey)?.let { first ->
-            if (first.amount != Money(request.amount)) {
-                throw CoreException(ErrorType.IDEMPOTENCY_KEY_CONFLICT)
-            }
-            return PointAccountInfo.replayOf(first)
-        }
-
-        val history = account.charge(Money(request.amount), chargeKey = request.chargeKey)
-        pointHistoryRepository.save(history)
+        account.charge(Money(request.amount))
         return PointAccountInfo.from(account)
     }
 

@@ -1,19 +1,21 @@
 package com.loopers.application.order
 
-import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderProduct
+import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.OrderStatus
-import com.loopers.domain.product.Product
+import com.loopers.domain.order.createOrder
+import com.loopers.domain.order.createOrderCreateRequest
+import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.product.ProductRepository
-import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -30,12 +33,13 @@ import org.springframework.transaction.annotation.Transactional
  * [com.loopers.application.like.LikeServiceTest]와 같다.
  *
  * 생성과 상세는 [com.loopers.interfaces.api.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
- * 여기서는 조회만 본다. 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.order.OrderRepositoryTest]가 SQL로 고정한다.
+ * 여기서는 조회와, 생성이 요청마다 새 주문이라는 계약만 본다(ADR 0005). 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.order.OrderRepositoryTest]가 SQL로 고정한다.
  *
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과
  * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class OrderServiceTest(
     private val orderService: OrderService,
@@ -52,10 +56,13 @@ class OrderServiceTest(
     @Test
     fun `the order list carries the default page and size into the slice and fills the stored items`() {
         val owner = userRepository.save(User())
-        val shirt = registerProduct("티셔츠", 1_000)
-        val socks = registerProduct("양말", 2_000)
+        val brand = brandRepository.save(createBrand())
+        val shirt = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000)))
+        val socks = productRepository.save(createProduct(brand, name = "양말", price = Money(2_000)))
         // 품목을 상품 ID의 거꾸로 넣는다. 그대로 실리면 차례를 확인한 것이 아니다.
-        orderRepository.save(order(owner.id, "only", listOf(socks to 1, shirt to 2)))
+        orderRepository.save(
+            createOrder(owner.id, listOf(createOrderProduct(socks, quantity = 1), createOrderProduct(shirt, quantity = 2))),
+        )
         entityManager.flushAndClear()
 
         val slice = orderService.findAll(owner.id, OrderListRequest())
@@ -75,6 +82,26 @@ class OrderServiceTest(
             { assertThat(listed.items.map { it.unitPrice }).containsExactly(1_000L, 2_000L) },
             { assertThat(listed.items.map { it.quantity }).containsExactly(2, 1) },
             { assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L) },
+        )
+    }
+
+    /** 요청마다 새 주문이다. 같은 품목을 두 번 보내면 확정 전 주문이 둘 남는다(ADR 0005). */
+    @Test
+    fun `creating the same order twice leaves two drafts`() {
+        val owner = userRepository.save(User())
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        entityManager.flushAndClear()
+        val request = createOrderCreateRequest(listOf(product.id))
+
+        val first = orderService.create(owner.id, request)
+        val second = orderService.create(owner.id, request)
+        entityManager.flushAndClear()
+
+        val listed = orderService.findAll(owner.id, OrderListRequest()).items
+        assertAll(
+            { assertThat(second.orderId).isNotEqualTo(first.orderId) },
+            { assertThat(listed.map { it.orderId }).containsExactly(second.orderId, first.orderId) },
+            { assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT) },
         )
     }
 
@@ -114,9 +141,9 @@ class OrderServiceTest(
     @Test
     fun `a slice filled to the maximum size still reads its items in one query`() {
         val owner = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         val size = OrderListRequest.MAX_SIZE
-        List(size) { orderRepository.save(order(owner.id, "order-$it", listOf(product to 1))) }
+        List(size) { orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product)))) }
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
         statistics.isStatisticsEnabled = true
@@ -140,9 +167,9 @@ class OrderServiceTest(
     fun `the admin list gives the orders of every user latest first with the ordering user id`() {
         val mine = userRepository.save(User()).id
         val theirs = userRepository.save(User()).id
-        val product = registerProduct()
-        val first = orderRepository.save(order(mine, "mine", listOf(product to 1))).id
-        val second = orderRepository.save(order(theirs, "theirs", listOf(product to 1))).id
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        val first = orderRepository.save(createOrder(mine, listOf(createOrderProduct(product)))).id
+        val second = orderRepository.save(createOrder(theirs, listOf(createOrderProduct(product)))).id
         entityManager.flushAndClear()
 
         val slice = orderService.findAll(OrderAdminListRequest())
@@ -163,9 +190,10 @@ class OrderServiceTest(
     @Test
     fun `the admin list reads the page of orders and all of their items in two queries`() {
         val owner = userRepository.save(User()).id
-        val products = List(3) { registerProduct("상품 $it") }
-        orderRepository.save(order(owner, "three-items", products.map { it to 1 }))
-        orderRepository.save(order(owner, "one-item", listOf(products.first() to 2)))
+        val brand = brandRepository.save(createBrand())
+        val products = List(3) { productRepository.save(createProduct(brand)) }
+        orderRepository.save(createOrder(owner, products.map { createOrderProduct(it, quantity = 1) }))
+        orderRepository.save(createOrder(owner, listOf(createOrderProduct(products.first(), quantity = 2))))
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
         statistics.isStatisticsEnabled = true
@@ -205,9 +233,12 @@ class OrderServiceTest(
     @Test
     fun `the admin detail gives another user's order with the ordering user id and the stored snapshot`() {
         val owner = userRepository.save(User()).id
-        val shirt = registerProduct("티셔츠", 1_000)
-        val pants = registerProduct("바지", 2_000)
-        val saved = orderRepository.save(order(owner, "two-items", listOf(pants to 1, shirt to 2)))
+        val brand = brandRepository.save(createBrand())
+        val shirt = productRepository.save(createProduct(brand, price = Money(1_000)))
+        val pants = productRepository.save(createProduct(brand, price = Money(2_000)))
+        val saved = orderRepository.save(
+            createOrder(owner, listOf(createOrderProduct(pants, quantity = 1), createOrderProduct(shirt, quantity = 2))),
+        )
         entityManager.flushAndClear()
 
         val info = orderService.findForAdmin(saved.id)
@@ -239,16 +270,4 @@ class OrderServiceTest(
     private fun violationsOf(request: OrderAdminListRequest): List<String> =
         assertThrows<ConstraintViolationException> { orderService.findAll(request) }
             .constraintViolations.map { it.message }
-
-    private fun order(userId: Long, creationKey: String, lines: List<Pair<Product, Int>>): Order {
-        val products = lines.map { (product, quantity) ->
-            OrderProduct(product.id, product.name, product.price, quantity)
-        }
-        return Order(userId, creationKey, products)
-    }
-
-    private fun registerProduct(name: String = "티셔츠", price: Long = 1_000): Product {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        return productRepository.save(Product(brand = brand, name = name, price = Money(price), stock = Stock(1)))
-    }
 }

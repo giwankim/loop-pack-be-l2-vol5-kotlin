@@ -1,19 +1,21 @@
 package com.loopers.interfaces.api.v1.product
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
+import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
@@ -32,11 +34,11 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class ProductApiMockMvcTest(
     private val mockMvc: MockMvc,
-    private val brandService: BrandService,
+    private val brandRepository: BrandRepository,
     private val productService: ProductService,
     private val likeRepository: LikeRepository,
     private val entityManager: EntityManager,
@@ -49,8 +51,9 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `a customer reads a product without any identification`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val productId = registerProduct(brand.id, name = "티셔츠", price = 12_000, stock = 7)
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        val productId =
+            productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
 
         mockMvc.get("$ENDPOINT/$productId")
             .andExpect {
@@ -69,8 +72,8 @@ class ProductApiMockMvcTest(
     /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.ProductInfo]에서 온다. */
     @Test
     fun `the customer detail leaves out the stock count and the timestamps`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val productId = registerProduct(brand.id, stock = 7)
+        val brand = brandRepository.save(createBrand())
+        val productId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         mockMvc.get("$ENDPOINT/$productId")
             .andExpect {
@@ -94,8 +97,8 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `reading a deleted product returns 404`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val productId = registerProduct(brand.id)
+        val brand = brandRepository.save(createBrand())
+        val productId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
         productService.delete(productId)
         entityManager.flushAndClear()
 
@@ -110,8 +113,8 @@ class ProductApiMockMvcTest(
      */
     @Test
     fun `stock an admin set to zero shows up as sold out in the customer detail`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val productId = registerProduct(brand.id, stock = 7)
+        val brand = brandRepository.save(createBrand())
+        val productId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         mockMvc.get("$ENDPOINT/$productId").andExpect { jsonPath("$.data.soldOut") { value(false) } }
 
@@ -137,9 +140,9 @@ class ProductApiMockMvcTest(
      */
     @Test
     fun `a customer lists products latest registered first without asking for a sort`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val firstId = registerProduct(brand.id, name = "티셔츠", price = 3_000)
-        val secondId = registerProduct(brand.id, name = "후드티", price = 30_000)
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        val firstId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000)).id
+        val secondId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000)).id
         entityManager.flushAndClear()
 
         getProducts().andExpect {
@@ -158,9 +161,9 @@ class ProductApiMockMvcTest(
     /** 싼 상품을 먼저 등록해 두 기준이 서로 다른 차례를 내놓게 한다. 같은 차례라면 기준이 닿았는지 알 수 없다. */
     @Test
     fun `the sort in the query string reaches the list order`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val cheapId = registerProduct(brand.id, name = "양말", price = 3_000)
-        val dearId = registerProduct(brand.id, name = "코트", price = 30_000)
+        val brand = brandRepository.save(createBrand())
+        val cheapId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000)).id
+        val dearId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000)).id
         entityManager.flushAndClear()
 
         getProducts("sort" to "price_asc").andExpect {
@@ -182,9 +185,9 @@ class ProductApiMockMvcTest(
      */
     @Test
     fun `the likes_desc sort in the query string reaches the list order`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val likedId = registerProduct(brand.id, name = "티셔츠")
-        val unlikedId = registerProduct(brand.id, name = "후드티")
+        val brand = brandRepository.save(createBrand())
+        val likedId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val unlikedId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
         likeRepository.save(Like(userId = 1L, productId = likedId))
         entityManager.flushAndClear()
 
@@ -223,8 +226,8 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `listing under an unknown brand is empty rather than not found`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        registerProduct(brand.id)
+        val brand = brandRepository.save(createBrand())
+        productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
         getProducts("brandId" to "999").andExpect {
@@ -237,10 +240,10 @@ class ProductApiMockMvcTest(
 
     @Test
     fun `listing keeps only the asked brand's products`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val other = brandService.register(BrandAdminRegisterRequest("나이키"))
-        val mineId = registerProduct(brand.id, name = "티셔츠")
-        registerProduct(other.id, name = "운동화")
+        val brand = brandRepository.save(createBrand())
+        val other = brandRepository.save(createBrand())
+        val mineId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        productService.register(createProductAdminRegisterRequest(brandId = other.id))
         entityManager.flushAndClear()
 
         getProducts("brandId" to brand.id.toString()).andExpect {
@@ -254,14 +257,4 @@ class ProductApiMockMvcTest(
         mockMvc.get(ENDPOINT) {
             query.forEach { (name, value) -> param(name, value) }
         }
-
-    private fun registerProduct(
-        brandId: Long,
-        name: String = "티셔츠",
-        price: Long = 10_000,
-        stock: Int = 1,
-    ): Long =
-        productService.register(
-            ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock),
-        ).id
 }

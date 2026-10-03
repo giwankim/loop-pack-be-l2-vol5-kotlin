@@ -10,8 +10,6 @@ interface OrderRepository {
 
     fun findByIdAndUserId(id: Long, userId: Long): Order?
 
-    fun findByUserIdAndCreationKey(userId: Long, creationKey: String): Order?
-
     /**
      * 늦게 만든 주문이 앞서는 한 조각. 만든 시각이 같으면 나중에 받은 식별자가 앞선다.
      * [userId]가 있으면 그 사용자가 만든 주문만 고르고, 없으면 모든 사용자의 주문을 본다.

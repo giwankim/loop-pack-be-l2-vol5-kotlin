@@ -4,15 +4,11 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.shared.PageSlice
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
 /**
- * [BrandRepository]의 구현. 일은 모두 [BrandJpaRepository]에 맡기고, `findById`의 `Optional`만 nullable로 바꾸고
- * Spring Data의 조각을 domain의 [PageSlice]로 옮긴다.
- *
- * [BrandJpaRepository]가 [BrandRepository]를 직접 상속하지 않는 이유: `JpaRepository`와 [BrandRepository]가
- * 둘 다 `findById(Long)`를 선언하는데 반환 타입이 `Optional<Brand>`와 `Brand?`로 달라 한 인터페이스가 둘을 함께 물려받을 수 없다.
+ * [BrandRepository]의 구현. 일은 모두 [BrandJpaRepository]에 맡기고, Spring Data의 조각만 domain의 [PageSlice]로 옮긴다.
+ * 두 인터페이스를 하나로 합치지 않는다(설계 5.20).
  */
 @Component
 class BrandRepositoryImpl(
@@ -20,7 +16,7 @@ class BrandRepositoryImpl(
 ) : BrandRepository {
     override fun save(brand: Brand): Brand = brandJpaRepository.save(brand)
 
-    override fun findById(id: Long): Brand? = brandJpaRepository.findByIdOrNull(id)
+    override fun findById(id: Long): Brand? = brandJpaRepository.findById(id)
 
     override fun findAll(page: Int, size: Int): PageSlice<Brand> =
         brandJpaRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(page, size))

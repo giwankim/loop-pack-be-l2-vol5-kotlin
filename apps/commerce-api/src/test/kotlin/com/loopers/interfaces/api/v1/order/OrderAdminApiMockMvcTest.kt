@@ -1,17 +1,18 @@
 package com.loopers.interfaces.api.v1.order
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
-import com.loopers.application.product.ProductService
+import com.loopers.application.order.OrderService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
+import com.loopers.domain.order.createOrderCreateRequest
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.createProduct
+import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
-import com.loopers.interfaces.api.IdempotencyKeyHeader
-import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
@@ -19,35 +20,39 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
-import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 
 /**
- * 관리자 주문 조회. 주문은 고객 API로 만들고 관리자 API로 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은
- * [OrderApiMockMvcTest]와 같다. 요청마다 서비스 트랜잭션이 끝나고 다음 요청은 새 영속성 컨텍스트에서 읽는다.
+ * 관리자 주문 조회. 주문은 [OrderService]로 만들고 관리자 API로 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은
+ * [OrderApiMockMvcTest]와 같다. 준비와 요청마다 서비스 트랜잭션이 끝나고 다음 요청은 새 영속성 컨텍스트에서 읽는다.
  *
  * 관리자 경계는 기존 테스트 전용 설정을 쓴다([AdminSecurityConfig]). 운영 인증 수단을 더하는 것이 아니다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderAdminApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,
     private val userRepository: UserRepository,
-    private val brandService: BrandService,
-    private val productService: ProductService,
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
+    private val orderService: OrderService,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
+    transactionManager: PlatformTransactionManager,
 ) {
     companion object {
         private const val ENDPOINT = "/api-admin/v1/orders"
@@ -55,12 +60,13 @@ class OrderAdminApiMockMvcTest(
         private val USER = user("user").roles("USER")
     }
 
-    private var brandId = 0L
+    private val transaction = TransactionTemplate(transactionManager)
+    private lateinit var brand: Brand
 
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
-        brandId = brandService.register(BrandAdminRegisterRequest("주문 브랜드")).id
+        brand = brandRepository.save(createBrand())
     }
 
     @AfterEach
@@ -70,12 +76,12 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `admin lists the orders of every user latest first with the ordering user id`() {
-        val shirt = productId("티셔츠", 1_000)
-        val pants = productId("바지", 2_000)
-        val userId = userId()
-        val otherUserId = userId()
-        val first = createOrder(userId, "create-1", items(pants to 1, shirt to 2))
-        val second = createOrder(otherUserId, "create-2", items(shirt to 1))
+        val shirt = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
+        val pants = productRepository.save(createProduct(brand, price = Money(2_000))).id
+        val userId = userRepository.save(User()).id
+        val otherUserId = userRepository.save(User()).id
+        val first = orderService.create(userId, createOrderCreateRequest(pants to 1, shirt to 2)).orderId
+        val second = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
         getOrders().andExpect {
             status { isOk() }
@@ -105,13 +111,13 @@ class OrderAdminApiMockMvcTest(
      */
     @Test
     fun `the admin list entries are the same order responses as the detail`() {
-        val shirt = productId("티셔츠", 1_000)
-        val socks = productId("양말", 2_000)
-        val userId = userId()
-        val otherUserId = userId()
-        // 품목을 상품 ID의 거꾸로 보낸다. 응답이 보낸 차례 그대로면 품목의 차례를 확인한 것이 아니다.
-        val older = createOrder(userId, "create-1", items(socks to 1, shirt to 2))
-        val newer = createOrder(otherUserId, "create-2", items(shirt to 1))
+        val shirt = productRepository.save(createProduct(brand)).id
+        val socks = productRepository.save(createProduct(brand)).id
+        val userId = userRepository.save(User()).id
+        val otherUserId = userRepository.save(User()).id
+        // 품목을 상품 ID의 거꾸로 넣는다. 응답이 넣은 차례 그대로면 품목의 차례를 확인한 것이 아니다.
+        val older = orderService.create(userId, createOrderCreateRequest(listOf(socks, shirt))).orderId
+        val newer = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
         val listed = getOrders().andExpect {
             status { isOk() }
@@ -126,13 +132,13 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `admin filters the list by the user and sees an empty slice for a user without orders`() {
-        val productId = productId()
-        val userId = userId()
-        val otherUserId = userId()
-        val quietUserId = userId()
-        val first = createOrder(userId, "create-1", items(productId to 1))
-        createOrder(otherUserId, "create-2", items(productId to 1))
-        val second = createOrder(userId, "create-3", items(productId to 2))
+        val productId = productRepository.save(createProduct(brand)).id
+        val userId = userRepository.save(User()).id
+        val otherUserId = userRepository.save(User()).id
+        val quietUserId = userRepository.save(User()).id
+        val first = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        orderService.create(otherUserId, createOrderCreateRequest(listOf(productId)))
+        val second = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
         getOrders("userId" to userId.toString()).andExpect {
             status { isOk() }
@@ -159,14 +165,14 @@ class OrderAdminApiMockMvcTest(
      */
     @Test
     fun `the admin list pages within one user's orders and never shows another user's`() {
-        val productId = productId()
-        val userId = userId()
-        val otherUserId = userId()
-        val oldest = createOrder(userId, "mine-1", items(productId to 1))
-        val foreignOlder = createOrder(otherUserId, "theirs-1", items(productId to 1))
-        val middle = createOrder(userId, "mine-2", items(productId to 1))
-        val foreignNewer = createOrder(otherUserId, "theirs-2", items(productId to 1))
-        val newest = createOrder(userId, "mine-3", items(productId to 1))
+        val request = createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id))
+        val userId = userRepository.save(User()).id
+        val otherUserId = userRepository.save(User()).id
+        val oldest = orderService.create(userId, request).orderId
+        val foreignOlder = orderService.create(otherUserId, request).orderId
+        val middle = orderService.create(userId, request).orderId
+        val foreignNewer = orderService.create(otherUserId, request).orderId
+        val newest = orderService.create(userId, request).orderId
 
         val first = getOrders("userId" to userId.toString(), "size" to "2").andExpect {
             status { isOk() }
@@ -189,9 +195,9 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `admin reads any user's order detail and a missing order is not found`() {
-        val shirt = productId("티셔츠", 1_000)
-        val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(shirt to 3))
+        val shirt = productRepository.save(createProduct(brand, price = Money(1_000))).id
+        val userId = userRepository.save(User()).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(shirt), quantity = 3)).orderId
 
         getOrder(orderId).andExpect {
             status { isOk() }
@@ -205,7 +211,6 @@ class OrderAdminApiMockMvcTest(
             jsonPath("$.data.items[0].quantity") { value(3) }
             jsonPath("$.data.paidAmount") { doesNotExist() }
             jsonPath("$.data.confirmedAt") { doesNotExist() }
-            jsonPath("$.data.creationKey") { doesNotExist() }
         }
 
         getOrder(Long.MAX_VALUE).andExpect {
@@ -221,10 +226,10 @@ class OrderAdminApiMockMvcTest(
      */
     @Test
     fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {
-        val productId = productId("티셔츠", 1_000)
-        val userId = userId()
-        val draft = createOrder(userId, "create-1", items(productId to 1))
-        val confirmed = createOrder(userId, "create-2", items(productId to 2))
+        val productId = productRepository.save(createProduct(brand, price = Money(1_000))).id
+        val userId = userRepository.save(User()).id
+        val draft = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val confirmed = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
         jdbc.update(
             "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
@@ -253,8 +258,9 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `reading as a user or without identification returns 403`() {
-        val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(productId() to 1))
+        val userId = userRepository.save(User()).id
+        val productId = productRepository.save(createProduct(brand)).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
         listOf(USER, null).forEach { principal ->
             getOrders(principal = principal).andExpect { status { isForbidden() } }
@@ -283,9 +289,9 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `orders created in the same microsecond are listed with the later id first`() {
-        val productId = productId()
-        val userId = userId()
-        val ids = (1..3).map { createOrder(userId, "create-$it", items(productId to it)) }
+        val request = createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id))
+        val userId = userRepository.save(User()).id
+        val ids = List(3) { orderService.create(userId, request).orderId }
         jdbc.update("update orders set created_at = '2026-09-18 00:00:00.000000'")
 
         getOrders("page" to "0", "size" to "2").andExpect {
@@ -305,10 +311,10 @@ class OrderAdminApiMockMvcTest(
     /** 한 조각이 세는 것은 주문이므로 품목이 많은 주문도 다음 주문을 밀어내지 않는다. */
     @Test
     fun `a multi item order fills one page entry and keeps all of its items`() {
-        val productIds = List(3) { productId("상품 $it", price = 1_000) }
-        val userId = userId()
-        val many = createOrder(userId, "create-1", items(*productIds.map { it to 1 }.toTypedArray()))
-        val one = createOrder(userId, "create-2", items(productIds.first() to 1))
+        val productIds = List(3) { productRepository.save(createProduct(brand)).id }
+        val userId = userRepository.save(User()).id
+        val many = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
+        val one = orderService.create(userId, createOrderCreateRequest(listOf(productIds.first()))).orderId
 
         getOrders("size" to "1").andExpect {
             status { isOk() }
@@ -329,14 +335,15 @@ class OrderAdminApiMockMvcTest(
 
     @Test
     fun `catalog edits and soft deletion leave the stored order readable`() {
-        val productId = productId("티셔츠", 1_000)
-        val userId = userId()
-        val orderId = createOrder(userId, "create-1", items(productId to 2))
+        val productId = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
+        val userId = userRepository.save(User()).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
         val before = getOrder(orderId).andExpect { status { isOk() } }.json()
 
-        productService.update(productId, ProductAdminUpdateRequest("새 이름", 9_000))
-        productService.delete(productId)
-        brandService.delete(brandId)
+        transaction.executeWithoutResult {
+            productRepository.findById(productId)!!.apply { update("새 이름", Money(9_000)) }.delete()
+            brandRepository.findById(brand.id)!!.delete()
+        }
 
         assertThat(getOrder(orderId).andExpect { status { isOk() } }.json()).isEqualTo(before)
         getOrders().andExpect {
@@ -346,24 +353,6 @@ class OrderAdminApiMockMvcTest(
             jsonPath("$.data.items[0].totalAmount") { value(2_000) }
         }
     }
-
-    private fun productId(name: String = "상품", price: Long = 1_000, stock: Int = 7): Long =
-        productService.register(ProductAdminRegisterRequest(brandId, name, price, stock)).id
-
-    private fun userId(): Long = userRepository.save(User()).id
-
-    /** 품목 요청 본문. 상품과 수량의 짝을 보낸 순서 그대로 싣는다. */
-    private fun items(vararg products: Pair<Long, Int>): String =
-        products.joinToString { (productId, quantity) -> """{"productId":$productId,"quantity":$quantity}""" }
-
-    /** 고객 API로 주문을 만들고 그 식별자를 준다. 관리자 조회가 보는 것이 실제로 저장된 주문이어야 한다. */
-    private fun createOrder(userId: Long, creationKey: String, items: String): Long =
-        mockMvc.post("/api/v1/orders") {
-            header(UserIdHeader.NAME, userId)
-            header(IdempotencyKeyHeader.NAME, creationKey)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"items":[$items]}"""
-        }.andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
 
     private fun getOrders(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): ResultActionsDsl =
         mockMvc.get(ENDPOINT) {

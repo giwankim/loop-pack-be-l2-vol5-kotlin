@@ -28,10 +28,10 @@ class Product(
     stock: Stock,
 ) : BaseEntity() {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "brand_id", nullable = false, updatable = false)
+    @JoinColumn(nullable = false, updatable = false)
     val brand: Brand = brand
 
-    /** 앞뒤 공백을 뗀 이름. 비어 있지 않고 [NAME_MAX_LENGTH]자 이하다. */
+    /** 받은 그대로의 이름. 공백뿐이지 않고 [NAME_MAX_LENGTH]자 이하다. */
     @Column(nullable = false, length = NAME_MAX_LENGTH)
     var name: String = validatedName(name)
         protected set
@@ -86,18 +86,17 @@ class Product(
         val MAX_PRICE = Money(MAX_PRICE_AMOUNT)
 
         /**
-         * 앞뒤 공백을 뗀 이름이 지켜야 할 규칙. 뗀 값을 돌려주므로 생성과 수정이 이름을 한 번만 정리한다.
-         * `name` 프로퍼티의 초기값이 부르는 자리라 인스턴스 메서드가 아니라 여기에 둔다.
+         * 이름이 지켜야 할 규칙. 생성과 수정이 같은 검사를 쓴다.
+         * `name` 프로퍼티의 초기값이 부르는 자리라 받은 값을 그대로 돌려주고, 인스턴스 메서드가 아니라 여기에 둔다.
          */
         private fun validatedName(name: String): String {
-            val trimmed = name.trim()
-            if (trimmed.isEmpty()) {
+            if (name.isBlank()) {
                 throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
             }
-            if (trimmed.length > NAME_MAX_LENGTH) {
+            if (name.length > NAME_MAX_LENGTH) {
                 throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
             }
-            return trimmed
+            return name
         }
     }
 }

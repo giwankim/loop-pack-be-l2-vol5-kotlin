@@ -11,7 +11,7 @@ import org.springframework.data.domain.Slice
  * 저장소마다 같은 두 줄을 적고 있었다. 옮기는 규칙이 하나이므로 자리도 하나여야 한다.
  * domain이 아니라 infrastructure에 두는 까닭은 [Slice]가 Spring Data의 타입이라서다. domain은 그것을 모른다.
  */
-fun <T> Slice<T>.toPageSlice(): PageSlice<T> =
+fun <T : Any> Slice<T>.toPageSlice(): PageSlice<T> =
     PageSlice(items = content, page = number, size = size, hasNext = hasNext())
 
 /**

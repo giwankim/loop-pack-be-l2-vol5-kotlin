@@ -1,4 +1,8 @@
+plugins {
+    alias(conventions.plugins.loopers.kotlin.spring)
+}
+
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation(libs.springBootStarterActuator)
+    implementation(libs.micrometer.registryPrometheus)
 }

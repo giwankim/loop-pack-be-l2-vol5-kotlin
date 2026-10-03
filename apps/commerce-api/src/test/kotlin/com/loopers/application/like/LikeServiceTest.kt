@@ -1,17 +1,17 @@
 package com.loopers.application.like
 
-import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
-import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
-import com.loopers.domain.product.Stock
-import com.loopers.domain.shared.Money
+import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import com.loopers.utils.statistics
@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -31,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional
  * 취소가 행을 지운다는 약속은 테이블에서 봐야 한다(ADR 0001).
  */
 @SpringBootTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @Transactional
 class LikeServiceTest(
     private val likeService: LikeService,
@@ -43,7 +45,7 @@ class LikeServiceTest(
     @Test
     fun `liking an active product for the first time saves one like for the user and product`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         entityManager.flushAndClear()
 
         likeService.like(userId = user.id, productId = product.id)
@@ -55,7 +57,7 @@ class LikeServiceTest(
     @Test
     fun `liking the same product again succeeds and keeps one like`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeService.like(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
@@ -69,7 +71,7 @@ class LikeServiceTest(
     fun `liking as another user adds a second like for the product`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeService.like(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
@@ -85,7 +87,7 @@ class LikeServiceTest(
     @Test
     fun `unliking leaves the pair without a like`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeService.like(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
@@ -98,7 +100,7 @@ class LikeServiceTest(
     @Test
     fun `unliking without a like succeeds and changes nothing`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         entityManager.flushAndClear()
 
         likeService.unlike(userId = user.id, productId = product.id)
@@ -111,7 +113,7 @@ class LikeServiceTest(
     fun `unliking leaves the other user's like in place`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeService.like(userId = user.id, productId = product.id)
         likeService.like(userId = other.id, productId = product.id)
         entityManager.flushAndClear()
@@ -128,7 +130,7 @@ class LikeServiceTest(
     @Test
     fun `liking a deleted product throws PRODUCT_NOT_FOUND and saves nothing`() {
         val user = userRepository.save(User())
-        val product = registerProduct().apply { delete() }
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand()))).apply { delete() }
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> { likeService.like(userId = user.id, productId = product.id) }
@@ -153,7 +155,7 @@ class LikeServiceTest(
     @Test
     fun `unliking a deleted product still lets the remaining like go`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeService.like(userId = user.id, productId = product.id)
         product.delete()
         entityManager.flushAndClear()
@@ -166,7 +168,7 @@ class LikeServiceTest(
 
     @Test
     fun `liking as an unknown user throws UNAUTHORIZED and saves nothing`() {
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> { likeService.like(userId = 999L, productId = product.id) }
@@ -181,7 +183,7 @@ class LikeServiceTest(
     @Test
     fun `unliking as an unknown user throws UNAUTHORIZED and leaves the like in place`() {
         val user = userRepository.save(User())
-        val product = registerProduct()
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
         likeRepository.save(Like(userId = user.id, productId = product.id))
         entityManager.flushAndClear()
 
@@ -202,8 +204,9 @@ class LikeServiceTest(
     fun `the like list gives only the user's own likes`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
-        val mine = registerProduct()
-        val theirs = registerProduct()
+        val brand = brandRepository.save(createBrand())
+        val mine = productRepository.save(createProduct(brand))
+        val theirs = productRepository.save(createProduct(brand))
         likeService.like(userId = user.id, productId = mine.id)
         likeService.like(userId = other.id, productId = theirs.id)
         entityManager.flushAndClear()
@@ -217,8 +220,9 @@ class LikeServiceTest(
     @Test
     fun `the like list leaves out a product that was deleted after it was liked`() {
         val user = userRepository.save(User())
-        val active = registerProduct()
-        val deleted = registerProduct()
+        val brand = brandRepository.save(createBrand())
+        val active = productRepository.save(createProduct(brand))
+        val deleted = productRepository.save(createProduct(brand))
         likeService.like(userId = user.id, productId = active.id)
         likeService.like(userId = user.id, productId = deleted.id)
         deleted.delete()
@@ -241,7 +245,8 @@ class LikeServiceTest(
     fun `the like list carries the default page and size into the slice and fills the brand name and like count`() {
         val user = userRepository.save(User())
         val other = userRepository.save(User())
-        val product = registerProduct()
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        val product = productRepository.save(createProduct(brand, name = "티셔츠"))
         likeService.like(userId = user.id, productId = product.id)
         likeService.like(userId = other.id, productId = product.id)
         entityManager.flushAndClear()
@@ -266,7 +271,7 @@ class LikeServiceTest(
     @Test
     fun `the like list reads a slice of any size in three queries`() {
         val user = userRepository.save(User())
-        val products = List(3) { registerProduct() }
+        val products = List(3) { productRepository.save(createProduct(brandRepository.save(createBrand()))) }
         products.forEach { likeService.like(userId = user.id, productId = it.id) }
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
@@ -278,7 +283,10 @@ class LikeServiceTest(
 
             assertAll(
                 { assertThat(slice.items).hasSize(3) },
-                { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
+                {
+                    assertThat(slice.items.map { it.brandName })
+                        .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
+                },
                 { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
                 { assertThat(statistics.prepareStatementCount).isEqualTo(3L) },
             )
@@ -323,10 +331,5 @@ class LikeServiceTest(
                 ).containsExactly("size는 100 이하여야 합니다.")
             },
         )
-    }
-
-    private fun registerProduct(): Product {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        return productRepository.save(Product(brand = brand, name = "티셔츠", price = Money(10_000), stock = Stock(1)))
     }
 }

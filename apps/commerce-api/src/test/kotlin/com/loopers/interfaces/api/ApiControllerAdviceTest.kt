@@ -1,8 +1,8 @@
 package com.loopers.interfaces.api
 
 import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.product.ProductAdminRegisterRequest
 import com.loopers.domain.product.InvalidStockException
+import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.interfaces.api.v1.brand.BrandAdminController
 import jakarta.validation.ConstraintViolationException
 import jakarta.validation.Validation
@@ -26,7 +26,7 @@ class ApiControllerAdviceTest {
     @Test
     fun `constraint violations from a validated service become one 400 message ordered by property`() {
         val validator = Validation.buildDefaultValidatorFactory().validator
-        val violations = validator.validate(ProductAdminRegisterRequest(brandId = 1L, name = " ", price = 0, stock = -1))
+        val violations = validator.validate(createProductAdminRegisterRequest(brandId = 1L, name = " ", price = 0, stock = -1))
         val exception = ConstraintViolationException(violations)
 
         val response = advice.handleConstraintViolation(exception)

@@ -1,21 +1,23 @@
 package com.loopers.interfaces.api.v1.like
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.countLikes
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
@@ -34,12 +36,12 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class LikeApiMockMvcTest(
     private val mockMvc: MockMvc,
-    private val brandService: BrandService,
-    private val productService: ProductService,
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
     private val userRepository: UserRepository,
     private val entityManager: EntityManager,
 ) {
@@ -51,7 +53,7 @@ class LikeApiMockMvcTest(
     @Test
     fun `liking shows one like in the product detail and unliking brings it back to zero`() {
         val userId = registerUser()
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         like(productId, userId).andExpect {
@@ -76,7 +78,7 @@ class LikeApiMockMvcTest(
     fun `liking shows in the product list item as well`() {
         val userId = registerUser()
         val otherUserId = registerUser()
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         like(productId, userId).andExpect { status { isOk() } }
@@ -93,7 +95,7 @@ class LikeApiMockMvcTest(
     @Test
     fun `liking twice returns 200 both times and counts one like`() {
         val userId = registerUser()
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         like(productId, userId).andExpect { status { isOk() } }
@@ -108,7 +110,7 @@ class LikeApiMockMvcTest(
     @Test
     fun `unliking without a like returns 200`() {
         val userId = registerUser()
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         unlike(productId, userId).andExpect {
@@ -119,7 +121,7 @@ class LikeApiMockMvcTest(
 
     @Test
     fun `liking without the user header returns 401`() {
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         mockMvc.post("$PRODUCTS/$productId/likes").andExpect {
@@ -132,7 +134,7 @@ class LikeApiMockMvcTest(
 
     @Test
     fun `unliking without the user header returns 401`() {
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         mockMvc.delete("$PRODUCTS/$productId/likes").andExpect {
@@ -144,7 +146,7 @@ class LikeApiMockMvcTest(
     /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. Spring의 타입 변환이 거절한다(설계 5.27). */
     @Test
     fun `liking with a user header that is not a number returns 400`() {
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         mockMvc.post("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, "abc") }.andExpect {
@@ -155,7 +157,7 @@ class LikeApiMockMvcTest(
 
     @Test
     fun `liking as a user that does not exist returns 401 and saves nothing`() {
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         like(productId, userId = 999L).andExpect {
@@ -169,7 +171,7 @@ class LikeApiMockMvcTest(
 
     @Test
     fun `unliking as a user that does not exist returns 401`() {
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
         unlike(productId, userId = 999L).andExpect { status { isUnauthorized() } }
@@ -178,11 +180,11 @@ class LikeApiMockMvcTest(
     @Test
     fun `liking a deleted product returns 404`() {
         val userId = registerUser()
-        val productId = registerProduct()
-        productService.delete(productId)
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        product.delete()
         entityManager.flushAndClear()
 
-        like(productId, userId).andExpect {
+        like(product.id, userId).andExpect {
             status { isNotFound() }
             jsonPath("$.meta.errorCode") { value("Not Found") }
             jsonPath("$.meta.message") { value(ErrorType.PRODUCT_NOT_FOUND.message) }
@@ -200,15 +202,15 @@ class LikeApiMockMvcTest(
     @Test
     fun `unliking a deleted product returns 200 and lets the remaining like go`() {
         val userId = registerUser()
-        val productId = registerProduct()
-        like(productId, userId).andExpect { status { isOk() } }
-        productService.delete(productId)
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        like(product.id, userId).andExpect { status { isOk() } }
+        product.delete()
         entityManager.flushAndClear()
 
-        unlike(productId, userId).andExpect { status { isOk() } }
+        unlike(product.id, userId).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
-        assertThat(entityManager.countLikes(userId, productId)).isZero()
+        assertThat(entityManager.countLikes(userId, product.id)).isZero()
     }
 
     private fun like(productId: Long, userId: Long): ResultActionsDsl =
@@ -218,11 +220,4 @@ class LikeApiMockMvcTest(
         mockMvc.delete("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, userId) }
 
     private fun registerUser(): Long = userRepository.save(User()).id
-
-    private fun registerProduct(): Long {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        return productService
-            .register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 10_000, stock = 1))
-            .id
-    }
 }

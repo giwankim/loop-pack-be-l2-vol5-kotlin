@@ -1,43 +1,45 @@
 package com.loopers.job.demo
 
 import com.loopers.batch.job.demo.DemoJobConfig
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.batch.core.ExitStatus
-import org.springframework.batch.core.Job
-import org.springframework.batch.core.JobParametersBuilder
-import org.springframework.batch.test.JobLauncherTestUtils
+import org.springframework.batch.core.job.Job
+import org.springframework.batch.core.job.parameters.JobParametersBuilder
+import org.springframework.batch.test.JobOperatorTestUtils
 import org.springframework.batch.test.context.SpringBatchTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.test.context.TestPropertySource
 import java.time.LocalDate
 
 @SpringBootTest
 @SpringBatchTest
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
 @TestPropertySource(properties = ["spring.batch.job.name=${DemoJobConfig.JOB_NAME}"])
 class DemoJobE2ETest @Autowired constructor(
     // IDE 정적 분석 상 [SpringBatchTest] 의 주입보다 [SpringBootTest] 의 주입이 우선되어, 해당 컴포넌트는 없으므로 오류처럼 보일 수 있음.
     // [SpringBatchTest] 자체가 Scope 기반으로 주입하기 때문에 정상 동작함.
-    private val jobLauncherTestUtils: JobLauncherTestUtils,
+    private val jobOperatorTestUtils: JobOperatorTestUtils,
     @param:Qualifier(DemoJobConfig.JOB_NAME) private val job: Job,
 ) {
     @BeforeEach
     fun beforeEach() {
     }
 
-    @DisplayName("jobParameter 중 requestDate 인자가 주어지지 않았을 때, demoJob 배치는 실패한다.")
     @Test
-    fun shouldFail_whenJobParameterNotFound() {
+    fun `demoJob fails when the requestDate job parameter is missing`() {
         // arrange
-        jobLauncherTestUtils.job = job
+        jobOperatorTestUtils.job = job
 
         // act
-        val jobExecution = jobLauncherTestUtils.launchJob()
+        val jobExecution = jobOperatorTestUtils.startJob()
 
         // assert
         assertAll(
@@ -46,17 +48,16 @@ class DemoJobE2ETest @Autowired constructor(
         )
     }
 
-    @DisplayName("demoJob 배치가 정상적으로 실행된다.")
     @Test
-    fun success() {
+    fun `demoJob completes when given a requestDate`() {
         // arrange
-        jobLauncherTestUtils.job = job
+        jobOperatorTestUtils.job = job
 
         // act
         val jobParameters = JobParametersBuilder()
             .addLocalDate("requestDate", LocalDate.now())
             .toJobParameters()
-        val jobExecution = jobLauncherTestUtils.launchJob(jobParameters)
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters)
 
         // assert
         assertAll(

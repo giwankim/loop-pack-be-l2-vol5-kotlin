@@ -1,14 +1,16 @@
 package com.loopers.interfaces.api.v1.brand
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
@@ -27,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(AdminSecurityConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class BrandApiMockMvcTest(
     private val mockMvc: MockMvc,
@@ -42,7 +44,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `a customer reads a brand without any identification`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         mockMvc.get("$ENDPOINT/${brand.id}")
             .andExpect {
@@ -68,7 +70,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `reading a deleted brand returns 404`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest())
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
@@ -84,7 +86,7 @@ class BrandApiMockMvcTest(
      */
     @Test
     fun `a name an admin changed shows up in the customer detail`() {
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
+        val brand = brandService.register(createBrandAdminRegisterRequest())
 
         mockMvc.put("$ADMIN_ENDPOINT/${brand.id}") {
             with(ADMIN)

@@ -174,7 +174,7 @@ interface BrandRepository {
 }
 ```
 
-브랜드가 없으면 Kotlin의 nullable 타입으로 표현하고, 목록은 프로젝트에서 정의한 `PageSlice`로 받는다. 서비스는 Spring Data의 `Optional`, `Slice`, `PageRequest`를 직접 다루지 않아도 된다. [BrandRepositoryImpl](../../apps/commerce-api/src/main/kotlin/com/loopers/infrastructure/brand/BrandRepositoryImpl.kt)이 그 사이를 변환한다.
+브랜드가 없으면 Kotlin의 nullable 타입으로 표현하고, 목록은 프로젝트에서 정의한 `PageSlice`로 받는다. 서비스는 Spring Data의 `Slice`, `PageRequest`를 직접 다루지 않아도 된다. [BrandRepositoryImpl](../../apps/commerce-api/src/main/kotlin/com/loopers/infrastructure/brand/BrandRepositoryImpl.kt)이 그 사이를 변환한다.
 
 저장소 내부의 조회 방식을 수정하더라도 이 계약을 유지할 수 있다면, 서비스는 같은 표현을 계속 사용할 수 있다. 인프라 전체를 교체하지 않아도 적용되는 경계다. 테스트에서 이 계약을 구현하는 대역을 전달할 여지도 생긴다. 다만 이것은 구조가 제공하는 가능성이지, 이번에 저장 기술을 교체해 효과를 확인했다는 뜻은 아니다.
 

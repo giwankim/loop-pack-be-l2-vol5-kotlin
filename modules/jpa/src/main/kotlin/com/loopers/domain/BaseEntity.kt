@@ -24,15 +24,14 @@ abstract class BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     lateinit var createdAt: ZonedDateTime
         protected set
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(nullable = false)
     lateinit var updatedAt: ZonedDateTime
         protected set
 
-    @Column(name = "deleted_at")
     var deletedAt: ZonedDateTime? = null
         protected set
 

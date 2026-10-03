@@ -187,7 +187,7 @@ sequenceDiagram
 | 기능 | method·path | 입력 | 성공 | 대표 오류 | 규칙 기대값 |
 | --- | --- | --- | --- | --- | --- |
 | 브랜드 목록 | `GET /brands` | `page`, `size` | 200 `{items:[{id, name, createdAt, updatedAt}], …}` | 400 paging | 삭제된 브랜드 제외. 최신 등록이 앞 |
-| 브랜드 등록 | `POST /brands` | `{name}` | 201 브랜드 | 이름 공백·100자 초과 → 400. 삭제되지 않은 브랜드와 이름 중복 → 409 CONFLICT | 이름 길이는 앞뒤 공백을 포함해 검사하고(5.18) 뗀 값을 저장한다. 중복은 뗀 이름끼리 대소문자 무시(5.13) |
+| 브랜드 등록 | `POST /brands` | `{name}` | 201 브랜드 | 이름 공백·100자 초과 → 400. 삭제되지 않은 브랜드와 이름 중복 → 409 CONFLICT | 이름 길이는 앞뒤 공백을 포함해 검사하고(5.18) 받은 그대로 저장한다. 중복은 컬럼 collation이 정한다: 대소문자·뒤 공백만 다른 이름은 겹치고 앞 공백이 다른 이름은 겹치지 않는다(5.13) |
 | 브랜드 상세 | `GET /brands/{brandId}` | path | 200 브랜드 | 없거나 삭제됨 → 404 | |
 | 브랜드 수정 | `PUT /brands/{brandId}` | `{name}` | 200 브랜드 | 404, 400, 409 | 거절 시 기존 값 유지. 이름 검사는 등록과 같다(5.18, 5.22) |
 | 브랜드 삭제 | `DELETE /brands/{brandId}` | path | 200, data 없음 | 404. 삭제되지 않은 상품이 남음 → 409 | 재고 0인 상품도 남은 상품이다. 이미 삭제된 브랜드는 404 |
@@ -296,13 +296,13 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.11 브랜드 등록의 검사 순서
 
 - `docs/domain/catalog.md`의 첫 안은 "이름 중복 조회 → `Brand(name)`"이었다. 구현(#2)에서는 `Brand(name)`을 먼저 만든다.
-- 이유: 중복은 trim된 이름끼리 비교해야 한다(`" 루퍼스 "`와 `"루퍼스"`는 같은 이름). 또 공백뿐인 이름은 조회 없이 400으로 끝난다. 두 검사가 모두 걸리면 400이 409보다 먼저다.
+- 이유: 공백뿐이거나 100자를 넘는 이름은 조회 없이 400으로 끝난다. 두 검사가 모두 걸리면 400이 409보다 먼저다. (처음에는 "중복은 trim된 이름끼리 비교해야 한다"도 이유였으나, 2026-10-03(#55)에 이름을 받은 그대로 저장하기로 하면서 이 이유는 사라졌다. 저장할 이름이 곧 받은 이름이라 어느 순서로 물어도 조회 값이 같다. 나머지 이유로 순서는 그대로다.)
 
 ### 5.12 도메인 규칙 거절의 표현
 
 - 문제: `ErrorType`은 `HttpStatus`를 품으므로 엔티티가 `CoreException`을 던지면 도메인이 HTTP 전송에 기댄다.
 - 대안 A: 엔티티는 `require()`로 불변식만 지키고(어기면 버그, 500), application이 같은 규칙을 먼저 검사해 `CoreException`을 던진다. 규칙이 두 곳에 적히고 상품의 가격·재고로 갈수록 늘어난다. `IllegalArgumentException`을 400으로 옮기는 방법은 라이브러리 버그까지 400으로 바꾼다.
-- 대안 B: `spring-boot-starter-validation`으로 요청 DTO나 서비스 인자를 검사한다. `@Size`는 trim 전 길이를 재므로 "뗀 뒤 100자" 규칙과 어긋나고, 예외 타입도 둘 늘어난다. (처음에는 "서비스 메서드 검증은 프록시가 있어야 해서 fake 저장소로 만든 서비스 테스트에서 돌지 않는다"도 이유였으나, 2026-09-17에 서비스 테스트를 `@SpringBootTest`로 옮기면서 이 이유는 사라졌다. 나머지 두 이유로 결정은 그대로다.)
+- 대안 B: `spring-boot-starter-validation`으로 요청 DTO나 서비스 인자를 검사한다. `@Size`는 trim 전 길이를 재므로 "뗀 뒤 100자" 규칙과 어긋나고, 예외 타입도 둘 늘어난다. (처음에는 "서비스 메서드 검증은 프록시가 있어야 해서 fake 저장소로 만든 서비스 테스트에서 돌지 않는다"도 이유였으나, 2026-09-17에 서비스 테스트를 `@SpringBootTest`로 옮기면서 이 이유는 사라졌다. 나머지 두 이유로 결정은 그대로다.) (길이의 어긋남도 2026-10-03(#55)에 이름을 받은 그대로 저장하면서 사라졌다(5.18). 남은 이유는 늘어나는 예외 타입이고, 결정은 그대로다.)
 - 대안 C: 도메인이 가진 예외로 거절한다. 추상 `RuleViolationException` 아래 규칙마다 하위 예외를 두고, advice가 상위 타입 하나로 400에 옮긴다.
 - 선택: C (2026-09-17). 규칙이 한 곳에 남고 HTTP 응답(400, `Bad Request`, 메시지)은 그대로다. 표식 인터페이스는 `@ExceptionHandler`가 `Throwable` 하위 클래스만 받으므로 쓰지 않는다. 하위 예외가 여러 패키지에 놓이므로 `sealed`가 아니라 `abstract`다.
 - 수정 (2026-09-17, 같은 날 저녁): 도메인 예외(C)는 그대로 두고, 그 앞에 B를 입력 검사로 더했다. "규칙이 한 곳에 남는다"는 이 결정의 이점은 포기했다. 까닭과 역할 나눔은 5.18에 있다.
@@ -317,6 +317,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: 서버 collation을 바꾼다. 모든 테이블의 문자열 비교가 바뀌어 규칙 하나에 비해 너무 넓다.
 - 선택: A (2026-09-17). 브랜드 이름은 사람이 부르는 이름이라 대소문자만 다른 두 브랜드는 관리자에게 혼란이다. `BrandServiceTest`가 대소문자만 다른 이름의 409를 고정한다.
 - 대가: 규칙이 코드가 아니라 collation에 있다. `utf8mb4_general_ci`는 악센트도 가리지 않으므로(`é` = `e`) 그것도 같은 이름이다. 기본 프로필은 `ddl-auto: none`이라 운영 스키마가 다른 collation이면 규칙이 조용히 바뀐다. 운영 DDL을 만들 때 `brand.name`의 collation을 맞춘다.
+- 수정 (2026-10-03, #55): 이름을 받은 그대로 저장하므로 앞뒤 공백도 collation이 정한다. `utf8mb4_general_ci`는 PAD SPACE라 뒤 공백만 다른 이름(`"루퍼스 "`)은 겹치고, 앞 공백이 다른 이름(`" 루퍼스"`)은 겹치지 않는다. 코드에 공백 처리를 더하지 않는다. `BrandAdminApiMockMvcTest`가 실제 MySQL에서 두 경우와 대소문자 경우를 고정한다.
 - 다시 볼 조건: 대소문자나 악센트만 다른 브랜드를 구분해야 할 때(대안 B), 또는 운영 스키마를 코드로 관리하게 될 때(collation을 `@Collate`나 마이그레이션에 명시).
 
 ### 5.14 이름의 타입
@@ -337,7 +338,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: `BrandName`, `ProductName`으로 타입을 나눈다. 타입이 규칙 전체를 들고 컴파일러가 섞어 쓰기를 막는다. 대신 공백 규칙이 두 벌이 되고 #4 직후라 바꿀 곳이 많다.
 - 선택: B (2026-09-17). 같은 `const val`을 `@AttributeOverride`의 컬럼 길이와 검사가 함께 써서 스키마와 규칙이 어긋나지 않는다. 길이 초과 메시지가 개념 이름을 말한다("상품 이름은 100자 이하여야 합니다."). 길이 테스트는 `NameTest`에서 `BrandTest`·`ProductTest`로 옮겼다.
 - 대가: `Name`만으로는 어느 컬럼에 들어갈 수 있는지 보장하지 않는다. 엔티티가 이름을 정하는 모든 곳(생성자, #3·#5의 `update`)에서 상한을 검사해야 한다. `String.length`는 UTF-16 단위라 이모지 한 글자를 2로 세고, MySQL `VARCHAR(100)`은 문자 수로 센다. 코드 검사가 컬럼보다 조금 엄격할 뿐 컬럼이 거절할 값을 통과시키지는 않는다.
-- 다시 볼 조건: 개념마다 이름 규칙이 길이 밖에서도 달라질 때(허용 문자, 정규화)는 C로 간다. 5.19가 `Name`을 지우면서 trim·공백 검사도 엔티티로 왔다.
+- 다시 볼 조건: 개념마다 이름 규칙이 길이 밖에서도 달라질 때(허용 문자, 정규화)는 C로 간다. 5.19가 `Name`을 지우면서 trim·공백 검사도 엔티티로 왔다. trim은 2026-10-03(#55)에 지웠다.
 
 ### 5.16 순환 검사의 단위
 
@@ -374,28 +375,35 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - Controller 검사는 `MethodArgumentNotValidException`, Service 검사는 `ConstraintViolationException`으로 나온다. `ApiControllerAdvice`가 둘 다 400 `Bad Request`로 옮기고, 메시지는 필드 이름 순으로 이어 하나로 준다. Controller가 먼저 거르므로 HTTP 요청이 Service 검사까지 가는 일은 없다.
   - `@Validated`는 Service에 CGLIB 프록시를 하나 더 씌운다. kotlin-spring 플러그인이 `@Service`(`@Component` 메타)를 여는 덕에 `final` 문제는 없다.
   - `spring-boot-starter-validation`은 루트에 `runtimeOnly`라 commerce-api에 `implementation`으로 더했다.
-- 대가: 5.12가 짚은 대로 `@Size`는 trim 전 길이를 잰다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 100자로 다듬어 받지만 제약이 먼저 거절한다. 학습 범위에서 이 차이는 받아들인다. 어긋나는 방향은 늘 한쪽이다. 제약은 받은 문자열 그대로를 재고 도메인은 뗀 값을 재므로, 프레임이 도메인보다 느슨해지는 일은 없고 공백으로 부풀린 이름은 입구에서 걸린다. API 문서(`BrandAdminApiSpec`, `ProductAdminApiSpec`)는 HTTP 입구가 실제로 거는 규칙을 적는다: 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하, 뗀 값을 저장한다. (처음에는 "뗀 뒤 100자"로 두었으나 2026-09-18에 고쳤다. 문서가 API가 하지 않는 일을 말하고 있었다.) 도메인 문서(`docs/domain/catalog.md`)와 `InvalidNameException`의 KDoc은 뗀 뒤 규칙을 그대로 둔다. 그 규칙은 도메인의 것이고, HTTP 등록으로는 Controller 제약이 먼저 거절해 `InvalidNameException`에 닿지 않는다(#2·#4에 반영). 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
-- 다시 볼 조건: trim 뒤 길이를 재야 할 때(커스텀 제약이나 Request에서 trim). 필드별 오류 목록을 응답에 실어야 할 때(`meta.message` 하나가 아니라 필드 배열).
+- 대가: 이름 규칙이 두 층에 적힌다. 두 층 모두 받은 문자열 그대로를 잰다. Request는 `@NotBlank`·`@Size`로, 엔티티는 공백뿐인지와 길이로 거절한다. API 문서(`BrandAdminApiSpec`, `ProductAdminApiSpec`), 도메인 문서(`docs/domain/catalog.md`), `InvalidNameException`의 KDoc이 같은 규칙을 적는다: 공백뿐일 수 없고 앞뒤 공백을 포함해 100자 이하이며 받은 그대로 저장한다. (API 문서는 처음에 "뗀 뒤 100자"로 두었으나 2026-09-18에 "앞뒤 공백을 포함해 100자"로 고쳤다. 문서가 API가 하지 않는 일을 말하고 있었다.) HTTP 등록으로는 Controller 제약이 먼저 거절해 `InvalidNameException`에 닿지 않는다(#2·#4에 반영). (처음에는 도메인이 앞뒤 공백을 떼고 뗀 값을 재서 `@Size`와 어긋났다. 앞뒤 공백을 포함해 101자인 이름은 도메인이라면 받지만 제약이 먼저 거절했다. 2026-10-03(#55)에 trim을 지워 두 층이 같은 문자열을 잰다.) 서비스 테스트에서 가격 0·빈 이름은 이제 `ConstraintViolationException`으로 거절되고, 도메인 예외 경로는 domain 단위 테스트가 지킨다.
+- 다시 볼 조건: 이름을 다듬어 저장해야 할 때(trim 등). 그때는 두 층이 같은 값을 재도록 Request에서 다듬거나 커스텀 제약을 둔다. 필드별 오류 목록을 응답에 실어야 할 때(`meta.message` 하나가 아니라 필드 배열).
 
 ### 5.19 이름 값 객체의 철회
 
 - 문제: 5.15 뒤 `Name`에 남은 규칙은 trim과 공백 거절뿐이다. 인터페이스(생성자, `value`, 뗀 값 기준 `equals`)가 구현과 같은 크기라 배울 값이 없다. 용어집(`CONTEXT.md`)에 재고·금액은 항목이 있지만 이름은 브랜드·상품의 속성으로만 나온다. `Name.equals`는 대소문자를 가리는데 도메인의 같은 이름은 가리지 않아(5.13) 값 객체가 맡아야 할 동일성을 DB collation이 대신 가진다. 자랄 자리도 없다. 5.15의 다시 볼 조건은 `BrandName`·`ProductName`으로 나누는 것이지 `Name`에 행위를 더하는 것이 아니다.
 - 대안 A: 그대로 둔다.
-- 대안 B: `Name`을 지우고 `Brand`·`Product`가 `String`을 받아 각자 trim·공백·길이 상한을 검사한다. 5.14의 A와 C 사이다.
+- 대안 B: `Name`을 지우고 `Brand`·`Product`가 `String`을 받아 각자 공백·길이 상한을 검사한다. 5.14의 A와 C 사이다. (처음에는 trim도 각자 했다. 2026-10-03(#55)에 지웠다.)
 - 대안 C: `Name`에 대소문자 무시 동일성과 정규화를 넣어 깊이를 만든다. 도메인이 요구하지 않은 행위를 지어내는 것이다.
-- 선택: B (2026-09-17). trim 한 줄과 검사 두 줄이 두 엔티티에 겹치는 대신 `@Embeddable`·`@AttributeOverride`·손으로 쓴 `equals`·`NameTest`가 사라진다. 메시지가 개념 이름을 말한다("브랜드 이름은 공백일 수 없습니다."). `existsByName(String)`이 뗀 이름을 받는다는 보장은 타입 대신 순서가 지킨다. `BrandService.register`가 `Brand`를 먼저 만들고 `brand.name`으로 중복을 조회한다. `BrandServiceTest`의 `" 루퍼스 "` 중복 사례가 이 순서를 지킨다.
+- 선택: B (2026-09-17). 검사 두 줄이 두 엔티티에 겹치는 대신 `@Embeddable`·`@AttributeOverride`·손으로 쓴 `equals`·`NameTest`가 사라진다. 메시지가 개념 이름을 말한다("브랜드 이름은 공백일 수 없습니다."). 두 엔티티는 같은 모양의 private `validatedName`으로 검사한다. (처음에는 `existsByName(String)`이 뗀 이름을 받는다는 보장을 타입 대신 순서가 지켰다. `BrandService.register`가 `Brand`를 먼저 만들고 `brand.name`으로 중복을 조회했다. 2026-10-03(#55)에 이름을 받은 그대로 저장하면서 지킬 보장이 없어졌다.)
 - 원시값을 감싸는 기준: 용어집이 개념으로 부르거나, 생성 밖의 행위가 있거나(도메인 문서가 맡긴 것 포함), 동일성이 원시값과 다르고 타입이 그것을 맞게 구현하거나, 다시 만들 수 없는 보장을 seam 너머로 넘길 때. `Money`는 앞의 셋, `Stock`은 앞의 둘(5.3, `decrease`가 예정)을 만족한다. `Name`은 넷째만 만족했고 순서로 대신할 수 있었다.
-- 대가: 이름을 정하는 곳마다(생성자, #3·#5의 `update`) trim·공백·길이 검사를 되풀이한다. 개념이 셋 이상 이름을 가지면 공유 함수(5.14의 A)를 고려한다.
+- 대가: 이름을 정하는 곳마다(생성자, #3·#5의 `update`) 공백·길이 검사를 되풀이한다. 개념이 셋 이상 이름을 가지면 공유 함수(5.14의 A)를 고려한다.
 - 다시 볼 조건: 이름에 도메인 행위가 생길 때(정규화, 허용 문자, 표시용 변환). 그때는 개념별 타입(`BrandName`)으로 간다.
 
 ### 5.20 저장소 구현의 모양
 
-- 문제: domain의 저장 약속(`BrandRepository`, `ProductRepository`)을 Spring Data JPA로 구현하는 방법. 저장 약속의 메서드 이름은 Spring Data의 `CrudRepository`와 맞춘다(`findById`). 그런데 `JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려준다. 이름과 매개변수가 같고 반환 타입만 다른 두 메서드를 한 인터페이스가 함께 물려받을 수 없어, 저장 약속과 `JpaRepository`를 한 인터페이스로 합칠 수 없다.
-- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. 손으로 쓰는 클래스가 없다. 그러나 domain 인터페이스가 Spring Data에 의존하고, `findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다.
-- 대안 B: infrastructure에 `BrandJpaRepository : JpaRepository<Brand, Long>`과 `@Component BrandRepositoryImpl : BrandRepository`를 따로 둔다. Impl은 일을 모두 `BrandJpaRepository`에 맡기고 `findById`의 `Optional`만 `findByIdOrNull`로 nullable로 바꾼다. 템플릿의 `Example` 패키지가 쓰던 모양이다.
-- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모르고, nullable 반환과 `CrudRepository`의 이름을 둘 다 지킨다. 저장 약속이 `Optional`을 돌려주면 application이 매번 `orElseThrow`나 `orElse(null)`을 붙여야 한다.
-- 비용: 개념마다 위임만 하는 클래스가 하나 더 있고, 조회를 더할 때 저장 약속·`JpaRepository`·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다.
-- 다시 볼 조건: 위임 클래스가 셋을 넘어 되풀이가 지루해지거나, domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환을 `Optional`로 바꾼다.
+- 문제: domain의 저장 약속(`BrandRepository`, `ProductRepository`)을 Spring Data JPA로 구현하는 방법. 저장 약속의 메서드 이름은 Spring Data의 `CrudRepository`와 맞추고(`findById`), 없는 행은 `Optional`이 아니라 nullable(`Brand?`)로 돌려준다. 저장 약속이 `Optional`을 돌려주면 application이 매번 `orElseThrow`나 `orElse(null)`을 붙여야 한다.
+- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. `Repository`는 메서드를 하나도 선언하지 않는 표지라서 저장 약속이 `findById(id: Long): Brand?`를 그대로 선언할 수 있다. 그러나 domain 인터페이스가 Spring Data에 의존하고, 이름만으로 끝나지 않는 목록(`findAll(page, size): PageSlice<Brand>`)은 Spring Data가 만들지 못한다. 목록을 Spring Data에 맡기려면 저장 약속이 `Slice`·`Pageable`을 돌려받아 5.21을 뒤집거나, domain에 조각 인터페이스를 따로 두고 infrastructure가 구현해야 한다.
+- 대안 B: infrastructure에 Spring Data 인터페이스 `BrandJpaRepository`와 `@Component BrandRepositoryImpl : BrandRepository`를 따로 둔다. Impl은 이름만으로 끝나는 일을 `BrandJpaRepository`에 맡기고, Spring Data가 읽은 결과를 domain의 모양으로 옮긴다. 템플릿의 `Example` 패키지가 쓰던 모양이다.
+- 대안 C: infrastructure의 Spring Data 인터페이스가 표지와 저장 약속을 함께 상속한다(`BrandJpaRepository : Repository<Brand, Long>, BrandRepository`). domain은 Spring Data를 모른다. 그러나 Spring Data가 이름에서 만들지 못하는 `findAll(page, size)`에서 애플리케이션 시작이 실패한다. Impl을 남기면 `BrandRepository` 빈이 둘이 되어 타입으로 주입받지 못한다. Spring Data는 저장 약속을 구현한 `BrandRepositoryImpl`을 저장 약속의 패키지(`domain.brand`) 아래에서만 찾으므로, `infrastructure.brand`의 Impl은 조각 구현으로 잡히지 않는다. Impl을 `domain.brand`로 옮기면 모든 메서드가 그리로 가고, Impl이 `BrandJpaRepository`를 받으므로 순환 참조로 시작이 실패한다. 옮기는 일이 있는 개념마다 저장 약속을 이름으로 끝나는 쪽과 손으로 짜는 쪽으로 나눠야 한다.
+- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모른다. domain은 JPA·Hibernate 애노테이션만 들여오고 `org.springframework`는 하나도 들여오지 않는다. 일곱 Impl 중 넷은 위임에 그치지 않고 옮기는 일을 한다. 브랜드는 `Slice`를 `PageSlice`로 옮기고, 상품과 주문은 목록을 QueryDSL로 짜고, 좋아요는 좋아요가 없는 상품의 개수를 0으로 채운다. A와 C는 그 넷에 조각 인터페이스를 따로 요구하면서 위임만 하는 셋(사용자, 포인트 계정, 포인트 이력)을 없앨 뿐이다.
+- Spring Data 인터페이스는 `JpaRepository`가 아니라 표지 `Repository<X, Long>`을 상속하고, Impl이 부르는 메서드만 선언한다(2026-09-28). 저장(`save`)은 일곱 모두, 단건 조회(`findById(id: Long): X?`)는 브랜드·상품·주문, 삭제(`delete`)는 좋아요, 존재 확인(`existsById`)은 사용자만 선언한다. `JpaRepository`가 물려주던 `deleteAll`, 쪽 없는 `findAll()`, `saveAndFlush`를 Impl이 부를 수 없다.
+  - 이름과 매개변수가 `CrudRepository`의 메서드와 같으면 Spring Data는 파생 조회를 만들지 않고 `SimpleJpaRepository`로 보낸다. 짝을 찾을 때 반환 타입은 따지지 않는다. 그래서 `findById`는 JPQL이 아니라 `EntityManager.find`이고, 영속성 컨텍스트에 있는 엔티티는 조회 없이 돌려주며 auto flush도 일으키지 않는다. `SimpleJpaRepository`가 돌려준 `Optional`은 Spring Data가 풀어 없으면 null이 된다.
+  - 반환 타입을 non-null `X`로 적으면 없을 때 `EmptyResultDataAccessException`을 던진다. 그래서 `X?`로 적는다.
+  - 공통 부모(`@NoRepositoryBean`)에 `save`·`findById`를 모으지 않는다. 줄이려던 물려받는 메서드가 작은 모양으로 돌아오고, 부르는 곳 없는 `findById`가 좋아요·사용자·포인트 이력에 생긴다. `save` 한 줄이 일곱 번 되풀이되는 것이 대가다.
+- 비용: 개념마다 Impl이 하나 더 있고, 조회를 더할 때 저장 약속·Spring Data 인터페이스·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다. `JpaRepository`나 `CrudRepository`를 다시 상속하는 인터페이스도 아직은 ArchUnit 규칙 없이 리뷰가 막는다.
+- 고침 (2026-09-28): 처음에는 문제를 "`JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려주므로 두 인터페이스를 합칠 수 없다"로 적고, A에는 "`findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다"고 적었다. 그 부딪힘은 `findById`를 선언한 `CrudRepository` 쪽의 것이고 표지 `Repository`에는 없다. 부딪힘이 사라진 뒤 B를 지키는 근거는 domain이 Spring Data를 모른다는 것과 Impl이 하는 옮기는 일이다. 다시 볼 조건에 있던 "위임 클래스가 셋을 넘으면"은 포인트·주문 조각에서 Impl이 일곱이 될 때까지 아무도 다시 보지 않았고, 위임만 하는 Impl은 지금도 셋이다. 그래서 지웠다.
+- 고침 (2026-09-28, ADR 0006): 포인트 이력의 저장소를 지웠다([포인트·주문 설계 18절](./points-orders.md)). 이 절에서 센 수는 그 전의 것이다. Impl과 `save`를 선언하는 Spring Data 인터페이스는 일곱에서 여섯, 위임만 하는 Impl은 셋에서 둘(사용자, 포인트 계정)이 되었다.
+- 다시 볼 조건: domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환은 `X?` 그대로 둔다.
 
 ### 5.21 목록 조각의 타입과 자리
 
@@ -436,6 +444,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
 
 ### 5.23 이름 수정의 순서
+
+> 2026-10-03 이 절의 선택(C)을 철회했다(#55). 이름을 받은 그대로 저장하므로 다듬은 이름이 따로 없고, `Brand.normalizeName`은 생성자·`update`만 부르는 private `validatedName`이 되었다. 순서는 `find(id)` → `existsByNameAndIdNot(request.name, brand.id)` → `brand.update(request.name)`이다. 거절이 브랜드를 건드리기 전에 끝나야 하는 까닭(대안 A를 물리친 까닭)과 중복 조회에 자기를 빼는 까닭은 그대로다.
 
 - 문제: `PUT /api-admin/v1/brands/{brandId}`는 거절되면(공백, 길이, 중복) 기존 이름이 그대로여야 한다. 중복을 물으려면 저장될 이름, 곧 앞뒤 공백을 뗀 이름이 필요한데(5.11과 같은 이유), 5.19가 `Name`을 지운 뒤로 그 이름을 만드는 곳은 `Brand`뿐이다.
 - 대안 A: `brand.update(name)`으로 먼저 바꾸고 중복이면 예외를 던져 트랜잭션 롤백에 맡긴다. 그러나 예외를 던지기 전에 영속성 컨텍스트의 브랜드는 이미 새 이름을 들고 있다. 조회가 auto-flush를 부르면 거절된 이름이 DB에 닿고, 같은 트랜잭션 안에서 다시 읽는 테스트는 거절된 이름을 본다. "기존 이름이 그대로다"가 객체가 아니라 롤백에 기대게 된다.
@@ -555,7 +565,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: C (2026-09-18, #9). 정렬에 쓰는 수와 응답에 싣는 수가 같은 쿼리에서 나오지 않지만, 그 대가로 저장소의 반환이 기준과 무관하게 `Product`로 남는다.
 - A와 C가 갈리는 자리는 반환 타입 하나뿐이다. "상품 저장소가 좋아요를 알게 된다"는 A를 물리치는 근거가 되지 못한다. C도 `QLike`를 들여와 `likes`를 조인하므로 이미 알고 있다. 상품 저장소가 좋아요를 모르는 선택지는 애초에 없었고, 5.28의 B를 물리친 근거 중 살아남은 것도 같은 절반이다. B와 갈린 자리는 인덱스다. `likes`의 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회는 인덱스가 없는데, 같은 조건에서 MySQL 8.0은 equi-join을 해시 조인으로 푼다. `likes`를 한 번 훑어 해시 테이블을 만들고 훑는 O(N + L)이고, B의 중첩 루프는 O(N × L)이다.
 - QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductRepositoryImpl.findAll`이 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 조각에서 처음 쓰인다.
-- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(`JpaRepository`의 저장·단건 조회와 `existsByBrandId`)만 남는다.
+- `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(저장·단건 조회와 `existsByBrandId`)만 남는다.
 - `brandId`가 null이면 QueryDSL이 그 조건을 통째로 버리므로 `:brandId is null` 같은 관용구가 없다. 나가는 SQL에 죽은 조건이 남지 않는다.
 - `hasNext`는 저장소가 정한다. `size + 1`개를 읽어 넘치면 다음 조각이 있고 그 하나는 버린다. `PageSlice`의 KDoc이 이미 그렇게 적혀 있었고, Spring의 `Slice`가 하던 일을 그대로 옮긴 것이다. 총 개수를 세는 쿼리는 여전히 나가지 않는다(5.5).
 - `group by product, product.brand`를 Hibernate 6.6은 식별자로만 편다: `group by p1_0.id, b1_0.id`. MySQL 8.0은 `ONLY_FULL_GROUP_BY`가 켜져 있어도 이것을 받는다. 두 기본 키에서 나머지 컬럼의 함수 종속을 스스로 알아내기 때문이다. 브랜드를 fetch join으로 함께 읽으면서도 `group by`에 브랜드의 모든 컬럼을 적지 않아도 되는 까닭이다.
@@ -569,7 +579,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | --- | --- | --- |
 | `Stock`: 음수 거절과 기존 값 유지, 0 허용, 양수 저장 | domain 단위 테스트, TDD 대표 사례 | Spring·DB 없음 |
 | `Money`: 음수 거절, 넘침 거절 | domain 단위 테스트 | |
-| `Brand`·`Product`: 이름 trim, 공백 거절, 길이 상한 | domain 단위 테스트 | |
+| `Brand`·`Product`: 이름을 받은 그대로 저장, 공백 거절, 받은 그대로 센 길이 상한 | domain 단위 테스트. 생성자 규칙은 생성자를 직접 불러 확인한다 | Instancio fixture는 생성자를 건너뛴다(ADR 0010) |
 | `Product`: 이름 길이 상한·가격 범위, 브랜드 불변 | domain 단위 테스트 | |
 | Request 제약이 Service 입구에서 거절 | application 통합 테스트. `ConstraintViolationException`과 저장 안 됨 | 두 검증 예외의 400 변환은 `ApiControllerAdviceTest`가 advice를 직접 불러 확인 |
 | 브랜드 삭제 조건, 이름 중복, 요청자 구분 | application 통합 테스트. `@SpringBootTest` + `@Transactional`, flush/clear 후 재조회 | fake 저장소는 두지 않는다(2026-09-17). 실제 SQL을 보내고 `count()`로 "저장하지 않음"을 확인 |
@@ -595,7 +605,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
 - MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 관리자가 바꾼 이름을 고객 조회가 읽는 자리도 같다. 그런 자리에서는 `flushAndClear`로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
-- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `apps/commerce-api`와 `modules/jpa`의 `build.gradle.kts`가 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 연다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로 목록은 브랜드를 함께 읽는다. #5·#7에서는 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`였고, #9이 목록을 QueryDSL로 옮기면서 `innerJoin(product.brand).fetchJoin()`이 되었다(5.32). 어느 쪽이든 `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다.
+- `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `build-logic`의 `loopers.jpa` 컨벤션이 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 열고, `modules/jpa`와 앱 모듈이 그 컨벤션을 건다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로 목록은 브랜드를 함께 읽는다. #5·#7에서는 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`였고, #9이 목록을 QueryDSL로 옮기면서 `innerJoin(product.brand).fetchJoin()`이 되었다(5.32). 어느 쪽이든 `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다.
 - `ProductSort.LIKES_DESC`는 #9(2026-09-18)에서 들어왔다. 목록 쿼리가 `left join` + `group by`로 차례만 내고 `likeCount` 값은 5.28의 C가 그대로 센다. 쿼리를 QueryDSL로 옮긴 까닭과 치른 값은 5.32에 있다.
 - 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
 - `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.

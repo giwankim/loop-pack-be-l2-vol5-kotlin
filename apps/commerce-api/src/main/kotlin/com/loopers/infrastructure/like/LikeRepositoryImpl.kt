@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component
 
 /**
  * [LikeRepository]의 구현. 일은 모두 [LikeJpaRepository]에 맡기고, 상품 여러 개의 집계만 domain이 약속한 모양으로 옮긴다.
- * 두 인터페이스를 하나로 합치지 않는 이유는 [com.loopers.infrastructure.brand.BrandRepositoryImpl]과 같다(설계 5.20).
+ * 두 인터페이스를 하나로 합치지 않는다(설계 5.20).
  */
 @Component
 class LikeRepositoryImpl(

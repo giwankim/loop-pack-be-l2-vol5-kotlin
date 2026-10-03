@@ -6,26 +6,22 @@ import com.loopers.domain.order.QOrder.order
 import com.loopers.domain.shared.PageSlice
 import com.loopers.infrastructure.shared.fetchSlice
 import com.querydsl.jpa.impl.JPAQueryFactory
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Component
 
 /**
  * [OrderRepository]의 구현. 메서드 이름만으로 끝나는 일은 [OrderJpaRepository]에 맡기고, 목록만 QueryDSL로 짠다.
- * 두 인터페이스를 하나로 합치지 않는 이유는 [com.loopers.infrastructure.product.ProductRepositoryImpl]과 같다.
+ * 두 인터페이스를 하나로 합치지 않는다(카탈로그 설계 5.20).
  */
 @Component
 class OrderRepositoryImpl(
-    private val jpaRepository: OrderJpaRepository,
+    private val orderJpaRepository: OrderJpaRepository,
     private val queryFactory: JPAQueryFactory,
 ) : OrderRepository {
-    override fun save(order: Order): Order = jpaRepository.save(order)
+    override fun save(order: Order): Order = orderJpaRepository.save(order)
 
-    override fun findById(id: Long): Order? = jpaRepository.findByIdOrNull(id)
+    override fun findById(id: Long): Order? = orderJpaRepository.findById(id)
 
-    override fun findByIdAndUserId(id: Long, userId: Long): Order? = jpaRepository.findByIdAndUserId(id, userId)
-
-    override fun findByUserIdAndCreationKey(userId: Long, creationKey: String): Order? =
-        jpaRepository.findByUserIdAndCreationKey(userId, creationKey)
+    override fun findByIdAndUserId(id: Long, userId: Long): Order? = orderJpaRepository.findByIdAndUserId(id, userId)
 
     /**
      * 조각은 주문만 센다. 품목을 fetch join으로 함께 읽으면 `limit`이 주문이 아니라 조인된 행을 자르므로

@@ -1,14 +1,18 @@
 package com.loopers.infrastructure.like
 
 import com.loopers.domain.like.Like
-import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.Repository
 
 /**
  * [Like]의 Spring Data JPA 저장소. [LikeRepositoryImpl]이 이것에 맡겨 domain의 저장 약속을 지킨다.
  * 좋아요는 논리 삭제가 없으므로 삭제 필터도 없다(ADR 0001).
  */
-interface LikeJpaRepository : JpaRepository<Like, Long> {
+interface LikeJpaRepository : Repository<Like, Long> {
+    fun save(like: Like): Like
+
+    fun delete(like: Like)
+
     fun existsByUserIdAndProductId(userId: Long, productId: Long): Boolean
 
     fun findByUserIdAndProductId(userId: Long, productId: Long): Like?
