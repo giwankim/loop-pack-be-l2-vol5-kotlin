@@ -1,11 +1,13 @@
 package com.loopers.interfaces.api.v1.like
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
 import com.loopers.application.like.LikeService
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
+import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
@@ -38,8 +40,8 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class UserLikeApiMockMvcTest(
     private val mockMvc: MockMvc,
-    private val brandService: BrandService,
-    private val productService: ProductService,
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
     private val likeService: LikeService,
     private val userRepository: UserRepository,
     private val entityManager: EntityManager,
@@ -52,10 +54,10 @@ class UserLikeApiMockMvcTest(
     @Test
     fun `a customer reads their own like list, the most recently liked product first`() {
         val userId = registerUser()
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val shirtId = registerProduct(brand.id, name = "티셔츠", price = 12_000, stock = 7)
-        val socksId = registerProduct(brand.id, name = "양말", price = 3_000, stock = 0)
-        likeService.like(userId = userId, productId = shirtId)
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        val earlierId = productRepository.save(createProduct(brand)).id
+        val socksId = productRepository.save(createProduct(brand, name = "양말", price = Money(3_000), stock = Stock(0))).id
+        likeService.like(userId = userId, productId = earlierId)
         likeService.like(userId = userId, productId = socksId)
         entityManager.flushAndClear()
 
@@ -72,7 +74,7 @@ class UserLikeApiMockMvcTest(
             jsonPath("$.data.items[0].likeCount") { value(1) }
             jsonPath("$.data.items[0].stock") { doesNotExist() }
             jsonPath("$.data.items[0].createdAt") { doesNotExist() }
-            jsonPath("$.data.items[1].id") { value(shirtId) }
+            jsonPath("$.data.items[1].id") { value(earlierId) }
             jsonPath("$.data.page") { value(0) }
             jsonPath("$.data.size") { value(20) }
             jsonPath("$.data.hasNext") { value(false) }
@@ -96,7 +98,7 @@ class UserLikeApiMockMvcTest(
     fun `reading another user's like list returns 403`() {
         val userId = registerUser()
         val otherUserId = registerUser()
-        val productId = registerProduct()
+        val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         likeService.like(userId = otherUserId, productId = productId)
         entityManager.flushAndClear()
 
@@ -147,24 +149,24 @@ class UserLikeApiMockMvcTest(
     @Test
     fun `the page and size in the query string reach the slice`() {
         val userId = registerUser()
-        val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
-        val shirtId = registerProduct(brand.id, name = "티셔츠")
-        val socksId = registerProduct(brand.id, name = "양말")
-        likeService.like(userId = userId, productId = shirtId)
-        likeService.like(userId = userId, productId = socksId)
+        val brand = brandRepository.save(createBrand())
+        val earlierId = productRepository.save(createProduct(brand)).id
+        val laterId = productRepository.save(createProduct(brand)).id
+        likeService.like(userId = userId, productId = earlierId)
+        likeService.like(userId = userId, productId = laterId)
         entityManager.flushAndClear()
 
         getLikes(userId, userId, "size" to "1").andExpect {
             status { isOk() }
             jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].id") { value(socksId) }
+            jsonPath("$.data.items[0].id") { value(laterId) }
             jsonPath("$.data.size") { value(1) }
             jsonPath("$.data.hasNext") { value(true) }
         }
 
         getLikes(userId, userId, "page" to "1", "size" to "1").andExpect {
             status { isOk() }
-            jsonPath("$.data.items[0].id") { value(shirtId) }
+            jsonPath("$.data.items[0].id") { value(earlierId) }
             jsonPath("$.data.page") { value(1) }
             jsonPath("$.data.hasNext") { value(false) }
         }
@@ -195,14 +197,4 @@ class UserLikeApiMockMvcTest(
         }
 
     private fun registerUser(): Long = userRepository.save(User()).id
-
-    private fun registerProduct(
-        brandId: Long = brandService.register(BrandAdminRegisterRequest("루퍼스")).id,
-        name: String = "티셔츠",
-        price: Long = 10_000,
-        stock: Int = 1,
-    ): Long =
-        productService.register(
-            ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock),
-        ).id
 }
