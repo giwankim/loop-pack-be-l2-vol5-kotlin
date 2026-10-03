@@ -31,7 +31,7 @@
 - 엔티티·Request fixture의 이름은 `create`에 타입 이름을 잇는다(`createBrand`, `createProductAdminRegisterRequest`).
 - 생성자가 입력을 검사하기만 하는 엔티티(`Brand`, `Product`, `Like`)와 모든 Request는 `KInstancio.of`로 만든다. 생성자가 필드를 계산하는 엔티티(`Order`, `PointAccount`)는 진짜 생성자를 부른다. 새 엔티티도 이 기준으로 고른다. 엔티티 fixture는 저장하지 않은 엔티티를 돌려주고, 저장은 테스트가 한다.
 - Instancio로 만드는 엔티티 fixture는 `unsaved()`를 거쳐 `BaseEntity`의 `id`를 0, `deletedAt`을 `null`로 둔다. `id`가 0이 아니면 `save`가 삽입하지 않고 병합하고, `deletedAt`이 있으면 `@SQLRestriction`이 행을 가린다. 연관은 fixture가 직접 넣는다. `Product`의 `brand`를 맡기면 Instancio가 저장되지 않은 브랜드를 지어낸다.
-- `create<타입>` 이름은 저장하지 않는 fixture만 쓴다. 저장까지 하는 테스트 도우미는 다른 이름으로 한 일을 드러낸다(사용자와 계정을 저장하는 `UserFixture.registerUser`, 주문 API를 부르는 `postOrder`). 용어집에서 주문의 행위는 `create`라 `createOrder`를 도우미 이름으로 쓰면 fixture와 겹친다.
+- `create<타입>` 이름은 저장하지 않는 fixture만 쓴다. 저장까지 하는 테스트 도우미는 다른 이름으로 한 일을 드러낸다(사용자와 계정을 저장하는 `UserFixture.registerUser`). 용어집에서 주문의 행위는 `create`라 `createOrder`를 도우미 이름으로 쓰면 fixture와 겹친다.
 - 규칙이 걸린 필드는 fixture가 그 자리에서 `gen()`으로 범위를 정해 `set`한다(이름 2..100자, 가격 1..1,000,000,000원). 따로 두는 값 생성기 함수는 없다. 값 객체(`Money`, `Stock`)는 Instancio에 맡기지 않고 뽑은 값으로 fixture가 만든다. 맡기면 값 객체의 검사도 건너뛰어 음수 금액이나 재고가 나온다. 기본값은 동작을 바꾸는 경계를 피한다(재고는 100..1,000개라 품절이 나오지 않는다).
 - Request의 상한 없는 `@Positive`·`@Min` 필드도 fixture가 범위를 정한다. `instancio.properties`로 켠 Bean Validation 연동은 fixture가 빠뜨린 제약 필드를 채우는데, 상한 없는 필드에는 큰 값이 나와 기본값끼리 더하면 넘칠 수 있다.
 - fixture 파일마다 같은 패키지에 계약 테스트가 있다. Instancio가 생성자를 건너뛰므로 범위는 여기서 지킨다. 기본값을 1,000개 뽑아 엔티티 fixture의 값은 진짜 생성자에 다시 넣어 예외가 없는지와 저장하지 않은 상태(`id` 0, `deletedAt` `null`)를 확인하고, Request fixture의 값은 그 Request의 제약으로 검증한다. 기본값이 피하는 경계(품절 등)도 확인한다. fixture마다 인자를 넘겨 그 값이 그대로 쓰이는지 하나씩 확인한다. fixture를 더하거나 범위를 바꾸면 계약 테스트도 함께 바꾼다. 계약 테스트가 없는 fixture를 두지 않는다.

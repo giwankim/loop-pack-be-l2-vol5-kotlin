@@ -71,3 +71,21 @@ fun createOrderCreateRequest(productIds: List<Long>, quantity: Int? = null): Ord
         )
         .create()
 }
+
+/**
+ * 상품마다 수량이 다른 주문 생성 요청. 넘긴 상품과 수량의 짝마다 품목 하나를 그 차례대로 둔다. 재고·합계 계산에 기대는
+ * 테스트가 품목마다 수량을 적을 때 쓴다. 수량이 `null`인 품목은 1..10개를 뽑는다.
+ */
+fun createOrderCreateRequest(vararg items: Pair<Long, Int?>): OrderCreateRequest {
+    return KInstancio.of<OrderCreateRequest>()
+        .set(
+            field(OrderCreateRequest::items),
+            items.map { (productId, quantity) ->
+                KInstancio.of<OrderCreateRequest.Item>()
+                    .set(field(OrderCreateRequest.Item::productId), productId)
+                    .set(field(OrderCreateRequest.Item::quantity), quantity ?: gen().ints().range(1, 10).get())
+                    .create()
+            },
+        )
+        .create()
+}

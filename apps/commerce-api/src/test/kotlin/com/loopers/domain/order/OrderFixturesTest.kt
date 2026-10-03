@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.OrderCreateRequest
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.BrandRepository
@@ -151,5 +152,29 @@ class OrderFixturesTest(
         val request = createOrderCreateRequest(productIds = PRODUCT_IDS, quantity = 11)
 
         assertThat(request.items.map { it.quantity }).containsExactly(11, 11, 11)
+    }
+
+    @Test
+    fun `createOrderCreateRequest with pairs draws 1 to 10 for a missing quantity within the request's constraints`() {
+        val requests = List(SAMPLES) { createOrderCreateRequest(3L to null, 1L to 11) }
+
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests).allSatisfy { request ->
+            assertAll(
+                { assertThat(request.items.map { it.productId }).containsExactly(3L, 1L) },
+                { assertThat(request.items.first().quantity).isBetween(1, 10) },
+                { assertThat(request.items.last().quantity).isEqualTo(11) },
+            )
+        }
+    }
+
+    @Test
+    fun `createOrderCreateRequest uses each product and quantity pair it is given in order`() {
+        val request = createOrderCreateRequest(3L to 5, 1L to 11)
+
+        assertThat(request.items).containsExactly(
+            OrderCreateRequest.Item(productId = 3, quantity = 5),
+            OrderCreateRequest.Item(productId = 1, quantity = 11),
+        )
     }
 }

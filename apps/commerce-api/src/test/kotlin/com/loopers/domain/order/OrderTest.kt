@@ -1,6 +1,5 @@
 package com.loopers.domain.order
 
-import com.loopers.domain.shared.Money
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -10,7 +9,7 @@ import org.junit.jupiter.api.assertThrows
 class OrderTest {
     @Test
     fun `confirming a draft records the stored total and the confirmation time`() {
-        val order = order()
+        val order = createOrder(userId = 1)
 
         order.confirm()
 
@@ -23,7 +22,7 @@ class OrderTest {
 
     @Test
     fun `a draft passes the confirmation check and stays a draft`() {
-        val order = order()
+        val order = createOrder(userId = 1)
 
         assertDoesNotThrow { order.validateConfirmable() }
 
@@ -32,7 +31,7 @@ class OrderTest {
 
     @Test
     fun `a confirmed order fails the confirmation check`() {
-        val order = order()
+        val order = createOrder(userId = 1)
         order.confirm()
 
         val exception = assertThrows<OrderAlreadyConfirmedException> { order.validateConfirmable() }
@@ -46,7 +45,7 @@ class OrderTest {
      */
     @Test
     fun `confirming an already confirmed order is rejected and keeps the first payment and time`() {
-        val order = order()
+        val order = createOrder(userId = 1)
         order.confirm()
         val paidAmount = order.paidAmount
         val confirmedAt = order.confirmedAt
@@ -60,9 +59,4 @@ class OrderTest {
             { assertThat(order.confirmedAt).isEqualTo(confirmedAt) },
         )
     }
-
-    private fun order(): Order = Order(
-        userId = 1,
-        products = listOf(OrderProduct(1, "상품", Money(3_000), 1)),
-    )
 }

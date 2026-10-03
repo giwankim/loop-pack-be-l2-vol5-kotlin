@@ -2,15 +2,14 @@ package com.loopers.infrastructure.order
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
-import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository
-import com.loopers.domain.product.Product
+import com.loopers.domain.order.createOrder
+import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.product.ProductRepository
-import com.loopers.domain.product.Stock
-import com.loopers.domain.shared.Money
+import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.infrastructure.brand.BrandRepositoryImpl
@@ -62,11 +61,11 @@ class OrderRepositoryTest(
     fun `findAll with a user lists only that user's orders from the newest and breaks equal creation times by id`() {
         val owner = userRepository.save(User())
         val other = userRepository.save(User())
-        val product = registerProduct()
-        val older = orderRepository.save(order(owner.id, product))
-        val tied = orderRepository.save(order(owner.id, product))
-        val tiedLater = orderRepository.save(order(owner.id, product))
-        val foreign = orderRepository.save(order(other.id, product))
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        val older = orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product))))
+        val tied = orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product))))
+        val tiedLater = orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product))))
+        val foreign = orderRepository.save(createOrder(other.id, listOf(createOrderProduct(product))))
         entityManager.flushAndClear()
         setCreatedAt(older.id, "2026-09-17 10:00:00.000000")
         setCreatedAt(tied.id, "2026-09-18 10:00:00.000000")
@@ -91,18 +90,17 @@ class OrderRepositoryTest(
     @Test
     fun `findAll pages multi item orders by order count and keeps every item in product order`() {
         val owner = userRepository.save(User())
-        val shirt = registerProduct("티셔츠")
-        val socks = registerProduct("양말")
-        val pants = registerProduct("바지")
-        val first = orderRepository.save(order(owner.id, shirt, socks, pants))
-        val second = orderRepository.save(order(owner.id, pants, socks, shirt))
+        val brand = brandRepository.save(createBrand())
+        val products = List(3) { productRepository.save(createProduct(brand)) }
+        val first = orderRepository.save(createOrder(owner.id, products.map { createOrderProduct(it) }))
+        val second = orderRepository.save(createOrder(owner.id, products.reversed().map { createOrderProduct(it) }))
         entityManager.flushAndClear()
 
         val firstPage = orderRepository.findAll(owner.id, page = 0, size = 1)
         val secondPage = orderRepository.findAll(owner.id, page = 1, size = 1)
         val thirdPage = orderRepository.findAll(owner.id, page = 2, size = 1)
 
-        val productIds = listOf(shirt, socks, pants).map { it.id }.sorted()
+        val productIds = products.map { it.id }.sorted()
         assertAll(
             { assertThat(firstPage.items.map { it.id }).containsExactly(second.id) },
             { assertThat(firstPage.hasNext).isTrue() },
@@ -119,9 +117,9 @@ class OrderRepositoryTest(
     /** 거를 사용자가 없으면 모든 사용자의 주문이 한 조각에 오른다. 관리자 목록이 쓰는 길이다. */
     @Test
     fun `findAll without a user gives the orders of every user latest first`() {
-        val product = registerProduct()
-        val first = orderRepository.save(order(userRepository.save(User()).id, product))
-        val second = orderRepository.save(order(userRepository.save(User()).id, product))
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        val first = orderRepository.save(createOrder(userRepository.save(User()).id, listOf(createOrderProduct(product))))
+        val second = orderRepository.save(createOrder(userRepository.save(User()).id, listOf(createOrderProduct(product))))
         entityManager.flushAndClear()
 
         val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
@@ -136,9 +134,9 @@ class OrderRepositoryTest(
     @Test
     fun `findAll puts the later created_at first even when its id is lower`() {
         val owner = userRepository.save(User())
-        val product = registerProduct()
-        val recent = orderRepository.save(order(owner.id, product))
-        val backDated = orderRepository.save(order(owner.id, product))
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        val recent = orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product))))
+        val backDated = orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product))))
         entityManager.flushAndClear()
         setCreatedAt(backDated.id, "2026-09-17 00:00:00.000000")
         entityManager.flushAndClear()
@@ -156,17 +154,17 @@ class OrderRepositoryTest(
     @Test
     fun `findAll loads the items of every order in the slice`() {
         val owner = userRepository.save(User())
-        val shirt = registerProduct("티셔츠")
-        val pants = registerProduct("바지")
-        orderRepository.save(order(owner.id, pants, shirt))
-        orderRepository.save(order(owner.id, shirt))
+        val brand = brandRepository.save(createBrand())
+        val (shared, other) = List(2) { productRepository.save(createProduct(brand)) }
+        orderRepository.save(createOrder(owner.id, listOf(other, shared).map { createOrderProduct(it) }))
+        orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(shared))))
         entityManager.flushAndClear()
 
         val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
         entityManager.clear()
 
         assertThat(slice.items.map { order -> order.items.map { it.productId } })
-            .containsExactly(listOf(shirt.id), listOf(shirt.id, pants.id).sorted())
+            .containsExactly(listOf(shared.id), listOf(shared.id, other.id).sorted())
     }
 
     @Test
@@ -186,13 +184,5 @@ class OrderRepositoryTest(
             .setParameter("createdAt", createdAt)
             .setParameter("id", orderId)
             .executeUpdate()
-    }
-
-    private fun order(userId: Long, vararg products: Product): Order =
-        Order(userId, products.map { OrderProduct(it.id, it.name, it.price, 1) })
-
-    private fun registerProduct(name: String = "티셔츠"): Product {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        return productRepository.save(Product(brand = brand, name = name, price = Money(1_000), stock = Stock(1)))
     }
 }

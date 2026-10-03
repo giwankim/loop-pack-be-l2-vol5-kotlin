@@ -1,11 +1,15 @@
 package com.loopers.interfaces.api.v1.order
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
-import com.loopers.application.product.ProductService
+import com.loopers.application.order.OrderService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
+import com.loopers.domain.order.createOrderCreateRequest
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
+import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
@@ -34,6 +38,8 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
@@ -45,11 +51,13 @@ class OrderApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,
     private val userRepository: UserRepository,
-    private val brandService: BrandService,
-    private val productService: ProductService,
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
+    private val orderService: OrderService,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
     private val entityManagerFactory: EntityManagerFactory,
+    transactionManager: PlatformTransactionManager,
 ) {
     companion object {
         /** 본문을 JSON으로 읽을 수조차 없는 것. Spring·Jackson의 범용 400이다(설계 13.1). */
@@ -72,14 +80,15 @@ class OrderApiMockMvcTest(
                 .map { """{"items":[{"productId":PRODUCT_ID,"quantity":$it}]}""" }
     }
 
+    private val transaction = TransactionTemplate(transactionManager)
     private var userId = 0L
-    private var brandId = 0L
+    private lateinit var brand: Brand
 
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
         userId = userRepository.save(User()).id
-        brandId = brandService.register(BrandAdminRegisterRequest("주문 브랜드")).id
+        brand = brandRepository.save(createBrand())
     }
 
     @AfterEach
@@ -89,8 +98,8 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `create sorts items by product id and own detail preserves the committed draft`() {
-        val first = product("티셔츠", 1_000, 0)
-        val second = product("바지", 2_000, 1)
+        val first = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000), stock = Stock(0))).id
+        val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(1))).id
         val created = create(
             """{"items":[
                 {"productId":$second,"quantity":1},
@@ -114,14 +123,14 @@ class OrderApiMockMvcTest(
 
         val detail = detail(created["data"]["orderId"].longValue()).andExpect { status { isOk() } }.json()
         assertThat(detail).isEqualTo(created)
-        assertThat(productService.find(first).stock).isZero()
-        assertThat(productService.find(second).stock).isEqualTo(1)
+        assertThat(productRepository.findById(first)!!.stock).isEqualTo(Stock(0))
+        assertThat(productRepository.findById(second)!!.stock).isEqualTo(Stock(1))
     }
 
     @Test
     fun `a request that lists the same product twice is rejected and saves nothing`() {
-        val id = product()
-        val other = product()
+        val id = productRepository.save(createProduct(brand)).id
+        val other = productRepository.save(createProduct(brand)).id
         listOf(listOf(id, id), listOf(id, other, id)).forEach { productIds ->
             create(items(productIds)).andExpect {
                 status { isBadRequest() }
@@ -135,8 +144,7 @@ class OrderApiMockMvcTest(
     /** 상품마다 판매 가능 여부를 본 뒤 주문을 만들므로 그 404가 중복의 400보다 먼저다(설계 15). */
     @Test
     fun `a request that repeats an unavailable product returns 404 and saves nothing`() {
-        val deleted = product()
-        productService.delete(deleted)
+        val deleted = productRepository.save(createProduct(brand).apply { delete() }).id
         listOf(Long.MAX_VALUE, deleted).forEach { id ->
             create(items(id, "1,1")).andExpect {
                 status { isNotFound() }
@@ -146,13 +154,10 @@ class OrderApiMockMvcTest(
         }
     }
 
-    private fun product(name: String = "상품", price: Long = 1_000, stock: Int = 0): Long =
-        productService.register(ProductAdminRegisterRequest(brandId, name, price, stock)).id
-
     @ParameterizedTest
     @MethodSource("malformedBodies")
     fun `malformed requests are rejected and save nothing`(body: String) {
-        val id = product()
+        val id = productRepository.save(createProduct(brand)).id
         create(body.replace("PRODUCT_ID", id.toString())).andExpect {
             status { isBadRequest() }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
@@ -163,7 +168,7 @@ class OrderApiMockMvcTest(
     /** 본문은 카탈로그처럼 Jackson 기본대로 읽는다. 숫자 문자열도 수량이다(설계 5.10). */
     @Test
     fun `an item quantity sent as a numeric string creates the order`() {
-        val id = product(price = 1_000)
+        val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
         create("""{"items":[{"productId":$id,"quantity":"2"}]}""").andExpect {
             status { isCreated() }
             jsonPath("$.data.items[0].quantity") { value(2) }
@@ -174,7 +179,7 @@ class OrderApiMockMvcTest(
     /** `JacksonConfig`의 `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 품목 객체 하나를 한 품목 배열로 읽는다. 5.10이 적은 대가다. */
     @Test
     fun `a single item object in place of the items array creates a one item order`() {
-        val id = product()
+        val id = productRepository.save(createProduct(brand)).id
         create("""{"items":{"productId":$id,"quantity":1}}""").andExpect {
             status { isCreated() }
             jsonPath("$.data.items.length()") { value(1) }
@@ -185,7 +190,7 @@ class OrderApiMockMvcTest(
     @ParameterizedTest
     @MethodSource("unreadableBodies")
     fun `unreadable bodies are rejected and save nothing`(body: String) {
-        product()
+        productRepository.save(createProduct(brand))
         create(body).andExpect {
             status { isBadRequest() }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
@@ -195,7 +200,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `items count is checked as sent and one hundred distinct products are allowed`() {
-        val products = List(100) { product() }
+        val products = List(100) { productRepository.save(createProduct(brand, price = Money(1_000))).id }
         // 같은 상품 101개도 개수 제약이 먼저 거른다. 받은 품목을 그대로 센다.
         listOf(emptyList(), List(101) { products.first() }).forEach { productIds ->
             create(items(productIds)).andExpect {
@@ -214,7 +219,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `nonpositive product ids and quantities are rejected and the largest quantity is accepted`() {
-        val id = product()
+        val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
         // 양수 조건은 Request 제약이라 범용 400 + 규칙 메시지다(설계 12.4, 13.1).
         listOf(0, -1).forEach { quantity ->
             create(body(id, quantity)).andExpect {
@@ -241,7 +246,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `order amount overflow rolls back every item`() {
-        val products = List(5) { product("상품$it", 1_000_000_000) }
+        val products = List(5) { productRepository.save(createProduct(brand, price = Money(1_000_000_000))).id }
         val entries = products.joinToString { """{"productId":$it,"quantity":2147483647}""" }
         create("""{"items":[$entries]}""").andExpect {
             status { isBadRequest() }
@@ -253,7 +258,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `missing and nonexistent requesters are unauthorized and other orders look missing`() {
-        val request = body(product())
+        val request = body(productRepository.save(createProduct(brand)).id)
         listOf(null, Long.MAX_VALUE).forEach { requester ->
             create(request, requester = requester).andExpect {
                 status { isUnauthorized() }
@@ -279,9 +284,8 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `new orders reject unknown or deleted products and deleted brands`() {
-        val active = product()
-        val deleted = product("삭제할 상품")
-        productService.delete(deleted)
+        val active = productRepository.save(createProduct(brand)).id
+        val deleted = productRepository.save(createProduct(brand).apply { delete() }).id
         listOf(Long.MAX_VALUE, deleted).forEach { id ->
             create("""{"items":[{"productId":$active,"quantity":1},{"productId":$id,"quantity":1}]}""").andExpect {
                 status { isNotFound() }
@@ -290,7 +294,7 @@ class OrderApiMockMvcTest(
             assertNoOrders()
         }
         // The catalog API prevents deleting a brand with active products; seed that legacy state directly.
-        jdbc.update("update brand set deleted_at = current_timestamp(6) where id = ?", brandId)
+        jdbc.update("update brand set deleted_at = current_timestamp(6) where id = ?", brand.id)
         create(body(active)).andExpect {
             status { isNotFound() }
             jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
@@ -300,7 +304,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `client supplied prices names and totals are ignored`() {
-        val id = product("서버 이름", 1_000)
+        val id = productRepository.save(createProduct(brand, name = "서버 이름", price = Money(1_000))).id
         create(
             """{
                 "items":[{"productId":$id,"quantity":2,"productName":"가짜","unitPrice":1,"lineAmount":1}],
@@ -320,7 +324,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `line amount overflow is rejected with no partial order`() {
-        val id = product()
+        val id = productRepository.save(createProduct(brand)).id
         // Valid catalog prices cannot overflow one line; a DB fixture exercises the Long multiplication guard.
         jdbc.update("update product set price = ? where id = ?", Long.MAX_VALUE, id)
         create(body(id, 2)).andExpect {
@@ -335,9 +339,9 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `foreign keys and order product uniqueness are enforced by MySQL`() {
-        val id = product()
-        val original = create(body(id)).andExpect { status { isCreated() } }.json()
-        val orderId = original["data"]["orderId"].longValue()
+        val id = productRepository.save(createProduct(brand)).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(id))).orderId
+        val original = detail(orderId).andExpect { status { isOk() } }.json()
         val foreignKeys = jdbc.queryForList(
             "select concat(table_name, '.', column_name, '->', referenced_table_name) as reference_name " +
                 "from information_schema.key_column_usage where table_schema = database() " +
@@ -366,8 +370,8 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `storage failure on the second item rolls back the order and its items`() {
-        val first = product("첫 상품")
-        val second = product("둘째 상품")
+        val first = productRepository.save(createProduct(brand)).id
+        val second = productRepository.save(createProduct(brand)).id
         val request = """{"items":[{"productId":$first,"quantity":1},{"productId":$second,"quantity":1}]}"""
         jdbc.execute("alter table order_line_item add constraint fail_second_order_item check (product_id <> $second)")
         try {
@@ -384,15 +388,15 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `database rejects inconsistent payment state and nonpositive item values`() {
-        val id = product()
-        val original = create(body(id)).andExpect { status { isCreated() } }.json()
-        val orderId = original["data"]["orderId"].longValue()
+        val productId = productRepository.save(createProduct(brand)).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val original = detail(orderId).andExpect { status { isOk() } }.json()
         listOf(
             "paid_amount = 1000",
             "confirmed_at = now(6)",
             "status = 'CONFIRMED'",
             "total_amount = 0",
-            "status = 'CONFIRMED', paid_amount = 999, confirmed_at = now(6)",
+            "status = 'CONFIRMED', paid_amount = total_amount - 1, confirmed_at = now(6)",
             "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
         ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
         listOf("quantity = 0", "unit_price = 0", "line_amount = 0").forEach { update ->
@@ -403,7 +407,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `Hibernate schema recreation drops scalar references and recreates every order foreign key`() {
-        create(body(product())).andExpect { status { isCreated() } }
+        orderService.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
         val schema = entityManagerFactory.unwrap(SessionFactory::class.java).schemaManager
         try {
             schema.dropMappedObjects(false)
@@ -428,8 +432,8 @@ class OrderApiMockMvcTest(
             "FK_ORDER_LINE_ITEM_PRODUCT",
         )
         userId = userRepository.save(User()).id
-        brandId = brandService.register(BrandAdminRegisterRequest("재생성 브랜드")).id
-        create(body(product())).andExpect { status { isCreated() } }
+        brand = brandRepository.save(createBrand())
+        create(body(productRepository.save(createProduct(brand)).id)).andExpect { status { isCreated() } }
     }
 
     /**
@@ -438,17 +442,18 @@ class OrderApiMockMvcTest(
      */
     @Test
     fun `the order list returns only the requester's orders from the newest with the same entries as the detail`() {
-        val shirt = product("티셔츠", 1_000)
-        val socks = product("양말", 2_000)
-        // 품목을 상품 ID의 거꾸로 보낸다. 응답이 보낸 차례 그대로면 품목의 차례를 확인한 것이 아니다.
-        val older = create("""{"items":[{"productId":$socks,"quantity":1},{"productId":$shirt,"quantity":2}]}""")
-            .andExpect { status { isCreated() } }.json()["data"]
-        val newer = create(body(socks)).andExpect { status { isCreated() } }.json()["data"]
+        val shirt = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
+        val socks = productRepository.save(createProduct(brand, price = Money(2_000))).id
+        // 품목을 상품 ID의 거꾸로 넣는다. 응답이 넣은 차례 그대로면 품목의 차례를 확인한 것이 아니다.
+        val older = detail(orderService.create(userId, createOrderCreateRequest(socks to 1, shirt to 2)).orderId)
+            .json()["data"]
+        val newer = detail(orderService.create(userId, createOrderCreateRequest(listOf(socks))).orderId).json()["data"]
         val otherUser = userRepository.save(User()).id
-        val foreign = create(body(shirt), otherUser).andExpect { status { isCreated() } }
-            .json()["data"]["orderId"].longValue()
-        productService.update(shirt, ProductAdminUpdateRequest("바뀐 이름", 9_000))
-        productService.delete(socks)
+        val foreign = orderService.create(otherUser, createOrderCreateRequest(listOf(shirt))).orderId
+        transaction.executeWithoutResult {
+            productRepository.findById(shirt)!!.update("바뀐 이름", Money(9_000))
+            productRepository.findById(socks)!!.delete()
+        }
 
         val listed = list().andExpect {
             status { isOk() }
@@ -478,10 +483,9 @@ class OrderApiMockMvcTest(
     /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정 동작은 후속 티켓의 책임이라 상태를 DB fixture로 만든다(설계 13). */
     @Test
     fun `the order list shows draft and confirmed entries with their stored payment fields`() {
-        val id = product()
-        create(body(id)).andExpect { status { isCreated() } }
-        val confirmed = create(body(id, 2)).andExpect { status { isCreated() } }
-            .json()["data"]["orderId"].longValue()
+        val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
+        orderService.create(userId, createOrderCreateRequest(listOf(id)))
+        val confirmed = orderService.create(userId, createOrderCreateRequest(listOf(id), quantity = 2)).orderId
         jdbc.update(
             "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
@@ -505,13 +509,10 @@ class OrderApiMockMvcTest(
      */
     @Test
     fun `the page and size in the query string reach the order slice and equal creation times break by id`() {
-        val shirt = product("티셔츠")
-        val socks = product("양말", 2_000)
-        val twoItems = """{"items":[{"productId":$shirt,"quantity":1},{"productId":$socks,"quantity":1}]}"""
-        val oldest = create(twoItems).andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
-        val tied = create(twoItems).andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
-        val tiedLater = create(twoItems).andExpect { status { isCreated() } }
-            .json()["data"]["orderId"].longValue()
+        val productIds = List(2) { productRepository.save(createProduct(brand)).id }
+        val oldest = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
+        val tied = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
+        val tiedLater = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
         jdbc.update("update orders set created_at = '2026-09-17 10:00:00.000000' where id = ?", oldest)
         jdbc.update("update orders set created_at = '2026-09-18 10:00:00.000000' where id in (?, ?)", tied, tiedLater)
 
@@ -552,7 +553,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `listing orders needs a requester and a user without orders gets an empty page`() {
-        create(body(product())).andExpect { status { isCreated() } }
+        orderService.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
         listOf(null, Long.MAX_VALUE).forEach { requester ->
             list(requester = requester).andExpect {
                 status { isUnauthorized() }

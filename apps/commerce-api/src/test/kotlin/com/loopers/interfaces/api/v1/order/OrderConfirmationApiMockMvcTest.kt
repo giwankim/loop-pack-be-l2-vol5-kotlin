@@ -1,12 +1,17 @@
 package com.loopers.interfaces.api.v1.order
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductAdminStockUpdateRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
-import com.loopers.application.product.ProductService
+import com.loopers.application.order.OrderService
+import com.loopers.application.point.PointService
 import com.loopers.config.security.AdminSecurityConfig
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
+import com.loopers.domain.order.createOrderCreateRequest
+import com.loopers.domain.point.createPointChargeRequest
+import com.loopers.domain.product.ProductRepository
+import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
+import com.loopers.domain.shared.Money
 import com.loopers.domain.user.UserFixture
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.testcontainers.MySqlTestContainersConfig
@@ -21,7 +26,6 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
-import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
@@ -41,21 +45,23 @@ class OrderConfirmationApiMockMvcTest(
     private val mockMvc: MockMvc,
     private val objectMapper: ObjectMapper,
     private val userFixture: UserFixture,
-    private val brandService: BrandService,
-    private val productService: ProductService,
+    private val brandRepository: BrandRepository,
+    private val productRepository: ProductRepository,
+    private val orderService: OrderService,
+    private val pointService: PointService,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
     transactionManager: PlatformTransactionManager,
 ) {
     private val transaction = TransactionTemplate(transactionManager)
     private var userId = 0L
-    private var brandId = 0L
+    private lateinit var brand: Brand
 
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
         userId = userFixture.registerUser().id
-        brandId = brandService.register(BrandAdminRegisterRequest("주문 브랜드")).id
+        brand = brandRepository.save(createBrand())
     }
 
     @AfterEach
@@ -66,12 +72,11 @@ class OrderConfirmationApiMockMvcTest(
     @Test
     fun `charging creating and confirming deduct stock and points once and read back the confirmed order`() {
         balance(0)
-        charge(10_000).andExpect { status { isOk() } }
-        val first = product("티셔츠", 1_000, 10)
-        val second = product("바지", 2_000, 5)
-        val items = listOf(second to 1, first to 5)
-        val draft = create(items).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
+        val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(5))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(second to 1, first to 5)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
         assertThat(draft["data"]["totalAmount"].longValue()).isEqualTo(7_000)
         balance(10_000)
         assertStock(first, 10)
@@ -98,16 +103,13 @@ class OrderConfirmationApiMockMvcTest(
         assertStock(second, 4)
     }
 
-    private fun product(name: String = "상품", price: Long = 1_000, stock: Int = 10): Long =
-        productService.register(ProductAdminRegisterRequest(brandId, name, price, stock)).id
-
     @Test
     fun `a later item shortage rolls back all deductions and replenishment makes the same draft confirmable`() {
-        charge(10_000).andExpect { status { isOk() } }
-        val first = product("첫 상품", stock = 10)
-        val second = product("둘째 상품", stock = 4)
-        val draft = create(listOf(first to 2, second to 5)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
+        val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(4))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(first to 2, second to 5)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
 
         confirm(orderId).andExpect {
             status { isConflict() }
@@ -118,7 +120,7 @@ class OrderConfirmationApiMockMvcTest(
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 4)
-        productService.updateStock(second, ProductAdminStockUpdateRequest(5))
+        transaction.executeWithoutResult { productRepository.findById(second)!!.updateStock(5) }
         confirm(orderId).andExpect {
             status { isOk() }
             jsonPath("$.data.paidAmount") { value(7_000) }
@@ -130,11 +132,11 @@ class OrderConfirmationApiMockMvcTest(
 
     @Test
     fun `insufficient points rolls back every item and charging allows the same order to be confirmed`() {
-        charge(3_000).andExpect { status { isOk() } }
-        val first = product("첫 상품", stock = 2)
-        val second = product("둘째 상품", stock = 2)
-        val draft = create(listOf(first to 2, second to 2)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 3_000))
+        val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
+        val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
 
         confirm(orderId).andExpect {
             status { isConflict() }
@@ -145,7 +147,7 @@ class OrderConfirmationApiMockMvcTest(
         balance(3_000)
         assertStock(first, 2)
         assertStock(second, 2)
-        charge(1_000).andExpect { status { isOk() } }
+        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
         confirm(orderId).andExpect {
             status { isOk() }
             jsonPath("$.data.paidAmount") { value(4_000) }
@@ -158,11 +160,13 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(longs = [500, 2_000])
     fun `an old draft confirms at its saved price after a catalog price increase or decrease`(newPrice: Long) {
-        charge(1_000).andExpect { status { isOk() } }
-        val productId = product("원래 이름")
-        val orderId = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
+        val productId = productRepository.save(
+            createProduct(brand, name = "원래 이름", price = Money(1_000), stock = Stock(10)),
+        ).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         jdbc.update("update orders set created_at = '2020-01-01 00:00:00.123456' where id = ?", orderId)
-        productService.update(productId, ProductAdminUpdateRequest("바뀐 이름", newPrice))
+        transaction.executeWithoutResult { productRepository.findById(productId)!!.update("바뀐 이름", Money(newPrice)) }
 
         val confirmed = confirm(orderId).andExpect {
             status { isOk() }
@@ -180,17 +184,17 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(strings = ["product", "brand"])
     fun `unavailable products or brands reject the whole confirmation and preserve the draft`(deleted: String) {
-        charge(10_000).andExpect { status { isOk() } }
-        val first = product("첫 상품")
-        val secondBrand = brandService.register(BrandAdminRegisterRequest("둘째 브랜드")).id
-        val second = productService.register(ProductAdminRegisterRequest(secondBrand, "둘째 상품", 1_000, 10)).id
-        val draft = create(listOf(first to 1, second to 1)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        val first = productRepository.save(createProduct(brand, stock = Stock(10))).id
+        val secondBrand = brandRepository.save(createBrand())
+        val second = productRepository.save(createProduct(secondBrand, stock = Stock(10))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second))).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
         if (deleted == "product") {
-            productService.delete(second)
+            transaction.executeWithoutResult { productRepository.findById(second)!!.delete() }
         } else {
             // The catalog normally prevents this; exercise the same legacy state as OrderApiMockMvcTest.
-            jdbc.update("update brand set deleted_at = now(6) where id = ?", secondBrand)
+            jdbc.update("update brand set deleted_at = now(6) where id = ?", secondBrand.id)
         }
 
         confirm(orderId).andExpect {
@@ -211,14 +215,16 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(booleans = [true, false])
     fun `an unavailable product outranks a shortage whichever item comes first`(shortageFirst: Boolean) {
-        charge(10_000).andExpect { status { isOk() } }
-        val first = product("첫 상품", stock = 10)
-        val second = product("둘째 상품", stock = 10)
-        val draft = create(listOf(first to 2, second to 2)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        val first = productRepository.save(createProduct(brand)).id
+        val second = productRepository.save(createProduct(brand)).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
         val (short, unavailable) = if (shortageFirst) first to second else second to first
-        productService.updateStock(short, ProductAdminStockUpdateRequest(1))
-        productService.delete(unavailable)
+        transaction.executeWithoutResult {
+            productRepository.findById(short)!!.updateStock(1)
+            productRepository.findById(unavailable)!!.delete()
+        }
 
         confirm(orderId).andExpect {
             status { isNotFound() }
@@ -232,10 +238,10 @@ class OrderConfirmationApiMockMvcTest(
 
     @Test
     fun `requester and ownership checks precede both first confirmation and the already confirmed rejection`() {
-        charge(1_000).andExpect { status { isOk() } }
-        val productId = product()
-        val draft = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
+        val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
         val otherUser = userFixture.registerUser().id
 
         fun assertAccessDenied() {
@@ -278,17 +284,18 @@ class OrderConfirmationApiMockMvcTest(
      */
     @Test
     fun `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`() {
-        charge(3_000).andExpect { status { isOk() } }
-        val productId = product(stock = 3)
-        val first = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()
-        val firstId = first["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 3_000))
+        val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(3))).id
+        val firstId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val confirmed = confirm(firstId).andExpect { status { isOk() } }.json()
-        val second = create(listOf(productId to 2)).andExpect { status { isCreated() } }.json()
-        confirm(second["data"]["orderId"].longValue()).andExpect { status { isOk() } }
+        val secondId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
+        confirm(secondId).andExpect { status { isOk() } }
         balance(0)
         assertStock(productId, 0)
-        productService.delete(productId)
-        brandService.delete(brandId)
+        transaction.executeWithoutResult {
+            productRepository.findById(productId)!!.delete()
+            brandRepository.findById(brand.id)!!.delete()
+        }
 
         repeat(2) {
             assertAlreadyConfirmed(firstId)
@@ -302,9 +309,9 @@ class OrderConfirmationApiMockMvcTest(
     @Test
     fun `a missing point account is an internal error and rolls back stock without creating an account`() {
         userId = userFixture.registerUserWithoutAccount().id
-        val productId = product()
-        val draft = create(listOf(productId to 1)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        val productId = productRepository.save(createProduct(brand, stock = Stock(10))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
 
         confirm(orderId).andExpect { status { isInternalServerError() } }
 
@@ -326,11 +333,11 @@ class OrderConfirmationApiMockMvcTest(
      */
     @Test
     fun `a failure on the last write at commit rolls back the earlier stock and order writes and permits retry`() {
-        charge(10_000).andExpect { status { isOk() } }
-        val first = product("첫 상품", 1_000, 6)
-        val second = product("둘째 상품", 2_000, 2)
-        val draft = create(listOf(first to 5, second to 1)).andExpect { status { isCreated() } }.json()
-        val orderId = draft["data"]["orderId"].longValue()
+        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(6))).id
+        val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(2))).id
+        val orderId = orderService.create(userId, createOrderCreateRequest(first to 5, second to 1)).orderId
+        val draft = detail(orderId).andExpect { status { isOk() } }.json()
         jdbc.execute("alter table point_account add constraint fail_paid_balance check (balance <> 3000)")
         try {
             confirm(orderId).andExpect { status { isInternalServerError() } }
@@ -358,22 +365,6 @@ class OrderConfirmationApiMockMvcTest(
         mockMvc.get("/api/v1/points") { header(UserIdHeader.NAME, userId) }.andExpect {
             status { isOk() }
             jsonPath("$.data.balance") { value(expected) }
-        }
-    }
-
-    private fun charge(amount: Long): ResultActionsDsl = mockMvc.post("/api/v1/points/charge") {
-        header(UserIdHeader.NAME, userId)
-        contentType = MediaType.APPLICATION_JSON
-        content = """{"amount":$amount}"""
-    }
-
-    private fun create(items: List<Pair<Long, Int>>): ResultActionsDsl = mockMvc.post(
-        "/api/v1/orders",
-    ) {
-        header(UserIdHeader.NAME, userId)
-        contentType = MediaType.APPLICATION_JSON
-        content = items.joinToString(prefix = """{"items":[""", postfix = "]}") { (id, quantity) ->
-            """{"productId":$id,"quantity":$quantity}"""
         }
     }
 
