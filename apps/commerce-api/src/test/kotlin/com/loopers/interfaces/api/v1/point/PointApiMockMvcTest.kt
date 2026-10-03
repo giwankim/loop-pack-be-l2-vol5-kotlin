@@ -2,11 +2,11 @@ package com.loopers.interfaces.api.v1.point
 
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.point.PointAccountRepository
+import com.loopers.domain.user.UserFixture
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.error.ErrorType
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import com.loopers.utils.countPointAccounts
 import com.loopers.utils.flushAndClear

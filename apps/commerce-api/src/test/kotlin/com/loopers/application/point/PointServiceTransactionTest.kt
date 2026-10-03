@@ -1,10 +1,10 @@
 package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccountRepository
+import com.loopers.domain.user.UserFixture
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import com.loopers.utils.DatabaseCleanUp
-import com.loopers.utils.UserFixture
 import com.loopers.utils.balanceOf
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat

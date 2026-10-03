@@ -1,9 +1,10 @@
-package com.loopers.utils
+// fixture 파일은 애그리거트마다 `<Aggregate>Fixtures.kt`다(CODING_STANDARDS.md). 클래스가 하나뿐이라 ktlint가 클래스 이름을 요구한다.
+@file:Suppress("ktlint:standard:filename")
+
+package com.loopers.domain.user
 
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
-import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import org.springframework.stereotype.Component
 
 /**
