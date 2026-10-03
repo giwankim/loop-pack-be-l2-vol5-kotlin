@@ -31,38 +31,38 @@ class ProductTest {
     }
 
     @Test
-    fun `name of 101 chars after trimming throws InvalidNameException`() {
-        assertThrows<InvalidNameException> { product(name = " " + "가".repeat(101) + " ") }
+    fun `name of 101 chars counting surrounding spaces throws InvalidNameException`() {
+        assertThrows<InvalidNameException> { product(name = " " + "가".repeat(99) + " ") }
     }
 
     @Test
-    fun `name of 100 chars after trimming is kept`() {
-        val name = "가".repeat(100)
+    fun `name of 100 chars counting surrounding spaces is kept as sent`() {
+        val name = " " + "가".repeat(98) + " "
 
-        val product = product(name = "  $name\t")
+        val product = product(name = name)
 
         assertThat(product.name).isEqualTo(name)
     }
 
     @Test
-    fun `registering keeps the brand, trimmed name, and stock it was given`() {
+    fun `registering keeps the brand, the name as sent, and the stock it was given`() {
         val brand = Brand("루퍼스")
 
         val product = Product(brand = brand, name = " 티셔츠 ", price = Money(10_000), stock = Stock(3))
 
         assertThat(product.brand).isSameAs(brand)
-        assertThat(product.name).isEqualTo("티셔츠")
+        assertThat(product.name).isEqualTo(" 티셔츠 ")
         assertThat(product.stock).isEqualTo(Stock(3))
     }
 
     @Test
-    fun `update sets the trimmed name and the price and keeps the brand`() {
+    fun `update sets the name as sent and the price and keeps the brand`() {
         val brand = Brand("루퍼스")
         val product = Product(brand = brand, name = "티셔츠", price = Money(10_000), stock = Stock(3))
 
         product.update(name = " 후드티 ", price = Money(25_000))
 
-        assertThat(product.name).isEqualTo("후드티")
+        assertThat(product.name).isEqualTo(" 후드티 ")
         assertThat(product.price).isEqualTo(Money(25_000))
         assertThat(product.brand).isSameAs(brand)
     }

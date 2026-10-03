@@ -59,7 +59,7 @@ class BrandServiceTest(
         val existing = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { brandService.register(createBrandAdminRegisterRequest(name = " 루퍼스 ")) }
+        val exception = assertThrows<CoreException> { brandService.register(createBrandAdminRegisterRequest(name = "루퍼스")) }
         entityManager.flushAndClear()
 
         assertAll(
@@ -120,14 +120,14 @@ class BrandServiceTest(
     }
 
     @Test
-    fun `updating a brand replaces its name`() {
+    fun `updating a brand replaces its name with the one sent`() {
         val registered = brandService.register(createBrandAdminRegisterRequest())
         entityManager.flushAndClear()
 
         brandService.update(registered.id, createBrandAdminUpdateRequest(name = " 무신사 "))
         entityManager.flushAndClear()
 
-        assertThat(brandService.find(registered.id).name).isEqualTo("무신사")
+        assertThat(brandService.find(registered.id).name).isEqualTo(" 무신사 ")
     }
 
     @Test

@@ -33,7 +33,7 @@ class ProductServiceTest(
     private val entityManager: EntityManager,
 ) {
     @Test
-    fun `registering under an active brand saves a product that can be fetched back`() {
+    fun `registering under an active brand saves a product, name as sent, that can be fetched back`() {
         val brand = brandRepository.save(Brand("루퍼스"))
 
         val registered =
@@ -43,11 +43,11 @@ class ProductServiceTest(
 
         assertAll(
             { assertThat(registered.brandId).isEqualTo(brand.id) },
-            { assertThat(registered.name).isEqualTo("티셔츠") },
+            { assertThat(registered.name).isEqualTo(" 티셔츠 ") },
             { assertThat(found.id).isEqualTo(registered.id) },
             { assertThat(found.brandId).isEqualTo(brand.id) },
             { assertThat(found.brandName).isEqualTo("루퍼스") },
-            { assertThat(found.name).isEqualTo("티셔츠") },
+            { assertThat(found.name).isEqualTo(" 티셔츠 ") },
             { assertThat(found.price).isEqualTo(12_000L) },
             { assertThat(found.stock).isEqualTo(7) },
             { assertThat(found.soldOut).isFalse() },
@@ -211,7 +211,7 @@ class ProductServiceTest(
     }
 
     @Test
-    fun `updating a product changes the name and price and keeps the brand`() {
+    fun `updating a product changes the name as sent and the price and keeps the brand`() {
         val brand = brandRepository.save(Brand("루퍼스"))
         val registered = register(brand.id, name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
@@ -221,7 +221,7 @@ class ProductServiceTest(
         val found = productService.find(registered.id)
 
         assertAll(
-            { assertThat(found.name).isEqualTo("후드티") },
+            { assertThat(found.name).isEqualTo(" 후드티 ") },
             { assertThat(found.price).isEqualTo(25_000L) },
             { assertThat(found.brandId).isEqualTo(brand.id) },
         )

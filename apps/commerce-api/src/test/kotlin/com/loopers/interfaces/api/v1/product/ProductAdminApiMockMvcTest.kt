@@ -46,15 +46,15 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
-    fun `admin registers a product under an active brand and can fetch it back`() {
+    fun `admin registers a product under an active brand and reads the name back as sent`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
 
-        val result = postProduct(brandId = brand.id, price = 12_000, stock = 7).andExpect {
+        val result = postProduct(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7).andExpect {
             status { isCreated() }
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data.id") { isNumber() }
             jsonPath("$.data.brandId") { value(brand.id) }
-            jsonPath("$.data.name") { value("티셔츠") }
+            jsonPath("$.data.name") { value(" 티셔츠 ") }
             jsonPath("$.data.price") { value(12_000) }
             jsonPath("$.data.stock") { value(7) }
             jsonPath("$.data.createdAt") { value(notNullValue()) }
@@ -67,7 +67,7 @@ class ProductAdminApiMockMvcTest(
                 status { isOk() }
                 jsonPath("$.data.id") { value(id) }
                 jsonPath("$.data.brandId") { value(brand.id) }
-                jsonPath("$.data.name") { value("티셔츠") }
+                jsonPath("$.data.name") { value(" 티셔츠 ") }
                 jsonPath("$.data.price") { value(12_000) }
                 jsonPath("$.data.stock") { value(7) }
             }
@@ -150,7 +150,7 @@ class ProductAdminApiMockMvcTest(
     }
 
     @Test
-    fun `admin updates the name and price and the brand stays`() {
+    fun `admin updates the name as sent and the price and the brand stays`() {
         val brand = brandService.register(BrandAdminRegisterRequest("루퍼스"))
         val id = registerProduct(brand.id, price = 12_000)
 
@@ -159,9 +159,12 @@ class ProductAdminApiMockMvcTest(
             jsonPath("$.meta.result") { value("SUCCESS") }
             jsonPath("$.data.id") { value(id) }
             jsonPath("$.data.brandId") { value(brand.id) }
-            jsonPath("$.data.name") { value("후드티") }
+            jsonPath("$.data.name") { value(" 후드티 ") }
             jsonPath("$.data.price") { value(25_000) }
         }
+
+        mockMvc.get("$ENDPOINT/$id") { with(ADMIN) }
+            .andExpect { jsonPath("$.data.name") { value(" 후드티 ") } }
     }
 
     @Test
@@ -396,7 +399,7 @@ class ProductAdminApiMockMvcTest(
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
     private fun postProduct(
         brandId: Long,
-        name: String = " 티셔츠 ",
+        name: String = "티셔츠",
         price: Long = 12_000,
         stock: Int = 7,
         principal: RequestPostProcessor? = ADMIN,
