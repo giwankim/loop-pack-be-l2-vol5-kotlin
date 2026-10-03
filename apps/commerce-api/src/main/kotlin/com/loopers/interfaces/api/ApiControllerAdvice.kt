@@ -68,9 +68,8 @@ class ApiControllerAdvice {
     }
 
     /**
-     * `@Validated` Service의 메서드 검증이 거른 입력. Controller가 Request를 본문으로 바로 받는 카탈로그에서는
-     * Controller를 거치지 않은 호출에서만 여기까지 온다. HTTP 입력 DTO가 Request를 만드는 포인트·주문에서는
-     * HTTP 요청도 여기로 온다(포인트·주문 설계 12.4).
+     * `@Validated` Service의 메서드 검증이 거른 입력. Controller가 Request를 본문으로 바로 받으므로
+     * Controller를 거치지 않은 호출에서만 여기까지 온다.
      */
     @ExceptionHandler
     fun handleConstraintViolation(e: ConstraintViolationException): ResponseEntity<ApiResponse<*>> {
@@ -98,19 +97,9 @@ class ApiControllerAdvice {
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message)
     }
 
-    /**
-     * 본문을 읽다 난 오류. 근본 원인이 [CoreException]이면 그 [ErrorType]으로 답한다. 포인트·주문의 HTTP 입력 DTO가
-     * JSON 토큰의 종류를 가리며 던진 거절이 Jackson과 Spring에 감싸여 여기까지 오기 때문이다
-     * ([StrictLongDeserializer], [com.loopers.interfaces.api.v1.order.OrderCreateRequestDeserializer]).
-     */
     @ExceptionHandler
     fun handleHttpMessageNotReadable(e: HttpMessageNotReadableException): ResponseEntity<ApiResponse<*>> {
         val errorMessage = when (val rootCause = e.rootCause) {
-            is CoreException -> {
-                log.warn { "CoreException in request body : ${rootCause.message}" }
-                return failureResponse(errorType = rootCause.errorType)
-            }
-
             is InvalidFormatException -> {
                 val fieldName = rootCause.fieldPath()
 
@@ -147,7 +136,7 @@ class ApiControllerAdvice {
 
             else -> BODY_FORMAT_MESSAGE
         }
-
+        log.warn { "HttpMessageNotReadableException : $errorMessage" }
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = errorMessage)
     }
 

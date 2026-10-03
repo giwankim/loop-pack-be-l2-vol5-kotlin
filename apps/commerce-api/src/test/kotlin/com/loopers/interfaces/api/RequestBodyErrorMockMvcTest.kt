@@ -1,7 +1,6 @@
 package com.loopers.interfaces.api
 
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.support.error.ErrorType
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import org.junit.jupiter.api.Test
@@ -20,9 +19,7 @@ import org.springframework.transaction.annotation.Transactional
  * 본문을 읽다 난 오류(`HttpMessageNotReadableException`)가 [ApiControllerAdvice]의 분기마다 내는 응답을 고정한다.
  * Jackson 3으로 옮겨도 status, 오류 타입, 메시지가 그대로여야 한다. 메시지는 글자 하나까지 계약으로 본다.
  *
- * 카탈로그 분기는 상품 등록 본문으로 친다. 그 Request를 Controller가 본문으로 바로 받기 때문이다.
- * 본문 안의 도메인 오류는 주문 생성 본문으로 친다. 주문 Request를 만드는 역직렬화기가 [com.loopers.support.error.CoreException]을
- * 던진다. 본문은 요청자 확인보다 먼저 읽히므로 사용자를 등록하지 않는다.
+ * 분기는 상품 등록 본문으로 친다. 그 Request를 Controller가 본문으로 바로 받기 때문이다.
  *
  * enum 값 불일치와 그 밖의 매핑 오류 분기는 지금 어느 본문에도 enum 필드가 없고 매핑 오류를 낼 길이 없어 HTTP로 닿지 않는다.
  */
@@ -35,7 +32,6 @@ class RequestBodyErrorMockMvcTest(
 ) {
     companion object {
         private const val PRODUCTS = "/api-admin/v1/products"
-        private const val ORDERS = "/api/v1/orders"
         private val ADMIN = user("admin").roles("ADMIN")
     }
 
@@ -109,19 +105,6 @@ class RequestBodyErrorMockMvcTest(
             jsonPath("$.meta.result") { value("FAIL") }
             jsonPath("$.meta.errorCode") { value("Bad Request") }
             jsonPath("$.meta.message") { value("필수 필드 'price'이(가) 누락되었습니다.") }
-        }
-    }
-
-    @Test
-    fun `a domain error raised while the body is read returns that error's own type and message`() {
-        mockMvc.post(ORDERS) {
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"items": "티셔츠"}"""
-        }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
-            jsonPath("$.meta.message") { value(ErrorType.INVALID_POINT_ORDER_REQUEST.message) }
         }
     }
 

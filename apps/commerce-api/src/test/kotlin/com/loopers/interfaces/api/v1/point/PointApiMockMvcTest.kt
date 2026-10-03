@@ -149,19 +149,34 @@ class PointApiMockMvcTest(
         assertThat(entityManager.countPointAccounts(userId)).isZero()
     }
 
-    /**
-     * 충전액은 정수 표기의 JSON 숫자만 받는다. 숫자 문자열·소수·지수·null·누락·boolean·배열·`Long` 범위 밖은 400이다(설계 5.10).
-     */
+    /** 충전액은 카탈로그처럼 Jackson 기본대로 읽는다. 숫자 문자열과 소수 표기의 정수도 받는다(설계 5.10). */
     @Test
-    fun `an amount that is not an integer JSON number returns 400 and changes nothing`() {
+    fun `an amount sent as a numeric string or a whole decimal is charged`() {
+        val userId = registerUser()
+        entityManager.flushAndClear()
+
+        charge(userId, body = """{"amount": "5"}""").andExpect {
+            status { isOk() }
+            jsonPath("$.data.balance") { value(5) }
+        }
+        charge(userId, body = """{"amount": 5.0}""").andExpect {
+            status { isOk() }
+            jsonPath("$.data.balance") { value(10) }
+        }
+        entityManager.flushAndClear()
+
+        assertThat(entityManager.balanceOf(accountIdOf(userId))).isEqualTo(10)
+    }
+
+    /** 숫자로 읽을 수 없거나 `Long` 범위 밖인 값은 다른 본문 오류와 같은 범용 400이다(설계 5.10). */
+    @Test
+    fun `a missing, null, non-numeric or out-of-range amount returns 400 and changes nothing`() {
         val userId = registerUser()
         entityManager.flushAndClear()
         val invalidBodies = listOf(
-            """{"amount": "10000"}""",
-            """{"amount": 10000.0}""",
-            """{"amount": 1e4}""",
-            """{"amount": null}""",
             """{}""",
+            """{"amount": null}""",
+            """{"amount": "abc"}""",
             """{"amount": true}""",
             """{"amount": [10000]}""",
             """{"amount": 100000000000000000000}""",
@@ -173,14 +188,25 @@ class PointApiMockMvcTest(
                     charge(userId, body = body).andExpect {
                         status { isBadRequest() }
                         jsonPath("$.meta.result") { value("FAIL") }
-                        jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
-                        jsonPath("$.meta.message") { value(ErrorType.INVALID_POINT_ORDER_REQUEST.message) }
+                        jsonPath("$.meta.errorCode") { value("Bad Request") }
                     }
                 }
             },
         )
         entityManager.flushAndClear()
         assertUnchanged(userId)
+    }
+
+    /** 소수 금액을 Jackson 3이 어떻게 읽는지 고정한다. 바뀌면 이 테스트가 먼저 알린다(설계 5.10). */
+    @Test
+    fun `a fractional amount is truncated to its integer part`() {
+        val userId = registerUser()
+        entityManager.flushAndClear()
+
+        charge(userId, body = """{"amount": 1.5}""").andExpect {
+            status { isOk() }
+            jsonPath("$.data.balance") { value(1) }
+        }
     }
 
     /** 알 수 없는 필드는 기존 정책대로 무시한다(설계 5.10). */

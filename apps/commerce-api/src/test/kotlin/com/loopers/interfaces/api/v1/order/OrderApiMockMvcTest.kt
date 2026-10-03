@@ -52,21 +52,23 @@ class OrderApiMockMvcTest(
     private val entityManagerFactory: EntityManagerFactory,
 ) {
     companion object {
-        /** 본문을 읽을 수조차 없는 것. 역직렬화기가 판단할 기회가 없어 Spring·Jackson의 범용 400이다(설계 13.1). */
+        /** 본문을 JSON으로 읽을 수조차 없는 것. Spring·Jackson의 범용 400이다(설계 13.1). */
         @JvmStatic
         fun unreadableBodies(): List<String> = listOf("", "null", "{")
 
-        /** 역직렬화기가 토큰과 컨테이너의 모양을 보고 거절하는 것. 양수 조건은 Request 제약이라 여기 없다. */
+        /**
+         * Jackson 기본 바인딩이 거절하는 모양. 숫자 문자열·소수 표기의 정수는 받으므로 여기 없다(설계 5.10).
+         * 양수 조건은 Request 제약이라 여기 없다.
+         */
         @JvmStatic
         fun malformedBodies(): List<String> = listOf(
-            "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}",
-            "{\"items\":{\"productId\":PRODUCT_ID,\"quantity\":1}}", "{\"items\":\"text\"}",
+            "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}", "{\"items\":\"text\"}",
             "{\"items\":true}", "{\"items\":1}", "{\"items\":[null]}", "{\"items\":[1]}",
             "{\"items\":[[]]}", "{\"items\":[{}]}", "{\"items\":[{\"productId\":PRODUCT_ID}]}",
             "{\"items\":[{\"quantity\":1}]}",
-        ) + listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "9223372036854775808")
+        ) + listOf("null", "true", "[]", "{}", "\"abc\"", "9223372036854775808")
             .map { """{"items":[{"productId":$it,"quantity":1}]}""" } +
-            listOf("null", "true", "[]", "{}", "\"1\"", "1.0", "1e0", "2147483648", "9223372036854775808")
+            listOf("null", "true", "[]", "{}", "\"abc\"", "2147483648", "9223372036854775808")
                 .map { """{"items":[{"productId":PRODUCT_ID,"quantity":$it}]}""" }
     }
 
@@ -153,9 +155,31 @@ class OrderApiMockMvcTest(
         val id = product()
         create(body.replace("PRODUCT_ID", id.toString())).andExpect {
             status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
+            jsonPath("$.meta.errorCode") { value("Bad Request") }
         }
         assertNoOrders()
+    }
+
+    /** 본문은 카탈로그처럼 Jackson 기본대로 읽는다. 숫자 문자열도 수량이다(설계 5.10). */
+    @Test
+    fun `an item quantity sent as a numeric string creates the order`() {
+        val id = product(price = 1_000)
+        create("""{"items":[{"productId":$id,"quantity":"2"}]}""").andExpect {
+            status { isCreated() }
+            jsonPath("$.data.items[0].quantity") { value(2) }
+            jsonPath("$.data.totalAmount") { value(2_000) }
+        }
+    }
+
+    /** `JacksonConfig`의 `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 품목 객체 하나를 한 품목 배열로 읽는다. 5.10이 적은 대가다. */
+    @Test
+    fun `a single item object in place of the items array creates a one item order`() {
+        val id = product()
+        create("""{"items":{"productId":$id,"quantity":1}}""").andExpect {
+            status { isCreated() }
+            jsonPath("$.data.items.length()") { value(1) }
+            jsonPath("$.data.items[0].productId") { value(id) }
+        }
     }
 
     @ParameterizedTest
