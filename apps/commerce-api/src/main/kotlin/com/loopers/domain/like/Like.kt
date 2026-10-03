@@ -18,17 +18,19 @@ import jakarta.persistence.UniqueConstraint
 @Entity
 @Table(
     name = "likes",
-    uniqueConstraints = [UniqueConstraint(name = "uk_likes_user_id_product_id", columnNames = ["user_id", "product_id"])],
+    uniqueConstraints = [
+        UniqueConstraint(name = "UK_LIKES_USER_ID_PRODUCT_ID", columnNames = ["user_id", "product_id"]),
+    ],
 )
 class Like(
     userId: Long,
     productId: Long,
 ) : BaseEntity() {
     /** 누른 사용자. */
-    @Column(name = "user_id", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     val userId: Long = userId
 
     /** 대상 상품. */
-    @Column(name = "product_id", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     val productId: Long = productId
 }

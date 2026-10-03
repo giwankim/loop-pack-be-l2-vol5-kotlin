@@ -13,9 +13,9 @@ import jakarta.validation.constraints.Min
  */
 data class ProductAdminListRequest(
     val brandId: Long? = null,
-    @field:Min(0, message = "page는 0 이상이어야 합니다.")
+    @Min(0, message = "page는 0 이상이어야 합니다.")
     val page: Int = ProductListRequest.DEFAULT_PAGE,
-    @field:Min(1, message = "size는 1 이상이어야 합니다.")
-    @field:Max(ProductListRequest.MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
+    @Min(1, message = "size는 1 이상이어야 합니다.")
+    @Max(ProductListRequest.MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
     val size: Int = ProductListRequest.DEFAULT_SIZE,
 )

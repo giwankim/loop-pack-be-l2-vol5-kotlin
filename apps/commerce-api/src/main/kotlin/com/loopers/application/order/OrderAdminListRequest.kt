@@ -16,9 +16,9 @@ import jakarta.validation.constraints.Min
  */
 data class OrderAdminListRequest(
     val userId: Long? = null,
-    @field:Min(0, message = "page는 0 이상이어야 합니다.")
+    @Min(0, message = "page는 0 이상이어야 합니다.")
     val page: Int = OrderListRequest.DEFAULT_PAGE,
-    @field:Min(1, message = "size는 1 이상이어야 합니다.")
-    @field:Max(OrderListRequest.MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
+    @Min(1, message = "size는 1 이상이어야 합니다.")
+    @Max(OrderListRequest.MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
     val size: Int = OrderListRequest.DEFAULT_SIZE,
 )

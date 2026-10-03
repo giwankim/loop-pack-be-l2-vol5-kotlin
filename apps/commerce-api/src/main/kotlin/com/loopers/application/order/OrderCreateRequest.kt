@@ -7,14 +7,14 @@ import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 
 data class OrderCreateRequest(
-    @field:Valid
-    @field:Size(min = 1, max = 100, message = "주문 품목은 {min}개 이상 {max}개 이하여야 합니다.")
+    @Valid
+    @Size(min = 1, max = 100, message = "주문 품목은 {min}개 이상 {max}개 이하여야 합니다.")
     val items: List<Item>,
 ) {
     data class Item(
-        @field:Positive(message = "상품 ID는 1 이상이어야 합니다.")
+        @Positive(message = "상품 ID는 1 이상이어야 합니다.")
         val productId: Long,
-        @field:Positive(message = "수량은 1개 이상이어야 합니다.")
+        @Positive(message = "수량은 1개 이상이어야 합니다.")
         val quantity: Int,
     )
 

@@ -11,10 +11,10 @@ import jakarta.validation.constraints.Min
  * 한쪽의 범위가 바뀌어도 다른 쪽이 따라가지 않게 한다(설계 5.17).
  */
 data class BrandAdminListRequest(
-    @field:Min(0, message = "page는 0 이상이어야 합니다.")
+    @Min(0, message = "page는 0 이상이어야 합니다.")
     val page: Int = DEFAULT_PAGE,
-    @field:Min(1, message = "size는 1 이상이어야 합니다.")
-    @field:Max(MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
+    @Min(1, message = "size는 1 이상이어야 합니다.")
+    @Max(MAX_SIZE.toLong(), message = "size는 {value} 이하여야 합니다.")
     val size: Int = DEFAULT_SIZE,
 ) {
     companion object {

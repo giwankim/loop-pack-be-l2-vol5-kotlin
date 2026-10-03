@@ -10,6 +10,6 @@ import jakarta.validation.constraints.Min
  * 제약이 붙는 자리와 까닭은 [com.loopers.application.product.ProductAdminRegisterRequest]와 같다(카탈로그 설계 5.18).
  */
 data class PointChargeRequest(
-    @field:Min(1, message = "충전액은 {value}원 이상이어야 합니다.")
+    @Min(1, message = "충전액은 {value}원 이상이어야 합니다.")
     val amount: Long,
 )

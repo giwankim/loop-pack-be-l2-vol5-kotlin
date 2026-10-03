@@ -13,12 +13,12 @@ import jakarta.validation.constraints.Size
  */
 data class ProductAdminRegisterRequest(
     val brandId: Long,
-    @field:NotBlank(message = "상품 이름은 공백일 수 없습니다.")
-    @field:Size(max = Product.NAME_MAX_LENGTH, message = "상품 이름은 {max}자 이하여야 합니다.")
+    @NotBlank(message = "상품 이름은 공백일 수 없습니다.")
+    @Size(max = Product.NAME_MAX_LENGTH, message = "상품 이름은 {max}자 이하여야 합니다.")
     val name: String,
-    @field:Min(Product.MIN_PRICE_AMOUNT, message = "상품 가격은 {value}원 이상이어야 합니다.")
-    @field:Max(Product.MAX_PRICE_AMOUNT, message = "상품 가격은 {value}원 이하여야 합니다.")
+    @Min(Product.MIN_PRICE_AMOUNT, message = "상품 가격은 {value}원 이상이어야 합니다.")
+    @Max(Product.MAX_PRICE_AMOUNT, message = "상품 가격은 {value}원 이하여야 합니다.")
     val price: Long,
-    @field:Min(0, message = "재고는 0 이상이어야 합니다.")
+    @Min(0, message = "재고는 0 이상이어야 합니다.")
     val stock: Int,
 )
