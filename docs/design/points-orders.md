@@ -1,6 +1,6 @@
 # 포인트·주문 설계 인터뷰
 
-상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
+상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-10-03 같은 상품의 수량 합산(Q3)을 철회했다(5.2, #55). 같은 상품이 두 번 있는 주문 요청은 400이다. 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
 
 ## 1. 근거와 범위
 
@@ -62,7 +62,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 | --- | --- | --- | --- |
 | Q1 | 이번 조각의 기능 범위 | 위 고객·관리자 API와 필요한 사용자 fixture를 포함한다. 쿠폰·취소·환불·만료·예약·외부 결제는 이번 조각에서 제외한다. | 사용자 준비 방식, 목록·상세 계약 |
 | Q2 | DRAFT에 저장된 단가의 효력 | 생성 시 상품 가격으로 단가를 기록하고 확정에도 그대로 쓴다. 가격 변경 시 확정 거절 대안도 비교했으며 결정은 ADR 0002에 명시한다. | Q10에서 이름 등 스냅샷 범위도 확정 |
-| Q3 | 같은 상품이 요청에 여러 번 있을 때의 의미 | 상품별 수량을 합산해 한 품목으로 기록한다. | Q13에서 수량·입력 품목 수와 넘침 거절도 확정 |
+| Q3 | 같은 상품이 요청에 여러 번 있을 때의 의미 | 상품별 수량을 합산해 한 품목으로 기록한다. | Q13에서 수량·입력 품목 수와 넘침 거절도 확정 **5.2에서 철회(#55).** |
 | Q4 | 여러 품목 중 하나라도 확정에 실패했을 때의 결과 | 해당 확정 시도의 차감을 모두 취소하고 주문은 DRAFT로 유지한다. 같은 주문으로 재시도할 수 있다. | 트랜잭션 경계(Q7), 동시성(Q8), 실패 기록(Q11) |
 | Q5 | 이미 확정한 주문의 확정 재요청 | 저장된 성공 결과를 반환하고 추가 차감하지 않는다. | 응답 필드(Q19), 충전·생성의 키 계약(Q15–Q16). 동시 확정은 연기 **17절에서 철회(Q25).** |
 | Q6 | 포인트 변경 사유를 남길 필요 | 현재 잔액과 충전·결제 이력을 함께 저장한다. 구현 복잡도가 커지면 재검토할 수 있다. | 최소 기록 범위(Q11), 잔액과 이력의 일관성 **18절에서 철회(Q34).** |
@@ -75,7 +75,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 | Q10 | Q2, Q1 | 주문 품목 이름과 스냅샷 | OrderLineItem이 상품 참조와 생성 당시 이름·단가 등 스냅샷을 가진다. 상품 ID·수량·품목 합계·주문 합계도 보존하며 기본 주문 조회에서 브랜드는 제외한다. |
 | Q11 | Q4, Q6 | 포인트 이력과 실패한 확정 시도 | 성공해서 잔액이 바뀐 기록만 저장한다. 실패 시도는 별도 업무 이력으로 저장하지 않는다. **18절에서 철회(Q34).** |
 | Q12 | Q1, Q4 | 재고나 포인트가 부족한 상태의 DRAFT 생성 | 허용한다. 생성 때는 상품 유효성·양수 수량·금액 범위를 검사하고, 재고·잔액 부족은 확정 때 거절한다. |
-| Q13 | Q1, Q3 | 충전액·잔액·품목 수·수량의 입력 한도 | 기존 Money의 Long 범위, 상품별 합산 수량은 양의 Int 범위, 합산 전 입력 품목은 1–100개다. 별도 금액 업무 상한은 두지 않으며 넘침은 거절한다. |
+| Q13 | Q1, Q3 | 충전액·잔액·품목 수·수량의 입력 한도 | 기존 Money의 Long 범위, 상품별 합산 수량은 양의 Int 범위, 합산 전 입력 품목은 1–100개다. 별도 금액 업무 상한은 두지 않으며 넘침은 거절한다. **합산 부분은 5.2에서 철회(#55).** |
 
 | ID | 선행 결정 | 3차 질문 | 사용자의 선택 |
 | --- | --- | --- | --- |
@@ -110,6 +110,8 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 - Q10에서 이름 등의 스냅샷 보존과 상품 참조를 함께 채택했다. 주문 품목의 정식 이름은 사용자가 선택한 OrderLineItem이다.
 
 ### 5.2 중복 품목 합산 — Q3
+
+> 2026-10-03 이 절의 선택을 철회했다(#55). 같은 상품이 두 번 있는 주문 요청은 400 `Bad Request`이며 아무것도 저장하지 않는다. `Order` 생성자의 기존 검사가 `InvalidOrderException`으로 거절한다. 합산 때문에 이 검사에 닿는 요청이 없었다. Service나 Request에 중복 검사를 따로 두지 않는다. 같은 규칙을 다른 모양으로 또 적으면 갈라진다. 그래서 판매할 수 없는 상품이 중복으로 오면 상품 확인의 404가 먼저다(15). 양수 수량과 1–100개 제약은 받은 품목 그대로 센다. 품목은 여전히 상품 ID 순이며, 확정이 재고를 차감하는 차례와 응답 순서가 여기서 나온다.
 
 - 같은 상품의 입력 수량을 합산해 하나의 주문 품목으로 기록한다. A 2개와 A 3개는 A 5개다.
 - 과제의 양수 수량 조건은 각 입력 품목에 적용된다. 음수나 0인 입력을 합산으로 감추지 않는다.
@@ -164,7 +166,7 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 
 - 재고가 0이거나 포인트 잔액이 주문 금액보다 작아도 DRAFT를 만들 수 있다. 상품 유효성·양수 수량·금액 범위 조건은 그대로 검사한다.
 - 각 충전액은 1..Long.MAX_VALUE이며 충전 후 잔액도 Long.MAX_VALUE를 넘을 수 없다. 잔액은 0을 허용한다.
-- 주문 입력 품목은 합산 전에 1..100개다. 입력 수량과 상품별 합산 수량은 1..Int.MAX_VALUE이고, 품목 금액·주문 합계도 Long 범위를 넘으면 거절한다.
+- 주문 입력 품목은 받은 그대로 1..100개다. 수량은 1..Int.MAX_VALUE이고, 품목 금액·주문 합계도 Long 범위를 넘으면 거절한다. (처음에는 합산 전 개수와 상품별 합산 수량의 범위를 따로 적었다. 2026-10-03(#55)에 합산을 지웠다(5.2).)
 - 클라이언트가 보낸 단가나 합계를 신뢰하지 않고 서버가 상품 가격과 수량으로 계산한다. Q20에 따라 정수 표기의 JSON 숫자만 받는다(5.10).
 
 ### 5.8 키와 첫 성공 응답 — Q9, Q15, Q16
@@ -430,7 +432,7 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 
 ### DRAFT 생성
 
-1. 요청자와 입력을 검증한다. 합산 전 개수·각 수량을 검사하고 checked addition으로 수량을 합산한 뒤 상품 식별자 순서로 정렬한다.
+1. 요청자와 입력을 검증한다. 받은 품목의 개수·각 수량을 검사한다. (처음에는 checked addition으로 수량을 합산한 뒤 상품 식별자 순서로 정렬했다. 2026-10-03(#55)에 합산을 지웠다. 같은 상품이 두 번 있으면 `Order`가 거절하고, 상품 식별자 순서는 `Order`가 정한다(5.2).)
 2. 사용자+생성+키의 성공 기록을 조회한다. 있으면 현재 상품을 읽기 전에 의도를 비교하고 최초 DRAFT 응답을 반환한다.
 3. 새 요청이면 해당 상품·브랜드가 삭제되지 않았는지 확인하고 현재 이름·가격을 읽는다. 재고·잔액 부족은 생성 거절 사유가 아니다.
 4. OrderLineItem 스냅샷과 합계를 만들고 creation_key를 가진 DRAFT를 한 트랜잭션으로 저장한다. 재고·포인트에는 쓰기를 하지 않는다.
@@ -454,6 +456,8 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 > 2026-09-28 충전 키·생성 키·저장 후 재생 행과, 재시도·삭제 행의 재요청 재생 부분을 17절에서 철회했다.
 >
 > 2026-09-28 이력 수와 이력 롤백을 보던 부분을 18절에서 철회했다. 늦은 실패를 넣는 자리는 18.2에 있다.
+>
+> 2026-10-03 금액·수량 행의 합산 수량 넘침과 원본 품목 행의 합산 사례를 철회했다(#55, 5.2). 같은 상품이 두 번 있는 요청은 400이며 아무것도 저장하지 않는다.
 
 
 아래는 앞으로 작성·실행할 검증 목록이다. 현재 테스트가 구현되었거나 통과했다는 뜻이 아니다.
@@ -484,6 +488,8 @@ domain 단위 테스트, 실제 DB를 사용하는 application/repository 테스
 ## 11. 전체 설계와 명세 게시
 
 > 2026-09-28 상태·일관성 행의 결제 이력과 멱등성 행의 충전 이력을 18절에서 철회했다.
+>
+> 2026-10-03 가격·품목 행의 같은 상품 수량 합산을 철회했다(#55, 5.2).
 
 Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 없이 명세를 작성·게시하는 to-spec을 요청해, 다음 내용을 [Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)에 정리했다. ready-for-agent 라벨과 게시된 본문이 작성한 명세와 일치함을 확인했다.
 
@@ -597,7 +603,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 - `Order`가 `OrderLineItem`을 소유한다. 품목의 상품 식별자·이름·단가·수량·금액과 주문 합계는 생성 후 바뀌지 않는다. 상품 객체 연관은 없고, 현재 상품을 읽지 않아도 상세를 구성한다. 카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다.
 - nullable `paidAmount`·`confirmedAt`과 `DRAFT`·`CONFIRMED` 저장 형태를 함께 둔다. 상태와 결제 필드의 일치, 양수 금액·수량은 MySQL CHECK로도 확인한다. 이 티켓의 공개 API에는 확정 동작이 없다.
-- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 원본 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사하고(5.18), 합산 넘침은 정규화 과정에서 거절한다. 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
+- application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받으며 다른 타입의 Jackson 바인딩 설정은 유지한다. 받은 품목의 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사한다(5.18). 같은 상품이 두 번 있으면 `Order` 생성자가 거절한다(5.2). (처음에는 합산 넘침도 정규화 과정에서 거절했다. 2026-10-03(#55)에 합산을 지웠다.) 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
 - `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
 - `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
@@ -629,6 +635,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 13.2 advice를 하나로 모음
 
+> 2026-10-03 오류 표에서 합산 넘침 행을 지우고 상품 중복 행을 더했다(#55, 5.2).
+
 **선택: `@RestControllerAdvice`는 `ApiControllerAdvice` 하나다.** `OrderControllerAdvice`를 지웠고, 주문의 입력 오류는 다른 엔드포인트와 같은 자리에서 같은 규칙으로 답한다.
 
 `OrderControllerAdvice`가 있었던 까닭은 `75aa245`의 `ApiControllerAdvice`가 입력 오류를 모두 범용 `Bad Request`로만 답해 새 code를 실을 자리가 없었기 때문이다. 컨트롤러 한 개에만 닿는 advice(`assignableTypes`, `HIGHEST_PRECEDENCE`)가 카탈로그의 오류 계약을 건드리지 않고 새 code를 줄 수 있는 유일한 길이었다. #12가 `handleHttpMessageNotReadable`에 가장 안쪽 원인이 `CoreException`이면 그 `ErrorType`으로 답하는 자리를 만들어 그 길이 필요 없어졌다.
@@ -647,8 +655,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | --- | --- | --- | --- |
 | 본문을 읽을 수 없음(빈 본문, `null` 리터럴, 깨진 JSON) | 400 | 범용 `Bad Request` | Spring·Jackson. 역직렬화기가 판단할 기회가 없다 |
 | 토큰의 종류·컨테이너의 모양(`items`가 배열이 아님, 정수 표기가 아닌 수량·상품 ID) | 400 | `INVALID_POINT_ORDER_REQUEST` | `OrderCreateRequestDeserializer` → 공용 `handleHttpMessageNotReadable` |
-| 원본 품목 개수, 양수 상품 ID·수량 | 400 | 범용 `Bad Request` + Request 제약의 메시지 | `OrderCreateRequest`의 `@Size`·`@Positive`, Controller의 `@Valid` |
-| 상품별 합산 수량의 `Int` 넘침 | 400 | `INVALID_POINT_ORDER_REQUEST` | `OrderCreateRequest.normalizedItems`의 `CoreException` |
+| 받은 품목 개수, 양수 상품 ID·수량 | 400 | 범용 `Bad Request` + Request 제약의 메시지 | `OrderCreateRequest`의 `@Size`·`@Positive`, Controller의 `@Valid` |
+| 같은 상품이 두 번 있음 | 400 | 범용 `Bad Request` + `InvalidOrderException`의 메시지 | `Order` 생성자 → 공용 `handleRuleViolation`. 판매할 수 없는 상품의 중복은 404가 먼저다(15) |
 | 품목·주문 금액의 `Long` 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `Money` → 공용 `handleRuleViolation` |
 
 - 업무 규칙은 범용 400에 규칙의 메시지를 실어 답한다. 충전액 0과 충전 후 넘침이 가는 길과 같다(12.4). 12.4가 "금액 범위 오류"를 새 code에서 떼어 낸 판단을 주문도 따르는 것이다. `INVALID_POINT_ORDER_REQUEST`는 JSON의 모양에만 남는다.
@@ -705,10 +713,11 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 `POST /api/v1/orders/{orderId}/confirm`은 요청자·소유권을 확인하고 저장된 CONFIRMED 결과를 200으로 반환한다. 별도 키나 본문이 필요하지 않다. 이미 확정된 주문이면 현재 상품·브랜드·재고·잔액을 읽기 전에 결과를 재생한다.
 
-첫 확정의 트랜잭션 경계는 `OrderService.confirm`이다. 모든 품목의 상품·브랜드가 판매 가능한지 먼저 확인한 뒤 상품별 합산 수량으로 `Product.deductStock`을 부르고, `PointAccount.pay`가 저장된 주문 총액을 차감한 뒤 PAYMENT 이력을 만든다. `Order.confirm`이 결제액과 마이크로초 정밀도의 확정 시각을 정한다. 이력 저장과 관리 중인 엔티티의 변경 감지를 같은 트랜잭션에 둔다. `PointService`를 호출하거나 다른 트랜잭션에서 결제하지 않는다. 실패는 주문과 모든 재고·잔액·이력을 되돌려 같은 DRAFT로 재시도할 수 있게 한다.
+첫 확정의 트랜잭션 경계는 `OrderService.confirm`이다. 모든 품목의 상품·브랜드가 판매 가능한지 먼저 확인한 뒤 상품별 수량으로 `Product.deductStock`을 부르고, `PointAccount.pay`가 저장된 주문 총액을 차감한 뒤 PAYMENT 이력을 만든다. `Order.confirm`이 결제액과 마이크로초 정밀도의 확정 시각을 정한다. 이력 저장과 관리 중인 엔티티의 변경 감지를 같은 트랜잭션에 둔다. `PointService`를 호출하거나 다른 트랜잭션에서 결제하지 않는다. 실패는 주문과 모든 재고·잔액·이력을 되돌려 같은 DRAFT로 재시도할 수 있게 한다.
 
 - 부족은 각각 `InsufficientStockException`·`InsufficientPointsException`으로 표현하고 공통 advice에서 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`/409로 바꾼다. 다른 도메인 규칙의 기존 400 매핑은 유지한다.
 - 판매 불가와 재고 부족이 함께면 `ORDER_PRODUCT_NOT_AVAILABLE`/404가 앞선다. 확인을 차감보다 먼저 한 번에 끝내므로 응답이 품목의 차례(상품 ID 오름차순)에 흔들리지 않는다. 검사 순서를 바꾸면 이 계약도 함께 본다.
+- 생성에서도 판매 불가가 앞선다. 판매할 수 없는 상품이 중복으로 오면 `ORDER_PRODUCT_NOT_AVAILABLE`/404이며 중복의 400이 아니다. `OrderService.create`가 받은 품목마다 상품을 확인한 뒤에야 `Order`를 만들고, 중복은 `Order` 생성자가 거절하기 때문이다. 중복 검사를 Service에 한 벌 더 두지 않으려고 이 차례를 받아들였다(2026-10-03, #55, 5.2). `OrderApiMockMvcTest`의 `a request that repeats an unavailable product returns 404 and saves nothing`이 붙들어 둔다.
 - 이미 확정된 주문의 재확정은 `Order.confirm`이 `InvalidOrderException`으로 거절한다. `OrderService.confirm`이 저장된 결과를 먼저 재생하므로 정상 흐름은 이 거절에 닿지 않으며, 애그리거트가 결제액·확정 시각을 두 번 쓰지 않도록 스스로 지킨다(#14 표준 리뷰).
 - `PointHistory.order`는 읽기용 LAZY 연관이다. `uk_point_history_order_id`가 주문당 PAYMENT 하나를 보장하고 Hibernate가 `fk_point_history_order`를 만든다. 처음에는 스칼라 참조와 import SQL을 사용했지만, 스키마 재생성 테스트에서 Hibernate가 FK를 모른 채 `orders`를 먼저 삭제해 실패했다. 연관 매핑으로 FK를 테이블보다 먼저 제거하게 하며 별도 스키마 삭제 훅은 두지 않는다. CHARGE는 키만, PAYMENT는 주문 참조만 가지며 양수 금액과 0 이상 직후 잔액을 DB CHECK로도 지킨다. CHARGE의 키 비교·재생은 그대로다.
 - 생성·확정 응답의 시각 정밀도를 MySQL `datetime(6)`에 맞춘다. 확정 후에도 생성 재요청은 최초 DRAFT/201이며 충전 재요청은 충전 당시 잔액이다. GET은 현재 상태를 읽는다.
@@ -829,7 +838,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 > 2026-09-28 충전과 확정의 이력 저장을 18절에서 철회했다. 지금의 흐름은 18.3에 있다.
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 돌려받은 CHARGE 이력 저장. 잔액 변경과 이력은 한 트랜잭션이다.
-- DRAFT 생성: 요청자 확인 → 입력 정규화(상품별 수량 합산·정렬) → 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문과 품목은 한 트랜잭션이다.
+- DRAFT 생성: 요청자 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽음 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둠 → 저장. (처음에는 상품 확인 앞에서 입력을 정규화했다(상품별 수량 합산·정렬). 2026-10-03(#55)에 합산을 지웠다(5.2).) 주문과 품목은 한 트랜잭션이다.
 - 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → 포인트 결제 → `confirm()` → PAYMENT 이력 저장. 확정 결과는 GET으로 읽는다.
 
 ### 17.4 테스트가 바뀐 자리

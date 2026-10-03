@@ -86,7 +86,7 @@
 
 ### 협력
 
-- 생성: `OrderService.create` → 요청자 존재 확인 → 입력 정규화(상품별 수량 합산·정렬) → 상품·브랜드 확인 후 이름·단가를 읽어 저장. 주문과 품목은 한 트랜잭션이다. 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
+- 생성: `OrderService.create` → 요청자 존재 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽는다 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둔 뒤 저장. 주문과 품목은 한 트랜잭션이다. 판매할 수 없는 상품이 중복으로 오면 상품 확인의 `ORDER_PRODUCT_NOT_AVAILABLE`(404)이 중복의 400보다 먼저다(설계 15). 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
 - 상세 조회: `OrderService.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
 - 목록 조회: `OrderService.findAll(userId, OrderListRequest)` → 요청자 존재 확인 → `findAll(userId, …)` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
 - 확정: `OrderService.confirm` → 요청자·소유권 확인 → `Order.validateConfirmable`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 모든 품목의 상품·브랜드 확인 → 상품별 `Product.deductStock` → `PointAccount.pay(총액)` → `Order.confirm`. 재고·잔액·주문의 변경은 커밋에서 함께 나가는 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이며, 같은 주문의 동시 확정도 막지 않는다(ADR 0002·0003, 설계 18.2).
@@ -106,7 +106,7 @@
 | `productId` | `Long` | 대상 상품. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(Q14, Q21) |
 | `productName` | `String` | 생성 당시의 상품 이름 |
 | `unitPrice` | `Money` | 생성 당시의 상품 가격. 양수 |
-| `quantity` | `Int` | 합산한 구매 수량. 양수 |
+| `quantity` | `Int` | 구매 수량. 양수 |
 | `lineAmount` | `Money` | `unitPrice` × `quantity` |
 
 테이블 `order_line_item`. `(order_id, product_id)` 유일(`uk_order_line_item_product`), `orders`로 외래 키(`fk_order_line_item_order`), `product`로 외래 키(`fk_order_line_item_product`). 단가·수량·금액이 양수인지는 DB `CHECK`도 본다.
@@ -115,8 +115,8 @@
 
 - 이름과 단가는 생성 당시의 값이다. 이후 상품의 이름·가격이 바뀌어도 이 품목은 그대로다(ADR 0002).
 - 상품을 객체로 참조하지 않는 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 논리 삭제된 상품의 주문을 읽을 수 없게 되기 때문이다(설계 12.1). 상품이 삭제되어도 주문과 그 스냅샷은 읽힌다.
-- 같은 상품의 입력 수량은 합산해 한 품목으로 남긴다. 음수·0인 입력을 합산으로 감출 수 없다(설계 5.2).
-- 합산 수량은 양의 `Int` 범위, 금액은 `Long` 범위다. 넘치면 거절하고 주문의 일부만 저장하지 않는다.
+- 한 주문 안에서 상품 하나는 품목 하나로만 나타난다. 같은 상품을 두 번 담은 요청은 `Order`의 검사가 `InvalidOrderException`(400)으로 거절하고 아무것도 저장하지 않는다(설계 5.2).
+- 수량은 양의 `Int` 범위, 금액은 `Long` 범위다. 넘치면 거절하고 주문의 일부만 저장하지 않는다.
 
 ## 사용자 (User)와 요청자
 
