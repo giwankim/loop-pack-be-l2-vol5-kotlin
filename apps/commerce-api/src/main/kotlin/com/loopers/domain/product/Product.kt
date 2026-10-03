@@ -28,7 +28,7 @@ class Product(
     stock: Stock,
 ) : BaseEntity() {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "brand_id", nullable = false, updatable = false)
+    @JoinColumn(nullable = false, updatable = false)
     val brand: Brand = brand
 
     /** 받은 그대로의 이름. 공백뿐이지 않고 [NAME_MAX_LENGTH]자 이하다. */

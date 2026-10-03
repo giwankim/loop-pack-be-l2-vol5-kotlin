@@ -36,7 +36,7 @@ import java.time.temporal.ChronoUnit
     ],
 )
 class Order(
-    @Column(name = "user_id", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     val userId: Long,
     products: List<OrderProduct>,
 ) {
@@ -72,12 +72,11 @@ class Order(
     var paidAmount: Money? = null
         protected set
 
-    @Column(name = "confirmed_at")
     var confirmedAt: Instant? = null
         protected set
 
     /** MySQL datetime(6)와 정밀도를 맞춰 저장 전의 첫 응답과 저장 후 조회가 같다. */
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
 
     /**

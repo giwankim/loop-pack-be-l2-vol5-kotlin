@@ -26,13 +26,13 @@ import jakarta.persistence.UniqueConstraint
 @Entity
 @Table(
     name = "point_account",
-    uniqueConstraints = [UniqueConstraint(name = "uk_point_account_user_id", columnNames = ["user_id"])],
+    uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_USER_ID", columnNames = ["user_id"])],
 )
 class PointAccount(
     user: User,
 ) : BaseEntity() {
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false, updatable = false, foreignKey = ForeignKey(name = "fk_point_account_user"))
+    @JoinColumn(nullable = false, updatable = false, foreignKey = ForeignKey(name = "FK_POINT_ACCOUNT_USER"))
     val user: User = user
 
     @Embedded

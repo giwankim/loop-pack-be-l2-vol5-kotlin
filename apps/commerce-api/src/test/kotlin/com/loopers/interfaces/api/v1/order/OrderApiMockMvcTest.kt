@@ -423,9 +423,9 @@ class OrderApiMockMvcTest(
             String::class.java,
         )
         assertThat(constraints).containsExactlyInAnyOrder(
-            "fk_orders_user",
-            "fk_order_line_item_order",
-            "fk_order_line_item_product",
+            "FK_ORDERS_USER",
+            "FK_ORDER_LINE_ITEM_ORDER",
+            "FK_ORDER_LINE_ITEM_PRODUCT",
         )
         userId = userRepository.save(User()).id
         brandId = brandService.register(BrandAdminRegisterRequest("재생성 브랜드")).id

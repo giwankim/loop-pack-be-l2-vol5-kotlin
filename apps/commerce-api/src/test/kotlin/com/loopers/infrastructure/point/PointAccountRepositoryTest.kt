@@ -104,13 +104,13 @@ class PointAccountRepositoryTest(
             .createNativeQuery(
                 "select referenced_table_name, referenced_column_name from information_schema.key_column_usage " +
                     "where table_schema = database() and table_name = 'point_account' " +
-                    "and constraint_name = 'fk_point_account_user'",
+                    "and constraint_name = 'FK_POINT_ACCOUNT_USER'",
             )
             .singleResult as Array<*>
         val uniqueColumns = entityManager
             .createNativeQuery(
                 "select column_name from information_schema.statistics where table_schema = database() " +
-                    "and table_name = 'point_account' and index_name = 'uk_point_account_user_id' and non_unique = 0",
+                    "and table_name = 'point_account' and index_name = 'UK_POINT_ACCOUNT_USER_ID' and non_unique = 0",
             )
             .resultList
 

@@ -19,17 +19,14 @@ import jakarta.persistence.UniqueConstraint
 @Entity
 @Table(
     name = "order_line_item",
-    uniqueConstraints = [UniqueConstraint(name = "uk_order_line_item_product", columnNames = ["order_id", "product_id"])],
+    uniqueConstraints = [
+        UniqueConstraint(name = "UK_ORDER_LINE_ITEM_PRODUCT", columnNames = ["order_id", "product_id"]),
+    ],
     check = [CheckConstraint(constraint = "unit_price > 0 and quantity > 0 and line_amount > 0")],
 )
 class OrderLineItem internal constructor(
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-        name = "order_id",
-        nullable = false,
-        updatable = false,
-        foreignKey = ForeignKey(name = "fk_order_line_item_order"),
-    )
+    @JoinColumn(nullable = false, updatable = false, foreignKey = ForeignKey(name = "FK_ORDER_LINE_ITEM_ORDER"))
     private val order: Order,
     product: OrderProduct,
 ) {
@@ -37,10 +34,10 @@ class OrderLineItem internal constructor(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0
 
-    @Column(name = "product_id", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     val productId: Long = product.productId
 
-    @Column(name = "product_name", nullable = false, updatable = false, length = 100)
+    @Column(nullable = false, updatable = false, length = 100)
     val productName: String = product.productName
 
     @Embedded
