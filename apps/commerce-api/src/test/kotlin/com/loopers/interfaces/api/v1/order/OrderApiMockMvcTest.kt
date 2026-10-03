@@ -86,14 +86,13 @@ class OrderApiMockMvcTest(
     }
 
     @Test
-    fun `create merges items in product order and own detail preserves the committed draft`() {
+    fun `create orders items by product id and own detail preserves the committed draft`() {
         val first = product("티셔츠", 1_000, 0)
         val second = product("바지", 2_000, 1)
         val created = create(
             """{"items":[
                 {"productId":$second,"quantity":1},
-                {"productId":$first,"quantity":2},
-                {"productId":$first,"quantity":3}
+                {"productId":$first,"quantity":5}
             ],"totalAmount":1}""",
         ).andExpect {
             status { isCreated() }
@@ -115,6 +114,35 @@ class OrderApiMockMvcTest(
         assertThat(detail).isEqualTo(created)
         assertThat(productService.find(first).stock).isZero()
         assertThat(productService.find(second).stock).isEqualTo(1)
+    }
+
+    @Test
+    fun `a request that lists the same product twice is rejected and saves nothing`() {
+        val id = product()
+        val other = product("다른 상품")
+        listOf("$id,$id", "$id,$other,$id").forEach { productIds ->
+            val entries = productIds.split(',').joinToString { """{"productId":$it,"quantity":1}""" }
+            create("""{"items":[$entries]}""").andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value("주문은 상품별로 하나씩인 품목을 포함해야 합니다.") }
+            }
+            assertNoOrders()
+        }
+    }
+
+    /** 상품마다 판매 가능 여부를 본 뒤 주문을 만들므로 그 404가 중복의 400보다 먼저다(설계 15). */
+    @Test
+    fun `a request that repeats an unavailable product returns 404 and saves nothing`() {
+        val deleted = product("삭제할 상품")
+        productService.delete(deleted)
+        listOf(Long.MAX_VALUE, deleted).forEach { id ->
+            create(items(id, "1,1")).andExpect {
+                status { isNotFound() }
+                jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
+            }
+            assertNoOrders()
+        }
     }
 
     private fun product(name: String = "상품", price: Long = 1_000, stock: Int = 0): Long =
@@ -143,32 +171,31 @@ class OrderApiMockMvcTest(
     }
 
     @Test
-    fun `raw items count is checked before merging and one hundred entries are allowed`() {
-        val id = product()
-        listOf(0, 101).forEach { count ->
-            val raw = List(count) { """{"productId":$id,"quantity":1}""" }
-            create("""{"items":[${raw.joinToString()}]}""").andExpect {
+    fun `items count is checked as sent and one hundred distinct products are allowed`() {
+        val products = List(100) { product("상품$it") }
+        // 같은 상품 101개도 개수 제약이 먼저 거른다. 받은 품목을 그대로 센다.
+        listOf(emptyList(), List(101) { products.first() }).forEach { productIds ->
+            val entries = productIds.joinToString { """{"productId":$it,"quantity":1}""" }
+            create("""{"items":[$entries]}""").andExpect {
                 status { isBadRequest() }
                 jsonPath("$.meta.errorCode") { value("Bad Request") }
                 jsonPath("$.meta.message") { value("주문 품목은 1개 이상 100개 이하여야 합니다.") }
             }
             assertNoOrders()
         }
-        val entries = List(101) { """{"productId":$id,"quantity":1}""" }
-        assertNoOrders()
-        create("""{"items":[${entries.take(100).joinToString()}]}""").andExpect {
+        create("""{"items":[${products.joinToString { """{"productId":$it,"quantity":1}""" }}]}""").andExpect {
             status { isCreated() }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].quantity") { value(100) }
+            jsonPath("$.data.items.length()") { value(100) }
+            jsonPath("$.data.totalAmount") { value(100_000) }
         }
     }
 
     @Test
-    fun `invalid raw quantities cannot be hidden by merging and quantity overflow saves nothing`() {
+    fun `nonpositive product ids and quantities are rejected and the largest quantity is accepted`() {
         val id = product()
-        // 원본 값의 양수 조건은 Request 제약이라 범용 400 + 규칙 메시지다(설계 12.4, 13.1).
-        listOf("0,1", "-1,2").forEach { quantities ->
-            create(items(id, quantities)).andExpect {
+        // 양수 조건은 Request 제약이라 범용 400 + 규칙 메시지다(설계 12.4, 13.1).
+        listOf(0, -1).forEach { quantity ->
+            create(body(id, quantity)).andExpect {
                 status { isBadRequest() }
                 jsonPath("$.meta.errorCode") { value("Bad Request") }
                 jsonPath("$.meta.message") { value("수량은 1개 이상이어야 합니다.") }
@@ -183,12 +210,6 @@ class OrderApiMockMvcTest(
             }
             assertNoOrders()
         }
-        // 합산 넘침은 정규화가 거르므로 주문 전용 code가 남는다.
-        create(items(id, "2147483647,1")).andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("INVALID_POINT_ORDER_REQUEST") }
-        }
-        assertNoOrders()
         create(body(id, Int.MAX_VALUE)).andExpect {
             status { isCreated() }
             jsonPath("$.data.items[0].quantity") { value(Int.MAX_VALUE) }

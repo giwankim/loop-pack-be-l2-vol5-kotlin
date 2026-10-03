@@ -14,7 +14,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 interface OrderApiSpec {
     @Operation(
         summary = "확정 전 주문 생성",
-        description = "정수 productId·quantity를 가진 items 배열(1~100개)을 받습니다. 중복 상품의 수량을 합산하며 " +
+        description = "정수 productId·quantity를 가진 items 배열(1~100개)을 받습니다. 같은 상품이 두 번 있으면 400입니다. " +
             "서버의 이름·단가로 DRAFT를 저장합니다. 재고·포인트를 차감하지 않습니다. " +
             "요청마다 새 주문이므로 같은 요청을 다시 보내면 DRAFT가 하나 더 생깁니다.",
     )

@@ -69,8 +69,7 @@ class OrderConfirmationApiMockMvcTest(
         charge(10_000).andExpect { status { isOk() } }
         val first = product("티셔츠", 1_000, 10)
         val second = product("바지", 2_000, 5)
-        // Split lines must be paid and deducted using their summed quantity.
-        val items = listOf(second to 1, first to 2, first to 3)
+        val items = listOf(second to 1, first to 5)
         val draft = create(items).andExpect { status { isCreated() } }.json()
         val orderId = draft["data"]["orderId"].longValue()
         assertThat(draft["data"]["totalAmount"].longValue()).isEqualTo(7_000)
@@ -107,7 +106,7 @@ class OrderConfirmationApiMockMvcTest(
         charge(10_000).andExpect { status { isOk() } }
         val first = product("첫 상품", stock = 10)
         val second = product("둘째 상품", stock = 4)
-        val draft = create(listOf(first to 2, second to 2, second to 3)).andExpect { status { isCreated() } }.json()
+        val draft = create(listOf(first to 2, second to 5)).andExpect { status { isCreated() } }.json()
         val orderId = draft["data"]["orderId"].longValue()
 
         confirm(orderId).andExpect {

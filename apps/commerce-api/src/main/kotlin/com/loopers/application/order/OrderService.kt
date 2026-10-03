@@ -29,7 +29,7 @@ class OrderService(
     @Transactional
     fun create(userId: Long, @Valid request: OrderCreateRequest): OrderInfo {
         checkUserExists(userId)
-        val products = request.normalizedItems().map { item ->
+        val products = request.items.map { item ->
             val product = availableProduct(item.productId)
             OrderProduct(product.id, product.name, product.price, item.quantity)
         }
