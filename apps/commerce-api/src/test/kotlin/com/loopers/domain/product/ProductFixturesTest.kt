@@ -23,10 +23,10 @@ class ProductFixturesTest {
 
     /**
      * 0이면 품절이라 주문·좋아요 테스트가 가끔 깨진다. 100 이상이면 기본 주문 수량(1..10)보다 크다.
-     * Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다.
+     * Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다. 생성자는 이름의 하한을 검사하지 않는다.
      */
     @Test
-    fun `createProduct builds unsaved products of the given brand with 100 to 1_000 in stock`() {
+    fun `createProduct builds unsaved products of the given brand named 2 to 100 characters with 100 to 1_000 in stock`() {
         val brand = createBrand()
 
         val products = List(SAMPLES) { createProduct(brand) }
@@ -35,6 +35,7 @@ class ProductFixturesTest {
             assertThat(product.brand).isSameAs(brand)
             assertThat(product.id).isZero()
             assertThat(product.deletedAt).isNull()
+            assertThat(product.name).hasSizeBetween(2, 100)
             assertThat(product.stock.quantity).isBetween(100, 1_000)
         }
     }
@@ -63,11 +64,14 @@ class ProductFixturesTest {
     }
 
     @Test
-    fun `createProductAdminRegisterRequest satisfies the request's own constraints and never registers a sold-out product`() {
+    fun `createProductAdminRegisterRequest satisfies its constraints with 2 to 100 character names and 100 to 1_000 in stock`() {
         val requests = List(SAMPLES) { createProductAdminRegisterRequest(brandId = BRAND_ID) }
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
-        assertThat(requests).allSatisfy { request -> assertThat(request.stock).isPositive() }
+        assertThat(requests).allSatisfy { request ->
+            assertThat(request.name).hasSizeBetween(2, 100)
+            assertThat(request.stock).isBetween(100, 1_000)
+        }
     }
 
     @Test
@@ -81,10 +85,11 @@ class ProductFixturesTest {
     }
 
     @Test
-    fun `createProductAdminUpdateRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { createProductAdminUpdateRequest() }.flatMap { validator.validate(it) }
+    fun `createProductAdminUpdateRequest satisfies the request's own constraints with names of 2 to 100 characters`() {
+        val requests = List(SAMPLES) { createProductAdminUpdateRequest() }
 
-        assertThat(violations).isEmpty()
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests).allSatisfy { request -> assertThat(request.name).hasSizeBetween(2, 100) }
     }
 
     @Test
@@ -96,11 +101,11 @@ class ProductFixturesTest {
     }
 
     @Test
-    fun `createProductAdminStockUpdateRequest satisfies the request's own constraints and never sells out`() {
+    fun `createProductAdminStockUpdateRequest satisfies the request's own constraints with 100 to 1_000 in stock`() {
         val requests = List(SAMPLES) { createProductAdminStockUpdateRequest() }
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
-        assertThat(requests).allSatisfy { request -> assertThat(request.quantity).isPositive() }
+        assertThat(requests).allSatisfy { request -> assertThat(request.quantity).isBetween(100, 1_000) }
     }
 
     @Test

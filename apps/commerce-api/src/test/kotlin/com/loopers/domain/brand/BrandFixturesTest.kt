@@ -16,14 +16,18 @@ class BrandFixturesTest {
 
     private val validator = Validation.buildDefaultValidatorFactory().validator
 
-    /** Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다. */
+    /**
+     * Instancio가 만든 엔티티라면 `id`와 `deletedAt`이 무작위다.
+     * 생성자는 이름의 하한을 검사하지 않으므로 2자 이상인지는 여기서 본다.
+     */
     @Test
-    fun `createBrand builds unsaved brands`() {
+    fun `createBrand builds unsaved brands named 2 to 100 characters`() {
         val brands = List(SAMPLES) { createBrand() }
 
         assertThat(brands).allSatisfy { brand ->
             assertThat(brand.id).isZero()
             assertThat(brand.deletedAt).isNull()
+            assertThat(brand.name).hasSizeBetween(2, 100)
         }
     }
 
@@ -44,10 +48,11 @@ class BrandFixturesTest {
     }
 
     @Test
-    fun `createBrandAdminRegisterRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { createBrandAdminRegisterRequest() }.flatMap { validator.validate(it) }
+    fun `createBrandAdminRegisterRequest satisfies the request's own constraints with names of 2 to 100 characters`() {
+        val requests = List(SAMPLES) { createBrandAdminRegisterRequest() }
 
-        assertThat(violations).isEmpty()
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests).allSatisfy { request -> assertThat(request.name).hasSizeBetween(2, 100) }
     }
 
     @Test
@@ -58,10 +63,11 @@ class BrandFixturesTest {
     }
 
     @Test
-    fun `createBrandAdminUpdateRequest satisfies the request's own constraints`() {
-        val violations = List(SAMPLES) { createBrandAdminUpdateRequest() }.flatMap { validator.validate(it) }
+    fun `createBrandAdminUpdateRequest satisfies the request's own constraints with names of 2 to 100 characters`() {
+        val requests = List(SAMPLES) { createBrandAdminUpdateRequest() }
 
-        assertThat(violations).isEmpty()
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests).allSatisfy { request -> assertThat(request.name).hasSizeBetween(2, 100) }
     }
 
     @Test
