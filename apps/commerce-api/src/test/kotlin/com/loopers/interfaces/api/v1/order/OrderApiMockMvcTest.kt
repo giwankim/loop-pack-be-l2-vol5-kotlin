@@ -86,7 +86,7 @@ class OrderApiMockMvcTest(
     }
 
     @Test
-    fun `create orders items by product id and own detail preserves the committed draft`() {
+    fun `create sorts items by product id and own detail preserves the committed draft`() {
         val first = product("티셔츠", 1_000, 0)
         val second = product("바지", 2_000, 1)
         val created = create(
@@ -119,10 +119,9 @@ class OrderApiMockMvcTest(
     @Test
     fun `a request that lists the same product twice is rejected and saves nothing`() {
         val id = product()
-        val other = product("다른 상품")
-        listOf("$id,$id", "$id,$other,$id").forEach { productIds ->
-            val entries = productIds.split(',').joinToString { """{"productId":$it,"quantity":1}""" }
-            create("""{"items":[$entries]}""").andExpect {
+        val other = product()
+        listOf(listOf(id, id), listOf(id, other, id)).forEach { productIds ->
+            create(items(productIds)).andExpect {
                 status { isBadRequest() }
                 jsonPath("$.meta.errorCode") { value("Bad Request") }
                 jsonPath("$.meta.message") { value("주문은 상품별로 하나씩인 품목을 포함해야 합니다.") }
@@ -134,7 +133,7 @@ class OrderApiMockMvcTest(
     /** 상품마다 판매 가능 여부를 본 뒤 주문을 만들므로 그 404가 중복의 400보다 먼저다(설계 15). */
     @Test
     fun `a request that repeats an unavailable product returns 404 and saves nothing`() {
-        val deleted = product("삭제할 상품")
+        val deleted = product()
         productService.delete(deleted)
         listOf(Long.MAX_VALUE, deleted).forEach { id ->
             create(items(id, "1,1")).andExpect {
@@ -172,18 +171,17 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `items count is checked as sent and one hundred distinct products are allowed`() {
-        val products = List(100) { product("상품$it") }
+        val products = List(100) { product() }
         // 같은 상품 101개도 개수 제약이 먼저 거른다. 받은 품목을 그대로 센다.
         listOf(emptyList(), List(101) { products.first() }).forEach { productIds ->
-            val entries = productIds.joinToString { """{"productId":$it,"quantity":1}""" }
-            create("""{"items":[$entries]}""").andExpect {
+            create(items(productIds)).andExpect {
                 status { isBadRequest() }
                 jsonPath("$.meta.errorCode") { value("Bad Request") }
                 jsonPath("$.meta.message") { value("주문 품목은 1개 이상 100개 이하여야 합니다.") }
             }
             assertNoOrders()
         }
-        create("""{"items":[${products.joinToString { """{"productId":$it,"quantity":1}""" }}]}""").andExpect {
+        create(items(products)).andExpect {
             status { isCreated() }
             jsonPath("$.data.items.length()") { value(100) }
             jsonPath("$.data.totalAmount") { value(100_000) }
@@ -557,6 +555,9 @@ class OrderApiMockMvcTest(
 
     private fun items(id: Long, quantities: String): String = quantities.split(',')
         .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
+
+    private fun items(productIds: List<Long>): String =
+        productIds.joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$it,"quantity":1}""" }
 
     private fun assertNoOrders() {
         assertThat(jdbc.queryForObject("select count(*) from orders", Long::class.java)!!).isZero()
