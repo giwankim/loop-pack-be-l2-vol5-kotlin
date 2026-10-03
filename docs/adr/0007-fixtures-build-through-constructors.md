@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0010
 date: 2026-09-30
 ---
 
 # 테스트 fixture는 생성자로 만들고 Instancio는 값만 뽑는다
+
+> 2026-10-03 [ADR 0010](./0010-entity-fixtures-built-by-instancio.md)으로 대체했다. 입력만 검사하는 엔티티(`Brand`, `Product`, `Like`)와 모든 Request는 Instancio가 만들고, 필드를 계산하는 엔티티(`Order`, `PointAccount`)만 계속 생성자를 부른다. 값 생성기 함수는 없어지고 범위는 fixture에 적힌다. 아래의 파일 위치·seed 보고·전체 이전은 그대로 유효하다.
 
 테스트 데이터를 손으로 적은 값 대신 fixture로 준비한다. 지금은 테스트 클래스마다 private 도우미가 따로 있다. `registerProduct`만 8곳에 다섯 가지 모양으로 있고 기본 가격과 재고도 제각각이다. 처음에는 Instancio(`instancio-junit` 6.1.0, 이미 모든 모듈의 테스트 경로에 있다)의 Bean Validation 연동으로 도메인 객체를 만들 생각이었다. 그러나 도메인에는 제약 애노테이션이 없고 규칙은 생성자에 있다([카탈로그 설계 5.18](../design/catalog.md)). Instancio가 엔티티를 만들면 그 생성자를 거치지 않는다. 그래서 fixture는 진짜 생성자를 부르고, Instancio는 엔티티의 상수가 정한 범위에서 값을 뽑는 데만 쓴다.
 
