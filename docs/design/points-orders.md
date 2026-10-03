@@ -541,7 +541,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - Q21의 물리 FK와 Q23의 migration 보류를 함께 만족하는 길은 연관뿐이다. `ddl-auto=create`는 연관에서만 외래 키를 만들고, 스칼라 열에 FK를 덧붙일 JPA 애노테이션은 없다. 8.2에서 본 대로 `import.sql`의 `alter table`은 반복 `create`에서 drop 순서를 깨뜨린다.
 - 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
 - `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountJpaRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
-- 만들어진 제약은 `fk_point_account_user`, `uk_point_account_user_id`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다.
+- 만들어진 제약은 `FK_POINT_ACCOUNT_USER`, `UK_POINT_ACCOUNT_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다.)
 - 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
 
 다시 볼 조건: 사용자에 삭제 상태가 생겨 `@SQLRestriction`이 붙으면, 계정 조회가 삭제된 사용자의 계정을 숨기게 되므로 스칼라 `userId` + 명시적 schema로 옮길지 정한다. OrderLineItem→Product의 FK(#13)는 이 방식으로는 만들 수 없어 그때 초기화 방법을 다시 정한다.

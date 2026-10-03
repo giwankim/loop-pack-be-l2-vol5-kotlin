@@ -17,7 +17,7 @@
 | `userId` | `Long` | `user`의 식별자. 프록시가 들고 있어 사용자를 읽지 않는다 |
 | `balance` | `Money` | 잔액. 처음 0원 |
 
-테이블 `point_account`. `user_id` 유일(`uk_point_account_user_id`), `users`로 외래 키(`fk_point_account_user`). `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
+테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
 
 ### 규칙
 
@@ -59,7 +59,7 @@
 | `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
 | `createdAt` | `Instant` | 생성 시각. 마이크로초로 잘라 저장한다 |
 
-테이블 `orders`. `users`로 외래 키(`fk_orders_user`), 조회용 인덱스 `idx_orders_user_created`·`idx_orders_created`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
+테이블 `orders`. `users`로 외래 키(`FK_ORDERS_USER`), 조회용 인덱스 `idx_orders_user_created`·`idx_orders_created`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
 
 ### 규칙
 
@@ -109,7 +109,7 @@
 | `quantity` | `Int` | 구매 수량. 양수 |
 | `lineAmount` | `Money` | `unitPrice` × `quantity` |
 
-테이블 `order_line_item`. `(order_id, product_id)` 유일(`uk_order_line_item_product`), `orders`로 외래 키(`fk_order_line_item_order`), `product`로 외래 키(`fk_order_line_item_product`). 단가·수량·금액이 양수인지는 DB `CHECK`도 본다.
+테이블 `order_line_item`. `(order_id, product_id)` 유일(`UK_ORDER_LINE_ITEM_PRODUCT`), `orders`로 외래 키(`FK_ORDER_LINE_ITEM_ORDER`), `product`로 외래 키(`FK_ORDER_LINE_ITEM_PRODUCT`). 단가·수량·금액이 양수인지는 DB `CHECK`도 본다.
 
 ### 규칙
 
