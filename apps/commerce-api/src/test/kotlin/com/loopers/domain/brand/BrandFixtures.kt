@@ -2,15 +2,15 @@ package com.loopers.domain.brand
 
 import com.loopers.application.brand.BrandAdminRegisterRequest
 import com.loopers.application.brand.BrandAdminUpdateRequest
+import com.loopers.domain.unsaved
 import org.instancio.kotlin.KInstancio
 import org.instancio.kotlin.KInstancio.gen
 import org.instancio.kotlin.KSelect.field
 
-/** 저장하지 않은 브랜드. 진짜 생성자를 거친다. */
+/** 저장하지 않은 브랜드. 생성자를 건너뛰므로 이름 규칙은 계약 테스트가 지킨다. */
 fun createBrand(name: String? = null): Brand {
     return KInstancio.of<Brand>()
-        .ignore(field(Brand::id))
-        .ignore(field(Brand::deletedAt))
+        .unsaved()
         .set(field(Brand::name), name ?: gen().string().minLength(2).maxLength(100).get())
         .create()
 }
