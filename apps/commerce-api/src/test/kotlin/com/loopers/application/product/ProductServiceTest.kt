@@ -1,9 +1,12 @@
 package com.loopers.application.product
 
-import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
+import com.loopers.domain.product.createProductAdminRegisterRequest
+import com.loopers.domain.product.createProductAdminStockUpdateRequest
+import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.testcontainers.MySqlTestContainersConfig
@@ -34,10 +37,11 @@ class ProductServiceTest(
 ) {
     @Test
     fun `registering under an active brand saves a product, name as sent, that can be fetched back`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
 
-        val registered =
-            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7))
+        val registered = productService.register(
+            createProductAdminRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7),
+        )
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -60,9 +64,9 @@ class ProductServiceTest(
     /** 좋아요 수는 관계에서 센다. 사용자 행은 필요 없다. 좋아요는 사용자를 식별자로만 가리킨다(설계 2). */
     @Test
     fun `finding a product counts the likes on it`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id)
-        val other = register(brand.id, name = "후드티")
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        val other = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         likeRepository.save(Like(userId = 1L, productId = registered.id))
         likeRepository.save(Like(userId = 2L, productId = registered.id))
         likeRepository.save(Like(userId = 1L, productId = other.id))
@@ -75,9 +79,9 @@ class ProductServiceTest(
 
     @Test
     fun `listing carries each product's own like count and zero for a product without likes`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val liked = register(brand.id, name = "티셔츠")
-        val unliked = register(brand.id, name = "후드티")
+        val brand = brandRepository.save(createBrand())
+        val liked = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        val unliked = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         likeRepository.save(Like(userId = 1L, productId = liked.id))
         likeRepository.save(Like(userId = 2L, productId = liked.id))
         entityManager.flushAndClear()
@@ -93,8 +97,8 @@ class ProductServiceTest(
      */
     @Test
     fun `listing counts the likes of the whole slice in one query`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val products = listOf("티셔츠", "후드티", "양말").map { register(brand.id, name = it) }
+        val brand = brandRepository.save(createBrand())
+        val products = List(3) { productService.register(createProductAdminRegisterRequest(brandId = brand.id)) }
         products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
@@ -116,9 +120,8 @@ class ProductServiceTest(
 
     @Test
     fun `finding a product with zero stock reports it as sold out`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered =
-            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = 0))
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 0))
         entityManager.flushAndClear()
 
         val found = productService.find(registered.id)
@@ -132,7 +135,7 @@ class ProductServiceTest(
     @Test
     fun `registering under an unknown brand throws BRAND_NOT_FOUND and saves nothing`() {
         val exception = assertThrows<CoreException> {
-            productService.register(ProductAdminRegisterRequest(brandId = 999L, name = "티셔츠", price = 12_000, stock = 7))
+            productService.register(createProductAdminRegisterRequest(brandId = 999L))
         }
         entityManager.flushAndClear()
 
@@ -144,11 +147,11 @@ class ProductServiceTest(
 
     @Test
     fun `registering under a deleted brand throws BRAND_NOT_FOUND and saves nothing`() {
-        val deleted = brandRepository.save(Brand("루퍼스").apply { delete() })
+        val deleted = brandRepository.save(createBrand().apply { delete() })
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
-            productService.register(ProductAdminRegisterRequest(brandId = deleted.id, name = "티셔츠", price = 12_000, stock = 7))
+            productService.register(createProductAdminRegisterRequest(brandId = deleted.id))
         }
         entityManager.flushAndClear()
 
@@ -160,10 +163,10 @@ class ProductServiceTest(
 
     @Test
     fun `registering a price of zero is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
+        val brand = brandRepository.save(createBrand())
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 0, stock = 7))
+            productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 0))
         }
         entityManager.flushAndClear()
 
@@ -175,10 +178,10 @@ class ProductServiceTest(
 
     @Test
     fun `registering a blank name is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
+        val brand = brandRepository.save(createBrand())
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "   ", price = 12_000, stock = 7))
+            productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "   "))
         }
         entityManager.flushAndClear()
 
@@ -190,10 +193,10 @@ class ProductServiceTest(
 
     @Test
     fun `registering a negative stock is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
+        val brand = brandRepository.save(createBrand())
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.register(ProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000, stock = -1))
+            productService.register(createProductAdminRegisterRequest(brandId = brand.id, stock = -1))
         }
         entityManager.flushAndClear()
 
@@ -212,11 +215,11 @@ class ProductServiceTest(
 
     @Test
     fun `updating a product changes the name as sent and the price and keeps the brand`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id, name = "티셔츠", price = 12_000)
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
-        productService.update(registered.id, ProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
+        productService.update(registered.id, createProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -229,11 +232,11 @@ class ProductServiceTest(
 
     @Test
     fun `updating the stock sets the final quantity, including zero`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id, stock = 7)
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
-        productService.updateStock(registered.id, ProductAdminStockUpdateRequest(quantity = 0))
+        productService.updateStock(registered.id, createProductAdminStockUpdateRequest(quantity = 0))
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
@@ -245,8 +248,8 @@ class ProductServiceTest(
 
     @Test
     fun `deleting a product makes it a product that does not exist`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id)
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
         productService.delete(registered.id)
@@ -267,9 +270,9 @@ class ProductServiceTest(
      */
     @Test
     fun `listing carries the default page and size into the slice and fills the brand name`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        register(brand.id, name = "티셔츠")
-        register(brand.id, name = "후드티")
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
         val slice = productService.findAll(ProductAdminListRequest())
@@ -289,9 +292,9 @@ class ProductServiceTest(
      */
     @Test
     fun `listing for a customer carries the default page, size, and sort into the slice`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val first = register(brand.id, name = "티셔츠", price = 3_000)
-        val second = register(brand.id, name = "후드티", price = 30_000)
+        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        val first = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000))
+        val second = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000))
         entityManager.flushAndClear()
 
         val slice = productService.findAll(ProductListRequest())
@@ -306,9 +309,9 @@ class ProductServiceTest(
 
     @Test
     fun `listing a customer sort reaches the slice order`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val cheap = register(brand.id, name = "양말", price = 3_000)
-        val dear = register(brand.id, name = "코트", price = 30_000)
+        val brand = brandRepository.save(createBrand())
+        val cheap = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000))
+        val dear = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000))
         entityManager.flushAndClear()
 
         val slice = productService.findAll(ProductListRequest(sort = "price_asc"))
@@ -322,10 +325,10 @@ class ProductServiceTest(
      */
     @Test
     fun `listing by likes orders the slice and carries each product's own count`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val liked = register(brand.id, name = "티셔츠")
-        val unliked = register(brand.id, name = "양말")
-        val mostLiked = register(brand.id, name = "후드티")
+        val brand = brandRepository.save(createBrand())
+        val liked = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        val unliked = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        val mostLiked = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         likeRepository.save(Like(userId = 1L, productId = liked.id))
         likeRepository.save(Like(userId = 1L, productId = mostLiked.id))
         likeRepository.save(Like(userId = 2L, productId = mostLiked.id))
@@ -344,8 +347,8 @@ class ProductServiceTest(
      */
     @Test
     fun `listing by likes counts the likes of the whole slice in one query`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val products = listOf("티셔츠", "후드티", "양말").map { register(brand.id, name = it) }
+        val brand = brandRepository.save(createBrand())
+        val products = List(3) { productService.register(createProductAdminRegisterRequest(brandId = brand.id)) }
         products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
         entityManager.flushAndClear()
         val statistics = entityManager.statistics
@@ -409,11 +412,11 @@ class ProductServiceTest(
     fun `updating, setting the stock of, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
         assertAll(
             {
-                assertThat(errorTypeOf { productService.update(999L, ProductAdminUpdateRequest("후드티", 25_000)) })
+                assertThat(errorTypeOf { productService.update(999L, createProductAdminUpdateRequest()) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             {
-                assertThat(errorTypeOf { productService.updateStock(999L, ProductAdminStockUpdateRequest(3)) })
+                assertThat(errorTypeOf { productService.updateStock(999L, createProductAdminStockUpdateRequest()) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             { assertThat(errorTypeOf { productService.delete(999L) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
@@ -422,18 +425,18 @@ class ProductServiceTest(
 
     @Test
     fun `updating, setting the stock of, and deleting a deleted product all throw PRODUCT_NOT_FOUND`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val deleted = register(brand.id)
+        val brand = brandRepository.save(createBrand())
+        val deleted = productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         productService.delete(deleted.id)
         entityManager.flushAndClear()
 
         assertAll(
             {
-                assertThat(errorTypeOf { productService.update(deleted.id, ProductAdminUpdateRequest("후드티", 25_000)) })
+                assertThat(errorTypeOf { productService.update(deleted.id, createProductAdminUpdateRequest()) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             {
-                assertThat(errorTypeOf { productService.updateStock(deleted.id, ProductAdminStockUpdateRequest(3)) })
+                assertThat(errorTypeOf { productService.updateStock(deleted.id, createProductAdminStockUpdateRequest()) })
                     .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
             },
             { assertThat(errorTypeOf { productService.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
@@ -442,12 +445,13 @@ class ProductServiceTest(
 
     @Test
     fun `an update rejected by request validation keeps the stored name and price`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id, name = "티셔츠", price = 12_000)
+        val brand = brandRepository.save(createBrand())
+        val registered =
+            productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000))
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.update(registered.id, ProductAdminUpdateRequest(name = "후드티", price = 0))
+            productService.update(registered.id, createProductAdminUpdateRequest(price = 0))
         }
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
@@ -461,12 +465,12 @@ class ProductServiceTest(
 
     @Test
     fun `a negative stock is rejected by request validation and keeps the stored stock`() {
-        val brand = brandRepository.save(Brand("루퍼스"))
-        val registered = register(brand.id, stock = 7)
+        val brand = brandRepository.save(createBrand())
+        val registered = productService.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 7))
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productService.updateStock(registered.id, ProductAdminStockUpdateRequest(quantity = -1))
+            productService.updateStock(registered.id, createProductAdminStockUpdateRequest(quantity = -1))
         }
         entityManager.flushAndClear()
 
@@ -499,9 +503,6 @@ class ProductServiceTest(
             },
         )
     }
-
-    private fun register(brandId: Long, name: String = "티셔츠", price: Long = 12_000, stock: Int = 7): ProductInfo =
-        productService.register(ProductAdminRegisterRequest(brandId = brandId, name = name, price = price, stock = stock))
 
     /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
     private fun errorTypeOf(call: () -> Unit): ErrorType =
