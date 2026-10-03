@@ -51,7 +51,7 @@ class PointApiMockMvcTest(
     /** 이 티켓의 인수 조건인 흐름. 0원 → 충전 10,000 → 조회 10,000 → 충전 500 → 조회 10,500. */
     @Test
     fun `charging shows the balance right after and the balance read shows the current balance`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         getBalance(userId).andExpect {
@@ -152,7 +152,7 @@ class PointApiMockMvcTest(
     /** 충전액은 카탈로그처럼 Jackson 기본대로 읽는다. 숫자 문자열과 소수 표기의 정수도 받는다(설계 5.10). */
     @Test
     fun `an amount sent as a numeric string or a whole decimal is charged`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         charge(userId, body = """{"amount": "5"}""").andExpect {
@@ -171,7 +171,7 @@ class PointApiMockMvcTest(
     /** 숫자로 읽을 수 없거나 `Long` 범위 밖인 값은 다른 본문 오류와 같은 범용 400이다(설계 5.10). */
     @Test
     fun `a missing, null, non-numeric or out-of-range amount returns 400 and changes nothing`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
         val invalidBodies = listOf(
             """{}""",
@@ -200,7 +200,7 @@ class PointApiMockMvcTest(
     /** 소수 금액을 Jackson 3이 어떻게 읽는지 고정한다. 바뀌면 이 테스트가 먼저 알린다(설계 5.10). */
     @Test
     fun `a fractional amount is truncated to its integer part`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         charge(userId, body = """{"amount": 1.5}""").andExpect {
@@ -212,7 +212,7 @@ class PointApiMockMvcTest(
     /** 알 수 없는 필드는 기존 정책대로 무시한다(설계 5.10). */
     @Test
     fun `an unknown field next to a valid amount is ignored`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         charge(userId, body = """{"amount": 10000, "balance": 1}""").andExpect {
@@ -224,7 +224,7 @@ class PointApiMockMvcTest(
     /** 0원 이하는 Request 제약이 거른다. 범용 400이며 메시지가 규칙을 말한다(카탈로그 설계 5.18). */
     @Test
     fun `charging zero or a negative amount returns 400 and changes nothing`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         assertAll(
@@ -246,7 +246,7 @@ class PointApiMockMvcTest(
     /** 충전 후 잔액이 `Long` 범위를 넘으면 domain이 거절한다. 잔액은 그대로다(설계 5.7). */
     @Test
     fun `a charge that overflows the balance returns 400 and keeps the balance`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         charge(userId, body = """{"amount": ${Long.MAX_VALUE}}""").andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
@@ -263,7 +263,7 @@ class PointApiMockMvcTest(
     /** 상품 가격의 10억 원 상한은 잔액에 적용되지 않는다(설계 5.7). */
     @Test
     fun `the balance may exceed the product price cap`() {
-        val userId = registerUser()
+        val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
         charge(userId, body = """{"amount": 1000000001}""").andExpect {
@@ -280,8 +280,6 @@ class PointApiMockMvcTest(
         }
 
     private fun getBalance(userId: Long): ResultActionsDsl = mockMvc.get(POINTS) { header(UserIdHeader.NAME, userId) }
-
-    private fun registerUser(): Long = userFixture.registerUser().id
 
     private fun accountIdOf(userId: Long): Long = pointAccountRepository.findByUserId(userId)!!.id
 

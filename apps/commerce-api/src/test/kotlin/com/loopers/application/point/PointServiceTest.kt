@@ -1,6 +1,7 @@
 package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccountRepository
+import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.user.UserFixture
 import com.loopers.support.error.CoreException
@@ -40,7 +41,7 @@ class PointServiceTest(
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, PointChargeRequest(amount = 10_000))
+        val info = pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
@@ -54,10 +55,10 @@ class PointServiceTest(
     @Test
     fun `charging the same amount twice adds it twice`() {
         val user = userFixture.registerUser()
-        pointService.charge(user.id, PointChargeRequest(amount = 10_000))
+        pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, PointChargeRequest(amount = 10_000))
+        val info = pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
@@ -73,8 +74,8 @@ class PointServiceTest(
         entityManager.flushAndClear()
         val fresh = pointService.findBalance(user.id)
 
-        pointService.charge(user.id, PointChargeRequest(amount = 10_000))
-        pointService.charge(user.id, PointChargeRequest(amount = 500))
+        pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
+        pointService.charge(user.id, createPointChargeRequest(amount = 500))
         entityManager.flushAndClear()
 
         assertAll(
@@ -89,7 +90,7 @@ class PointServiceTest(
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, PointChargeRequest(amount = 1_000_000_001))
+        val info = pointService.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
         entityManager.flushAndClear()
 
         assertAll(
@@ -107,14 +108,14 @@ class PointServiceTest(
             {
                 assertThat(
                     assertThrows<ConstraintViolationException> {
-                        pointService.charge(user.id, PointChargeRequest(amount = 0))
+                        pointService.charge(user.id, createPointChargeRequest(amount = 0))
                     }.constraintViolations.map { it.message },
                 ).containsExactly("충전액은 1원 이상이어야 합니다.")
             },
             {
                 assertThat(
                     assertThrows<ConstraintViolationException> {
-                        pointService.charge(user.id, PointChargeRequest(amount = -1))
+                        pointService.charge(user.id, createPointChargeRequest(amount = -1))
                     }.constraintViolations.map { it.message },
                 ).containsExactly("충전액은 1원 이상이어야 합니다.")
             },
@@ -126,11 +127,11 @@ class PointServiceTest(
     @Test
     fun `a charge that overflows the balance is rejected and changes nothing`() {
         val user = userFixture.registerUser()
-        pointService.charge(user.id, PointChargeRequest(amount = Long.MAX_VALUE))
+        pointService.charge(user.id, createPointChargeRequest(amount = Long.MAX_VALUE))
         entityManager.flushAndClear()
 
         assertThrows<InvalidMoneyException> {
-            pointService.charge(user.id, PointChargeRequest(amount = 1))
+            pointService.charge(user.id, createPointChargeRequest(amount = 1))
         }
         entityManager.flushAndClear()
 
@@ -140,7 +141,7 @@ class PointServiceTest(
     @Test
     fun `charging as an unknown user throws UNAUTHORIZED and creates no account`() {
         val exception = assertThrows<CoreException> {
-            pointService.charge(999L, PointChargeRequest(amount = 1_000))
+            pointService.charge(999L, createPointChargeRequest())
         }
         entityManager.flushAndClear()
 
@@ -168,7 +169,7 @@ class PointServiceTest(
         entityManager.flushAndClear()
 
         val chargeException = assertThrows<CoreException> {
-            pointService.charge(user.id, PointChargeRequest(amount = 1_000))
+            pointService.charge(user.id, createPointChargeRequest())
         }
         val readException = assertThrows<CoreException> { pointService.findBalance(user.id) }
         entityManager.flushAndClear()

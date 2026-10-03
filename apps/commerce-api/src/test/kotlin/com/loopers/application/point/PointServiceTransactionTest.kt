@@ -1,6 +1,7 @@
 package com.loopers.application.point
 
 import com.loopers.domain.point.PointAccountRepository
+import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.user.UserFixture
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
@@ -39,7 +40,7 @@ class PointServiceTransactionTest(
     fun `a charge commits the balance so a new transaction sees it`() {
         val user = userFixture.registerUser()
 
-        pointService.charge(user.id, PointChargeRequest(amount = 10_000))
+        pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
         val account = pointAccountRepository.findByUserId(user.id)!!
 
         assertThat(entityManager.balanceOf(account.id)).isEqualTo(10_000L)
