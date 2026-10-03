@@ -595,7 +595,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 12.5 사용자 fixture와 계정
 
-**선택: 테스트 컴포넌트 `com.loopers.utils.UserFixture`(src/test)가 `registerUser()`로 사용자와 0원 계정을 함께 만든다.** 운영 코드에는 사용자를 만드는 API도 계정을 만드는 자리도 없다(Q17).
+**선택: 테스트 컴포넌트 `com.loopers.domain.user.UserFixture`(src/test, `UserFixtures.kt`)가 `registerUser()`로 사용자와 0원 계정을 함께 만든다.** 운영 코드에는 사용자를 만드는 API도 계정을 만드는 자리도 없다(Q17).
 
 - `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiMockMvcTest`가 `count(*)`로 확인).
 - 좋아요 테스트는 계정 없이 `userRepository.save(User())`로 사용자를 만든다. 포인트를 쓰지 않는 자리라 그대로 두었다. 주문 확정(#14)이 좋아요와 포인트를 함께 쓰는 테스트를 만들면 그때 `UserFixture`로 모은다.

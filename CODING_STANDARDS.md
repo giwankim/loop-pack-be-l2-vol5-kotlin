@@ -26,7 +26,7 @@
 **fixture 쪽**
 
 - 애그리거트마다 `<Aggregate>Fixtures.kt` 하나를 그 애그리거트의 domain 테스트 패키지에 둔다. 엔티티 fixture와 Request fixture가 그 파일에 함께 있다. 엔티티 fixture가 함께 쓰는 도우미 `unsaved()`는 `com.loopers.domain`의 `EntityFixtures.kt`에 있다.
-- fixture는 최상위 함수다. 저장까지 맡아 저장소를 주입받는 `UserFixture`만 Spring 컴포넌트다. 다른 애그리거트를 가리키는 인자(브랜드, 브랜드 ID, 사용자 ID, 상품)는 기본값 없이 받는다.
+- fixture는 최상위 함수다. 저장까지 맡아 저장소를 주입받는 `UserFixture`만 Spring 컴포넌트다. 다른 애그리거트를 가리키는 인자(브랜드, 브랜드 ID, 사용자 ID, 상품)는 기본값 없이 받는다. 상품 없이 만드는 주문 품목만 상품 ID를 뽑는다. 상품이 필요 없는 Order 규칙 테스트가 쓰고, 상품 외래 키에 걸려 저장하지 않는다.
 - 그 밖의 파라미터는 모두 nullable이고 기본값이 `null`이다. `null`이면 fixture가 값을 뽑으므로, 감싸는 도우미가 "지정하지 않음"을 그대로 넘길 수 있다. 원래 nullable인 필드(목록 필터의 `brandId`·`userId` 등)의 파라미터만은 `null`이 곧 값이다. 넘긴 인자는 반드시 쓴다.
 - 엔티티·Request fixture의 이름은 `create`에 타입 이름을 잇는다(`createBrand`, `createProductAdminRegisterRequest`).
 - 생성자가 입력을 검사하기만 하는 엔티티(`Brand`, `Product`, `Like`)와 모든 Request는 `KInstancio.of`로 만든다. 생성자가 필드를 계산하는 엔티티(`Order`, `PointAccount`)는 진짜 생성자를 부른다. 새 엔티티도 이 기준으로 고른다. 엔티티 fixture는 저장하지 않은 엔티티를 돌려주고, 저장은 테스트가 한다.
