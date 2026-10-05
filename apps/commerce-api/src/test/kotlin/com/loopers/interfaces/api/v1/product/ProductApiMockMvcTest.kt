@@ -9,20 +9,21 @@ import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
-import org.hamcrest.Matchers.containsString
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.put
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -37,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class ProductApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val brandRepository: BrandRepository,
     private val productService: ProductService,
     private val likeRepository: LikeRepository,
@@ -55,18 +56,15 @@ class ProductApiMockMvcTest(
         val productId =
             productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
 
-        mockMvc.get("$ENDPOINT/$productId")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.meta.result") { value("SUCCESS") }
-                jsonPath("$.data.id") { value(productId) }
-                jsonPath("$.data.name") { value("티셔츠") }
-                jsonPath("$.data.price") { value(12_000) }
-                jsonPath("$.data.soldOut") { value(false) }
-                jsonPath("$.data.brand.id") { value(brand.id) }
-                jsonPath("$.data.brand.name") { value("루퍼스") }
-                jsonPath("$.data.likeCount") { value(0) }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/$productId")).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.id").isEqualToLong(productId)
+        body.extractingPath("$.data.name").isEqualTo("티셔츠")
+        body.extractingPath("$.data.price").isEqualTo(12_000)
+        body.extractingPath("$.data.soldOut").isEqualTo(false)
+        body.extractingPath("$.data.brand.id").isEqualToLong(brand.id)
+        body.extractingPath("$.data.brand.name").isEqualTo("루퍼스")
+        body.extractingPath("$.data.likeCount").isEqualTo(0)
     }
 
     /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.ProductInfo]에서 온다. */
@@ -75,24 +73,18 @@ class ProductApiMockMvcTest(
         val brand = brandRepository.save(createBrand())
         val productId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
-        mockMvc.get("$ENDPOINT/$productId")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.stock") { doesNotExist() }
-                jsonPath("$.data.createdAt") { doesNotExist() }
-                jsonPath("$.data.updatedAt") { doesNotExist() }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/$productId")).hasStatusOk().bodyJson()
+        body.doesNotHavePath("$.data.stock")
+        body.doesNotHavePath("$.data.createdAt")
+        body.doesNotHavePath("$.data.updatedAt")
     }
 
     @Test
     fun `reading an unknown product returns 404`() {
-        mockMvc.get("$ENDPOINT/999")
-            .andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.result") { value("FAIL") }
-                jsonPath("$.meta.errorCode") { value("Not Found") }
-                jsonPath("$.meta.message") { value(ErrorType.PRODUCT_NOT_FOUND.message) }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/999")).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Not Found")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.PRODUCT_NOT_FOUND.message)
     }
 
     @Test
@@ -102,7 +94,7 @@ class ProductApiMockMvcTest(
         productService.delete(productId)
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/$productId").andExpect { status { isNotFound() } }
+        assertThat(mvc.get().uri("$ENDPOINT/$productId")).hasStatus(HttpStatus.NOT_FOUND)
     }
 
     /**
@@ -116,22 +108,21 @@ class ProductApiMockMvcTest(
         val brand = brandRepository.save(createBrand())
         val productId = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
-        mockMvc.get("$ENDPOINT/$productId").andExpect { jsonPath("$.data.soldOut") { value(false) } }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/$productId")).bodyJson()
+        body.extractingPath("$.data.soldOut").isEqualTo(false)
 
-        mockMvc.put("$ADMIN_ENDPOINT/$productId/stock") {
-            with(ADMIN)
-            with(csrf())
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"quantity": 0}"""
-        }.andExpect { status { isOk() } }
+        assertThat(
+            mvc.put().uri("$ADMIN_ENDPOINT/$productId/stock")
+                .with(ADMIN)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"quantity": 0}"""),
+        ).hasStatusOk()
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/$productId")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.soldOut") { value(true) }
-                jsonPath("$.data.stock") { doesNotExist() }
-            }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/$productId")).hasStatusOk().bodyJson()
+        detail.extractingPath("$.data.soldOut").isEqualTo(true)
+        detail.doesNotHavePath("$.data.stock")
     }
 
     /**
@@ -145,17 +136,15 @@ class ProductApiMockMvcTest(
         val secondId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000)).id
         entityManager.flushAndClear()
 
-        getProducts().andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].id") { value(secondId) }
-            jsonPath("$.data.items[1].id") { value(firstId) }
-            jsonPath("$.data.items[0].brand.name") { value("루퍼스") }
-            jsonPath("$.data.items[0].soldOut") { value(false) }
-            jsonPath("$.data.items[0].likeCount") { value(0) }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(20) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val body = assertThat(getProducts()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].id").isEqualToLong(secondId)
+        body.extractingPath("$.data.items[1].id").isEqualToLong(firstId)
+        body.extractingPath("$.data.items[0].brand.name").isEqualTo("루퍼스")
+        body.extractingPath("$.data.items[0].soldOut").isEqualTo(false)
+        body.extractingPath("$.data.items[0].likeCount").isEqualTo(0)
+        body.extractingPath("$.data.page").isEqualTo(0)
+        body.extractingPath("$.data.size").isEqualTo(20)
+        body.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     /** 싼 상품을 먼저 등록해 두 기준이 서로 다른 차례를 내놓게 한다. 같은 차례라면 기준이 닿았는지 알 수 없다. */
@@ -166,17 +155,13 @@ class ProductApiMockMvcTest(
         val dearId = productService.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000)).id
         entityManager.flushAndClear()
 
-        getProducts("sort" to "price_asc").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].id") { value(cheapId) }
-            jsonPath("$.data.items[1].id") { value(dearId) }
-        }
+        val body = assertThat(getProducts("sort" to "price_asc")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].id").isEqualToLong(cheapId)
+        body.extractingPath("$.data.items[1].id").isEqualToLong(dearId)
 
-        getProducts("sort" to "latest").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].id") { value(dearId) }
-            jsonPath("$.data.items[1].id") { value(cheapId) }
-        }
+        val list = assertThat(getProducts("sort" to "latest")).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items[0].id").isEqualToLong(dearId)
+        list.extractingPath("$.data.items[1].id").isEqualToLong(cheapId)
     }
 
     /**
@@ -191,37 +176,29 @@ class ProductApiMockMvcTest(
         likeRepository.save(Like(userId = 1L, productId = likedId))
         entityManager.flushAndClear()
 
-        getProducts("sort" to "likes_desc").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].id") { value(likedId) }
-            jsonPath("$.data.items[0].likeCount") { value(1) }
-            jsonPath("$.data.items[1].id") { value(unlikedId) }
-            jsonPath("$.data.items[1].likeCount") { value(0) }
-        }
+        val body = assertThat(getProducts("sort" to "likes_desc")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].id").isEqualToLong(likedId)
+        body.extractingPath("$.data.items[0].likeCount").isEqualTo(1)
+        body.extractingPath("$.data.items[1].id").isEqualToLong(unlikedId)
+        body.extractingPath("$.data.items[1].likeCount").isEqualTo(0)
     }
 
     @Test
     fun `listing with a sort no product sort answers to returns 400`() {
-        getProducts("sort" to "likes").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(ErrorType.INVALID_SORT.message) }
-        }
+        val body = assertThat(getProducts("sort" to "likes")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.INVALID_SORT.message)
     }
 
     @Test
     fun `listing outside the page and size bounds returns 400`() {
-        getProducts("page" to "-1").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(containsString("page는 0 이상이어야 합니다")) }
-        }
+        val body = assertThat(getProducts("page" to "-1")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").asString().contains("page는 0 이상이어야 합니다")
 
-        getProducts("size" to "101").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.message") { value(containsString("size는 100 이하여야 합니다")) }
-        }
+        val error = assertThat(getProducts("size" to "101")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        error.extractingPath("$.meta.message").asString().contains("size는 100 이하여야 합니다")
     }
 
     @Test
@@ -230,12 +207,10 @@ class ProductApiMockMvcTest(
         productService.register(createProductAdminRegisterRequest(brandId = brand.id))
         entityManager.flushAndClear()
 
-        getProducts("brandId" to "999").andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.items") { isEmpty() }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val body = assertThat(getProducts("brandId" to "999")).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.items").asArray().isEmpty()
+        body.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     @Test
@@ -246,15 +221,13 @@ class ProductApiMockMvcTest(
         productService.register(createProductAdminRegisterRequest(brandId = other.id))
         entityManager.flushAndClear()
 
-        getProducts("brandId" to brand.id.toString()).andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].id") { value(mineId) }
-        }
+        val body = assertThat(getProducts("brandId" to brand.id.toString())).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].id").isEqualToLong(mineId)
     }
 
-    private fun getProducts(vararg query: Pair<String, String>) =
-        mockMvc.get(ENDPOINT) {
-            query.forEach { (name, value) -> param(name, value) }
-        }
+    private fun getProducts(vararg query: Pair<String, String>): MvcTestResult =
+        mvc.get().uri(ENDPOINT)
+            .apply { query.forEach { (name, value) -> param(name, value) } }
+            .exchange()
 }

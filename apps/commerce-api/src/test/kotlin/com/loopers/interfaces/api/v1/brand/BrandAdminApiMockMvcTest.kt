@@ -305,7 +305,7 @@ class BrandAdminApiMockMvcTest(
 
         assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND)
         val list = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).bodyJson()
-        list.extractingPath("$.data.items.length()").isEqualTo(0)
+        list.extractingPath("$.data.items").asArray().isEmpty()
         assertThat(countBrands()).isZero()
     }
 
