@@ -13,7 +13,6 @@ import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Hibernate
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
@@ -43,13 +42,11 @@ class PointAccountRepositoryTest(
 
         val found = pointAccountRepository.findByUserId(user.id)
 
-        assertAll(
-            { assertThat(found).isNotNull().isNotSameAs(saved) },
-            { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.userId).isEqualTo(user.id) },
-            { assertThat(found?.balance).isEqualTo(Money(10_000)) },
-            { assertThat(found?.createdAt).isNotNull() },
-        )
+        assertThat(found).isNotNull().isNotSameAs(saved)
+        assertThat(found?.id).isEqualTo(saved.id)
+        assertThat(found?.userId).isEqualTo(user.id)
+        assertThat(found?.balance).isEqualTo(Money(10_000))
+        assertThat(found?.createdAt).isNotNull()
     }
 
     /** 사용자는 식별자뿐이라 계정을 읽을 때 사용자 행까지 읽을 까닭이 없다. 식별자는 프록시가 들고 있다. */
@@ -61,11 +58,9 @@ class PointAccountRepositoryTest(
 
         val found = pointAccountRepository.findByUserId(user.id)!!
 
-        assertAll(
-            { assertThat(Hibernate.isInitialized(found.user)).isFalse() },
-            { assertThat(found.userId).isEqualTo(user.id) },
-            { assertThat(Hibernate.isInitialized(found.user)).isFalse() },
-        )
+        assertThat(Hibernate.isInitialized(found.user)).isFalse()
+        assertThat(found.userId).isEqualTo(user.id)
+        assertThat(Hibernate.isInitialized(found.user)).isFalse()
     }
 
     @Test
@@ -75,10 +70,8 @@ class PointAccountRepositoryTest(
         pointAccountRepository.save(PointAccount(other))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(pointAccountRepository.findByUserId(user.id)).isNull() },
-            { assertThat(pointAccountRepository.findByUserId(999L)).isNull() },
-        )
+        assertThat(pointAccountRepository.findByUserId(user.id)).isNull()
+        assertThat(pointAccountRepository.findByUserId(999L)).isNull()
     }
 
     /** 식별자가 IDENTITY라 저장이 곧 INSERT이므로 두 번째 계정은 flush를 기다리지 않고 바로 거절된다. */
@@ -114,10 +107,8 @@ class PointAccountRepositoryTest(
             )
             .resultList
 
-        assertAll(
-            { assertThat(foreignKey[0]).isEqualTo("users") },
-            { assertThat(foreignKey[1]).isEqualTo("id") },
-            { assertThat(uniqueColumns).containsExactly("user_id") },
-        )
+        assertThat(foreignKey[0]).isEqualTo("users")
+        assertThat(foreignKey[1]).isEqualTo("id")
+        assertThat(uniqueColumns).containsExactly("user_id")
     }
 }

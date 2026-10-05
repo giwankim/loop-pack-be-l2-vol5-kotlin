@@ -15,7 +15,6 @@ import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -45,10 +44,8 @@ class PointServiceTest(
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
-        assertAll(
-            { assertThat(info.balance).isEqualTo(10_000L) },
-            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L) },
-        )
+        assertThat(info.balance).isEqualTo(10_000L)
+        assertThat(entityManager.balanceOf(accountId)).isEqualTo(10_000L)
     }
 
     /** 요청마다 새 충전이다. 같은 충전액을 두 번 보내면 두 번 늘어난다(ADR 0005). */
@@ -62,10 +59,8 @@ class PointServiceTest(
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
-        assertAll(
-            { assertThat(info.balance).isEqualTo(20_000L) },
-            { assertThat(entityManager.balanceOf(accountId)).isEqualTo(20_000L) },
-        )
+        assertThat(info.balance).isEqualTo(20_000L)
+        assertThat(entityManager.balanceOf(accountId)).isEqualTo(20_000L)
     }
 
     @Test
@@ -78,10 +73,8 @@ class PointServiceTest(
         pointService.charge(user.id, createPointChargeRequest(amount = 500))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(fresh.balance).isZero() },
-            { assertThat(pointService.findBalance(user.id).balance).isEqualTo(10_500L) },
-        )
+        assertThat(fresh.balance).isZero()
+        assertThat(pointService.findBalance(user.id).balance).isEqualTo(10_500L)
     }
 
     /** 상품 가격의 상한은 잔액의 상한이 아니다(설계 5.7). */
@@ -93,10 +86,8 @@ class PointServiceTest(
         val info = pointService.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(info.balance).isEqualTo(1_000_000_001L) },
-            { assertThat(pointService.findBalance(user.id).balance).isEqualTo(1_000_000_001L) },
-        )
+        assertThat(info.balance).isEqualTo(1_000_000_001L)
+        assertThat(pointService.findBalance(user.id).balance).isEqualTo(1_000_000_001L)
     }
 
     @Test
@@ -104,22 +95,16 @@ class PointServiceTest(
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
-        assertAll(
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> {
-                        pointService.charge(user.id, createPointChargeRequest(amount = 0))
-                    }.constraintViolations.map { it.message },
-                ).containsExactly("충전액은 1원 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> {
-                        pointService.charge(user.id, createPointChargeRequest(amount = -1))
-                    }.constraintViolations.map { it.message },
-                ).containsExactly("충전액은 1원 이상이어야 합니다.")
-            },
-        )
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                pointService.charge(user.id, createPointChargeRequest(amount = 0))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("충전액은 1원 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                pointService.charge(user.id, createPointChargeRequest(amount = -1))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("충전액은 1원 이상이어야 합니다.")
         entityManager.flushAndClear()
         assertThat(entityManager.balanceOf(accountIdOf(user.id))).isZero()
     }
@@ -145,10 +130,8 @@ class PointServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(entityManager.countPointAccounts(999L)).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
+        assertThat(entityManager.countPointAccounts(999L)).isZero()
     }
 
     @Test
@@ -156,10 +139,8 @@ class PointServiceTest(
         val exception = assertThrows<CoreException> { pointService.findBalance(999L) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(entityManager.countPointAccounts(999L)).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
+        assertThat(entityManager.countPointAccounts(999L)).isZero()
     }
 
     /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */
@@ -174,11 +155,9 @@ class PointServiceTest(
         val readException = assertThrows<CoreException> { pointService.findBalance(user.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(chargeException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING) },
-            { assertThat(readException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING) },
-            { assertThat(entityManager.countPointAccounts(user.id)).isZero() },
-        )
+        assertThat(chargeException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)
+        assertThat(readException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)
+        assertThat(entityManager.countPointAccounts(user.id)).isZero()
     }
 
     private fun accountIdOf(userId: Long): Long = pointAccountRepository.findByUserId(userId)!!.id

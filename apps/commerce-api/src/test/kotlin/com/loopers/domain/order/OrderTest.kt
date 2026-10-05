@@ -2,7 +2,6 @@ package com.loopers.domain.order
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 
@@ -13,11 +12,9 @@ class OrderTest {
 
         order.confirm()
 
-        assertAll(
-            { assertThat(order.status).isEqualTo(OrderStatus.CONFIRMED) },
-            { assertThat(order.paidAmount).isEqualTo(order.totalAmount) },
-            { assertThat(order.confirmedAt).isNotNull() },
-        )
+        assertThat(order.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(order.paidAmount).isEqualTo(order.totalAmount)
+        assertThat(order.confirmedAt).isNotNull()
     }
 
     @Test
@@ -52,11 +49,9 @@ class OrderTest {
 
         val exception = assertThrows<OrderAlreadyConfirmedException> { order.confirm() }
 
-        assertAll(
-            { assertThat(exception.message).isEqualTo("이미 확정된 주문입니다.") },
-            { assertThat(order.status).isEqualTo(OrderStatus.CONFIRMED) },
-            { assertThat(order.paidAmount).isEqualTo(paidAmount) },
-            { assertThat(order.confirmedAt).isEqualTo(confirmedAt) },
-        )
+        assertThat(exception.message).isEqualTo("이미 확정된 주문입니다.")
+        assertThat(order.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(order.paidAmount).isEqualTo(paidAmount)
+        assertThat(order.confirmedAt).isEqualTo(confirmedAt)
     }
 }

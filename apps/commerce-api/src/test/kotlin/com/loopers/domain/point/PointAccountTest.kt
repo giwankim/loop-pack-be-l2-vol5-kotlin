@@ -6,7 +6,6 @@ import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 
 class PointAccountTest {
@@ -64,10 +63,8 @@ class PointAccountTest {
 
         val exception = assertThrows<InvalidChargeAmountException> { account.charge(Money.ZERO) }
 
-        assertAll(
-            { assertThat(exception.message).isEqualTo("충전액은 1원 이상이어야 합니다.") },
-            { assertThat(account.balance).isEqualTo(Money(1_000)) },
-        )
+        assertThat(exception.message).isEqualTo("충전액은 1원 이상이어야 합니다.")
+        assertThat(account.balance).isEqualTo(Money(1_000))
     }
 
     /** 충전 후 잔액도 `Long` 범위 안이어야 한다. 넘치면 거절하고 잔액은 그대로다(설계 5.7). */

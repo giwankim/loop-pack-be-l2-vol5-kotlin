@@ -19,7 +19,6 @@ import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Hibernate
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
@@ -51,18 +50,16 @@ class ProductRepositoryTest(
 
         val found = productRepository.findById(saved.id)
 
-        assertAll(
-            { assertThat(found).isNotNull().isNotSameAs(saved) },
-            { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.brand?.id).isEqualTo(brand.id) },
-            { assertThat(found?.brand?.name).isEqualTo("루퍼스") },
-            { assertThat(found?.name).isEqualTo("티셔츠") },
-            { assertThat(found?.price).isEqualTo(Money(12_000)) },
-            { assertThat(found?.stock).isEqualTo(Stock(7)) },
-            { assertThat(found?.createdAt).isNotNull() },
-            { assertThat(found?.updatedAt).isNotNull() },
-            { assertThat(found?.deletedAt).isNull() },
-        )
+        assertThat(found).isNotNull().isNotSameAs(saved)
+        assertThat(found?.id).isEqualTo(saved.id)
+        assertThat(found?.brand?.id).isEqualTo(brand.id)
+        assertThat(found?.brand?.name).isEqualTo("루퍼스")
+        assertThat(found?.name).isEqualTo("티셔츠")
+        assertThat(found?.price).isEqualTo(Money(12_000))
+        assertThat(found?.stock).isEqualTo(Stock(7))
+        assertThat(found?.createdAt).isNotNull()
+        assertThat(found?.updatedAt).isNotNull()
+        assertThat(found?.deletedAt).isNull()
     }
 
     @Test
@@ -95,11 +92,9 @@ class ProductRepositoryTest(
             .setParameter("id", saved.id)
             .singleResult as Array<*>
 
-        assertAll(
-            { assertThat((row[0] as Number).toLong()).isEqualTo(brand.id) },
-            { assertThat((row[1] as Number).toLong()).isEqualTo(12_000L) },
-            { assertThat((row[2] as Number).toInt()).isEqualTo(7) },
-        )
+        assertThat((row[0] as Number).toLong()).isEqualTo(brand.id)
+        assertThat((row[1] as Number).toLong()).isEqualTo(12_000L)
+        assertThat((row[2] as Number).toInt()).isEqualTo(7)
     }
 
     @Test
@@ -194,12 +189,10 @@ class ProductRepositoryTest(
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
-        assertAll(
-            { assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id) },
-            // group by가 붙는 유일한 기준이라 브랜드를 함께 읽는 일이 여기서만 깨질 수 있다.
-            // 프록시로 남으면 항목마다 조회가 붙고, 트랜잭션 밖에서는 아예 읽히지 않는다(설계 5.7).
-            { assertThat(slice.items).allSatisfy { assertThat(Hibernate.isInitialized(it.brand)).isTrue() } },
-        )
+        assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id)
+        // group by가 붙는 유일한 기준이라 브랜드를 함께 읽는 일이 여기서만 깨질 수 있다.
+        // 프록시로 남으면 항목마다 조회가 붙고, 트랜잭션 밖에서는 아예 읽히지 않는다(설계 5.7).
+        assertThat(slice.items).allSatisfy { assertThat(Hibernate.isInitialized(it.brand)).isTrue() }
     }
 
     /**
@@ -268,15 +261,13 @@ class ProductRepositoryTest(
         val first = productRepository.findAll(brandId = brand.id, page = 0, size = 2, sort = ProductSort.LIKES_DESC)
         val second = productRepository.findAll(brandId = brand.id, page = 1, size = 2, sort = ProductSort.LIKES_DESC)
 
-        assertAll(
-            { assertThat(first.items.map { it.id }).containsExactly(most.id, middling.id) },
-            { assertThat(first.hasNext).isTrue() },
-            { assertThat(first.page).isZero() },
-            { assertThat(first.size).isEqualTo(2) },
-            { assertThat(second.items.map { it.id }).containsExactly(fewest.id) },
-            { assertThat(second.hasNext).isFalse() },
-            { assertThat(second.page).isEqualTo(1) },
-        )
+        assertThat(first.items.map { it.id }).containsExactly(most.id, middling.id)
+        assertThat(first.hasNext).isTrue()
+        assertThat(first.page).isZero()
+        assertThat(first.size).isEqualTo(2)
+        assertThat(second.items.map { it.id }).containsExactly(fewest.id)
+        assertThat(second.hasNext).isFalse()
+        assertThat(second.page).isEqualTo(1)
     }
 
     /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
@@ -339,15 +330,13 @@ class ProductRepositoryTest(
         val first = productRepository.findAll(brandId = null, page = 0, size = 2, sort = ProductSort.LATEST)
         val second = productRepository.findAll(brandId = null, page = 1, size = 2, sort = ProductSort.LATEST)
 
-        assertAll(
-            { assertThat(first.items).hasSize(2) },
-            { assertThat(first.hasNext).isTrue() },
-            { assertThat(first.page).isZero() },
-            { assertThat(first.size).isEqualTo(2) },
-            { assertThat(second.items).hasSize(1) },
-            { assertThat(second.hasNext).isFalse() },
-            { assertThat(second.page).isEqualTo(1) },
-        )
+        assertThat(first.items).hasSize(2)
+        assertThat(first.hasNext).isTrue()
+        assertThat(first.page).isZero()
+        assertThat(first.size).isEqualTo(2)
+        assertThat(second.items).hasSize(1)
+        assertThat(second.hasNext).isFalse()
+        assertThat(second.page).isEqualTo(1)
     }
 
     /**
@@ -364,10 +353,8 @@ class ProductRepositoryTest(
 
         val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
-        assertAll(
-            { assertThat(productRepository.findById(active.id)).isNotNull() },
-            { assertThat(slice.items).isEmpty() },
-        )
+        assertThat(productRepository.findById(active.id)).isNotNull()
+        assertThat(slice.items).isEmpty()
     }
 
     @Test
@@ -459,10 +446,8 @@ class ProductRepositoryTest(
 
         val slice = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 20)
 
-        assertAll(
-            { assertThat(slice.items.map { it.id }).containsExactly(active.id) },
-            { assertThat(slice.hasNext).isFalse() },
-        )
+        assertThat(slice.items.map { it.id }).containsExactly(active.id)
+        assertThat(slice.hasNext).isFalse()
     }
 
     @Test
@@ -501,15 +486,13 @@ class ProductRepositoryTest(
         val first = productRepository.findAllLikedBy(userId = 1L, page = 0, size = 2)
         val second = productRepository.findAllLikedBy(userId = 1L, page = 1, size = 2)
 
-        assertAll(
-            { assertThat(first.items).hasSize(2) },
-            { assertThat(first.hasNext).isTrue() },
-            { assertThat(first.page).isZero() },
-            { assertThat(first.size).isEqualTo(2) },
-            { assertThat(second.items).hasSize(1) },
-            { assertThat(second.hasNext).isFalse() },
-            { assertThat(second.page).isEqualTo(1) },
-        )
+        assertThat(first.items).hasSize(2)
+        assertThat(first.hasNext).isTrue()
+        assertThat(first.page).isZero()
+        assertThat(first.size).isEqualTo(2)
+        assertThat(second.items).hasSize(1)
+        assertThat(second.hasNext).isFalse()
+        assertThat(second.page).isEqualTo(1)
     }
 
     @Test
@@ -520,10 +503,8 @@ class ProductRepositoryTest(
 
         val slice = productRepository.findAllLikedBy(userId = 999L, page = 0, size = 20)
 
-        assertAll(
-            { assertThat(slice.items).isEmpty() },
-            { assertThat(slice.hasNext).isFalse() },
-        )
+        assertThat(slice.items).isEmpty()
+        assertThat(slice.hasNext).isFalse()
     }
 
     /** 브랜드 이름을 읽어야 하므로 좋아요 목록도 상품마다 브랜드를 따로 조회하지 않는다(설계 7). */

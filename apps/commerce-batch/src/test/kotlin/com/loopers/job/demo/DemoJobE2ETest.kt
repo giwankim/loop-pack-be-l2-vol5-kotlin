@@ -6,7 +6,6 @@ import com.loopers.testcontainers.RedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.batch.core.ExitStatus
 import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
@@ -42,10 +41,8 @@ class DemoJobE2ETest @Autowired constructor(
         val jobExecution = jobOperatorTestUtils.startJob()
 
         // assert
-        assertAll(
-            { assertThat(jobExecution).isNotNull() },
-            { assertThat(jobExecution.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode) },
-        )
+        assertThat(jobExecution).isNotNull()
+        assertThat(jobExecution.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
     }
 
     @Test
@@ -60,9 +57,7 @@ class DemoJobE2ETest @Autowired constructor(
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters)
 
         // assert
-        assertAll(
-            { assertThat(jobExecution).isNotNull() },
-            { assertThat(jobExecution.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode) },
-        )
+        assertThat(jobExecution).isNotNull()
+        assertThat(jobExecution.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
     }
 }

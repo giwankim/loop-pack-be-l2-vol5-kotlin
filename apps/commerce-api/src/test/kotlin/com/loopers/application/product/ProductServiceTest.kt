@@ -17,7 +17,6 @@ import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -45,20 +44,18 @@ class ProductServiceTest(
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
-        assertAll(
-            { assertThat(registered.brandId).isEqualTo(brand.id) },
-            { assertThat(registered.name).isEqualTo(" 티셔츠 ") },
-            { assertThat(found.id).isEqualTo(registered.id) },
-            { assertThat(found.brandId).isEqualTo(brand.id) },
-            { assertThat(found.brandName).isEqualTo("루퍼스") },
-            { assertThat(found.name).isEqualTo(" 티셔츠 ") },
-            { assertThat(found.price).isEqualTo(12_000L) },
-            { assertThat(found.stock).isEqualTo(7) },
-            { assertThat(found.soldOut).isFalse() },
-            { assertThat(found.likeCount).isZero() },
-            { assertThat(found.createdAt).isNotNull() },
-            { assertThat(found.updatedAt).isNotNull() },
-        )
+        assertThat(registered.brandId).isEqualTo(brand.id)
+        assertThat(registered.name).isEqualTo(" 티셔츠 ")
+        assertThat(found.id).isEqualTo(registered.id)
+        assertThat(found.brandId).isEqualTo(brand.id)
+        assertThat(found.brandName).isEqualTo("루퍼스")
+        assertThat(found.name).isEqualTo(" 티셔츠 ")
+        assertThat(found.price).isEqualTo(12_000L)
+        assertThat(found.stock).isEqualTo(7)
+        assertThat(found.soldOut).isFalse()
+        assertThat(found.likeCount).isZero()
+        assertThat(found.createdAt).isNotNull()
+        assertThat(found.updatedAt).isNotNull()
     }
 
     /** 좋아요 수는 관계에서 센다. 사용자 행은 필요 없다. 좋아요는 사용자를 식별자로만 가리킨다(설계 2). */
@@ -108,11 +105,9 @@ class ProductServiceTest(
         try {
             val slice = productService.findAll(ProductListRequest())
 
-            assertAll(
-                { assertThat(slice.items).hasSize(3) },
-                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
-                { assertThat(statistics.prepareStatementCount).isEqualTo(2L) },
-            )
+            assertThat(slice.items).hasSize(3)
+            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false
         }
@@ -126,10 +121,8 @@ class ProductServiceTest(
 
         val found = productService.find(registered.id)
 
-        assertAll(
-            { assertThat(found.stock).isZero() },
-            { assertThat(found.soldOut).isTrue() },
-        )
+        assertThat(found.stock).isZero()
+        assertThat(found.soldOut).isTrue()
     }
 
     @Test
@@ -139,10 +132,8 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(countProducts()).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        assertThat(countProducts()).isZero()
     }
 
     @Test
@@ -155,10 +146,8 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(countProducts()).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        assertThat(countProducts()).isZero()
     }
 
     @Test
@@ -170,10 +159,8 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.") },
-            { assertThat(countProducts()).isZero() },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.")
+        assertThat(countProducts()).isZero()
     }
 
     @Test
@@ -185,10 +172,8 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 이름은 공백일 수 없습니다.") },
-            { assertThat(countProducts()).isZero() },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 이름은 공백일 수 없습니다.")
+        assertThat(countProducts()).isZero()
     }
 
     @Test
@@ -200,10 +185,8 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.") },
-            { assertThat(countProducts()).isZero() },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
+        assertThat(countProducts()).isZero()
     }
 
     @Test
@@ -223,11 +206,9 @@ class ProductServiceTest(
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
-        assertAll(
-            { assertThat(found.name).isEqualTo(" 후드티 ") },
-            { assertThat(found.price).isEqualTo(25_000L) },
-            { assertThat(found.brandId).isEqualTo(brand.id) },
-        )
+        assertThat(found.name).isEqualTo(" 후드티 ")
+        assertThat(found.price).isEqualTo(25_000L)
+        assertThat(found.brandId).isEqualTo(brand.id)
     }
 
     @Test
@@ -240,10 +221,8 @@ class ProductServiceTest(
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
-        assertAll(
-            { assertThat(found.stock).isZero() },
-            { assertThat(found.soldOut).isTrue() },
-        )
+        assertThat(found.stock).isZero()
+        assertThat(found.soldOut).isTrue()
     }
 
     @Test
@@ -257,11 +236,9 @@ class ProductServiceTest(
 
         val exception = assertThrows<CoreException> { productService.find(registered.id) }
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
-            { assertThat(countProducts()).isZero() },
-            { assertThat(deletedAtOf(registered.id)).isNotNull() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(countProducts()).isZero()
+        assertThat(deletedAtOf(registered.id)).isNotNull()
     }
 
     /**
@@ -277,11 +254,9 @@ class ProductServiceTest(
 
         val slice = productService.findAll(ProductAdminListRequest())
 
-        assertAll(
-            { assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE) },
-            { assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE) },
-            { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
-        )
+        assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
+        assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스")
     }
 
     /**
@@ -299,12 +274,10 @@ class ProductServiceTest(
 
         val slice = productService.findAll(ProductListRequest())
 
-        assertAll(
-            { assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE) },
-            { assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE) },
-            { assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id) },
-            { assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스") },
-        )
+        assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
+        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스")
     }
 
     @Test
@@ -358,11 +331,9 @@ class ProductServiceTest(
         try {
             val slice = productService.findAll(ProductListRequest(sort = "likes_desc"))
 
-            assertAll(
-                { assertThat(slice.items).hasSize(3) },
-                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
-                { assertThat(statistics.prepareStatementCount).isEqualTo(2L) },
-            )
+            assertThat(slice.items).hasSize(3)
+            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false
         }
@@ -374,53 +345,33 @@ class ProductServiceTest(
      */
     @Test
     fun `a sort no product sort answers to is rejected without any controller`() {
-        assertAll(
-            {
-                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "likes")) })
-                    .isEqualTo(ErrorType.INVALID_SORT)
-            },
-            {
-                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "LATEST")) })
-                    .isEqualTo(ErrorType.INVALID_SORT)
-            },
-            {
-                assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "")) })
-                    .isEqualTo(ErrorType.INVALID_SORT)
-            },
-        )
+        assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "likes")) })
+            .isEqualTo(ErrorType.INVALID_SORT)
+        assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "LATEST")) })
+            .isEqualTo(ErrorType.INVALID_SORT)
+        assertThat(errorTypeOf { productService.findAll(ProductListRequest(sort = "")) })
+            .isEqualTo(ErrorType.INVALID_SORT)
     }
 
     @Test
     fun `listing for a customer outside the page and size bounds is rejected by request validation`() {
-        assertAll(
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(page = -1)) }
-                        .constraintViolations.map { it.message },
-                ).containsExactly("page는 0 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 101)) }
-                        .constraintViolations.map { it.message },
-                ).containsExactly("size는 100 이하여야 합니다.")
-            },
-        )
+        assertThat(
+            assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(page = -1)) }
+                .constraintViolations.map { it.message },
+        ).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> { productService.findAll(ProductListRequest(size = 101)) }
+                .constraintViolations.map { it.message },
+        ).containsExactly("size는 100 이하여야 합니다.")
     }
 
     @Test
     fun `updating, setting the stock of, and deleting an unknown product all throw PRODUCT_NOT_FOUND`() {
-        assertAll(
-            {
-                assertThat(errorTypeOf { productService.update(999L, createProductAdminUpdateRequest()) })
-                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-            },
-            {
-                assertThat(errorTypeOf { productService.updateStock(999L, createProductAdminStockUpdateRequest()) })
-                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-            },
-            { assertThat(errorTypeOf { productService.delete(999L) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
-        )
+        assertThat(errorTypeOf { productService.update(999L, createProductAdminUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productService.updateStock(999L, createProductAdminStockUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productService.delete(999L) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
     @Test
@@ -430,17 +381,11 @@ class ProductServiceTest(
         productService.delete(deleted.id)
         entityManager.flushAndClear()
 
-        assertAll(
-            {
-                assertThat(errorTypeOf { productService.update(deleted.id, createProductAdminUpdateRequest()) })
-                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-            },
-            {
-                assertThat(errorTypeOf { productService.updateStock(deleted.id, createProductAdminStockUpdateRequest()) })
-                    .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-            },
-            { assertThat(errorTypeOf { productService.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
-        )
+        assertThat(errorTypeOf { productService.update(deleted.id, createProductAdminUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productService.updateStock(deleted.id, createProductAdminStockUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productService.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
     @Test
@@ -456,11 +401,9 @@ class ProductServiceTest(
         entityManager.flushAndClear()
         val found = productService.find(registered.id)
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.") },
-            { assertThat(found.name).isEqualTo("티셔츠") },
-            { assertThat(found.price).isEqualTo(12_000L) },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.")
+        assertThat(found.name).isEqualTo("티셔츠")
+        assertThat(found.price).isEqualTo(12_000L)
     }
 
     @Test
@@ -474,34 +417,24 @@ class ProductServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.") },
-            { assertThat(productService.find(registered.id).stock).isEqualTo(7) },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
+        assertThat(productService.find(registered.id).stock).isEqualTo(7)
     }
 
     @Test
     fun `listing outside the page and size bounds is rejected by request validation`() {
-        assertAll(
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(page = -1)) }
-                        .constraintViolations.map { it.message },
-                ).containsExactly("page는 0 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 0)) }
-                        .constraintViolations.map { it.message },
-                ).containsExactly("size는 1 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 101)) }
-                        .constraintViolations.map { it.message },
-                ).containsExactly("size는 100 이하여야 합니다.")
-            },
-        )
+        assertThat(
+            assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(page = -1)) }
+                .constraintViolations.map { it.message },
+        ).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 0)) }
+                .constraintViolations.map { it.message },
+        ).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> { productService.findAll(ProductAdminListRequest(size = 101)) }
+                .constraintViolations.map { it.message },
+        ).containsExactly("size는 100 이하여야 합니다.")
     }
 
     /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */

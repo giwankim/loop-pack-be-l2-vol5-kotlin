@@ -14,7 +14,6 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
@@ -57,12 +56,10 @@ class OrderFixturesTest(
         val lines = List(SAMPLES) { createOrderProduct(product) }
 
         assertThat(lines).allSatisfy { line ->
-            assertAll(
-                { assertThat(line.productId).isEqualTo(product.id) },
-                { assertThat(line.productName).isEqualTo(product.name) },
-                { assertThat(line.unitPrice).isEqualTo(product.price) },
-                { assertThat(line.quantity).isBetween(1, 10) },
-            )
+            assertThat(line.productId).isEqualTo(product.id)
+            assertThat(line.productName).isEqualTo(product.name)
+            assertThat(line.unitPrice).isEqualTo(product.price)
+            assertThat(line.quantity).isBetween(1, 10)
         }
     }
 
@@ -82,11 +79,9 @@ class OrderFixturesTest(
         val lines = List(SAMPLES) { createOrderProduct() }
 
         assertThat(lines).allSatisfy { line ->
-            assertAll(
-                { assertThat(line.productName).hasSizeBetween(2, 100) },
-                { assertThat(line.unitPrice.amount).isBetween(1, 1_000_000_000) },
-                { assertThat(line.quantity).isBetween(1, 10) },
-            )
+            assertThat(line.productName).hasSizeBetween(2, 100)
+            assertThat(line.unitPrice.amount).isBetween(1, 1_000_000_000)
+            assertThat(line.quantity).isBetween(1, 10)
         }
     }
 
@@ -107,14 +102,12 @@ class OrderFixturesTest(
         val orders = List(SAMPLES) { createOrder(userId = 1) }
 
         assertThat(orders).allSatisfy { order ->
-            assertAll(
-                { assertThat(order.id).isZero() },
-                { assertThat(order.userId).isEqualTo(1) },
-                { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
-                { assertThat(order.items).hasSizeBetween(1, 5) },
-                { assertThat(order.items.map { it.productId }).doesNotHaveDuplicates() },
-                { assertThat(order.totalAmount.amount).isBetween(1, 50_000_000_000) },
-            )
+            assertThat(order.id).isZero()
+            assertThat(order.userId).isEqualTo(1)
+            assertThat(order.status).isEqualTo(OrderStatus.DRAFT)
+            assertThat(order.items).hasSizeBetween(1, 5)
+            assertThat(order.items.map { it.productId }).doesNotHaveDuplicates()
+            assertThat(order.totalAmount.amount).isBetween(1, 50_000_000_000)
         }
     }
 
@@ -125,12 +118,10 @@ class OrderFixturesTest(
         val order = createOrder(userId = 1, products = listOf(line))
 
         assertThat(order.items).singleElement().satisfies({ item ->
-            assertAll(
-                { assertThat(item.productId).isEqualTo(7) },
-                { assertThat(item.productName).isEqualTo("운동화") },
-                { assertThat(item.unitPrice).isEqualTo(Money(39_000)) },
-                { assertThat(item.quantity).isEqualTo(2) },
-            )
+            assertThat(item.productId).isEqualTo(7)
+            assertThat(item.productName).isEqualTo("운동화")
+            assertThat(item.unitPrice).isEqualTo(Money(39_000))
+            assertThat(item.quantity).isEqualTo(2)
         })
     }
 
@@ -140,10 +131,8 @@ class OrderFixturesTest(
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
         assertThat(requests).allSatisfy { request ->
-            assertAll(
-                { assertThat(request.items.map { it.productId }).containsExactly(3L, 1L, 2L) },
-                { assertThat(request.items).allSatisfy { item -> assertThat(item.quantity).isBetween(1, 10) } },
-            )
+            assertThat(request.items.map { it.productId }).containsExactly(3L, 1L, 2L)
+            assertThat(request.items).allSatisfy { item -> assertThat(item.quantity).isBetween(1, 10) }
         }
     }
 
@@ -160,11 +149,9 @@ class OrderFixturesTest(
 
         assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
         assertThat(requests).allSatisfy { request ->
-            assertAll(
-                { assertThat(request.items.map { it.productId }).containsExactly(3L, 1L) },
-                { assertThat(request.items.first().quantity).isBetween(1, 10) },
-                { assertThat(request.items.last().quantity).isEqualTo(11) },
-            )
+            assertThat(request.items.map { it.productId }).containsExactly(3L, 1L)
+            assertThat(request.items.first().quantity).isBetween(1, 10)
+            assertThat(request.items.last().quantity).isEqualTo(11)
         }
     }
 

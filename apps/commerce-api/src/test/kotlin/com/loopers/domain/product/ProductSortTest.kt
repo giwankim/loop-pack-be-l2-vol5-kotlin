@@ -2,26 +2,21 @@ package com.loopers.domain.product
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 
 class ProductSortTest {
     @Test
     fun `from reads the API value of every sort`() {
-        assertAll(
-            { assertThat(ProductSort.from("latest")).isEqualTo(ProductSort.LATEST) },
-            { assertThat(ProductSort.from("price_asc")).isEqualTo(ProductSort.PRICE_ASC) },
-            { assertThat(ProductSort.from("likes_desc")).isEqualTo(ProductSort.LIKES_DESC) },
-        )
+        assertThat(ProductSort.from("latest")).isEqualTo(ProductSort.LATEST)
+        assertThat(ProductSort.from("price_asc")).isEqualTo(ProductSort.PRICE_ASC)
+        assertThat(ProductSort.from("likes_desc")).isEqualTo(ProductSort.LIKES_DESC)
     }
 
     @Test
     fun `every sort answers to exactly one API value`() {
         val apiValues = ProductSort.entries.map { it.apiValue }
 
-        assertAll(
-            { assertThat(apiValues).doesNotHaveDuplicates() },
-            { assertThat(apiValues).allSatisfy { assertThat(ProductSort.from(it)).isNotNull() } },
-        )
+        assertThat(apiValues).doesNotHaveDuplicates()
+        assertThat(apiValues).allSatisfy { assertThat(ProductSort.from(it)).isNotNull() }
     }
 
     @Test
@@ -38,9 +33,7 @@ class ProductSortTest {
     /** 상수 이름은 API 철자가 아니다. 밖에서 오는 값은 [ProductSort.apiValue]와만 맞춰 본다. */
     @Test
     fun `from does not read the constant name`() {
-        assertAll(
-            { assertThat(ProductSort.from("PRICE_ASC")).isNull() },
-            { assertThat(ProductSort.from("Latest")).isNull() },
-        )
+        assertThat(ProductSort.from("PRICE_ASC")).isNull()
+        assertThat(ProductSort.from("Latest")).isNull()
     }
 }

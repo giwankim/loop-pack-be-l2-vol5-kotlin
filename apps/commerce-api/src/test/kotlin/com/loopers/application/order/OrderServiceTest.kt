@@ -22,7 +22,6 @@ import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -68,21 +67,19 @@ class OrderServiceTest(
         val slice = orderService.findAll(owner.id, OrderListRequest())
 
         val listed = slice.items.single()
-        assertAll(
-            { assertThat(slice.page).isEqualTo(OrderListRequest.DEFAULT_PAGE) },
-            { assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE) },
-            { assertThat(slice.hasNext).isFalse() },
-            { assertThat(listed.status).isEqualTo(OrderStatus.DRAFT) },
-            { assertThat(listed.totalAmount).isEqualTo(4_000L) },
-            { assertThat(listed.paidAmount).isNull() },
-            { assertThat(listed.confirmedAt).isNull() },
-            { assertThat(listed.createdAt).isNotNull() },
-            { assertThat(listed.items.map { it.productId }).containsExactly(shirt.id, socks.id) },
-            { assertThat(listed.items.map { it.productName }).containsExactly("티셔츠", "양말") },
-            { assertThat(listed.items.map { it.unitPrice }).containsExactly(1_000L, 2_000L) },
-            { assertThat(listed.items.map { it.quantity }).containsExactly(2, 1) },
-            { assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L) },
-        )
+        assertThat(slice.page).isEqualTo(OrderListRequest.DEFAULT_PAGE)
+        assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
+        assertThat(slice.hasNext).isFalse()
+        assertThat(listed.status).isEqualTo(OrderStatus.DRAFT)
+        assertThat(listed.totalAmount).isEqualTo(4_000L)
+        assertThat(listed.paidAmount).isNull()
+        assertThat(listed.confirmedAt).isNull()
+        assertThat(listed.createdAt).isNotNull()
+        assertThat(listed.items.map { it.productId }).containsExactly(shirt.id, socks.id)
+        assertThat(listed.items.map { it.productName }).containsExactly("티셔츠", "양말")
+        assertThat(listed.items.map { it.unitPrice }).containsExactly(1_000L, 2_000L)
+        assertThat(listed.items.map { it.quantity }).containsExactly(2, 1)
+        assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L)
     }
 
     /** 요청마다 새 주문이다. 같은 품목을 두 번 보내면 확정 전 주문이 둘 남는다(ADR 0005). */
@@ -98,11 +95,9 @@ class OrderServiceTest(
         entityManager.flushAndClear()
 
         val listed = orderService.findAll(owner.id, OrderListRequest()).items
-        assertAll(
-            { assertThat(second.orderId).isNotEqualTo(first.orderId) },
-            { assertThat(listed.map { it.orderId }).containsExactly(second.orderId, first.orderId) },
-            { assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT) },
-        )
+        assertThat(second.orderId).isNotEqualTo(first.orderId)
+        assertThat(listed.map { it.orderId }).containsExactly(second.orderId, first.orderId)
+        assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT)
     }
 
     /** 요청자가 없으면 목록도 볼 수 없다. 생성·상세와 같은 검사다. */
@@ -118,14 +113,10 @@ class OrderServiceTest(
         val owner = userRepository.save(User())
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(violationsOf(owner.id, OrderListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.") },
-            { assertThat(violationsOf(owner.id, OrderListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.") },
-            {
-                assertThat(violationsOf(owner.id, OrderListRequest(size = OrderListRequest.MAX_SIZE + 1)))
-                    .containsExactly("size는 ${OrderListRequest.MAX_SIZE} 이하여야 합니다.")
-            },
-        )
+        assertThat(violationsOf(owner.id, OrderListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(violationsOf(owner.id, OrderListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(violationsOf(owner.id, OrderListRequest(size = OrderListRequest.MAX_SIZE + 1)))
+            .containsExactly("size는 ${OrderListRequest.MAX_SIZE} 이하여야 합니다.")
     }
 
     /**
@@ -152,11 +143,9 @@ class OrderServiceTest(
         try {
             val slice = orderService.findAll(owner.id, OrderListRequest(size = size))
 
-            assertAll(
-                { assertThat(slice.items).hasSize(size) },
-                { assertThat(slice.items.flatMap { it.items }).hasSize(size) },
-                { assertThat(statistics.prepareStatementCount).isEqualTo(3L) },
-            )
+            assertThat(slice.items).hasSize(size)
+            assertThat(slice.items.flatMap { it.items }).hasSize(size)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         } finally {
             statistics.isStatisticsEnabled = false
         }
@@ -174,13 +163,11 @@ class OrderServiceTest(
 
         val slice = orderService.findAll(OrderAdminListRequest())
 
-        assertAll(
-            { assertThat(slice.items.map { it.orderId }).containsExactly(second, first) },
-            { assertThat(slice.items.map { it.userId }).containsExactly(theirs, mine) },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE) },
-            { assertThat(slice.hasNext).isFalse() },
-        )
+        assertThat(slice.items.map { it.orderId }).containsExactly(second, first)
+        assertThat(slice.items.map { it.userId }).containsExactly(theirs, mine)
+        assertThat(slice.page).isZero()
+        assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
+        assertThat(slice.hasNext).isFalse()
     }
 
     /**
@@ -202,11 +189,9 @@ class OrderServiceTest(
         try {
             val slice = orderService.findAll(OrderAdminListRequest())
 
-            assertAll(
-                { assertThat(slice.items.map { it.items.size }).containsExactly(1, 3) },
-                { assertThat(slice.items.flatMap { it.items }.map { it.quantity }).containsExactly(2, 1, 1, 1) },
-                { assertThat(statistics.prepareStatementCount).isEqualTo(2L) },
-            )
+            assertThat(slice.items.map { it.items.size }).containsExactly(1, 3)
+            assertThat(slice.items.flatMap { it.items }.map { it.quantity }).containsExactly(2, 1, 1, 1)
+            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false
         }
@@ -215,19 +200,13 @@ class OrderServiceTest(
     /** 컨트롤러를 거치지 않는 호출도 같은 페이지 규칙을 받는다(카탈로그 설계 5.25). */
     @Test
     fun `the admin list rejects a page and a size outside the bounds and accepts the maximum`() {
-        assertAll(
-            { assertThat(violationsOf(OrderAdminListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.") },
-            { assertThat(violationsOf(OrderAdminListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.") },
-            {
-                assertThat(violationsOf(OrderAdminListRequest(size = OrderListRequest.MAX_SIZE + 1)))
-                    .containsExactly("size는 ${OrderListRequest.MAX_SIZE} 이하여야 합니다.")
-            },
-            // 상한은 포함이다. 거절하는 쪽만 보면 @Max를 좁혀도 아무 테스트가 말하지 않는다.
-            {
-                assertThat(orderService.findAll(OrderAdminListRequest(size = OrderListRequest.MAX_SIZE)).size)
-                    .isEqualTo(OrderListRequest.MAX_SIZE)
-            },
-        )
+        assertThat(violationsOf(OrderAdminListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(violationsOf(OrderAdminListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(violationsOf(OrderAdminListRequest(size = OrderListRequest.MAX_SIZE + 1)))
+            .containsExactly("size는 ${OrderListRequest.MAX_SIZE} 이하여야 합니다.")
+        // 상한은 포함이다. 거절하는 쪽만 보면 @Max를 좁혀도 아무 테스트가 말하지 않는다.
+        assertThat(orderService.findAll(OrderAdminListRequest(size = OrderListRequest.MAX_SIZE)).size)
+            .isEqualTo(OrderListRequest.MAX_SIZE)
     }
 
     @Test
@@ -243,16 +222,14 @@ class OrderServiceTest(
 
         val info = orderService.findForAdmin(saved.id)
 
-        assertAll(
-            { assertThat(info.orderId).isEqualTo(saved.id) },
-            { assertThat(info.userId).isEqualTo(owner) },
-            { assertThat(info.status).isEqualTo(OrderStatus.DRAFT) },
-            { assertThat(info.totalAmount).isEqualTo(4_000L) },
-            { assertThat(info.items.map { it.productId }).containsExactly(shirt.id, pants.id) },
-            { assertThat(info.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L) },
-            { assertThat(info.paidAmount).isNull() },
-            { assertThat(info.confirmedAt).isNull() },
-        )
+        assertThat(info.orderId).isEqualTo(saved.id)
+        assertThat(info.userId).isEqualTo(owner)
+        assertThat(info.status).isEqualTo(OrderStatus.DRAFT)
+        assertThat(info.totalAmount).isEqualTo(4_000L)
+        assertThat(info.items.map { it.productId }).containsExactly(shirt.id, pants.id)
+        assertThat(info.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L)
+        assertThat(info.paidAmount).isNull()
+        assertThat(info.confirmedAt).isNull()
     }
 
     /** 관리자 상세는 요청자를 받지 않으므로, 없는 주문만이 거절 사유다. */

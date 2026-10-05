@@ -8,7 +8,6 @@ import jakarta.validation.ConstraintViolationException
 import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.core.MethodParameter
 import org.springframework.http.HttpStatus
 import org.springframework.validation.BeanPropertyBindingResult
@@ -31,14 +30,10 @@ class ApiControllerAdviceTest {
 
         val response = advice.handleConstraintViolation(exception)
 
-        assertAll(
-            { assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST) },
-            { assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request") },
-            {
-                assertThat(response.body?.meta?.message)
-                    .isEqualTo("상품 이름은 공백일 수 없습니다. 상품 가격은 1원 이상이어야 합니다. 재고는 0 이상이어야 합니다.")
-            },
-        )
+        assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request")
+        assertThat(response.body?.meta?.message)
+            .isEqualTo("상품 이름은 공백일 수 없습니다. 상품 가격은 1원 이상이어야 합니다. 재고는 0 이상이어야 합니다.")
     }
 
     @Test
@@ -47,11 +42,9 @@ class ApiControllerAdviceTest {
 
         val response = advice.handleRuleViolation(exception)
 
-        assertAll(
-            { assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST) },
-            { assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request") },
-            { assertThat(response.body?.meta?.message).isEqualTo("재고는 0 이상이어야 합니다.") },
-        )
+        assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request")
+        assertThat(response.body?.meta?.message).isEqualTo("재고는 0 이상이어야 합니다.")
     }
 
     @Test
@@ -65,10 +58,8 @@ class ApiControllerAdviceTest {
 
         val response = advice.handleMethodArgumentNotValid(exception)
 
-        assertAll(
-            { assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST) },
-            { assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request") },
-            { assertThat(response.body?.meta?.message).isEqualTo("이름은 공백일 수 없습니다. 재고는 0 이상이어야 합니다.") },
-        )
+        assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(response.body?.meta?.errorCode).isEqualTo("Bad Request")
+        assertThat(response.body?.meta?.message).isEqualTo("이름은 공백일 수 없습니다. 재고는 0 이상이어야 합니다.")
     }
 }

@@ -15,7 +15,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.notNullValue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
@@ -368,10 +367,8 @@ class BrandAdminApiMockMvcTest(
         deleteBrand(brand.id).andExpect { status { isOk() } }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(brandRowExists(brand.id)).isTrue() },
-            { assertThat(countStampedBrands(brand.id)).isOne() },
-        )
+        assertThat(brandRowExists(brand.id)).isTrue()
+        assertThat(countStampedBrands(brand.id)).isOne()
     }
 
     @Test

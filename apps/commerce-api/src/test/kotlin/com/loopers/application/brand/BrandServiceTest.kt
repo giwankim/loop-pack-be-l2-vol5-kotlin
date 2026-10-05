@@ -14,7 +14,6 @@ import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -44,14 +43,12 @@ class BrandServiceTest(
 
         val found = brandService.find(registered.id)
 
-        assertAll(
-            { assertThat(registered.name).isEqualTo(request.name) },
-            { assertThat(found).isNotSameAs(registered) },
-            { assertThat(found.id).isEqualTo(registered.id) },
-            { assertThat(found.name).isEqualTo(request.name) },
-            { assertThat(found.createdAt).isNotNull() },
-            { assertThat(found.updatedAt).isNotNull() },
-        )
+        assertThat(registered.name).isEqualTo(request.name)
+        assertThat(found).isNotSameAs(registered)
+        assertThat(found.id).isEqualTo(registered.id)
+        assertThat(found.name).isEqualTo(request.name)
+        assertThat(found.createdAt).isNotNull()
+        assertThat(found.updatedAt).isNotNull()
     }
 
     @Test
@@ -62,11 +59,9 @@ class BrandServiceTest(
         val exception = assertThrows<CoreException> { brandService.register(createBrandAdminRegisterRequest(name = "루퍼스")) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
-            { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.find(existing.id).name).isEqualTo("루퍼스") },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED)
+        assertThat(countBrands()).isOne()
+        assertThat(brandService.find(existing.id).name).isEqualTo("루퍼스")
     }
 
     @Test
@@ -77,10 +72,8 @@ class BrandServiceTest(
         val exception = assertThrows<CoreException> { brandService.register(createBrandAdminRegisterRequest(name = "LOOPERS")) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
-            { assertThat(countBrands()).isOne() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED)
+        assertThat(countBrands()).isOne()
     }
 
     @Test
@@ -90,10 +83,8 @@ class BrandServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.") },
-            { assertThat(countBrands()).isZero() },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.")
+        assertThat(countBrands()).isZero()
     }
 
     @Test
@@ -111,12 +102,10 @@ class BrandServiceTest(
 
         val slice = brandService.findAll(BrandAdminListRequest(page = 0, size = 1))
 
-        assertAll(
-            { assertThat(slice.items.map { it.name }).containsExactly("둘째") },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isOne() },
-            { assertThat(slice.hasNext).isTrue() },
-        )
+        assertThat(slice.items.map { it.name }).containsExactly("둘째")
+        assertThat(slice.page).isZero()
+        assertThat(slice.size).isOne()
+        assertThat(slice.hasNext).isTrue()
     }
 
     @Test
@@ -141,10 +130,8 @@ class BrandServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED) },
-            { assertThat(brandService.find(renamed.id).name).isEqualTo("무신사") },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NAME_DUPLICATED)
+        assertThat(brandService.find(renamed.id).name).isEqualTo("무신사")
     }
 
     /** 삭제된 브랜드는 없는 브랜드이므로 그 이름은 비어 있다. 등록뿐 아니라 수정도 그 이름을 가져갈 수 있어야 한다. */
@@ -183,10 +170,8 @@ class BrandServiceTest(
         }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.") },
-            { assertThat(brandService.find(registered.id).name).isEqualTo("루퍼스") },
-        )
+        assertThat(exception.constraintViolations.map { it.message }).containsExactly("브랜드 이름은 공백일 수 없습니다.")
+        assertThat(brandService.find(registered.id).name).isEqualTo("루퍼스")
     }
 
     @Test
@@ -206,11 +191,9 @@ class BrandServiceTest(
 
         val exception = assertThrows<CoreException> { brandService.find(registered.id) }
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND) },
-            { assertThat(brandService.findAll(BrandAdminListRequest()).items).isEmpty() },
-            { assertThat(countBrands()).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        assertThat(brandService.findAll(BrandAdminListRequest()).items).isEmpty()
+        assertThat(countBrands()).isZero()
     }
 
     @Test
@@ -246,11 +229,9 @@ class BrandServiceTest(
         val exception = assertThrows<CoreException> { brandService.delete(brand.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS) },
-            { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스") },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS)
+        assertThat(countBrands()).isOne()
+        assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
     }
 
     /** 재고가 비었다고 상품이 없는 것은 아니다. 삭제 조건은 재고를 보지 않는다. */
@@ -263,11 +244,9 @@ class BrandServiceTest(
         val exception = assertThrows<CoreException> { brandService.delete(brand.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS) },
-            { assertThat(countBrands()).isOne() },
-            { assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스") },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_HAS_PRODUCTS)
+        assertThat(countBrands()).isOne()
+        assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
     }
 
     /**

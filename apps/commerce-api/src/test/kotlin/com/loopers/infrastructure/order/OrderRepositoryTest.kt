@@ -20,7 +20,6 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
@@ -75,12 +74,10 @@ class OrderRepositoryTest(
 
         val slice = orderRepository.findAll(userId = owner.id, page = 0, size = 10)
 
-        assertAll(
-            { assertThat(slice.items.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id) },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isEqualTo(10) },
-            { assertThat(slice.hasNext).isFalse() },
-        )
+        assertThat(slice.items.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id)
+        assertThat(slice.page).isZero()
+        assertThat(slice.size).isEqualTo(10)
+        assertThat(slice.hasNext).isFalse()
     }
 
     /**
@@ -101,17 +98,15 @@ class OrderRepositoryTest(
         val thirdPage = orderRepository.findAll(owner.id, page = 2, size = 1)
 
         val productIds = products.map { it.id }.sorted()
-        assertAll(
-            { assertThat(firstPage.items.map { it.id }).containsExactly(second.id) },
-            { assertThat(firstPage.hasNext).isTrue() },
-            { assertThat(firstPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds) },
-            { assertThat(secondPage.items.map { it.id }).containsExactly(first.id) },
-            { assertThat(secondPage.hasNext).isFalse() },
-            { assertThat(secondPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds) },
-            { assertThat(thirdPage.items).isEmpty() },
-            { assertThat(thirdPage.page).isEqualTo(2) },
-            { assertThat(thirdPage.hasNext).isFalse() },
-        )
+        assertThat(firstPage.items.map { it.id }).containsExactly(second.id)
+        assertThat(firstPage.hasNext).isTrue()
+        assertThat(firstPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(secondPage.items.map { it.id }).containsExactly(first.id)
+        assertThat(secondPage.hasNext).isFalse()
+        assertThat(secondPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(thirdPage.items).isEmpty()
+        assertThat(thirdPage.page).isEqualTo(2)
+        assertThat(thirdPage.hasNext).isFalse()
     }
 
     /** 거를 사용자가 없으면 모든 사용자의 주문이 한 조각에 오른다. 관리자 목록이 쓰는 길이다. */
@@ -171,12 +166,10 @@ class OrderRepositoryTest(
     fun `findAll gives an empty slice without a next page when nothing matches`() {
         val slice = orderRepository.findAll(userId = userRepository.save(User()).id, page = 0, size = 20)
 
-        assertAll(
-            { assertThat(slice.items).isEmpty() },
-            { assertThat(slice.hasNext).isFalse() },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isEqualTo(20) },
-        )
+        assertThat(slice.items).isEmpty()
+        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.page).isZero()
+        assertThat(slice.size).isEqualTo(20)
     }
 
     private fun setCreatedAt(orderId: Long, createdAt: String) {

@@ -19,7 +19,6 @@ import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
@@ -124,10 +123,8 @@ class OrderAdminApiMockMvcTest(
             jsonPath("$.data.items.length()") { value(2) }
         }.json()["data"]["items"]
 
-        assertAll(
-            { assertThat(listed[0]).isEqualTo(getOrder(newer).andExpect { status { isOk() } }.json()["data"]) },
-            { assertThat(listed[1]).isEqualTo(getOrder(older).andExpect { status { isOk() } }.json()["data"]) },
-        )
+        assertThat(listed[0]).isEqualTo(getOrder(newer).andExpect { status { isOk() } }.json()["data"])
+        assertThat(listed[1]).isEqualTo(getOrder(older).andExpect { status { isOk() } }.json()["data"])
     }
 
     @Test

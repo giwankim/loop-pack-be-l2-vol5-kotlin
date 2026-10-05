@@ -13,7 +13,6 @@ import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
@@ -182,17 +181,13 @@ class PointApiMockMvcTest(
             """{"amount": 100000000000000000000}""",
         )
 
-        assertAll(
-            invalidBodies.map { body ->
-                {
-                    charge(userId, body = body).andExpect {
-                        status { isBadRequest() }
-                        jsonPath("$.meta.result") { value("FAIL") }
-                        jsonPath("$.meta.errorCode") { value("Bad Request") }
-                    }
-                }
-            },
-        )
+        invalidBodies.forEach { body ->
+            charge(userId, body = body).andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.result") { value("FAIL") }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+            }
+        }
         entityManager.flushAndClear()
         assertUnchanged(userId)
     }
@@ -227,17 +222,13 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        assertAll(
-            listOf(0L, -1L).map { amount ->
-                {
-                    charge(userId, body = """{"amount": $amount}""").andExpect {
-                        status { isBadRequest() }
-                        jsonPath("$.meta.errorCode") { value("Bad Request") }
-                        jsonPath("$.meta.message") { value("충전액은 1원 이상이어야 합니다.") }
-                    }
-                }
-            },
-        )
+        listOf(0L, -1L).forEach { amount ->
+            charge(userId, body = """{"amount": $amount}""").andExpect {
+                status { isBadRequest() }
+                jsonPath("$.meta.errorCode") { value("Bad Request") }
+                jsonPath("$.meta.message") { value("충전액은 1원 이상이어야 합니다.") }
+            }
+        }
         entityManager.flushAndClear()
 
         assertUnchanged(userId)

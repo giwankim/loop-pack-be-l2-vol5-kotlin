@@ -10,7 +10,6 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
@@ -44,14 +43,12 @@ class BrandRepositoryTest(
 
         val found = brandRepository.findById(saved.id)
 
-        assertAll(
-            { assertThat(found).isNotNull().isNotSameAs(saved) },
-            { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.name).isEqualTo(saved.name) },
-            { assertThat(found?.createdAt).isNotNull() },
-            { assertThat(found?.updatedAt).isNotNull() },
-            { assertThat(found?.deletedAt).isNull() },
-        )
+        assertThat(found).isNotNull().isNotSameAs(saved)
+        assertThat(found?.id).isEqualTo(saved.id)
+        assertThat(found?.name).isEqualTo(saved.name)
+        assertThat(found?.createdAt).isNotNull()
+        assertThat(found?.updatedAt).isNotNull()
+        assertThat(found?.deletedAt).isNull()
     }
 
     @Test
@@ -71,10 +68,8 @@ class BrandRepositoryTest(
         val taken = brandRepository.existsByName("루퍼스")
         val free = brandRepository.existsByName("다른 브랜드")
 
-        assertAll(
-            { assertThat(taken).isTrue() },
-            { assertThat(free).isFalse() },
-        )
+        assertThat(taken).isTrue()
+        assertThat(free).isFalse()
     }
 
     @Test
@@ -94,10 +89,8 @@ class BrandRepositoryTest(
 
         val taken = brandRepository.existsByNameAndIdNot(other.name, renaming.id)
 
-        assertAll(
-            { assertThat(taken).isTrue() },
-            { assertThat(other.id).isNotEqualTo(renaming.id) },
-        )
+        assertThat(taken).isTrue()
+        assertThat(other.id).isNotEqualTo(renaming.id)
     }
 
     /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다. */
@@ -161,12 +154,10 @@ class BrandRepositoryTest(
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
-        assertAll(
-            { assertThat(slice.items).hasSize(2) },
-            { assertThat(slice.hasNext).isFalse() },
-            { assertThat(slice.page).isZero() },
-            { assertThat(slice.size).isEqualTo(2) },
-        )
+        assertThat(slice.items).hasSize(2)
+        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.page).isZero()
+        assertThat(slice.size).isEqualTo(2)
     }
 
     @Test
@@ -176,10 +167,8 @@ class BrandRepositoryTest(
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
-        assertAll(
-            { assertThat(slice.items).hasSize(2) },
-            { assertThat(slice.hasNext).isTrue() },
-        )
+        assertThat(slice.items).hasSize(2)
+        assertThat(slice.hasNext).isTrue()
     }
 
     /** 1분 간격으로 등록한다. 목록은 최신순이므로 가장 먼저 등록한 브랜드만 둘째 조각에 남는다. */
@@ -189,11 +178,9 @@ class BrandRepositoryTest(
 
         val slice = brandRepository.findAll(page = 1, size = 2)
 
-        assertAll(
-            { assertThat(slice.items.map { it.id }).containsExactly(brands.first().id) },
-            { assertThat(slice.hasNext).isFalse() },
-            { assertThat(slice.page).isEqualTo(1) },
-        )
+        assertThat(slice.items.map { it.id }).containsExactly(brands.first().id)
+        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.page).isEqualTo(1)
     }
 
     /**
@@ -208,10 +195,8 @@ class BrandRepositoryTest(
 
         val slice = brandRepository.findAll(page = 0, size = 2)
 
-        assertAll(
-            { assertThat(slice.hasNext).isTrue() },
-            { assertThat(entityManager.statistics.prepareStatementCount).isOne() },
-        )
+        assertThat(slice.hasNext).isTrue()
+        assertThat(entityManager.statistics.prepareStatementCount).isOne()
     }
 
     /**

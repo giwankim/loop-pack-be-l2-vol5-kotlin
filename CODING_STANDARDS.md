@@ -11,6 +11,10 @@
 - 테스트 클래스는 `@Nested` 없이 평평하다.
 - `assertThrows`가 돌려준 예외는 `exception`이라는 변수에 담는다.
 
+### 단언
+
+- 단언은 차례로 적는다. `assertAll`이나 soft assertion(`assertSoftly`, `SoftAssertions`)으로 묶지 않는다. 테스트는 동작 하나를 보므로 첫 실패에서 멈추면 충분하다.
+
 ### 도우미
 
 - 테스트 도우미는 `com.loopers.support`에 둔다. 여기서 도우미는 여러 테스트 클래스가 함께 쓰는 함수와 클래스다. 모든 모듈의 테스트와 `testFixtures`에 똑같이 적용한다(jpa `testFixtures`의 `DatabaseCleanUp`, redis `testFixtures`의 `RedisCleanUp` 등).

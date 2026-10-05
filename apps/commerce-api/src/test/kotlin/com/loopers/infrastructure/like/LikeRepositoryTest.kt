@@ -10,7 +10,6 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
@@ -38,13 +37,11 @@ class LikeRepositoryTest(
 
         val found = likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)
 
-        assertAll(
-            { assertThat(found).isNotNull().isNotSameAs(saved) },
-            { assertThat(found?.id).isEqualTo(saved.id) },
-            { assertThat(found?.userId).isEqualTo(1L) },
-            { assertThat(found?.productId).isEqualTo(10L) },
-            { assertThat(found?.createdAt).isNotNull() },
-        )
+        assertThat(found).isNotNull().isNotSameAs(saved)
+        assertThat(found?.id).isEqualTo(saved.id)
+        assertThat(found?.userId).isEqualTo(1L)
+        assertThat(found?.productId).isEqualTo(10L)
+        assertThat(found?.createdAt).isNotNull()
     }
 
     @Test
@@ -52,10 +49,8 @@ class LikeRepositoryTest(
         likeRepository.save(Like(userId = 1L, productId = 10L))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(likeRepository.findByUserIdAndProductId(userId = 2L, productId = 10L)).isNull() },
-            { assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 11L)).isNull() },
-        )
+        assertThat(likeRepository.findByUserIdAndProductId(userId = 2L, productId = 10L)).isNull()
+        assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 11L)).isNull()
     }
 
     @Test
@@ -63,11 +58,9 @@ class LikeRepositoryTest(
         likeRepository.save(Like(userId = 1L, productId = 10L))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(likeRepository.existsByUserIdAndProductId(userId = 1L, productId = 10L)).isTrue() },
-            { assertThat(likeRepository.existsByUserIdAndProductId(userId = 2L, productId = 10L)).isFalse() },
-            { assertThat(likeRepository.existsByUserIdAndProductId(userId = 1L, productId = 11L)).isFalse() },
-        )
+        assertThat(likeRepository.existsByUserIdAndProductId(userId = 1L, productId = 10L)).isTrue()
+        assertThat(likeRepository.existsByUserIdAndProductId(userId = 2L, productId = 10L)).isFalse()
+        assertThat(likeRepository.existsByUserIdAndProductId(userId = 1L, productId = 11L)).isFalse()
     }
 
     /** 식별자가 IDENTITY라 저장이 곧 INSERT이므로, 같은 쌍의 두 번째 저장은 flush를 기다리지 않고 바로 거절된다. */
@@ -98,10 +91,8 @@ class LikeRepositoryTest(
         likeRepository.delete(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)!!)
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)).isNull() },
-            { assertThat(entityManager.likeRowExists(saved.id)).isFalse() },
-        )
+        assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)).isNull()
+        assertThat(entityManager.likeRowExists(saved.id)).isFalse()
     }
 
     /** 취소한 좋아요가 행으로 남으면 같은 쌍을 다시 누를 때 죽은 행과 충돌한다. 행을 지우는 까닭이다(ADR 0001). */
@@ -114,11 +105,9 @@ class LikeRepositoryTest(
         val second = likeRepository.save(Like(userId = 1L, productId = 10L))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(second.id).isNotEqualTo(first.id) },
-            { assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)?.id).isEqualTo(second.id) },
-            { assertThat(entityManager.countLikes()).isOne() },
-        )
+        assertThat(second.id).isNotEqualTo(first.id)
+        assertThat(likeRepository.findByUserIdAndProductId(userId = 1L, productId = 10L)?.id).isEqualTo(second.id)
+        assertThat(entityManager.countLikes()).isOne()
     }
 
     @Test
@@ -128,11 +117,9 @@ class LikeRepositoryTest(
         likeRepository.save(Like(userId = 1L, productId = 11L))
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(likeRepository.countByProductId(10L)).isEqualTo(2L) },
-            { assertThat(likeRepository.countByProductId(11L)).isEqualTo(1L) },
-            { assertThat(likeRepository.countByProductId(12L)).isZero() },
-        )
+        assertThat(likeRepository.countByProductId(10L)).isEqualTo(2L)
+        assertThat(likeRepository.countByProductId(11L)).isEqualTo(1L)
+        assertThat(likeRepository.countByProductId(12L)).isZero()
     }
 
     @Test

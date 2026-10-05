@@ -25,7 +25,6 @@ import org.hibernate.SessionFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import org.springframework.boot.test.context.SpringBootTest
@@ -464,20 +463,16 @@ class OrderApiMockMvcTest(
             jsonPath("$.data.items.length()") { value(2) }
         }.json()["data"]["items"]
 
-        assertAll(
-            { assertThat(listed[0]).isEqualTo(newer) },
-            { assertThat(listed[1]).isEqualTo(older) },
-            { assertThat(listed[1]["items"][0]["productName"].stringValue()).isEqualTo("티셔츠") },
-            { assertThat(listed[1]["items"][0]["unitPrice"].longValue()).isEqualTo(1_000) },
-            { assertThat(listed[1]["items"][0]["quantity"].intValue()).isEqualTo(2) },
-            { assertThat(listed[1]["items"][1]["productId"].longValue()).isEqualTo(socks) },
-            { assertThat(listed[1]["totalAmount"].longValue()).isEqualTo(4_000) },
-            { assertThat(listed.values().map { it["orderId"].longValue() }).doesNotContain(foreign) },
-            {
-                val foreignList = list(requester = otherUser).json()["data"]["items"]
-                assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
-            },
-        )
+        assertThat(listed[0]).isEqualTo(newer)
+        assertThat(listed[1]).isEqualTo(older)
+        assertThat(listed[1]["items"][0]["productName"].stringValue()).isEqualTo("티셔츠")
+        assertThat(listed[1]["items"][0]["unitPrice"].longValue()).isEqualTo(1_000)
+        assertThat(listed[1]["items"][0]["quantity"].intValue()).isEqualTo(2)
+        assertThat(listed[1]["items"][1]["productId"].longValue()).isEqualTo(socks)
+        assertThat(listed[1]["totalAmount"].longValue()).isEqualTo(4_000)
+        assertThat(listed.values().map { it["orderId"].longValue() }).doesNotContain(foreign)
+        val foreignList = list(requester = otherUser).json()["data"]["items"]
+        assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
     }
 
     /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정 동작은 후속 티켓의 책임이라 상태를 DB fixture로 만든다(설계 13). */
@@ -524,16 +519,14 @@ class OrderApiMockMvcTest(
             }.json()["data"]
         }
 
-        assertAll(
-            { assertThat(pages[0]["items"][0]["orderId"].longValue()).isEqualTo(tiedLater) },
-            { assertThat(pages[1]["items"][0]["orderId"].longValue()).isEqualTo(tied) },
-            { assertThat(pages[2]["items"][0]["orderId"].longValue()).isEqualTo(oldest) },
-            { assertThat(pages.take(2).map { it["hasNext"].booleanValue() }).containsOnly(true) },
-            { assertThat(pages[2]["hasNext"].booleanValue()).isFalse() },
-            { assertThat(pages.take(3).map { it["items"][0]["items"].size() }).containsOnly(2) },
-            { assertThat(pages[3]["items"].size()).isZero() },
-            { assertThat(pages[3]["hasNext"].booleanValue()).isFalse() },
-        )
+        assertThat(pages[0]["items"][0]["orderId"].longValue()).isEqualTo(tiedLater)
+        assertThat(pages[1]["items"][0]["orderId"].longValue()).isEqualTo(tied)
+        assertThat(pages[2]["items"][0]["orderId"].longValue()).isEqualTo(oldest)
+        assertThat(pages.take(2).map { it["hasNext"].booleanValue() }).containsOnly(true)
+        assertThat(pages[2]["hasNext"].booleanValue()).isFalse()
+        assertThat(pages.take(3).map { it["items"][0]["items"].size() }).containsOnly(2)
+        assertThat(pages[3]["items"].size()).isZero()
+        assertThat(pages[3]["hasNext"].booleanValue()).isFalse()
     }
 
     @Test

@@ -19,7 +19,6 @@ import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -78,10 +77,8 @@ class LikeServiceTest(
         likeService.like(userId = other.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(entityManager.countLikes(user.id, product.id)).isOne() },
-            { assertThat(entityManager.countLikes(other.id, product.id)).isOne() },
-        )
+        assertThat(entityManager.countLikes(user.id, product.id)).isOne()
+        assertThat(entityManager.countLikes(other.id, product.id)).isOne()
     }
 
     @Test
@@ -121,10 +118,8 @@ class LikeServiceTest(
         likeService.unlike(userId = user.id, productId = product.id)
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(entityManager.countLikes(user.id, product.id)).isZero() },
-            { assertThat(entityManager.countLikes(other.id, product.id)).isOne() },
-        )
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
+        assertThat(entityManager.countLikes(other.id, product.id)).isOne()
     }
 
     @Test
@@ -136,10 +131,8 @@ class LikeServiceTest(
         val exception = assertThrows<CoreException> { likeService.like(userId = user.id, productId = product.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND) },
-            { assertThat(entityManager.countLikes(user.id, product.id)).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
     @Test
@@ -174,10 +167,8 @@ class LikeServiceTest(
         val exception = assertThrows<CoreException> { likeService.like(userId = 999L, productId = product.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(entityManager.countLikes(999L, product.id)).isZero() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
+        assertThat(entityManager.countLikes(999L, product.id)).isZero()
     }
 
     @Test
@@ -190,10 +181,8 @@ class LikeServiceTest(
         val exception = assertThrows<CoreException> { likeService.unlike(userId = 999L, productId = product.id) }
         entityManager.flushAndClear()
 
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED) },
-            { assertThat(entityManager.countLikes(user.id, product.id)).isOne() },
-        )
+        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
+        assertThat(entityManager.countLikes(user.id, product.id)).isOne()
     }
 
     /**
@@ -230,10 +219,8 @@ class LikeServiceTest(
 
         val slice = likeService.findLikedProducts(user.id, LikeListRequest())
 
-        assertAll(
-            { assertThat(slice.items.map { it.id }).containsExactly(active.id) },
-            { assertThat(entityManager.countLikes(user.id, deleted.id)).isOne() },
-        )
+        assertThat(slice.items.map { it.id }).containsExactly(active.id)
+        assertThat(entityManager.countLikes(user.id, deleted.id)).isOne()
     }
 
     /**
@@ -253,14 +240,12 @@ class LikeServiceTest(
 
         val slice = likeService.findLikedProducts(user.id, LikeListRequest())
 
-        assertAll(
-            { assertThat(slice.page).isEqualTo(LikeListRequest.DEFAULT_PAGE) },
-            { assertThat(slice.size).isEqualTo(LikeListRequest.DEFAULT_SIZE) },
-            { assertThat(slice.hasNext).isFalse() },
-            { assertThat(slice.items.single().brandName).isEqualTo("루퍼스") },
-            { assertThat(slice.items.single().name).isEqualTo("티셔츠") },
-            { assertThat(slice.items.single().likeCount).isEqualTo(2L) },
-        )
+        assertThat(slice.page).isEqualTo(LikeListRequest.DEFAULT_PAGE)
+        assertThat(slice.size).isEqualTo(LikeListRequest.DEFAULT_SIZE)
+        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.items.single().brandName).isEqualTo("루퍼스")
+        assertThat(slice.items.single().name).isEqualTo("티셔츠")
+        assertThat(slice.items.single().likeCount).isEqualTo(2L)
     }
 
     /**
@@ -281,15 +266,11 @@ class LikeServiceTest(
         try {
             val slice = likeService.findLikedProducts(user.id, LikeListRequest())
 
-            assertAll(
-                { assertThat(slice.items).hasSize(3) },
-                {
-                    assertThat(slice.items.map { it.brandName })
-                        .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
-                },
-                { assertThat(slice.items.map { it.likeCount }).containsOnly(1L) },
-                { assertThat(statistics.prepareStatementCount).isEqualTo(3L) },
-            )
+            assertThat(slice.items).hasSize(3)
+            assertThat(slice.items.map { it.brandName })
+                .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
+            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         } finally {
             statistics.isStatisticsEnabled = false
         }
@@ -308,28 +289,20 @@ class LikeServiceTest(
         val user = userRepository.save(User())
         entityManager.flushAndClear()
 
-        assertAll(
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> {
-                        likeService.findLikedProducts(user.id, LikeListRequest(page = -1))
-                    }.constraintViolations.map { it.message },
-                ).containsExactly("page는 0 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> {
-                        likeService.findLikedProducts(user.id, LikeListRequest(size = 0))
-                    }.constraintViolations.map { it.message },
-                ).containsExactly("size는 1 이상이어야 합니다.")
-            },
-            {
-                assertThat(
-                    assertThrows<ConstraintViolationException> {
-                        likeService.findLikedProducts(user.id, LikeListRequest(size = 101))
-                    }.constraintViolations.map { it.message },
-                ).containsExactly("size는 100 이하여야 합니다.")
-            },
-        )
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                likeService.findLikedProducts(user.id, LikeListRequest(page = -1))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                likeService.findLikedProducts(user.id, LikeListRequest(size = 0))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                likeService.findLikedProducts(user.id, LikeListRequest(size = 101))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("size는 100 이하여야 합니다.")
     }
 }
