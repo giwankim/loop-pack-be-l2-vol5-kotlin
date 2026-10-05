@@ -8,6 +8,7 @@ import com.loopers.support.balanceOf
 import com.loopers.support.countPointAccounts
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -16,11 +17,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.ResultActionsDsl
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -37,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class PointApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val pointAccountRepository: PointAccountRepository,
     private val userFixture: UserFixture,
     private val entityManager: EntityManager,
@@ -53,61 +53,49 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        getBalance(userId).andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.balance") { value(0) }
-        }
+        val body = assertThat(getBalance(userId)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.balance").isEqualTo(0)
 
-        charge(userId, body = """{"amount": 10000}""").andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.balance") { value(10_000) }
-            jsonPath("$.data.length()") { value(1) }
-        }
+        val chargeBody = assertThat(charge(userId, json = """{"amount": 10000}""")).hasStatusOk().bodyJson()
+        chargeBody.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        chargeBody.extractingPath("$.data.balance").isEqualTo(10_000)
+        chargeBody.extractingPath("$.data.length()").isEqualTo(1)
         entityManager.flushAndClear()
 
-        getBalance(userId).andExpect { jsonPath("$.data.balance") { value(10_000) } }
+        val detail = assertThat(getBalance(userId)).bodyJson()
+        detail.extractingPath("$.data.balance").isEqualTo(10_000)
 
-        charge(userId, body = """{"amount": 500}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(10_500) }
-        }
+        val secondChargeBody = assertThat(charge(userId, json = """{"amount": 500}""")).hasStatusOk().bodyJson()
+        secondChargeBody.extractingPath("$.data.balance").isEqualTo(10_500)
         entityManager.flushAndClear()
 
-        getBalance(userId).andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(10_500) }
-        }
+        val detailAfterSecondCharge = assertThat(getBalance(userId)).hasStatusOk().bodyJson()
+        detailAfterSecondCharge.extractingPath("$.data.balance").isEqualTo(10_500)
     }
 
     @Test
     fun `charging and reading without the user header return 401`() {
-        mockMvc.post(CHARGE) {
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"amount": 10000}"""
-        }.andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-            jsonPath("$.meta.message") { value(ErrorType.UNAUTHORIZED.message) }
-        }
-        mockMvc.get(POINTS).andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-        }
+        val body = assertThat(
+            mvc.post().uri(CHARGE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount": 10000}"""),
+        ).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.UNAUTHORIZED.message)
+
+        val error = assertThat(mvc.get().uri(POINTS)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
     }
 
     @Test
     fun `charging and reading as a user that does not exist return 401 and create no account`() {
-        charge(999L, body = """{"amount": 10000}""").andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-        }
-        getBalance(999L).andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-        }
+        val body = assertThat(charge(999L, json = """{"amount": 10000}""")).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+
+        val error = assertThat(getBalance(999L)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
 
         assertThat(entityManager.countPointAccounts(999L)).isZero()
     }
@@ -115,18 +103,18 @@ class PointApiMockMvcTest(
     /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. Spring의 타입 변환이 거절한다(카탈로그 설계 5.27). */
     @Test
     fun `a user header that is not a number returns 400 on both APIs`() {
-        mockMvc.post(CHARGE) {
-            header(UserIdHeader.NAME, "abc")
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"amount": 10000}"""
-        }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
-        mockMvc.get(POINTS) { header(UserIdHeader.NAME, "abc") }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val body = assertThat(
+            mvc.post().uri(CHARGE)
+                .header(UserIdHeader.NAME, "abc")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount": 10000}"""),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+
+        val error = assertThat(
+            mvc.get().uri(POINTS).header(UserIdHeader.NAME, "abc"),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
     }
 
     /** 사용자는 있는데 계정이 없는 것은 데이터 불일치라 내부 오류다. 0원 계정을 만들어 주지 않는다(설계 5.9, 6 끝). */
@@ -135,15 +123,14 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUserWithoutAccount().id
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": 10000}""").andExpect {
-            status { isInternalServerError() }
-            jsonPath("$.meta.errorCode") { value("Internal Server Error") }
-            jsonPath("$.meta.message") { value(ErrorType.POINT_ACCOUNT_MISSING.message) }
-        }
-        getBalance(userId).andExpect {
-            status { isInternalServerError() }
-            jsonPath("$.meta.message") { value(ErrorType.POINT_ACCOUNT_MISSING.message) }
-        }
+        val body = assertThat(
+            charge(userId, json = """{"amount": 10000}"""),
+        ).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Internal Server Error")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.POINT_ACCOUNT_MISSING.message)
+
+        val error = assertThat(getBalance(userId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        error.extractingPath("$.meta.message").isEqualTo(ErrorType.POINT_ACCOUNT_MISSING.message)
 
         assertThat(entityManager.countPointAccounts(userId)).isZero()
     }
@@ -154,14 +141,11 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": "5"}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(5) }
-        }
-        charge(userId, body = """{"amount": 5.0}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(10) }
-        }
+        val body = assertThat(charge(userId, json = """{"amount": "5"}""")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualTo(5)
+
+        val chargeBody = assertThat(charge(userId, json = """{"amount": 5.0}""")).hasStatusOk().bodyJson()
+        chargeBody.extractingPath("$.data.balance").isEqualTo(10)
         entityManager.flushAndClear()
 
         assertThat(entityManager.balanceOf(accountIdOf(userId))).isEqualTo(10)
@@ -172,7 +156,7 @@ class PointApiMockMvcTest(
     fun `a missing, null, non-numeric or out-of-range amount returns 400 and changes nothing`() {
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
-        val invalidBodies = listOf(
+        val invalidJsons = listOf(
             """{}""",
             """{"amount": null}""",
             """{"amount": "abc"}""",
@@ -181,12 +165,10 @@ class PointApiMockMvcTest(
             """{"amount": 100000000000000000000}""",
         )
 
-        invalidBodies.forEach { body ->
-            charge(userId, body = body).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.result") { value("FAIL") }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-            }
+        invalidJsons.forEach { json ->
+            val body = assertThat(charge(userId, json = json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.result").isEqualTo("FAIL")
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         }
         entityManager.flushAndClear()
         assertUnchanged(userId)
@@ -198,10 +180,8 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": 1.5}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(1) }
-        }
+        val body = assertThat(charge(userId, json = """{"amount": 1.5}""")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualTo(1)
     }
 
     /** 알 수 없는 필드는 기존 정책대로 무시한다(설계 5.10). */
@@ -210,10 +190,8 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": 10000, "balance": 1}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(10_000) }
-        }
+        val body = assertThat(charge(userId, json = """{"amount": 10000, "balance": 1}""")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualTo(10_000)
     }
 
     /** 0원 이하는 Request 제약이 거른다. 범용 400이며 메시지가 규칙을 말한다(카탈로그 설계 5.18). */
@@ -223,11 +201,9 @@ class PointApiMockMvcTest(
         entityManager.flushAndClear()
 
         listOf(0L, -1L).forEach { amount ->
-            charge(userId, body = """{"amount": $amount}""").andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value("충전액은 1원 이상이어야 합니다.") }
-            }
+            val body = assertThat(charge(userId, json = """{"amount": $amount}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            body.extractingPath("$.meta.message").isEqualTo("충전액은 1원 이상이어야 합니다.")
         }
         entityManager.flushAndClear()
 
@@ -238,14 +214,12 @@ class PointApiMockMvcTest(
     @Test
     fun `a charge that overflows the balance returns 400 and keeps the balance`() {
         val userId = userFixture.registerUser().id
-        charge(userId, body = """{"amount": ${Long.MAX_VALUE}}""").andExpect { status { isOk() } }
+        assertThat(charge(userId, json = """{"amount": ${Long.MAX_VALUE}}""")).hasStatusOk()
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": 1}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
-        }
+        val body = assertThat(charge(userId, json = """{"amount": 1}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
         entityManager.flushAndClear()
 
         assertThat(entityManager.balanceOf(accountIdOf(userId))).isEqualTo(Long.MAX_VALUE)
@@ -257,20 +231,18 @@ class PointApiMockMvcTest(
         val userId = userFixture.registerUser().id
         entityManager.flushAndClear()
 
-        charge(userId, body = """{"amount": 1000000001}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(1_000_000_001L) }
-        }
+        val body = assertThat(charge(userId, json = """{"amount": 1000000001}""")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualToLong(1_000_000_001L)
     }
 
-    private fun charge(userId: Long, body: String): ResultActionsDsl =
-        mockMvc.post(CHARGE) {
-            header(UserIdHeader.NAME, userId)
-            contentType = MediaType.APPLICATION_JSON
-            content = body
-        }
+    private fun charge(userId: Long, json: String): MvcTestResult =
+        mvc.post().uri(CHARGE)
+            .header(UserIdHeader.NAME, userId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json)
+            .exchange()
 
-    private fun getBalance(userId: Long): ResultActionsDsl = mockMvc.get(POINTS) { header(UserIdHeader.NAME, userId) }
+    private fun getBalance(userId: Long): MvcTestResult = mvc.get().uri(POINTS).header(UserIdHeader.NAME, userId).exchange()
 
     private fun accountIdOf(userId: Long): Long = pointAccountRepository.findByUserId(userId)!!.id
 
