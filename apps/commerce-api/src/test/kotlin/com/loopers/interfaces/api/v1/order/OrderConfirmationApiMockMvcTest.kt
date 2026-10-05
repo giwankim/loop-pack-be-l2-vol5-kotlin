@@ -15,6 +15,7 @@ import com.loopers.domain.shared.Money
 import com.loopers.domain.user.UserFixture
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
@@ -26,11 +27,10 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.ResultActionsDsl
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.JsonNode
@@ -42,7 +42,7 @@ import java.time.Instant
 @AutoConfigureMockMvc
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderConfirmationApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val objectMapper: ObjectMapper,
     private val userFixture: UserFixture,
     private val brandRepository: BrandRepository,
@@ -76,27 +76,29 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(5))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(second to 1, first to 5)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
-        assertThat(draft["data"]["totalAmount"].longValue()).isEqualTo(7_000)
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
+        assertThat(draft.json()["data"]["totalAmount"].longValue()).isEqualTo(7_000)
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 5)
 
         val before = Instant.now().minusSeconds(1)
-        val confirmed = confirm(orderId).andExpect {
-            status { isOk() }
-            jsonPath("$.data.status") { value("CONFIRMED") }
-            jsonPath("$.data.paidAmount") { value(7_000) }
-            jsonPath("$.data.totalAmount") { value(7_000) }
-        }.json()
+        val confirmed = confirm(orderId)
+        val body = assertThat(confirmed).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.paidAmount").isEqualTo(7_000)
+        body.extractingPath("$.data.totalAmount").isEqualTo(7_000)
 
-        assertThat(confirmed["data"]["items"]).isEqualTo(draft["data"]["items"])
-        assertThat(confirmed["data"]["createdAt"]).isEqualTo(draft["data"]["createdAt"])
-        assertThat(Instant.parse(confirmed["data"]["confirmedAt"].stringValue())).isBetween(before, Instant.now())
+        assertThat(confirmed.json()["data"]["items"]).isEqualTo(draft.json()["data"]["items"])
+        assertThat(confirmed.json()["data"]["createdAt"]).isEqualTo(draft.json()["data"]["createdAt"])
+        assertThat(Instant.parse(confirmed.json()["data"]["confirmedAt"].stringValue())).isBetween(before, Instant.now())
         balance(3_000)
         assertStock(first, 5)
         assertStock(second, 4)
-        assertThat(detail(orderId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
+        val confirmedDetail = detail(orderId)
+        assertThat(confirmedDetail).hasStatusOk()
+        assertThat(confirmedDetail.json()).isEqualTo(confirmed.json())
         assertAlreadyConfirmed(orderId)
         balance(3_000)
         assertStock(first, 5)
@@ -109,22 +111,19 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(4))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(first to 2, second to 5)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
 
-        confirm(orderId).andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.errorCode") { value("INSUFFICIENT_STOCK") }
-        }
+        val body = assertThat(confirm(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("INSUFFICIENT_STOCK")
 
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 4)
         transaction.executeWithoutResult { productRepository.findById(second)!!.updateStock(5) }
-        confirm(orderId).andExpect {
-            status { isOk() }
-            jsonPath("$.data.paidAmount") { value(7_000) }
-        }
+        val confirmBody = assertThat(confirm(orderId)).hasStatusOk().bodyJson()
+        confirmBody.extractingPath("$.data.paidAmount").isEqualTo(7_000)
         balance(3_000)
         assertStock(first, 8)
         assertStock(second, 0)
@@ -136,22 +135,19 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
 
-        confirm(orderId).andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.errorCode") { value("INSUFFICIENT_POINTS") }
-        }
+        val body = assertThat(confirm(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("INSUFFICIENT_POINTS")
 
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         balance(3_000)
         assertStock(first, 2)
         assertStock(second, 2)
         pointService.charge(userId, createPointChargeRequest(amount = 1_000))
-        confirm(orderId).andExpect {
-            status { isOk() }
-            jsonPath("$.data.paidAmount") { value(4_000) }
-        }
+        val confirmBody = assertThat(confirm(orderId)).hasStatusOk().bodyJson()
+        confirmBody.extractingPath("$.data.paidAmount").isEqualTo(4_000)
         balance(0)
         assertStock(first, 0)
         assertStock(second, 0)
@@ -168,15 +164,14 @@ class OrderConfirmationApiMockMvcTest(
         jdbc.update("update orders set created_at = '2020-01-01 00:00:00.123456' where id = ?", orderId)
         transaction.executeWithoutResult { productRepository.findById(productId)!!.update("바뀐 이름", Money(newPrice)) }
 
-        val confirmed = confirm(orderId).andExpect {
-            status { isOk() }
-            jsonPath("$.data.paidAmount") { value(1_000) }
-            jsonPath("$.data.items[0].productName") { value("원래 이름") }
-            jsonPath("$.data.items[0].unitPrice") { value(1_000) }
-            jsonPath("$.data.createdAt") { value("2020-01-01T00:00:00.123456Z") }
-        }.json()
+        val confirmed = confirm(orderId)
+        val body = assertThat(confirmed).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.paidAmount").isEqualTo(1_000)
+        body.extractingPath("$.data.items[0].productName").isEqualTo("원래 이름")
+        body.extractingPath("$.data.items[0].unitPrice").isEqualTo(1_000)
+        body.extractingPath("$.data.createdAt").isEqualTo("2020-01-01T00:00:00.123456Z")
 
-        assertThat(detail(orderId).json()).isEqualTo(confirmed)
+        assertThat(detail(orderId).json()).isEqualTo(confirmed.json())
         balance(0)
         assertStock(productId, 9)
     }
@@ -189,7 +184,8 @@ class OrderConfirmationApiMockMvcTest(
         val secondBrand = brandRepository.save(createBrand())
         val second = productRepository.save(createProduct(secondBrand, stock = Stock(10))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second))).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
         if (deleted == "product") {
             transaction.executeWithoutResult { productRepository.findById(second)!!.delete() }
         } else {
@@ -197,12 +193,10 @@ class OrderConfirmationApiMockMvcTest(
             jdbc.update("update brand set deleted_at = now(6) where id = ?", secondBrand.id)
         }
 
-        confirm(orderId).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
-        }
+        val body = assertThat(confirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
 
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         balance(10_000)
         assertStock(first, 10)
         assertStock(second, 10)
@@ -219,19 +213,18 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand)).id
         val second = productRepository.save(createProduct(brand)).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
         val (short, unavailable) = if (shortageFirst) first to second else second to first
         transaction.executeWithoutResult {
             productRepository.findById(short)!!.updateStock(1)
             productRepository.findById(unavailable)!!.delete()
         }
 
-        confirm(orderId).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
-        }
+        val body = assertThat(confirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
 
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         balance(10_000)
         assertStock(short, 1)
     }
@@ -241,41 +234,40 @@ class OrderConfirmationApiMockMvcTest(
         pointService.charge(userId, createPointChargeRequest(amount = 1_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
         val otherUser = userFixture.registerUser().id
 
         fun assertAccessDenied() {
             listOf(null, Long.MAX_VALUE).forEach { requester ->
-                confirm(orderId, requester).andExpect {
-                    status { isUnauthorized() }
-                    jsonPath("$.meta.errorCode") { value("Unauthorized") }
-                }
+                val body = assertThat(confirm(orderId, requester)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+                body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
             }
-            val missing = confirm(Long.MAX_VALUE).andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.errorCode") { value("ORDER_NOT_FOUND") }
-            }.json()
-            assertThat(confirm(orderId, otherUser).andExpect { status { isNotFound() } }.json()).isEqualTo(missing)
+            val missing = confirm(Long.MAX_VALUE)
+            val error = assertThat(missing).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+            error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
+            val forbidden = confirm(orderId, otherUser)
+            assertThat(forbidden).hasStatus(HttpStatus.NOT_FOUND)
+            assertThat(forbidden.json()).isEqualTo(missing.json())
         }
 
         assertAccessDenied()
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         balance(1_000)
         assertStock(productId, 10)
-        val confirmed = confirm(orderId).andExpect { status { isOk() } }.json()
+        val confirmed = confirm(orderId)
+        assertThat(confirmed).hasStatusOk()
         assertAccessDenied()
         assertAlreadyConfirmed(orderId)
-        assertThat(detail(orderId).json()).isEqualTo(confirmed)
+        assertThat(detail(orderId).json()).isEqualTo(confirmed.json())
         balance(0)
         assertStock(productId, 9)
     }
 
     /** 다시 확정하면 차감 없이 거절된다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005). */
     private fun assertAlreadyConfirmed(orderId: Long) {
-        confirm(orderId).andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.errorCode") { value("ORDER_ALREADY_CONFIRMED") }
-        }
+        val body = assertThat(confirm(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_ALREADY_CONFIRMED")
     }
 
     /**
@@ -287,9 +279,10 @@ class OrderConfirmationApiMockMvcTest(
         pointService.charge(userId, createPointChargeRequest(amount = 3_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(3))).id
         val firstId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
-        val confirmed = confirm(firstId).andExpect { status { isOk() } }.json()
+        val confirmed = confirm(firstId)
+        assertThat(confirmed).hasStatusOk()
         val secondId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
-        confirm(secondId).andExpect { status { isOk() } }
+        assertThat(confirm(secondId)).hasStatusOk()
         balance(0)
         assertStock(productId, 0)
         transaction.executeWithoutResult {
@@ -299,7 +292,9 @@ class OrderConfirmationApiMockMvcTest(
 
         repeat(2) {
             assertAlreadyConfirmed(firstId)
-            assertThat(detail(firstId).andExpect { status { isOk() } }.json()).isEqualTo(confirmed)
+            val firstDetail = detail(firstId)
+            assertThat(firstDetail).hasStatusOk()
+            assertThat(firstDetail.json()).isEqualTo(confirmed.json())
         }
 
         balance(0)
@@ -311,11 +306,12 @@ class OrderConfirmationApiMockMvcTest(
         userId = userFixture.registerUserWithoutAccount().id
         val productId = productRepository.save(createProduct(brand, stock = Stock(10))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
 
-        confirm(orderId).andExpect { status { isInternalServerError() } }
+        assertThat(confirm(orderId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
 
-        assertThat(detail(orderId).json()).isEqualTo(draft)
+        assertThat(detail(orderId).json()).isEqualTo(draft.json())
         assertStock(productId, 10)
         assertThat(jdbc.queryForObject("select count(*) from point_account where user_id = ?", Long::class.java, userId)!!)
             .isZero()
@@ -337,10 +333,11 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(6))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(2))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(first to 5, second to 1)).orderId
-        val draft = detail(orderId).andExpect { status { isOk() } }.json()
+        val draft = detail(orderId)
+        assertThat(draft).hasStatusOk()
         jdbc.execute("alter table point_account add constraint fail_paid_balance check (balance <> 3000)")
         try {
-            confirm(orderId).andExpect { status { isInternalServerError() } }
+            assertThat(confirm(orderId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
         } finally {
             jdbc.execute("alter table point_account drop check fail_paid_balance")
         }
@@ -354,26 +351,27 @@ class OrderConfirmationApiMockMvcTest(
             assertThat(jdbc.queryForMap("select status, paid_amount, confirmed_at from orders where id = ?", orderId))
                 .containsAllEntriesOf(mapOf("status" to "DRAFT", "paid_amount" to null, "confirmed_at" to null))
         }
-        assertThat(detail(orderId).andExpect { status { isOk() } }.json()).isEqualTo(draft)
-        confirm(orderId).andExpect { status { isOk() } }
+        val afterRollback = detail(orderId)
+        assertThat(afterRollback).hasStatusOk()
+        assertThat(afterRollback.json()).isEqualTo(draft.json())
+        assertThat(confirm(orderId)).hasStatusOk()
         balance(3_000)
         assertStock(first, 1)
         assertStock(second, 1)
     }
 
     private fun balance(expected: Long) {
-        mockMvc.get("/api/v1/points") { header(UserIdHeader.NAME, userId) }.andExpect {
-            status { isOk() }
-            jsonPath("$.data.balance") { value(expected) }
-        }
+        val body = assertThat(mvc.get().uri("/api/v1/points").header(UserIdHeader.NAME, userId)).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualToLong(expected)
     }
 
-    private fun confirm(orderId: Long, requester: Long? = userId): ResultActionsDsl =
-        mockMvc.post("/api/v1/orders/$orderId/confirm") { if (requester != null) header(UserIdHeader.NAME, requester) }
+    private fun confirm(orderId: Long, requester: Long? = userId): MvcTestResult =
+        mvc.post().uri("/api/v1/orders/$orderId/confirm")
+            .apply { requester?.let { header(UserIdHeader.NAME, it) } }
+            .exchange()
 
-    private fun detail(orderId: Long): ResultActionsDsl = mockMvc.get(
-        "/api/v1/orders/$orderId",
-    ) { header(UserIdHeader.NAME, userId) }
+    private fun detail(orderId: Long): MvcTestResult =
+        mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, userId).exchange()
 
-    private fun ResultActionsDsl.json(): JsonNode = objectMapper.readTree(andReturn().response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
 }

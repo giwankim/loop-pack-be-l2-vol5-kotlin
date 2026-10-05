@@ -12,21 +12,21 @@ import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
-import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.ResultActionsDsl
-import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -43,7 +43,7 @@ import tools.jackson.databind.ObjectMapper
 @AutoConfigureMockMvc
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderAdminApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val objectMapper: ObjectMapper,
     private val userRepository: UserRepository,
     private val brandRepository: BrandRepository,
@@ -82,26 +82,24 @@ class OrderAdminApiMockMvcTest(
         val first = orderService.create(userId, createOrderCreateRequest(pants to 1, shirt to 2)).orderId
         val second = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
-        getOrders().andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.items.length()") { value(2) }
-            jsonPath("$.data.items[0].orderId") { value(second) }
-            jsonPath("$.data.items[0].userId") { value(otherUserId) }
-            jsonPath("$.data.items[1].orderId") { value(first) }
-            jsonPath("$.data.items[1].userId") { value(userId) }
-            jsonPath("$.data.items[1].totalAmount") { value(4_000) }
-            jsonPath("$.data.items[1].items.length()") { value(2) }
-            jsonPath("$.data.items[1].items[0].productId") { value(shirt) }
-            jsonPath("$.data.items[1].items[0].productName") { value("티셔츠") }
-            jsonPath("$.data.items[1].items[0].unitPrice") { value(1_000) }
-            jsonPath("$.data.items[1].items[0].quantity") { value(2) }
-            jsonPath("$.data.items[1].items[0].lineAmount") { value(2_000) }
-            jsonPath("$.data.items[1].items[1].productId") { value(pants) }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(20) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val body = assertThat(getOrders()).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(second)
+        body.extractingPath("$.data.items[0].userId").isEqualToLong(otherUserId)
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(first)
+        body.extractingPath("$.data.items[1].userId").isEqualToLong(userId)
+        body.extractingPath("$.data.items[1].totalAmount").isEqualTo(4_000)
+        body.extractingPath("$.data.items[1].items.length()").isEqualTo(2)
+        body.extractingPath("$.data.items[1].items[0].productId").isEqualToLong(shirt)
+        body.extractingPath("$.data.items[1].items[0].productName").isEqualTo("티셔츠")
+        body.extractingPath("$.data.items[1].items[0].unitPrice").isEqualTo(1_000)
+        body.extractingPath("$.data.items[1].items[0].quantity").isEqualTo(2)
+        body.extractingPath("$.data.items[1].items[0].lineAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.items[1].items[1].productId").isEqualToLong(pants)
+        body.extractingPath("$.data.page").isEqualTo(0)
+        body.extractingPath("$.data.size").isEqualTo(20)
+        body.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     /**
@@ -118,13 +116,17 @@ class OrderAdminApiMockMvcTest(
         val older = orderService.create(userId, createOrderCreateRequest(listOf(socks, shirt))).orderId
         val newer = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
-        val listed = getOrders().andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(2) }
-        }.json()["data"]["items"]
+        val orders = getOrders()
+        val body = assertThat(orders).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        val listed = orders.json()["data"]["items"]
 
-        assertThat(listed[0]).isEqualTo(getOrder(newer).andExpect { status { isOk() } }.json()["data"])
-        assertThat(listed[1]).isEqualTo(getOrder(older).andExpect { status { isOk() } }.json()["data"])
+        val newerDetail = getOrder(newer)
+        assertThat(newerDetail).hasStatusOk()
+        assertThat(listed[0]).isEqualTo(newerDetail.json()["data"])
+        val olderDetail = getOrder(older)
+        assertThat(olderDetail).hasStatusOk()
+        assertThat(listed[1]).isEqualTo(olderDetail.json()["data"])
     }
 
     @Test
@@ -137,22 +139,18 @@ class OrderAdminApiMockMvcTest(
         orderService.create(otherUserId, createOrderCreateRequest(listOf(productId)))
         val second = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
-        getOrders("userId" to userId.toString()).andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(2) }
-            jsonPath("$.data.items[0].orderId") { value(second) }
-            jsonPath("$.data.items[0].userId") { value(userId) }
-            jsonPath("$.data.items[1].orderId") { value(first) }
-            jsonPath("$.data.items[1].userId") { value(userId) }
-        }
+        val body = assertThat(getOrders("userId" to userId.toString())).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(second)
+        body.extractingPath("$.data.items[0].userId").isEqualToLong(userId)
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(first)
+        body.extractingPath("$.data.items[1].userId").isEqualToLong(userId)
 
-        getOrders("userId" to quietUserId.toString()).andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(0) }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(20) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val list = assertThat(getOrders("userId" to quietUserId.toString())).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items").asArray().isEmpty()
+        list.extractingPath("$.data.page").isEqualTo(0)
+        list.extractingPath("$.data.size").isEqualTo(20)
+        list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     /**
@@ -171,23 +169,21 @@ class OrderAdminApiMockMvcTest(
         val foreignNewer = orderService.create(otherUserId, request).orderId
         val newest = orderService.create(userId, request).orderId
 
-        val first = getOrders("userId" to userId.toString(), "size" to "2").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(2) }
-            jsonPath("$.data.items[0].orderId") { value(newest) }
-            jsonPath("$.data.items[1].orderId") { value(middle) }
-            jsonPath("$.data.hasNext") { value(true) }
-        }.json()["data"]["items"]
+        val firstPage = getOrders("userId" to userId.toString(), "size" to "2")
+        val body = assertThat(firstPage).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(newest)
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(middle)
+        body.extractingPath("$.data.hasNext").isEqualTo(true)
 
-        val second = getOrders("userId" to userId.toString(), "page" to "1", "size" to "2").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].orderId") { value(oldest) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }.json()["data"]["items"]
+        val secondPage = getOrders("userId" to userId.toString(), "page" to "1", "size" to "2")
+        val list = assertThat(secondPage).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items.length()").isEqualTo(1)
+        list.extractingPath("$.data.items[0].orderId").isEqualToLong(oldest)
+        list.extractingPath("$.data.hasNext").isEqualTo(false)
 
-        assertThat((first.toList() + second.toList()).map { it["orderId"].longValue() })
-            .doesNotContain(foreignOlder, foreignNewer)
+        val listed = firstPage.json()["data"]["items"].toList() + secondPage.json()["data"]["items"].toList()
+        assertThat(listed.map { it["orderId"].longValue() }).doesNotContain(foreignOlder, foreignNewer)
     }
 
     @Test
@@ -196,25 +192,21 @@ class OrderAdminApiMockMvcTest(
         val userId = userRepository.save(User()).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(shirt), quantity = 3)).orderId
 
-        getOrder(orderId).andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.orderId") { value(orderId) }
-            jsonPath("$.data.userId") { value(userId) }
-            jsonPath("$.data.status") { value("DRAFT") }
-            jsonPath("$.data.totalAmount") { value(3_000) }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].productId") { value(shirt) }
-            jsonPath("$.data.items[0].quantity") { value(3) }
-            jsonPath("$.data.paidAmount") { doesNotExist() }
-            jsonPath("$.data.confirmedAt") { doesNotExist() }
-        }
+        val body = assertThat(getOrder(orderId)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.orderId").isEqualToLong(orderId)
+        body.extractingPath("$.data.userId").isEqualToLong(userId)
+        body.extractingPath("$.data.status").isEqualTo("DRAFT")
+        body.extractingPath("$.data.totalAmount").isEqualTo(3_000)
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].productId").isEqualToLong(shirt)
+        body.extractingPath("$.data.items[0].quantity").isEqualTo(3)
+        body.doesNotHavePath("$.data.paidAmount")
+        body.doesNotHavePath("$.data.confirmedAt")
 
-        getOrder(Long.MAX_VALUE).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("ORDER_NOT_FOUND") }
-        }
+        val error = assertThat(getOrder(Long.MAX_VALUE)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        error.extractingPath("$.meta.result").isEqualTo("FAIL")
+        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
     }
 
     /**
@@ -233,24 +225,20 @@ class OrderAdminApiMockMvcTest(
             confirmed,
         )
 
-        getOrders().andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].orderId") { value(confirmed) }
-            jsonPath("$.data.items[0].status") { value("CONFIRMED") }
-            jsonPath("$.data.items[0].paidAmount") { value(2_000) }
-            jsonPath("$.data.items[0].confirmedAt") { value("2026-09-18T00:00:00.123456Z") }
-            jsonPath("$.data.items[1].orderId") { value(draft) }
-            jsonPath("$.data.items[1].status") { value("DRAFT") }
-            jsonPath("$.data.items[1].paidAmount") { doesNotExist() }
-            jsonPath("$.data.items[1].confirmedAt") { doesNotExist() }
-        }
+        val body = assertThat(getOrders()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(confirmed)
+        body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.items[0].confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(draft)
+        body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[1].paidAmount")
+        body.doesNotHavePath("$.data.items[1].confirmedAt")
 
-        getOrder(confirmed).andExpect {
-            status { isOk() }
-            jsonPath("$.data.status") { value("CONFIRMED") }
-            jsonPath("$.data.paidAmount") { value(2_000) }
-            jsonPath("$.data.confirmedAt") { value("2026-09-18T00:00:00.123456Z") }
-        }
+        val detail = assertThat(getOrder(confirmed)).hasStatusOk().bodyJson()
+        detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        detail.extractingPath("$.data.paidAmount").isEqualTo(2_000)
+        detail.extractingPath("$.data.confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
     }
 
     @Test
@@ -260,28 +248,22 @@ class OrderAdminApiMockMvcTest(
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
         listOf(USER, null).forEach { principal ->
-            getOrders(principal = principal).andExpect { status { isForbidden() } }
-            getOrder(orderId, principal = principal).andExpect { status { isForbidden() } }
+            assertThat(getOrders(principal = principal)).hasStatus(HttpStatus.FORBIDDEN)
+            assertThat(getOrder(orderId, principal = principal)).hasStatus(HttpStatus.FORBIDDEN)
         }
     }
 
     @Test
     fun `listing outside the page and size bounds returns 400`() {
-        getOrders("page" to "-1").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(containsString("page는 0 이상이어야 합니다")) }
-        }
+        val body = assertThat(getOrders("page" to "-1")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").asString().contains("page는 0 이상이어야 합니다")
 
-        getOrders("size" to "0").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.message") { value(containsString("size는 1 이상이어야 합니다")) }
-        }
+        val error = assertThat(getOrders("size" to "0")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        error.extractingPath("$.meta.message").asString().contains("size는 1 이상이어야 합니다")
 
-        getOrders("size" to "101").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.message") { value(containsString("size는 100 이하여야 합니다")) }
-        }
+        val secondError = assertThat(getOrders("size" to "101")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        secondError.extractingPath("$.meta.message").asString().contains("size는 100 이하여야 합니다")
     }
 
     @Test
@@ -291,18 +273,15 @@ class OrderAdminApiMockMvcTest(
         val ids = List(3) { orderService.create(userId, request).orderId }
         jdbc.update("update orders set created_at = '2026-09-18 00:00:00.000000'")
 
-        getOrders("page" to "0", "size" to "2").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].orderId") { value(ids[2]) }
-            jsonPath("$.data.items[1].orderId") { value(ids[1]) }
-            jsonPath("$.data.hasNext") { value(true) }
-        }
+        val body = assertThat(getOrders("page" to "0", "size" to "2")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(ids[2])
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(ids[1])
+        body.extractingPath("$.data.hasNext").isEqualTo(true)
 
-        getOrders("page" to "1", "size" to "2").andExpect {
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].orderId") { value(ids[0]) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val list = assertThat(getOrders("page" to "1", "size" to "2")).bodyJson()
+        list.extractingPath("$.data.items.length()").isEqualTo(1)
+        list.extractingPath("$.data.items[0].orderId").isEqualToLong(ids[0])
+        list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     /** 한 조각이 세는 것은 주문이므로 품목이 많은 주문도 다음 주문을 밀어내지 않는다. */
@@ -313,21 +292,18 @@ class OrderAdminApiMockMvcTest(
         val many = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
         val one = orderService.create(userId, createOrderCreateRequest(listOf(productIds.first()))).orderId
 
-        getOrders("size" to "1").andExpect {
-            status { isOk() }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].orderId") { value(one) }
-            jsonPath("$.data.hasNext") { value(true) }
-        }
+        val body = assertThat(getOrders("size" to "1")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(one)
+        body.extractingPath("$.data.hasNext").isEqualTo(true)
 
-        getOrders("page" to "1", "size" to "1").andExpect {
-            jsonPath("$.data.items[0].orderId") { value(many) }
-            jsonPath("$.data.items[0].items.length()") { value(3) }
-            productIds.sorted().forEachIndexed { index, productId ->
-                jsonPath("$.data.items[0].items[$index].productId") { value(productId) }
-            }
-            jsonPath("$.data.hasNext") { value(false) }
+        val list = assertThat(getOrders("page" to "1", "size" to "1")).bodyJson()
+        list.extractingPath("$.data.items[0].orderId").isEqualToLong(many)
+        list.extractingPath("$.data.items[0].items.length()").isEqualTo(3)
+        productIds.sorted().forEachIndexed { index, productId ->
+            list.extractingPath("$.data.items[0].items[$index].productId").isEqualToLong(productId)
         }
+        list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     @Test
@@ -335,30 +311,33 @@ class OrderAdminApiMockMvcTest(
         val productId = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
         val userId = userRepository.save(User()).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
-        val before = getOrder(orderId).andExpect { status { isOk() } }.json()
+        val original = getOrder(orderId)
+        assertThat(original).hasStatusOk()
 
         transaction.executeWithoutResult {
             productRepository.findById(productId)!!.apply { update("새 이름", Money(9_000)) }.delete()
             brandRepository.findById(brand.id)!!.delete()
         }
 
-        assertThat(getOrder(orderId).andExpect { status { isOk() } }.json()).isEqualTo(before)
-        getOrders().andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].items[0].productName") { value("티셔츠") }
-            jsonPath("$.data.items[0].items[0].unitPrice") { value(1_000) }
-            jsonPath("$.data.items[0].totalAmount") { value(2_000) }
-        }
+        val afterEdits = getOrder(orderId)
+        assertThat(afterEdits).hasStatusOk()
+        assertThat(afterEdits.json()).isEqualTo(original.json())
+        val body = assertThat(getOrders()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].items[0].productName").isEqualTo("티셔츠")
+        body.extractingPath("$.data.items[0].items[0].unitPrice").isEqualTo(1_000)
+        body.extractingPath("$.data.items[0].totalAmount").isEqualTo(2_000)
     }
 
-    private fun getOrders(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): ResultActionsDsl =
-        mockMvc.get(ENDPOINT) {
-            principal?.let { with(it) }
-            query.forEach { (name, value) -> param(name, value) }
-        }
+    private fun getOrders(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
+        mvc.get().uri(ENDPOINT)
+            .apply { principal?.let { with(it) } }
+            .apply { query.forEach { (name, value) -> param(name, value) } }
+            .exchange()
 
-    private fun getOrder(orderId: Long, principal: RequestPostProcessor? = ADMIN): ResultActionsDsl =
-        mockMvc.get("$ENDPOINT/$orderId") { principal?.let { with(it) } }
+    private fun getOrder(orderId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
+        mvc.get().uri("$ENDPOINT/$orderId")
+            .apply { principal?.let { with(it) } }
+            .exchange()
 
-    private fun ResultActionsDsl.json(): JsonNode = objectMapper.readTree(andReturn().response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
 }
