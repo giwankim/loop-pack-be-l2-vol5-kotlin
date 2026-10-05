@@ -11,6 +11,7 @@ import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.countLikes
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -19,11 +20,9 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.ResultActionsDsl
-import org.springframework.test.web.servlet.delete
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
+import org.springframework.http.HttpStatus
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -39,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class LikeApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
     private val userRepository: UserRepository,
@@ -56,22 +55,20 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        like(productId, userId).andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data") { doesNotExist() }
-        }
+        val body = assertThat(like(productId, userId)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.doesNotHavePath("$.data")
         entityManager.flushAndClear()
 
-        mockMvc.get("$PRODUCTS/$productId").andExpect { jsonPath("$.data.likeCount") { value(1) } }
+        val detail = assertThat(mvc.get().uri("$PRODUCTS/$productId")).bodyJson()
+        detail.extractingPath("$.data.likeCount").isEqualTo(1)
 
-        unlike(productId, userId).andExpect {
-            status { isOk() }
-            jsonPath("$.data") { doesNotExist() }
-        }
+        val unlikeBody = assertThat(unlike(productId, userId)).hasStatusOk().bodyJson()
+        unlikeBody.doesNotHavePath("$.data")
         entityManager.flushAndClear()
 
-        mockMvc.get("$PRODUCTS/$productId").andExpect { jsonPath("$.data.likeCount") { value(0) } }
+        val detailAfterUnlike = assertThat(mvc.get().uri("$PRODUCTS/$productId")).bodyJson()
+        detailAfterUnlike.extractingPath("$.data.likeCount").isEqualTo(0)
     }
 
     @Test
@@ -81,15 +78,13 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        like(productId, userId).andExpect { status { isOk() } }
-        like(productId, otherUserId).andExpect { status { isOk() } }
+        assertThat(like(productId, userId)).hasStatusOk()
+        assertThat(like(productId, otherUserId)).hasStatusOk()
         entityManager.flushAndClear()
 
-        mockMvc.get(PRODUCTS).andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].id") { value(productId) }
-            jsonPath("$.data.items[0].likeCount") { value(2) }
-        }
+        val body = assertThat(mvc.get().uri(PRODUCTS)).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].id").isEqualToLong(productId)
+        body.extractingPath("$.data.items[0].likeCount").isEqualTo(2)
     }
 
     @Test
@@ -98,13 +93,14 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        like(productId, userId).andExpect { status { isOk() } }
+        assertThat(like(productId, userId)).hasStatusOk()
         entityManager.flushAndClear()
-        like(productId, userId).andExpect { status { isOk() } }
+        assertThat(like(productId, userId)).hasStatusOk()
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(userId, productId)).isOne()
-        mockMvc.get("$PRODUCTS/$productId").andExpect { jsonPath("$.data.likeCount") { value(1) } }
+        val body = assertThat(mvc.get().uri("$PRODUCTS/$productId")).bodyJson()
+        body.extractingPath("$.data.likeCount").isEqualTo(1)
     }
 
     @Test
@@ -113,10 +109,8 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        unlike(productId, userId).andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-        }
+        val body = assertThat(unlike(productId, userId)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
     }
 
     @Test
@@ -124,12 +118,10 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        mockMvc.post("$PRODUCTS/$productId/likes").andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-            jsonPath("$.meta.message") { value(ErrorType.UNAUTHORIZED.message) }
-        }
+        val body = assertThat(mvc.post().uri("$PRODUCTS/$productId/likes")).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.UNAUTHORIZED.message)
     }
 
     @Test
@@ -137,10 +129,8 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        mockMvc.delete("$PRODUCTS/$productId/likes").andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-        }
+        val body = assertThat(mvc.delete().uri("$PRODUCTS/$productId/likes")).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
     }
 
     /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. Spring의 타입 변환이 거절한다(설계 5.27). */
@@ -149,10 +139,10 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        mockMvc.post("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, "abc") }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val body = assertThat(
+            mvc.post().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, "abc"),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
     }
 
     @Test
@@ -160,11 +150,9 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        like(productId, userId = 999L).andExpect {
-            status { isUnauthorized() }
-            jsonPath("$.meta.errorCode") { value("Unauthorized") }
-            jsonPath("$.meta.message") { value(ErrorType.UNAUTHORIZED.message) }
-        }
+        val body = assertThat(like(productId, userId = 999L)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.UNAUTHORIZED.message)
 
         assertThat(entityManager.countLikes(999L, productId)).isZero()
     }
@@ -174,7 +162,7 @@ class LikeApiMockMvcTest(
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
         entityManager.flushAndClear()
 
-        unlike(productId, userId = 999L).andExpect { status { isUnauthorized() } }
+        assertThat(unlike(productId, userId = 999L)).hasStatus(HttpStatus.UNAUTHORIZED)
     }
 
     @Test
@@ -184,18 +172,16 @@ class LikeApiMockMvcTest(
         product.delete()
         entityManager.flushAndClear()
 
-        like(product.id, userId).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.errorCode") { value("Not Found") }
-            jsonPath("$.meta.message") { value(ErrorType.PRODUCT_NOT_FOUND.message) }
-        }
+        val body = assertThat(like(product.id, userId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Not Found")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.PRODUCT_NOT_FOUND.message)
     }
 
     @Test
     fun `liking an unknown product returns 404`() {
         val userId = registerUser()
 
-        like(999L, userId).andExpect { status { isNotFound() } }
+        assertThat(like(999L, userId)).hasStatus(HttpStatus.NOT_FOUND)
     }
 
     /** 상품이 삭제되어도 남은 좋아요는 취소된다. 취소는 상품을 보지 않는다. */
@@ -203,21 +189,21 @@ class LikeApiMockMvcTest(
     fun `unliking a deleted product returns 200 and lets the remaining like go`() {
         val userId = registerUser()
         val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
-        like(product.id, userId).andExpect { status { isOk() } }
+        assertThat(like(product.id, userId)).hasStatusOk()
         product.delete()
         entityManager.flushAndClear()
 
-        unlike(product.id, userId).andExpect { status { isOk() } }
+        assertThat(unlike(product.id, userId)).hasStatusOk()
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(userId, product.id)).isZero()
     }
 
-    private fun like(productId: Long, userId: Long): ResultActionsDsl =
-        mockMvc.post("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, userId) }
+    private fun like(productId: Long, userId: Long): MvcTestResult =
+        mvc.post().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
 
-    private fun unlike(productId: Long, userId: Long): ResultActionsDsl =
-        mockMvc.delete("$PRODUCTS/$productId/likes") { header(UserIdHeader.NAME, userId) }
+    private fun unlike(productId: Long, userId: Long): MvcTestResult =
+        mvc.delete().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
 
     private fun registerUser(): Long = userRepository.save(User()).id
 }

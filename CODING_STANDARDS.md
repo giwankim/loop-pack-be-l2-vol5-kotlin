@@ -21,7 +21,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 
 - `MockMvcTester`는 생성자로 받고 필드 이름은 `mvc`다. 클래스 이름 `*MockMvcTest`는 그대로 둔다.
 - 상태는 `hasStatusOk()`나 `hasStatus(HttpStatus.…)`로 단언한다. 본문을 단언할 때는 그 결과에서 `bodyJson()`을 받아 지역 변수에 둔다. 상태도 보면 같은 줄에서 먼저 단언한다(`assertThat(result).hasStatusOk().bodyJson()`).
-- 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 짓는다. 상세는 `detail`, 목록은 `list`, 오류 응답은 `error`다.
+- 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 짓는다. 상세는 `detail`, 목록은 `list`, 오류 응답은 `error`다. 뒤에 받는 쓰기 요청의 응답은 그 요청 이름에 `Body`를 붙인다(`unlikeBody`). 이미 쓴 이름을 다시 읽으면 무엇 뒤에 읽었는지 붙인다(`detailAfterUnlike`).
 - 요청에 실을 JSON을 담는 파라미터와 변수의 이름은 `json`이다. 응답 본문 `body`와 겹치지 않게 한다.
 - 본문은 JSON 경로 하나에 한 줄씩 단언한다.
   - 값은 `extractingPath(…).isEqualTo(…)`
