@@ -697,7 +697,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 - 그래서 `OrderCreateRequest`의 `@Size`·`@Positive`에 메시지를 적었다. 전에는 주문 전용 advice가 메시지를 버려 비어 있었고, 저장소의 다른 Request는 모두 메시지를 적는다(카탈로그 설계 5.18). 메시지가 없으면 Hibernate Validator의 locale 기본 문장이 그대로 내려간다.
 - 로그도 돌아왔다. `OrderControllerAdvice.invalidRequest()`는 예외를 받지 않고 버려 주문의 거절이 아무 줄도 남기지 않았다. 공용 handler는 모두 `log.warn`한다. (2026-10-03(#55)에 `CoreException` 갈래를 지우며 `handleHttpMessageNotReadable`의 로그도 모든 갈래가 거치는 한 줄로 옮겼다.)
 - `ConstraintViolationException` handler는 옮기지 않고 지웠다. 본문 제약은 Controller의 `@Valid`가, 키는 `IdempotencyKeyHeader`가 먼저 보므로 HTTP로는 닿지 않는다. Controller를 거치지 않는 호출은 공용 handler가 받는다.
-- 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableBodies`), Jackson이 거르는 28개(`malformedBodies`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. (처음에는 역직렬화기가 거르는 33개였다. 2026-10-03(#55)에 Jackson이 받는 숫자 문자열·소수·지수 표기 6개와 단일 items 객체를 빼고 숫자가 아닌 문자열 2개를 더했다. 숫자 문자열 수량과 단일 items 객체는 생성되는 것을 따로 본다.)
+- 테스트의 본문 묶음을 셋으로 나눴다. 읽을 수 없는 본문 3개(`unreadableJsons`), Jackson이 거르는 28개(`malformedJsons`), 그리고 양수 조건 4개는 Request 제약을 보는 테스트로 옮겼다. (처음에는 역직렬화기가 거르는 33개였다. 2026-10-03(#55)에 Jackson이 받는 숫자 문자열·소수·지수 표기 6개와 단일 items 객체를 빼고 숫자가 아닌 문자열 2개를 더했다. 숫자 문자열 수량과 단일 items 객체는 생성되는 것을 따로 본다.)
 
 ## 14. 내 주문 목록 구현 — Issue #15
 

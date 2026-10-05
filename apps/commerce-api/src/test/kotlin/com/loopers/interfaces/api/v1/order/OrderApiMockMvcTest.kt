@@ -60,14 +60,14 @@ class OrderApiMockMvcTest(
     companion object {
         /** 본문을 JSON으로 읽을 수조차 없는 것. Spring·Jackson의 범용 400이다(설계 13.1). */
         @JvmStatic
-        fun unreadableBodies(): List<String> = listOf("", "null", "{")
+        fun unreadableJsons(): List<String> = listOf("", "null", "{")
 
         /**
          * Jackson 기본 바인딩이 거절하는 모양. 숫자 문자열·소수 표기의 정수는 받으므로 여기 없다(설계 5.10).
          * 양수 조건은 Request 제약이라 여기 없다.
          */
         @JvmStatic
-        fun malformedBodies(): List<String> = listOf(
+        fun malformedJsons(): List<String> = listOf(
             "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}", "{\"items\":\"text\"}",
             "{\"items\":true}", "{\"items\":1}", "{\"items\":[null]}", "{\"items\":[1]}",
             "{\"items\":[[]]}", "{\"items\":[{}]}", "{\"items\":[{\"productId\":PRODUCT_ID}]}",
@@ -149,7 +149,7 @@ class OrderApiMockMvcTest(
     }
 
     @ParameterizedTest
-    @MethodSource("malformedBodies")
+    @MethodSource("malformedJsons")
     fun `malformed requests are rejected and save nothing`(json: String) {
         val id = productRepository.save(createProduct(brand)).id
         val body = assertThat(create(json.replace("PRODUCT_ID", id.toString()))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
@@ -176,7 +176,7 @@ class OrderApiMockMvcTest(
     }
 
     @ParameterizedTest
-    @MethodSource("unreadableBodies")
+    @MethodSource("unreadableJsons")
     fun `unreadable bodies are rejected and save nothing`(json: String) {
         productRepository.save(createProduct(brand))
         val body = assertThat(create(json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
