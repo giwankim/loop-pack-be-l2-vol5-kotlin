@@ -13,8 +13,8 @@ import com.loopers.domain.product.createProduct
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandRepositoryImpl
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Hibernate

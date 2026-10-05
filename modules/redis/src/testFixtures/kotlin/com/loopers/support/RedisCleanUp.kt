@@ -1,4 +1,4 @@
-package com.loopers.utils
+package com.loopers.support
 
 import org.springframework.data.redis.connection.RedisConnectionFactory
 import org.springframework.stereotype.Component

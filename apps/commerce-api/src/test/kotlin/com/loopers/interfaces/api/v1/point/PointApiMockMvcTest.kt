@@ -4,12 +4,12 @@ import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.user.UserFixture
 import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.support.balanceOf
+import com.loopers.support.countPointAccounts
 import com.loopers.support.error.ErrorType
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.balanceOf
-import com.loopers.utils.countPointAccounts
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

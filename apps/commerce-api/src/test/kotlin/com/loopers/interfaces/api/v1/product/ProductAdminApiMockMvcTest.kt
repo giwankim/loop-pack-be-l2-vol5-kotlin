@@ -8,9 +8,9 @@ import com.loopers.domain.brand.createBrand
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString

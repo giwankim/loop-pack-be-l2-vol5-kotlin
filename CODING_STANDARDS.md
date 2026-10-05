@@ -11,6 +11,14 @@
 - 테스트 클래스는 `@Nested` 없이 평평하다.
 - `assertThrows`가 돌려준 예외는 `exception`이라는 변수에 담는다.
 
+### 도우미
+
+- 테스트 도우미는 `com.loopers.support`에 둔다. 여기서 도우미는 여러 테스트 클래스가 함께 쓰는 함수와 클래스다. 모든 모듈의 테스트와 `testFixtures`에 똑같이 적용한다(jpa `testFixtures`의 `DatabaseCleanUp`, redis `testFixtures`의 `RedisCleanUp` 등).
+- 다음은 이 규칙에 들지 않는다.
+  - fixture와 fixture 곁의 도우미(`unsaved()`, `UserFixture.registerUser`). 아래 [Fixture](#fixture)를 따른다.
+  - 한 테스트 클래스 안에서만 쓰는 도우미(MockMvc 테스트의 요청 도우미 등). 그 클래스에 둔다.
+  - Testcontainers 설정(`com.loopers.testcontainers`).
+
 ### Fixture
 
 테스트 데이터는 fixture로 준비한다. 까닭과 고르지 않은 대안은 [ADR 0010](docs/adr/0010-entity-fixtures-built-by-instancio.md)에 있다. 파일 위치, seed 보고, Bean Validation 연동 설정은 [ADR 0007](docs/adr/0007-fixtures-build-through-constructors.md)에서 이어진다.

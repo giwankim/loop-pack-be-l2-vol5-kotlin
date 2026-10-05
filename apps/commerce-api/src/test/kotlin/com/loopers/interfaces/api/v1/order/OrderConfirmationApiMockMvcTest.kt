@@ -14,9 +14,9 @@ import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.UserFixture
 import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.support.DatabaseCleanUp
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach

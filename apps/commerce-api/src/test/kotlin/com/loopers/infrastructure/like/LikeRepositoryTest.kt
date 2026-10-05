@@ -3,10 +3,10 @@ package com.loopers.infrastructure.like
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
+import com.loopers.support.countLikes
+import com.loopers.support.flushAndClear
+import com.loopers.support.likeRowExists
 import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.utils.countLikes
-import com.loopers.utils.flushAndClear
-import com.loopers.utils.likeRowExists
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

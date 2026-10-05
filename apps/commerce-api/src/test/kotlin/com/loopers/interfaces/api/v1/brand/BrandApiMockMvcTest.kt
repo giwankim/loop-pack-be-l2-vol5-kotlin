@@ -4,9 +4,9 @@ import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest

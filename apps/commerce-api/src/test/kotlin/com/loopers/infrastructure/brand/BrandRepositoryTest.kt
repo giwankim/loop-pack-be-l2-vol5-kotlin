@@ -4,9 +4,9 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
+import com.loopers.support.flushAndClear
+import com.loopers.support.statistics
 import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.utils.flushAndClear
-import com.loopers.utils.statistics
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

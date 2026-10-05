@@ -8,9 +8,9 @@ import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.ErrorType
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Test

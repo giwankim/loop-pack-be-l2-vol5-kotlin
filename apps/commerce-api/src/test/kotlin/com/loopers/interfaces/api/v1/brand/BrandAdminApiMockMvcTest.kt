@@ -7,9 +7,9 @@ import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.ErrorType
+import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.flushAndClear
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.hamcrest.Matchers.containsString
@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional
 /**
  * MockMvc는 요청을 테스트 스레드에서 처리하므로 테스트 트랜잭션이 컨트롤러와 서비스까지 감싸고, 테스트마다 롤백으로 정리한다.
  * 실제 톰캣(RANDOM_PORT)을 띄우거나 다른 스레드가 끼어드는 순간 이 롤백은 요청 밖의 데이터를 잡지 못하므로,
- * 그때는 [com.loopers.utils.DatabaseCleanUp]으로 되돌린다.
+ * 그때는 [com.loopers.support.DatabaseCleanUp]으로 되돌린다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -1,4 +1,4 @@
-package com.loopers.utils
+package com.loopers.support
 
 import jakarta.persistence.Entity
 import jakarta.persistence.EntityManager

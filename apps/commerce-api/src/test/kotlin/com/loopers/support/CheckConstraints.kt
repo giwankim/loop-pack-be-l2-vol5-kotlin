@@ -1,4 +1,4 @@
-package com.loopers.utils
+package com.loopers.support
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.assertThrows

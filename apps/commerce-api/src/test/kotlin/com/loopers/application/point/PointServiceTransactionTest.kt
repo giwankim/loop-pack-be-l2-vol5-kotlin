@@ -3,10 +3,10 @@ package com.loopers.application.point
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.user.UserFixture
+import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.balanceOf
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.DatabaseCleanUp
-import com.loopers.utils.balanceOf
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach

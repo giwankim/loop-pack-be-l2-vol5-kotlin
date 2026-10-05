@@ -13,10 +13,10 @@ import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
+import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.assertCheckConstraintRejects
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
-import com.loopers.utils.DatabaseCleanUp
-import com.loopers.utils.assertCheckConstraintRejects
 import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
