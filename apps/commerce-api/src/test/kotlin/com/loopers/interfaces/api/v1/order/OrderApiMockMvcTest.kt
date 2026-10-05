@@ -15,12 +15,12 @@ import com.loopers.domain.user.UserRepository
 import com.loopers.interfaces.api.UserIdHeader
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.assertCheckConstraintRejects
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.hamcrest.Matchers.containsString
 import org.hibernate.SessionFactory
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -31,12 +31,11 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.ResultActionsDsl
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.JsonNode
@@ -47,7 +46,7 @@ import tools.jackson.databind.ObjectMapper
 @AutoConfigureMockMvc
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 class OrderApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val objectMapper: ObjectMapper,
     private val userRepository: UserRepository,
     private val brandRepository: BrandRepository,
@@ -104,24 +103,24 @@ class OrderApiMockMvcTest(
                 {"productId":$second,"quantity":1},
                 {"productId":$first,"quantity":5}
             ],"totalAmount":1}""",
-        ).andExpect {
-            status { isCreated() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.status") { value("DRAFT") }
-            jsonPath("$.data.totalAmount") { value(7_000) }
-            jsonPath("$.data.items.length()") { value(2) }
-            jsonPath("$.data.items[0].productId") { value(first) }
-            jsonPath("$.data.items[0].productName") { value("티셔츠") }
-            jsonPath("$.data.items[0].unitPrice") { value(1_000) }
-            jsonPath("$.data.items[0].quantity") { value(5) }
-            jsonPath("$.data.items[0].lineAmount") { value(5_000) }
-            jsonPath("$.data.items[1].productId") { value(second) }
-            jsonPath("$.data.paidAmount") { doesNotExist() }
-            jsonPath("$.data.confirmedAt") { doesNotExist() }
-        }.json()
+        )
+        val body = assertThat(created).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.status").isEqualTo("DRAFT")
+        body.extractingPath("$.data.totalAmount").isEqualTo(7_000)
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        body.extractingPath("$.data.items[0].productId").isEqualToLong(first)
+        body.extractingPath("$.data.items[0].productName").isEqualTo("티셔츠")
+        body.extractingPath("$.data.items[0].unitPrice").isEqualTo(1_000)
+        body.extractingPath("$.data.items[0].quantity").isEqualTo(5)
+        body.extractingPath("$.data.items[0].lineAmount").isEqualTo(5_000)
+        body.extractingPath("$.data.items[1].productId").isEqualToLong(second)
+        body.doesNotHavePath("$.data.paidAmount")
+        body.doesNotHavePath("$.data.confirmedAt")
 
-        val detail = detail(created["data"]["orderId"].longValue()).andExpect { status { isOk() } }.json()
-        assertThat(detail).isEqualTo(created)
+        val ownDetail = detail(body.extractingPath("$.data.orderId").asNumber().actual().toLong())
+        assertThat(ownDetail).hasStatusOk()
+        assertThat(ownDetail.json()).isEqualTo(created.json())
         assertThat(productRepository.findById(first)!!.stock).isEqualTo(Stock(0))
         assertThat(productRepository.findById(second)!!.stock).isEqualTo(Stock(1))
     }
@@ -131,11 +130,9 @@ class OrderApiMockMvcTest(
         val id = productRepository.save(createProduct(brand)).id
         val other = productRepository.save(createProduct(brand)).id
         listOf(listOf(id, id), listOf(id, other, id)).forEach { productIds ->
-            create(items(productIds)).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value("주문은 상품별로 하나씩인 품목을 포함해야 합니다.") }
-            }
+            val body = assertThat(create(items(productIds))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            body.extractingPath("$.meta.message").isEqualTo("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")
             assertNoOrders()
         }
     }
@@ -145,22 +142,18 @@ class OrderApiMockMvcTest(
     fun `a request that repeats an unavailable product returns 404 and saves nothing`() {
         val deleted = productRepository.save(createProduct(brand).apply { delete() }).id
         listOf(Long.MAX_VALUE, deleted).forEach { id ->
-            create(items(id, "1,1")).andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
-            }
+            val body = assertThat(create(items(id, "1,1"))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
     }
 
     @ParameterizedTest
     @MethodSource("malformedBodies")
-    fun `malformed requests are rejected and save nothing`(body: String) {
+    fun `malformed requests are rejected and save nothing`(json: String) {
         val id = productRepository.save(createProduct(brand)).id
-        create(body.replace("PRODUCT_ID", id.toString())).andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val body = assertThat(create(json.replace("PRODUCT_ID", id.toString()))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         assertNoOrders()
     }
 
@@ -168,32 +161,26 @@ class OrderApiMockMvcTest(
     @Test
     fun `an item quantity sent as a numeric string creates the order`() {
         val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
-        create("""{"items":[{"productId":$id,"quantity":"2"}]}""").andExpect {
-            status { isCreated() }
-            jsonPath("$.data.items[0].quantity") { value(2) }
-            jsonPath("$.data.totalAmount") { value(2_000) }
-        }
+        val body = assertThat(create("""{"items":[{"productId":$id,"quantity":"2"}]}""")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.items[0].quantity").isEqualTo(2)
+        body.extractingPath("$.data.totalAmount").isEqualTo(2_000)
     }
 
     /** `JacksonConfig`의 `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 품목 객체 하나를 한 품목 배열로 읽는다. 5.10이 적은 대가다. */
     @Test
     fun `a single item object in place of the items array creates a one item order`() {
         val id = productRepository.save(createProduct(brand)).id
-        create("""{"items":{"productId":$id,"quantity":1}}""").andExpect {
-            status { isCreated() }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].productId") { value(id) }
-        }
+        val body = assertThat(create("""{"items":{"productId":$id,"quantity":1}}""")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].productId").isEqualToLong(id)
     }
 
     @ParameterizedTest
     @MethodSource("unreadableBodies")
-    fun `unreadable bodies are rejected and save nothing`(body: String) {
+    fun `unreadable bodies are rejected and save nothing`(json: String) {
         productRepository.save(createProduct(brand))
-        create(body).andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val body = assertThat(create(json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         assertNoOrders()
     }
 
@@ -202,18 +189,14 @@ class OrderApiMockMvcTest(
         val products = List(100) { productRepository.save(createProduct(brand, price = Money(1_000))).id }
         // 같은 상품 101개도 개수 제약이 먼저 거른다. 받은 품목을 그대로 센다.
         listOf(emptyList(), List(101) { products.first() }).forEach { productIds ->
-            create(items(productIds)).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value("주문 품목은 1개 이상 100개 이하여야 합니다.") }
-            }
+            val body = assertThat(create(items(productIds))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            body.extractingPath("$.meta.message").isEqualTo("주문 품목은 1개 이상 100개 이하여야 합니다.")
             assertNoOrders()
         }
-        create(items(products)).andExpect {
-            status { isCreated() }
-            jsonPath("$.data.items.length()") { value(100) }
-            jsonPath("$.data.totalAmount") { value(100_000) }
-        }
+        val createBody = assertThat(create(items(products))).hasStatus(HttpStatus.CREATED).bodyJson()
+        createBody.extractingPath("$.data.items.length()").isEqualTo(100)
+        createBody.extractingPath("$.data.totalAmount").isEqualTo(100_000)
     }
 
     @Test
@@ -221,64 +204,56 @@ class OrderApiMockMvcTest(
         val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
         // 양수 조건은 Request 제약이라 범용 400 + 규칙 메시지다(설계 12.4, 13.1).
         listOf(0, -1).forEach { quantity ->
-            create(body(id, quantity)).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value("수량은 1개 이상이어야 합니다.") }
-            }
+            val body = assertThat(create(item(id, quantity))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            body.extractingPath("$.meta.message").isEqualTo("수량은 1개 이상이어야 합니다.")
             assertNoOrders()
         }
         listOf(0, -1).forEach { productId ->
-            create("""{"items":[{"productId":$productId,"quantity":1}]}""").andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value("상품 ID는 1 이상이어야 합니다.") }
-            }
+            val error = assertThat(
+                create("""{"items":[{"productId":$productId,"quantity":1}]}"""),
+            ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            error.extractingPath("$.meta.message").isEqualTo("상품 ID는 1 이상이어야 합니다.")
             assertNoOrders()
         }
-        create(body(id, Int.MAX_VALUE)).andExpect {
-            status { isCreated() }
-            jsonPath("$.data.items[0].quantity") { value(Int.MAX_VALUE) }
-            jsonPath("$.data.totalAmount") { value(2_147_483_647_000L) }
-        }
+        val createBody = assertThat(create(item(id, Int.MAX_VALUE))).hasStatus(HttpStatus.CREATED).bodyJson()
+        createBody.extractingPath("$.data.items[0].quantity").isEqualTo(Int.MAX_VALUE)
+        createBody.extractingPath("$.data.totalAmount").isEqualToLong(2_147_483_647_000L)
     }
 
     @Test
     fun `order amount overflow rolls back every item`() {
         val products = List(5) { productRepository.save(createProduct(brand, price = Money(1_000_000_000))).id }
         val entries = products.joinToString { """{"productId":$it,"quantity":2147483647}""" }
-        create("""{"items":[$entries]}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
-        }
+        val body = assertThat(create("""{"items":[$entries]}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
         assertNoOrders()
     }
 
     @Test
     fun `missing and nonexistent requesters are unauthorized and other orders look missing`() {
-        val request = body(productRepository.save(createProduct(brand)).id)
+        val json = item(productRepository.save(createProduct(brand)).id)
         listOf(null, Long.MAX_VALUE).forEach { requester ->
-            create(request, requester = requester).andExpect {
-                status { isUnauthorized() }
-                jsonPath("$.meta.errorCode") { value("Unauthorized") }
-            }
-            detail(1, requester).andExpect { status { isUnauthorized() } }
+            val body = assertThat(create(json, requester = requester)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+            assertThat(detail(1, requester)).hasStatus(HttpStatus.UNAUTHORIZED)
             assertNoOrders()
         }
-        val created = create(request).andExpect { status { isCreated() } }.json()
-        val orderId = created["data"]["orderId"].longValue()
+        val createBody = assertThat(create(json)).hasStatus(HttpStatus.CREATED).bodyJson()
+        val orderId = createBody.extractingPath("$.data.orderId").asNumber().actual().toLong()
         val otherUser = userRepository.save(User()).id
-        val missing = detail(Long.MAX_VALUE).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.errorCode") { value("ORDER_NOT_FOUND") }
-        }.json()
-        val forbidden = detail(orderId, otherUser).andExpect { status { isNotFound() } }.json()
-        assertThat(forbidden).isEqualTo(missing)
-        mockMvc.get("/api/v1/orders/$orderId") { header(UserIdHeader.NAME, "abc") }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val missing = detail(Long.MAX_VALUE)
+        val error = assertThat(missing).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
+        val forbidden = detail(orderId, otherUser)
+        assertThat(forbidden).hasStatus(HttpStatus.NOT_FOUND)
+        assertThat(forbidden.json()).isEqualTo(missing.json())
+        val secondError = assertThat(
+            mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, "abc"),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        secondError.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
     }
 
     @Test
@@ -286,39 +261,37 @@ class OrderApiMockMvcTest(
         val active = productRepository.save(createProduct(brand)).id
         val deleted = productRepository.save(createProduct(brand).apply { delete() }).id
         listOf(Long.MAX_VALUE, deleted).forEach { id ->
-            create("""{"items":[{"productId":$active,"quantity":1},{"productId":$id,"quantity":1}]}""").andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
-            }
+            val body = assertThat(
+                create("""{"items":[{"productId":$active,"quantity":1},{"productId":$id,"quantity":1}]}"""),
+            ).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
         // The catalog API prevents deleting a brand with active products; seed that legacy state directly.
         jdbc.update("update brand set deleted_at = current_timestamp(6) where id = ?", brand.id)
-        create(body(active)).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.errorCode") { value("ORDER_PRODUCT_NOT_AVAILABLE") }
-        }
+        val error = assertThat(create(item(active))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
         assertNoOrders()
     }
 
     @Test
     fun `client supplied prices names and totals are ignored`() {
         val id = productRepository.save(createProduct(brand, name = "서버 이름", price = Money(1_000))).id
-        create(
-            """{
-                "items":[{"productId":$id,"quantity":2,"productName":"가짜","unitPrice":1,"lineAmount":1}],
-                "totalAmount":1,"status":"CONFIRMED","paidAmount":1
-            }""",
-        ).andExpect {
-            status { isCreated() }
-            jsonPath("$.data.status") { value("DRAFT") }
-            jsonPath("$.data.items[0].productName") { value("서버 이름") }
-            jsonPath("$.data.items[0].unitPrice") { value(1_000) }
-            jsonPath("$.data.items[0].lineAmount") { value(2_000) }
-            jsonPath("$.data.totalAmount") { value(2_000) }
-            jsonPath("$.data.paidAmount") { doesNotExist() }
-            jsonPath("$.data.userId") { doesNotExist() }
-        }
+        val body = assertThat(
+            create(
+                """{
+                    "items":[{"productId":$id,"quantity":2,"productName":"가짜","unitPrice":1,"lineAmount":1}],
+                    "totalAmount":1,"status":"CONFIRMED","paidAmount":1
+                }""",
+            ),
+        ).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("DRAFT")
+        body.extractingPath("$.data.items[0].productName").isEqualTo("서버 이름")
+        body.extractingPath("$.data.items[0].unitPrice").isEqualTo(1_000)
+        body.extractingPath("$.data.items[0].lineAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.totalAmount").isEqualTo(2_000)
+        body.doesNotHavePath("$.data.paidAmount")
+        body.doesNotHavePath("$.data.userId")
     }
 
     @Test
@@ -326,21 +299,20 @@ class OrderApiMockMvcTest(
         val id = productRepository.save(createProduct(brand)).id
         // Valid catalog prices cannot overflow one line; a DB fixture exercises the Long multiplication guard.
         jdbc.update("update product set price = ? where id = ?", Long.MAX_VALUE, id)
-        create(body(id, 2)).andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value("금액 계산 결과가 표현 범위를 넘습니다.") }
-        }
+        val body = assertThat(create(item(id, 2))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
         assertNoOrders()
         jdbc.update("update product set price = 1000 where id = ?", id)
-        create(body(id)).andExpect { status { isCreated() } }
+        assertThat(create(item(id))).hasStatus(HttpStatus.CREATED)
     }
 
     @Test
     fun `foreign keys and order product uniqueness are enforced by MySQL`() {
         val id = productRepository.save(createProduct(brand)).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(id))).orderId
-        val original = detail(orderId).andExpect { status { isOk() } }.json()
+        val original = detail(orderId)
+        assertThat(original).hasStatusOk()
         val foreignKeys = jdbc.queryForList(
             "select concat(table_name, '.', column_name, '->', referenced_table_name) as reference_name " +
                 "from information_schema.key_column_usage where table_schema = database() " +
@@ -364,17 +336,17 @@ class OrderApiMockMvcTest(
         assertConstraint("delete from users where id = ?", userId)
         assertConstraint("delete from product where id = ?", id)
         assertConstraint("delete from orders where id = ?", orderId)
-        assertThat(detail(orderId).json()).isEqualTo(original)
+        assertThat(detail(orderId).json()).isEqualTo(original.json())
     }
 
     @Test
     fun `storage failure on the second item rolls back the order and its items`() {
         val first = productRepository.save(createProduct(brand)).id
         val second = productRepository.save(createProduct(brand)).id
-        val request = """{"items":[{"productId":$first,"quantity":1},{"productId":$second,"quantity":1}]}"""
+        val json = """{"items":[{"productId":$first,"quantity":1},{"productId":$second,"quantity":1}]}"""
         jdbc.execute("alter table order_line_item add constraint fail_second_order_item check (product_id <> $second)")
         try {
-            create(request).andExpect { status { isInternalServerError() } }
+            assertThat(create(json)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
             assertNoOrders()
         } finally {
             jdbc.execute("alter table order_line_item drop check fail_second_order_item")
@@ -389,7 +361,8 @@ class OrderApiMockMvcTest(
     fun `database rejects inconsistent payment state and nonpositive item values`() {
         val productId = productRepository.save(createProduct(brand)).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
-        val original = detail(orderId).andExpect { status { isOk() } }.json()
+        val original = detail(orderId)
+        assertThat(original).hasStatusOk()
         listOf(
             "paid_amount = 1000",
             "confirmed_at = now(6)",
@@ -401,7 +374,7 @@ class OrderApiMockMvcTest(
         listOf("quantity = 0", "unit_price = 0", "line_amount = 0").forEach { update ->
             jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
-        assertThat(detail(orderId).json()).isEqualTo(original)
+        assertThat(detail(orderId).json()).isEqualTo(original.json())
     }
 
     @Test
@@ -432,7 +405,7 @@ class OrderApiMockMvcTest(
         )
         userId = userRepository.save(User()).id
         brand = brandRepository.save(createBrand())
-        create(body(productRepository.save(createProduct(brand)).id)).andExpect { status { isCreated() } }
+        assertThat(create(item(productRepository.save(createProduct(brand)).id))).hasStatus(HttpStatus.CREATED)
     }
 
     /**
@@ -454,14 +427,14 @@ class OrderApiMockMvcTest(
             productRepository.findById(socks)!!.delete()
         }
 
-        val listed = list().andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(20) }
-            jsonPath("$.data.hasNext") { value(false) }
-            jsonPath("$.data.items.length()") { value(2) }
-        }.json()["data"]["items"]
+        val orders = list()
+        val body = assertThat(orders).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.page").isEqualTo(0)
+        body.extractingPath("$.data.size").isEqualTo(20)
+        body.extractingPath("$.data.hasNext").isEqualTo(false)
+        body.extractingPath("$.data.items.length()").isEqualTo(2)
+        val listed = orders.json()["data"]["items"]
 
         assertThat(listed[0]).isEqualTo(newer)
         assertThat(listed[1]).isEqualTo(older)
@@ -487,15 +460,13 @@ class OrderApiMockMvcTest(
             confirmed,
         )
 
-        list().andExpect {
-            status { isOk() }
-            jsonPath("$.data.items[0].status") { value("CONFIRMED") }
-            jsonPath("$.data.items[0].paidAmount") { value(2_000) }
-            jsonPath("$.data.items[0].confirmedAt") { value("2026-09-18T00:00:00.123456Z") }
-            jsonPath("$.data.items[1].status") { value("DRAFT") }
-            jsonPath("$.data.items[1].paidAmount") { doesNotExist() }
-            jsonPath("$.data.items[1].confirmedAt") { doesNotExist() }
-        }
+        val body = assertThat(list()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.items[0].confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
+        body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[1].paidAmount")
+        body.doesNotHavePath("$.data.items[1].confirmedAt")
     }
 
     /**
@@ -512,11 +483,11 @@ class OrderApiMockMvcTest(
         jdbc.update("update orders set created_at = '2026-09-18 10:00:00.000000' where id in (?, ?)", tied, tiedLater)
 
         val pages = (0..3).map { page ->
-            list("page" to "$page", "size" to "1").andExpect {
-                status { isOk() }
-                jsonPath("$.data.page") { value(page) }
-                jsonPath("$.data.size") { value(1) }
-            }.json()["data"]
+            val orders = list("page" to "$page", "size" to "1")
+            val body = assertThat(orders).hasStatusOk().bodyJson()
+            body.extractingPath("$.data.page").isEqualTo(page)
+            body.extractingPath("$.data.size").isEqualTo(1)
+            orders.json()["data"]
         }
 
         assertThat(pages[0]["items"][0]["orderId"].longValue()).isEqualTo(tiedLater)
@@ -536,11 +507,9 @@ class OrderApiMockMvcTest(
             ("size" to "0") to "size는 1 이상이어야 합니다",
             ("size" to "101") to "size는 100 이하여야 합니다",
         ).forEach { (query, message) ->
-            list(query).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.meta.errorCode") { value("Bad Request") }
-                jsonPath("$.meta.message") { value(containsString(message)) }
-            }
+            val body = assertThat(list(query)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+            body.extractingPath("$.meta.message").asString().contains(message)
         }
     }
 
@@ -548,28 +517,24 @@ class OrderApiMockMvcTest(
     fun `listing orders needs a requester and a user without orders gets an empty page`() {
         orderService.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
         listOf(null, Long.MAX_VALUE).forEach { requester ->
-            list(requester = requester).andExpect {
-                status { isUnauthorized() }
-                jsonPath("$.meta.errorCode") { value("Unauthorized") }
-            }
+            val body = assertThat(list(requester = requester)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+            body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
         }
 
         // 헤더가 사용자 식별자로 읽히지 않는 것은 요청자 확인보다 앞선 HTTP의 사실이라 400이다(설계 13.1).
-        mockMvc.get("/api/v1/orders") { header(UserIdHeader.NAME, "abc") }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-        }
+        val error = assertThat(
+            mvc.get().uri("/api/v1/orders").header(UserIdHeader.NAME, "abc"),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
 
-        list(requester = userRepository.save(User()).id).andExpect {
-            status { isOk() }
-            jsonPath("$.data.items") { isEmpty() }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(20) }
-            jsonPath("$.data.hasNext") { value(false) }
-        }
+        val list = assertThat(list(requester = userRepository.save(User()).id)).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items").asArray().isEmpty()
+        list.extractingPath("$.data.page").isEqualTo(0)
+        list.extractingPath("$.data.size").isEqualTo(20)
+        list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
-    private fun body(id: Long, quantity: Int = 1): String = """{"items":[{"productId":$id,"quantity":$quantity}]}"""
+    private fun item(id: Long, quantity: Int = 1): String = """{"items":[{"productId":$id,"quantity":$quantity}]}"""
 
     private fun items(id: Long, quantities: String): String = quantities.split(',')
         .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
@@ -582,21 +547,23 @@ class OrderApiMockMvcTest(
         assertThat(jdbc.queryForObject("select count(*) from order_line_item", Long::class.java)!!).isZero()
     }
 
-    private fun create(body: String, requester: Long? = userId): ResultActionsDsl =
-        mockMvc.post("/api/v1/orders") {
-            if (requester != null) header(UserIdHeader.NAME, requester)
-            contentType = MediaType.APPLICATION_JSON
-            content = body
-        }
+    private fun create(json: String, requester: Long? = userId): MvcTestResult =
+        mvc.post().uri("/api/v1/orders")
+            .apply { requester?.let { header(UserIdHeader.NAME, it) } }
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json)
+            .exchange()
 
-    private fun detail(orderId: Long, requester: Long? = userId): ResultActionsDsl =
-        mockMvc.get("/api/v1/orders/$orderId") { if (requester != null) header(UserIdHeader.NAME, requester) }
+    private fun detail(orderId: Long, requester: Long? = userId): MvcTestResult =
+        mvc.get().uri("/api/v1/orders/$orderId")
+            .apply { requester?.let { header(UserIdHeader.NAME, it) } }
+            .exchange()
 
-    private fun list(vararg query: Pair<String, String>, requester: Long? = userId): ResultActionsDsl =
-        mockMvc.get("/api/v1/orders") {
-            if (requester != null) header(UserIdHeader.NAME, requester)
-            query.forEach { (name, value) -> param(name, value) }
-        }
+    private fun list(vararg query: Pair<String, String>, requester: Long? = userId): MvcTestResult =
+        mvc.get().uri("/api/v1/orders")
+            .apply { requester?.let { header(UserIdHeader.NAME, it) } }
+            .apply { query.forEach { (name, value) -> param(name, value) } }
+            .exchange()
 
-    private fun ResultActionsDsl.json(): JsonNode = objectMapper.readTree(andReturn().response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
 }

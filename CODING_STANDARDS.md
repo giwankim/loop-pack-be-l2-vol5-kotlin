@@ -21,8 +21,8 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 
 - `MockMvcTester`는 생성자로 받고 필드 이름은 `mvc`다. 클래스 이름 `*MockMvcTest`는 그대로 둔다.
 - 상태는 `hasStatusOk()`나 `hasStatus(HttpStatus.…)`로 단언한다. 본문을 단언할 때는 그 결과에서 `bodyJson()`을 받아 지역 변수에 둔다. 상태도 보면 같은 줄에서 먼저 단언한다(`assertThat(result).hasStatusOk().bodyJson()`).
-- 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 짓는다. 상세는 `detail`, 목록은 `list`, 오류 응답은 `error`다. 뒤에 받는 쓰기 요청의 응답은 그 요청 이름에 `Body`를 붙인다(`unlikeBody`). 그 이름을 이미 썼으면 그 요청이 몇 번째인지 앞에 붙인다(`secondChargeBody`). 이미 쓴 이름을 다시 읽으면 무엇 뒤에 읽었는지 붙인다(`detailAfterUnlike`).
-- 요청에 실을 JSON을 담는 파라미터와 변수의 이름은 `json`이다. 응답 본문 `body`와 겹치지 않게 한다.
+- 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 짓는다. 상세는 `detail`, 목록은 `list`, 오류 응답은 `error`다. 오류 응답은 쓰기 요청의 것이어도 `error`이고, 오류 응답을 또 받으면 몇 번째인지 앞에 붙인다(`secondError`). 뒤에 받는 쓰기 요청의 응답은 그 요청 이름에 `Body`를 붙인다(`unlikeBody`). 그 이름을 이미 썼으면 그 요청이 몇 번째인지 앞에 붙인다(`secondChargeBody`). 이미 쓴 이름을 다시 읽으면 무엇 뒤에 읽었는지 붙인다(`detailAfterUnlike`). 반복문 안에서 받은 본문도 그 테스트의 본문으로 센다. 반복문이 `body`를 썼으면 뒤에서는 `body`를 다시 쓰지 않는다.
+- 요청에 실을 JSON을 담는 파라미터와 변수의 이름은 `json`이다. 응답 본문 `body`와 겹치지 않게 한다. 요청 JSON을 만드는 도우미 함수도 `body`라 부르지 않고 무엇을 싣는지 따라 짓는다(`item`, `items`).
 - 본문은 JSON 경로 하나에 한 줄씩 단언한다.
   - 값은 `extractingPath(…).isEqualTo(…)`
   - 없어야 하는 필드는 `doesNotHavePath(…)`
@@ -47,6 +47,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   ```kotlin
   val id = body.extractingPath("$.data.id").asNumber().actual().toLong()
   ```
+- 두 응답을 `JsonNode`의 부분 트리로 견주는 테스트(주문의 목록 항목과 상세 등)는 클래스 안의 도우미 `MvcTestResult.json()`으로 본문을 읽는다. 같은 응답을 단언도 하고 견주기도 하면 그 결과를 지역 변수에 받는다. 이름은 응답이 무엇인지 따라 짓고(`created`, `ownDetail`, `missing`, `original`, `orders`) 본문 이름(`body`, `detail` 등)과 겹치지 않게 한다. 상태와 경로는 그 변수로 단언하고, 견줄 때 `json()`으로 읽는다. 주문 테스트에 이미 있던 `JsonNode` 필드 단언(목록 항목의 스냅샷, 쪽마다의 차례)은 ADR 0011대로 그대로 둔다. 한 응답의 필드를 새로 단언할 때는 `extractingPath`를 쓴다.
 
 ### 도우미
 
