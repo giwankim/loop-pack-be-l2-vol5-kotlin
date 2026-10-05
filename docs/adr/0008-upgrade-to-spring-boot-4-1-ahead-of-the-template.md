@@ -21,6 +21,26 @@ date: 2026-10-01
 - 확인된 후속판이 있는 라이브러리는 옮긴다: instancio-junit 6, archunit-junit6, 그리고 Initializr가 쓰는 테스트 스타터. testcontainers-redis는 Testcontainers 2용 판이 없어 일반 컨테이너로 바꾼다.
 - QueryDSL 5.1.0은 Boot가 관리하는 동안 그대로 쓴다. logback-slack-appender는 보관(archived) 상태지만 Boot 4에서도 동작해 그대로 둔다.
 
+## 새 기능은 쓰는 곳이 생길 때 들인다 (2026-10-05)
+
+Boot 4와 Framework 7이 더한 기능은 지금 유지하는 코드를 대신하거나 지금의 요구사항이 필요로 할 때만 들인다. 그렇지 않은 기능은 처음 쓰는 곳이 생길 때 정한다. 요청 멱등성([ADR 0005](./0005-no-request-idempotency-until-a-retrying-caller.md))과 포인트 이력([ADR 0006](./0006-no-point-history-until-a-reader.md))을 미룬 것과 같은 기준이다. 값싼 기능을 미리 들여 익히는 길도 있었다. 하지만 쓰는 곳 없이 들인 기능은 지킬 까닭 없이 지켜야 하는 코드가 되고, 쓰는 곳이 생기면 그때의 요구에 맞춰 다시 고르게 된다. 이번에 들이는 것은 테스트 쪽뿐이다([ADR 0011](./0011-http-tests-assert-through-mockmvctester.md)).
+
+| 기다리는 기능 | 들이는 때 |
+|---|---|
+| API 버전 관리(`spring.mvc.apiversion.*`) | 두 번째 API 버전이 생길 때. 지금 `/api/v1`은 경로 문자열일 뿐이고 고를 버전이 없다. |
+| Redis 정적 master/replica 자동 구성 | 앱 코드가 Redis를 처음 쓸 때. 지금은 `RedisConfig.kt` 말고 Redis를 쓰는 코드가 없다. 자동 구성은 연결 팩토리를 하나만 만들어서 master 전용 팩토리는 어차피 손으로 남고, 속성도 `datasource.redis.*`에서 `spring.data.redis.*`로 옮겨야 한다. |
+| `@Retryable`·`@ConcurrencyLimit` | 재시도할 일이 생길 때. 3주차에 낙관적 락을 고르면 그 재시도가 첫 쓰임이다. |
+| HTTP Service Clients | 처음으로 밖의 HTTP API를 부를 때 |
+| `@RedisListener`, Redis 관측 | 앱 코드가 Redis를 처음 쓸 때 |
+
+이 저장소에서 할 일이 없는 것도 있다.
+
+- JSpecify 널 안전성은 이미 걸려 있다. Kotlin이 Spring 7의 애노테이션을 기본으로 엄격하게 읽는다. `-Xjsr305=strict`는 Initializr가 아직 넣으므로 그대로 둔다.
+- JPA 3.2의 `EntityManager` 생성자 주입은 이미 쓴다(`OrderServiceTest`).
+- Spring Batch 6의 새 chunk 스텝은 걸릴 곳이 없다. 데모 잡은 tasklet 스텝이다.
+- `spring.datasource.connection-fetch=lazy`(4.1)는 자동 구성된 풀에만 걸린다. 이 저장소는 `HikariDataSource`를 직접 만든다.
+- Kotlin 2.2·2.3의 문법(`when`의 guard 조건 등)은 쓸 자리에서 쓴다. 컴파일러 옵션은 위 규칙대로 Initializr를 따르므로 더하지 않는다.
+
 ## 고르지 않은 것
 
 - **과정이 끝날 때까지 3.4에 머문다.** 주마다 내는 PR이 과제에만 집중되고 템플릿 코드와도 계속 맞는다. 하지만 지원이 끝난 버전에 남고, 나중의 이전은 그사이 쌓인 코드만큼 비싸진다.
