@@ -15,6 +15,37 @@
 
 - 단언은 차례로 적는다. `assertAll`이나 soft assertion(`assertSoftly`, `SoftAssertions`)으로 묶지 않는다. 테스트는 동작 하나를 보므로 첫 실패에서 멈추면 충분하다.
 
+### HTTP 테스트
+
+HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르지 않은 대안은 [ADR 0011](docs/adr/0011-http-tests-assert-through-mockmvctester.md)에 있다.
+
+- `MockMvcTester`는 생성자로 받고 필드 이름은 `mvc`다. 클래스 이름 `*MockMvcTest`는 그대로 둔다.
+- 상태는 `hasStatusOk()`나 `hasStatus(HttpStatus.…)`로 단언한다. 본문을 단언할 때는 그 결과에서 `bodyJson()`을 받아 지역 변수에 둔다. 상태도 보면 같은 줄에서 먼저 단언한다(`assertThat(result).hasStatusOk().bodyJson()`).
+- 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 `detail`·`list`로 짓는다.
+- 본문은 JSON 경로 하나에 한 줄씩 단언한다.
+  - 값은 `extractingPath(…).isEqualTo(…)`
+  - 없어야 하는 필드는 `doesNotHavePath(…)`
+  - 부분 문자열은 `extractingPath(…).asString().contains(…)`
+  - 있기만 하면 되는 값은 `isNotNull()`, 수인지는 `asNumber()`
+
+  Hamcrest와 `ResultMatcher`(`andExpect`)는 쓰지 않는다.
+
+  ```kotlin
+  val body = assertThat(postBrand(name = "루퍼스")).hasStatus(HttpStatus.CREATED).bodyJson()
+  body.extractingPath("$.data.name").isEqualTo("루퍼스")
+  body.extractingPath("$.data.createdAt").isNotNull()
+  ```
+- 기대값이 `Long`이면 `com.loopers.support`의 `isEqualToLong`으로 단언한다. JSONPath는 `Int` 범위의 정수를 `Integer`로 읽으므로 `isEqualTo(brand.id)`는 맞는 ID에서도 실패한다.
+- 요청 빌더는 `assertThat`에 넘기거나 `exchange()`를 부를 때마다 실행된다.
+  - 단언에 한 번 넘기는 요청은 빌더를 그대로 `assertThat`에 넘긴다.
+  - 두 번 이상 단언하거나 단언하지 않는 요청은 `exchange()`로 한 번 실행하고 그 결과를 쓴다.
+- 요청 도우미(`postBrand` 등)는 요청을 실행하고 `MvcTestResult`를 돌려준다. 결과는 여러 번 단언해도 요청을 다시 보내지 않는다. 관리자 요청 도우미는 `principal: RequestPostProcessor? = ADMIN`을 받아 요청마다 `with(…)`와 `with(csrf())`를 건다. `principal`이 `null`이면 식별 없는 요청이다.
+- 응답의 ID를 다음 요청에 쓸 때는 그 경로의 `asNumber()` 단언에서 꺼낸다. `andReturn()`과 `JsonPath.read`를 거치지 않는다.
+
+  ```kotlin
+  val id = body.extractingPath("$.data.id").asNumber().actual().toLong()
+  ```
+
 ### 도우미
 
 - 테스트 도우미는 `com.loopers.support`에 둔다. 여기서 도우미는 여러 테스트 클래스가 함께 쓰는 함수와 클래스다. 모든 모듈의 테스트와 `testFixtures`에 똑같이 적용한다(jpa `testFixtures`의 `DatabaseCleanUp`, redis `testFixtures`의 `RedisCleanUp` 등).

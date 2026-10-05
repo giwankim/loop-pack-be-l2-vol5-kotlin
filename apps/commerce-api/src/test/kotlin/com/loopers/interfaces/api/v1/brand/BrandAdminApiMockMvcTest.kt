@@ -1,6 +1,5 @@
 package com.loopers.interfaces.api.v1.brand
 
-import com.jayway.jsonpath.JsonPath
 import com.loopers.application.brand.BrandService
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
@@ -8,12 +7,11 @@ import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
-import org.hamcrest.Matchers.containsString
-import org.hamcrest.Matchers.notNullValue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
@@ -21,15 +19,13 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.assertj.MockMvcTester
+import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.test.web.servlet.request.RequestPostProcessor
-import org.springframework.test.web.servlet.delete
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
-import org.springframework.test.web.servlet.put
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -42,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class BrandAdminApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val brandService: BrandService,
     private val productRepository: ProductRepository,
     private val entityManager: EntityManager,
@@ -55,32 +51,24 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin registers a brand with surrounding spaces and reads the name back as sent`() {
-        val result = postBrand(name = " 루퍼스 ").andExpect {
-            status { isCreated() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.id") { isNumber() }
-            jsonPath("$.data.name") { value(" 루퍼스 ") }
-            jsonPath("$.data.createdAt") { value(notNullValue()) }
-            jsonPath("$.data.updatedAt") { value(notNullValue()) }
-        }.andReturn()
+        val body = assertThat(postBrand(name = " 루퍼스 ")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        val id = body.extractingPath("$.data.id").asNumber().actual().toLong()
+        body.extractingPath("$.data.name").isEqualTo(" 루퍼스 ")
+        body.extractingPath("$.data.createdAt").isNotNull()
+        body.extractingPath("$.data.updatedAt").isNotNull()
 
-        val id = JsonPath.read<Number>(result.response.contentAsString, "$.data.id").toLong()
-        mockMvc.get("$ENDPOINT/$id") { with(ADMIN) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.id") { value(id) }
-                jsonPath("$.data.name") { value(" 루퍼스 ") }
-            }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/$id").with(ADMIN)).hasStatusOk().bodyJson()
+        detail.extractingPath("$.data.id").isEqualToLong(id)
+        detail.extractingPath("$.data.name").isEqualTo(" 루퍼스 ")
     }
 
     @Test
     fun `registering a blank name returns 400 and saves nothing`() {
-        postBrand(name = "   ").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(containsString("이름은 공백일 수 없습니다")) }
-        }
+        val body = assertThat(postBrand(name = "   ")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").asString().contains("이름은 공백일 수 없습니다")
 
         assertThat(countBrands()).isZero()
     }
@@ -89,12 +77,10 @@ class BrandAdminApiMockMvcTest(
     fun `registering a name taken by an active brand returns 409 and saves nothing`() {
         brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        postBrand(name = "루퍼스").andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Conflict") }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_NAME_DUPLICATED.message) }
-        }
+        val body = assertThat(postBrand(name = "루퍼스")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NAME_DUPLICATED.message)
 
         assertThat(countBrands()).isOne()
     }
@@ -104,10 +90,8 @@ class BrandAdminApiMockMvcTest(
     fun `registering a name that differs from an existing brand only by a leading space returns 201`() {
         brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        postBrand(name = " 루퍼스").andExpect {
-            status { isCreated() }
-            jsonPath("$.data.name") { value(" 루퍼스") }
-        }
+        val body = assertThat(postBrand(name = " 루퍼스")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.name").isEqualTo(" 루퍼스")
 
         assertThat(countBrands()).isEqualTo(2)
     }
@@ -120,58 +104,47 @@ class BrandAdminApiMockMvcTest(
     ) {
         brandService.register(createBrandAdminRegisterRequest(name = "Loopers"))
 
-        postBrand(name = name).andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.errorCode") { value("Conflict") }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_NAME_DUPLICATED.message) }
-        }
+        val body = assertThat(postBrand(name = name)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NAME_DUPLICATED.message)
 
         assertThat(countBrands()).isOne()
     }
 
     @Test
     fun `registering as a user returns 403 and saves nothing`() {
-        postBrand(name = "루퍼스", principal = USER).andExpect {
-            status { isForbidden() }
-        }
+        assertThat(postBrand(name = "루퍼스", principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
         assertThat(countBrands()).isZero()
     }
 
     @Test
     fun `registering anonymously returns 403 and saves nothing`() {
-        postBrand(name = "루퍼스", principal = null).andExpect {
-            status { isForbidden() }
-        }
+        assertThat(postBrand(name = "루퍼스", principal = null)).hasStatus(HttpStatus.FORBIDDEN)
 
         assertThat(countBrands()).isZero()
     }
 
     @Test
     fun `getting an unknown brand returns 404`() {
-        mockMvc.get("$ENDPOINT/999") { with(ADMIN) }
-            .andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.result") { value("FAIL") }
-                jsonPath("$.meta.errorCode") { value("Not Found") }
-                jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/999").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Not Found")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NOT_FOUND.message)
     }
 
     @Test
     fun `getting a brand as a user returns 403`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(USER) }
-            .andExpect { status { isForbidden() } }
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(USER)).hasStatus(HttpStatus.FORBIDDEN)
     }
 
     @Test
     fun `getting a brand anonymously returns 403`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        mockMvc.get("$ENDPOINT/${brand.id}")
-            .andExpect { status { isForbidden() } }
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatus(HttpStatus.FORBIDDEN)
     }
 
     @Test
@@ -179,32 +152,28 @@ class BrandAdminApiMockMvcTest(
         brandService.register(createBrandAdminRegisterRequest())
         brandService.register(createBrandAdminRegisterRequest(name = "둘째"))
 
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("page", "0")
-            param("size", "1")
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data.items.length()") { value(1) }
-            jsonPath("$.data.items[0].name") { value("둘째") }
-            jsonPath("$.data.page") { value(0) }
-            jsonPath("$.data.size") { value(1) }
-            jsonPath("$.data.hasNext") { value(true) }
-        }
+        val body = assertThat(
+            mvc.get().uri(ENDPOINT)
+                .with(ADMIN)
+                .param("page", "0")
+                .param("size", "1"),
+        ).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].name").isEqualTo("둘째")
+        body.extractingPath("$.data.page").isEqualTo(0)
+        body.extractingPath("$.data.size").isEqualTo(1)
+        body.extractingPath("$.data.hasNext").isEqualTo(true)
     }
 
     @Test
     fun `listing without paging parameters uses the first page of twenty`() {
         brandService.register(createBrandAdminRegisterRequest())
 
-        mockMvc.get(ENDPOINT) { with(ADMIN) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.page") { value(0) }
-                jsonPath("$.data.size") { value(20) }
-                jsonPath("$.data.hasNext") { value(false) }
-            }
+        val body = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.page").isEqualTo(0)
+        body.extractingPath("$.data.size").isEqualTo(20)
+        body.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
     @Test
@@ -213,12 +182,9 @@ class BrandAdminApiMockMvcTest(
         brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
         brandService.delete(deleted.id)
 
-        mockMvc.get(ENDPOINT) { with(ADMIN) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.items.length()") { value(1) }
-                jsonPath("$.data.items[0].name") { value("루퍼스") }
-            }
+        val body = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].name").isEqualTo("루퍼스")
     }
 
     /**
@@ -232,36 +198,32 @@ class BrandAdminApiMockMvcTest(
         "0, 101, size는 100 이하여야 합니다",
     )
     fun `listing with a page or size outside the allowed range returns 400`(page: Int, size: Int, message: String) {
-        mockMvc.get(ENDPOINT) {
-            with(ADMIN)
-            param("page", page.toString())
-            param("size", size.toString())
-        }.andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Bad Request") }
-            jsonPath("$.meta.message") { value(containsString(message)) }
-        }
+        val body = assertThat(
+            mvc.get().uri(ENDPOINT)
+                .with(ADMIN)
+                .param("page", page.toString())
+                .param("size", size.toString()),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").asString().contains(message)
     }
 
     @Test
     fun `listing as a user returns 403`() {
-        mockMvc.get(ENDPOINT) { with(USER) }
-            .andExpect { status { isForbidden() } }
+        assertThat(mvc.get().uri(ENDPOINT).with(USER)).hasStatus(HttpStatus.FORBIDDEN)
     }
 
     @Test
     fun `admin renames a brand with surrounding spaces and reads the new name back as sent`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        putBrand(brand.id, name = " 무신사 ").andExpect {
-            status { isOk() }
-            jsonPath("$.data.id") { value(brand.id) }
-            jsonPath("$.data.name") { value(" 무신사 ") }
-        }
+        val body = assertThat(putBrand(brand.id, name = " 무신사 ")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.id").isEqualToLong(brand.id)
+        body.extractingPath("$.data.name").isEqualTo(" 무신사 ")
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect { jsonPath("$.data.name") { value(" 무신사 ") } }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).bodyJson()
+        detail.extractingPath("$.data.name").isEqualTo(" 무신사 ")
     }
 
     @Test
@@ -269,14 +231,12 @@ class BrandAdminApiMockMvcTest(
         brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
         val renamed = brandService.register(createBrandAdminRegisterRequest(name = "무신사"))
 
-        putBrand(renamed.id, name = "루퍼스").andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.errorCode") { value("Conflict") }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_NAME_DUPLICATED.message) }
-        }
+        val body = assertThat(putBrand(renamed.id, name = "루퍼스")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NAME_DUPLICATED.message)
 
-        mockMvc.get("$ENDPOINT/${renamed.id}") { with(ADMIN) }
-            .andExpect { jsonPath("$.data.name") { value("무신사") } }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/${renamed.id}").with(ADMIN)).bodyJson()
+        detail.extractingPath("$.data.name").isEqualTo("무신사")
     }
 
     /** 자기 행은 중복 조회에서 빠지므로, 바꾸지 않은 이름을 그대로 저장해도 충돌이 아니다. */
@@ -284,44 +244,36 @@ class BrandAdminApiMockMvcTest(
     fun `renaming a brand to its own current name returns 200`() {
         val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        putBrand(brand.id, name = "루퍼스").andExpect {
-            status { isOk() }
-            jsonPath("$.data.name") { value("루퍼스") }
-        }
+        val body = assertThat(putBrand(brand.id, name = "루퍼스")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.name").isEqualTo("루퍼스")
     }
 
     @Test
     fun `renaming to a blank name returns 400 and keeps the old name`() {
         val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        putBrand(brand.id, name = "   ").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.message") { value(containsString("이름은 공백일 수 없습니다")) }
-        }
+        val body = assertThat(putBrand(brand.id, name = "   ")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.message").asString().contains("이름은 공백일 수 없습니다")
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect { jsonPath("$.data.name") { value("루퍼스") } }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).bodyJson()
+        detail.extractingPath("$.data.name").isEqualTo("루퍼스")
     }
 
     @Test
     fun `renaming to a name over a hundred chars returns 400 and keeps the old name`() {
         val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        putBrand(brand.id, name = "가".repeat(101)).andExpect {
-            status { isBadRequest() }
-            jsonPath("$.meta.message") { value(containsString("100자 이하여야")) }
-        }
+        val body = assertThat(putBrand(brand.id, name = "가".repeat(101))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.message").asString().contains("100자 이하여야")
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect { jsonPath("$.data.name") { value("루퍼스") } }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).bodyJson()
+        detail.extractingPath("$.data.name").isEqualTo("루퍼스")
     }
 
     @Test
     fun `renaming an unknown brand returns 404`() {
-        putBrand(999L, name = "루퍼스").andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
-        }
+        val body = assertThat(putBrand(999L, name = "루퍼스")).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NOT_FOUND.message)
     }
 
     @Test
@@ -330,14 +282,14 @@ class BrandAdminApiMockMvcTest(
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
-        putBrand(brand.id, name = "무신사").andExpect { status { isNotFound() } }
+        assertThat(putBrand(brand.id, name = "무신사")).hasStatus(HttpStatus.NOT_FOUND)
     }
 
     @Test
     fun `renaming as a user returns 403 and keeps the old name`() {
         val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        putBrand(brand.id, name = "무신사", principal = USER).andExpect { status { isForbidden() } }
+        assertThat(putBrand(brand.id, name = "무신사", principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
         assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
     }
@@ -346,17 +298,14 @@ class BrandAdminApiMockMvcTest(
     fun `admin deletes a brand and it disappears from the detail and the list`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        deleteBrand(brand.id).andExpect {
-            status { isOk() }
-            jsonPath("$.meta.result") { value("SUCCESS") }
-            jsonPath("$.data") { doesNotExist() }
-        }
+        val body = assertThat(deleteBrand(brand.id)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.doesNotHavePath("$.data")
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect { status { isNotFound() } }
-        mockMvc.get(ENDPOINT) { with(ADMIN) }
-            .andExpect { jsonPath("$.data.items.length()") { value(0) } }
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND)
+        val list = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).bodyJson()
+        list.extractingPath("$.data.items.length()").isEqualTo(0)
         assertThat(countBrands()).isZero()
     }
 
@@ -364,7 +313,7 @@ class BrandAdminApiMockMvcTest(
     fun `deleting a brand stamps the row instead of erasing it`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        deleteBrand(brand.id).andExpect { status { isOk() } }
+        assertThat(deleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
 
         assertThat(brandRowExists(brand.id)).isTrue()
@@ -374,25 +323,23 @@ class BrandAdminApiMockMvcTest(
     @Test
     fun `deleting a brand twice returns 404 the second time`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
-        deleteBrand(brand.id).andExpect { status { isOk() } }
+        assertThat(deleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
 
-        deleteBrand(brand.id).andExpect {
-            status { isNotFound() }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
-        }
+        val body = assertThat(deleteBrand(brand.id)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NOT_FOUND.message)
     }
 
     @Test
     fun `deleting an unknown brand returns 404`() {
-        deleteBrand(999L).andExpect { status { isNotFound() } }
+        assertThat(deleteBrand(999L)).hasStatus(HttpStatus.NOT_FOUND)
     }
 
     @Test
     fun `deleting as a user returns 403 and keeps the brand`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        deleteBrand(brand.id, principal = USER).andExpect { status { isForbidden() } }
+        assertThat(deleteBrand(brand.id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
         assertThat(countBrands()).isOne()
     }
@@ -403,19 +350,14 @@ class BrandAdminApiMockMvcTest(
         productRepository.save(createProduct(brand))
         entityManager.flushAndClear()
 
-        deleteBrand(brand.id).andExpect {
-            status { isConflict() }
-            jsonPath("$.meta.result") { value("FAIL") }
-            jsonPath("$.meta.errorCode") { value("Conflict") }
-            jsonPath("$.meta.message") { value(ErrorType.BRAND_HAS_PRODUCTS.message) }
-        }
+        val body = assertThat(deleteBrand(brand.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_HAS_PRODUCTS.message)
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.name") { value("루퍼스") }
-            }
+        val detail = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatusOk().bodyJson()
+        detail.extractingPath("$.data.name").isEqualTo("루퍼스")
         assertThat(countStampedBrands(brand.id)).isZero()
     }
 
@@ -425,35 +367,35 @@ class BrandAdminApiMockMvcTest(
         productRepository.save(createProduct(brand)).delete()
         entityManager.flushAndClear()
 
-        deleteBrand(brand.id).andExpect { status { isOk() } }
+        assertThat(deleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/${brand.id}") { with(ADMIN) }
-            .andExpect { status { isNotFound() } }
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND)
         assertThat(countStampedBrands(brand.id)).isOne()
     }
 
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
-    private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN) = mockMvc.post(ENDPOINT) {
-        principal?.let { with(it) }
-        with(csrf())
-        contentType = MediaType.APPLICATION_JSON
-        content = """{"name": "$name"}"""
-    }
+    private fun postBrand(name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
+        mvc.post().uri(ENDPOINT)
+            .apply { principal?.let { with(it) } }
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"name": "$name"}""")
+            .exchange()
 
-    private fun putBrand(brandId: Long, name: String, principal: RequestPostProcessor? = ADMIN) =
-        mockMvc.put("$ENDPOINT/$brandId") {
-            principal?.let { with(it) }
-            with(csrf())
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name": "$name"}"""
-        }
+    private fun putBrand(brandId: Long, name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
+        mvc.put().uri("$ENDPOINT/$brandId")
+            .apply { principal?.let { with(it) } }
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"name": "$name"}""")
+            .exchange()
 
-    private fun deleteBrand(brandId: Long, principal: RequestPostProcessor? = ADMIN) =
-        mockMvc.delete("$ENDPOINT/$brandId") {
-            principal?.let { with(it) }
-            with(csrf())
-        }
+    private fun deleteBrand(brandId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
+        mvc.delete().uri("$ENDPOINT/$brandId")
+            .apply { principal?.let { with(it) } }
+            .with(csrf())
+            .exchange()
 
     /** 삭제 시각과 상관없이 브랜드 행이 남아 있는지. 물리 삭제와 논리 삭제를 가른다. */
     private fun brandRowExists(brandId: Long): Boolean =

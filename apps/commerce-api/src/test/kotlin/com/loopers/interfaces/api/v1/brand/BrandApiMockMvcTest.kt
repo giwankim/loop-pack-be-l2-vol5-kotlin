@@ -5,19 +5,20 @@ import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.put
+import org.springframework.test.web.servlet.assertj.MockMvcTester
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -32,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
 @Transactional
 class BrandApiMockMvcTest(
-    private val mockMvc: MockMvc,
+    private val mvc: MockMvcTester,
     private val brandService: BrandService,
     private val entityManager: EntityManager,
 ) {
@@ -46,26 +47,20 @@ class BrandApiMockMvcTest(
     fun `a customer reads a brand without any identification`() {
         val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
-        mockMvc.get("$ENDPOINT/${brand.id}")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.meta.result") { value("SUCCESS") }
-                jsonPath("$.data.id") { value(brand.id) }
-                jsonPath("$.data.name") { value("루퍼스") }
-                jsonPath("$.data.createdAt") { doesNotExist() }
-                jsonPath("$.data.updatedAt") { doesNotExist() }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.id").isEqualToLong(brand.id)
+        body.extractingPath("$.data.name").isEqualTo("루퍼스")
+        body.doesNotHavePath("$.data.createdAt")
+        body.doesNotHavePath("$.data.updatedAt")
     }
 
     @Test
     fun `reading an unknown brand returns 404`() {
-        mockMvc.get("$ENDPOINT/999")
-            .andExpect {
-                status { isNotFound() }
-                jsonPath("$.meta.result") { value("FAIL") }
-                jsonPath("$.meta.errorCode") { value("Not Found") }
-                jsonPath("$.meta.message") { value(ErrorType.BRAND_NOT_FOUND.message) }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/999")).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Not Found")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_NOT_FOUND.message)
     }
 
     @Test
@@ -74,8 +69,7 @@ class BrandApiMockMvcTest(
         brandService.delete(brand.id)
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/${brand.id}")
-            .andExpect { status { isNotFound() } }
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatus(HttpStatus.NOT_FOUND)
     }
 
     /**
@@ -88,18 +82,16 @@ class BrandApiMockMvcTest(
     fun `a name an admin changed shows up in the customer detail`() {
         val brand = brandService.register(createBrandAdminRegisterRequest())
 
-        mockMvc.put("$ADMIN_ENDPOINT/${brand.id}") {
-            with(ADMIN)
-            with(csrf())
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name": "무신사"}"""
-        }.andExpect { status { isOk() } }
+        assertThat(
+            mvc.put().uri("$ADMIN_ENDPOINT/${brand.id}")
+                .with(ADMIN)
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name": "무신사"}"""),
+        ).hasStatusOk()
         entityManager.flushAndClear()
 
-        mockMvc.get("$ENDPOINT/${brand.id}")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.data.name") { value("무신사") }
-            }
+        val body = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.name").isEqualTo("무신사")
     }
 }
