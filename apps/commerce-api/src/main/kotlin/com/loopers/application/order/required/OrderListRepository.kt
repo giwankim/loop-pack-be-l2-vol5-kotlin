@@ -5,8 +5,10 @@ import com.loopers.domain.shared.PageSlice
 
 /**
  * 주문 목록. 사용자 필터가 조각마다 있거나 없어 QueryDSL로 짜는데(카탈로그 설계 5.32), application은 QueryDSL을 모르므로
- * 구현은 adapter.persistence에 둔다. Spring Data의 저장소가 아닌 순수 포트라 [OrderRepository]와 따로 선언하는 까닭은
- * [com.loopers.application.product.required.ProductListRepository]와 같다.
+ * 구현은 adapter.persistence에 둔다.
+ *
+ * Spring Data의 저장소가 아닌 순수 포트라 [OrderRepository]와 따로 선언한다. Spring Data의 custom fragment로 붙이면
+ * 구현이 fragment 인터페이스의 패키지 아래에 있어야 찾히므로, QueryDSL 코드가 application으로 들어온다.
  */
 interface OrderListRepository {
     /**
