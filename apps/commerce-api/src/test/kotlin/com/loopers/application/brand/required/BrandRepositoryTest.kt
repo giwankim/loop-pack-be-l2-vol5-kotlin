@@ -1,8 +1,7 @@
-package com.loopers.adapter.persistence.brand
+package com.loopers.application.brand.required
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.support.flushAndClear
 import com.loopers.support.statistics
@@ -17,17 +16,18 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 /**
- * [BrandRepositoryImpl]이 [BrandRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
- * 슬라이스는 사용자 `@Configuration`과 `@Component`를 스캔하지 않으므로 데이터소스 설정, 컨테이너 설정,
- * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 구현을 알아야 하므로 domain이 아니라 adapter.persistence 패키지에 둔다(설계 5.20).
- * 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ * Spring Data가 만든 [BrandRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 설정과 패키지 위치의 이유는
+ * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
+ *
+ * 목록 [BrandRepository.findAll]은 본문을 가진 인터페이스 메서드다. 목록 테스트는 Spring Data가 그 본문을 쿼리로 만들지 않고
+ * 실행한다는 것도 함께 고정한다.
  *
  * Hibernate 통계를 켜는 까닭은 목록이 보내는 쿼리 수를 세기 위한 것이다. 총 개수를 세지 않는다는 약속은
  * 반환 타입이 `Slice`라는 사실에만 걸려 있어, 세어 보지 않으면 `Page`로 바꿔도 아무 테스트가 깨지지 않는다.
  */
 @DataJpaTest(properties = ["spring.jpa.properties.hibernate.generate_statistics=true"])
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, BrandRepositoryImpl::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,

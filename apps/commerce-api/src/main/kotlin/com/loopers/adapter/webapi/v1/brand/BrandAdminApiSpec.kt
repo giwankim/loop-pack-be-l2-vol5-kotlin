@@ -2,9 +2,9 @@ package com.loopers.adapter.webapi.v1.brand
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.brand.BrandAdminListRequest
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandAdminUpdateRequest
+import com.loopers.application.brand.provided.BrandAdminListRequest
+import com.loopers.application.brand.provided.BrandAdminRegisterRequest
+import com.loopers.application.brand.provided.BrandAdminUpdateRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag

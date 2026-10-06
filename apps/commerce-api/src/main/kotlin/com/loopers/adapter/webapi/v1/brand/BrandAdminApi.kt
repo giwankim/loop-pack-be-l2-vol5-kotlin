@@ -2,10 +2,11 @@ package com.loopers.adapter.webapi.v1.brand
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.brand.BrandAdminListRequest
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandService
-import com.loopers.application.brand.BrandAdminUpdateRequest
+import com.loopers.application.brand.provided.BrandAdminListRequest
+import com.loopers.application.brand.provided.BrandAdminRegisterRequest
+import com.loopers.application.brand.provided.BrandAdminUpdateRequest
+import com.loopers.application.brand.provided.BrandFinder
+import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -22,14 +23,15 @@ import org.springframework.web.bind.annotation.ResponseStatus
 @WebApiAdapter
 @RequestMapping("/api-admin/v1/brands")
 class BrandAdminApi(
-    private val brandService: BrandService,
+    private val brandFinder: BrandFinder,
+    private val brandRegister: BrandRegister,
 ) : BrandAdminApiSpec {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
         @RequestBody @Valid request: BrandAdminRegisterRequest,
     ): ApiResponse<BrandAdminResponse> {
-        return brandService.register(request)
+        return brandRegister.register(request)
             .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -39,7 +41,7 @@ class BrandAdminApi(
     override fun getBrands(
         @ModelAttribute @Valid request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
-        return brandService.findAll(request)
+        return brandFinder.findAll(request)
             .let { PageResponse.from(it, BrandAdminResponse::from) }
             .let { ApiResponse.success(it) }
     }
@@ -48,7 +50,7 @@ class BrandAdminApi(
     override fun getBrand(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandAdminResponse> {
-        return brandService.find(brandId)
+        return brandFinder.find(brandId)
             .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -58,7 +60,7 @@ class BrandAdminApi(
         @PathVariable("brandId") brandId: Long,
         @RequestBody @Valid request: BrandAdminUpdateRequest,
     ): ApiResponse<BrandAdminResponse> {
-        return brandService.update(brandId, request)
+        return brandRegister.update(brandId, request)
             .let { BrandAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -67,7 +69,7 @@ class BrandAdminApi(
     override fun delete(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<Any> {
-        brandService.delete(brandId)
+        brandRegister.delete(brandId)
 
         return ApiResponse.success()
     }

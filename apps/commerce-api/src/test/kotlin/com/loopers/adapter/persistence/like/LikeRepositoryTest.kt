@@ -18,7 +18,7 @@ import org.springframework.dao.DataIntegrityViolationException
 
 /**
  * [LikeRepositoryImpl]이 [LikeRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 설정과 패키지 위치의 이유는
- * [com.loopers.adapter.persistence.brand.BrandRepositoryTest]와 같다.
+ * [com.loopers.adapter.persistence.product.ProductRepositoryTest]와 같다.
  *
  * 좋아요는 사용자와 상품을 식별자로만 가리키므로(설계 2) 사용자·상품 행 없이 식별자만으로 만든다.
  * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001).

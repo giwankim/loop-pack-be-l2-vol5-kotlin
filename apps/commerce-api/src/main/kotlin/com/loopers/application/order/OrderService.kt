@@ -1,7 +1,7 @@
 package com.loopers.application.order
 
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.user.provided.UserFinder
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository

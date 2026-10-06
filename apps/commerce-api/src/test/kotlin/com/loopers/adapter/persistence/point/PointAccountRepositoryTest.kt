@@ -20,7 +20,7 @@ import org.springframework.dao.DataIntegrityViolationException
 
 /**
  * [PointAccountRepositoryImpl]이 [PointAccountRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 설정과 패키지 위치의 이유는
- * [com.loopers.adapter.persistence.brand.BrandRepositoryTest]와 같다.
+ * [com.loopers.adapter.persistence.product.ProductRepositoryTest]와 같다.
  *
  * 사용자당 계정 하나와 사용자를 향한 외래 키는 DB가 지키는 약속이라 여기서 본다. 제약이 실제로 만들어졌는지는
  * `information_schema`에서도 확인한다(설계 10 DB 참조 무결성).

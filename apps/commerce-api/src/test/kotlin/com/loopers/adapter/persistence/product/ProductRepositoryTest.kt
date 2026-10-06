@@ -1,10 +1,9 @@
 package com.loopers.adapter.persistence.product
 
-import com.loopers.adapter.persistence.brand.BrandRepositoryImpl
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
@@ -25,8 +24,11 @@ import org.springframework.context.annotation.Import
 
 /**
  * [ProductRepositoryImpl]이 [ProductRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
- * 상품이 브랜드를 참조하므로 [BrandRepositoryImpl]도 함께 등록한다. 설정과 정리 방식, 패키지 위치의 이유는
- * [com.loopers.adapter.persistence.brand.BrandRepositoryTest]와 같다.
+ * 슬라이스는 사용자 `@Configuration`과 `@Component`를 스캔하지 않으므로 데이터소스 설정, QueryDSL 설정, 컨테이너 설정,
+ * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 구현을 알아야 하므로 domain이 아니라 adapter.persistence 패키지에 둔다(설계 5.20).
+ * 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ *
+ * 상품이 브랜드를 참조하므로 브랜드도 저장한다. 브랜드 저장소는 Spring Data가 만들어 슬라이스가 등록한다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -34,7 +36,6 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    BrandRepositoryImpl::class,
     ProductRepositoryImpl::class,
 )
 class ProductRepositoryTest(

@@ -1,7 +1,7 @@
 package com.loopers.application.like
 
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.user.required.UserRepository
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
@@ -25,7 +25,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * [LikeService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.BrandServiceTest]와 같다.
+ * [LikeService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  *
  * 관계가 있는지는 저장 약속을 거치지 않고 `likes` 테이블을 SQL로 센다. 두 번 눌러도 행이 하나이고
  * 취소가 행을 지운다는 약속은 테이블에서 봐야 한다(ADR 0001).

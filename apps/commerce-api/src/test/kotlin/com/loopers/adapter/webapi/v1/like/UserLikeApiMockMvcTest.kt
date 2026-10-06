@@ -1,10 +1,10 @@
 package com.loopers.adapter.webapi.v1.like
 
 import com.loopers.adapter.webapi.UserIdHeader
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.LikeService
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock

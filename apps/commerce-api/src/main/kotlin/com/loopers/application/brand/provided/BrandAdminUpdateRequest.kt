@@ -1,4 +1,4 @@
-package com.loopers.application.brand
+package com.loopers.application.brand.provided
 
 import com.loopers.domain.brand.Brand
 import jakarta.validation.constraints.NotBlank

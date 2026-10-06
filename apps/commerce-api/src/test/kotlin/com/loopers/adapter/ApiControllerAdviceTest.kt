@@ -1,7 +1,7 @@
 package com.loopers.adapter
 
 import com.loopers.adapter.webapi.v1.brand.BrandAdminApi
-import com.loopers.application.brand.BrandAdminRegisterRequest
+import com.loopers.application.brand.provided.BrandAdminRegisterRequest
 import com.loopers.domain.product.InvalidStockException
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import jakarta.validation.ConstraintViolationException

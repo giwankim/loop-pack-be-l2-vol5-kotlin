@@ -1,7 +1,7 @@
 package com.loopers.domain.brand
 
-import com.loopers.application.brand.BrandAdminRegisterRequest
-import com.loopers.application.brand.BrandAdminUpdateRequest
+import com.loopers.application.brand.provided.BrandAdminRegisterRequest
+import com.loopers.application.brand.provided.BrandAdminUpdateRequest
 import com.loopers.domain.unsaved
 import org.instancio.kotlin.KInstancio
 import org.instancio.kotlin.KInstancio.gen

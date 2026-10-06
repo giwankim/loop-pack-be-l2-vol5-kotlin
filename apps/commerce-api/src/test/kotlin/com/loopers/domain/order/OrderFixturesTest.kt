@@ -1,11 +1,10 @@
 package com.loopers.domain.order
 
-import com.loopers.adapter.persistence.brand.BrandRepositoryImpl
 import com.loopers.adapter.persistence.product.ProductRepositoryImpl
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.OrderCreateRequest
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
@@ -31,7 +30,6 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    BrandRepositoryImpl::class,
     ProductRepositoryImpl::class,
 )
 class OrderFixturesTest(

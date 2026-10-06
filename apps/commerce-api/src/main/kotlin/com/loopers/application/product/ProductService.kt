@@ -1,6 +1,6 @@
 package com.loopers.application.product
 
-import com.loopers.domain.brand.BrandRepository
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort

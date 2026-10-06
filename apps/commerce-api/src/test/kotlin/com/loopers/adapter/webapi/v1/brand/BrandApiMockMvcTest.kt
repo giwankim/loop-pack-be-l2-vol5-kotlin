@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.brand
 
-import com.loopers.application.brand.BrandService
+import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class BrandApiMockMvcTest(
     private val mvc: MockMvcTester,
-    private val brandService: BrandService,
+    private val brandRegister: BrandRegister,
     private val entityManager: EntityManager,
 ) {
     companion object {
@@ -45,7 +45,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `a customer reads a brand without any identification`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -65,8 +65,8 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `reading a deleted brand returns 404`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
-        brandService.delete(brand.id)
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
+        brandRegister.delete(brand.id)
         entityManager.flushAndClear()
 
         assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatus(HttpStatus.NOT_FOUND)
@@ -80,7 +80,7 @@ class BrandApiMockMvcTest(
      */
     @Test
     fun `a name an admin changed shows up in the customer detail`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         assertThat(
             mvc.put().uri("$ADMIN_ENDPOINT/${brand.id}")

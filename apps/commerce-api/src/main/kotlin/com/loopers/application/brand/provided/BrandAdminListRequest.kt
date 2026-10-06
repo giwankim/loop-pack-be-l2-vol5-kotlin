@@ -1,4 +1,4 @@
-package com.loopers.application.brand
+package com.loopers.application.brand.provided
 
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min

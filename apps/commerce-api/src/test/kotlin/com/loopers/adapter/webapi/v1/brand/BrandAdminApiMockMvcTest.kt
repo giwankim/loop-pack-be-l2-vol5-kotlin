@@ -1,6 +1,7 @@
 package com.loopers.adapter.webapi.v1.brand
 
-import com.loopers.application.brand.BrandService
+import com.loopers.application.brand.provided.BrandFinder
+import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.product.ProductRepository
@@ -39,7 +40,8 @@ import org.springframework.transaction.annotation.Transactional
 @Transactional
 class BrandAdminApiMockMvcTest(
     private val mvc: MockMvcTester,
-    private val brandService: BrandService,
+    private val brandRegister: BrandRegister,
+    private val brandFinder: BrandFinder,
     private val productRepository: ProductRepository,
     private val entityManager: EntityManager,
 ) {
@@ -75,7 +77,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `registering a name taken by an active brand returns 409 and saves nothing`() {
-        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(postBrand(name = "루퍼스")).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
@@ -88,7 +90,7 @@ class BrandAdminApiMockMvcTest(
     /** 앞 공백은 collation이 가리지 않으므로 앞 공백만 다른 이름은 다른 브랜드다(설계 5.13). */
     @Test
     fun `registering a name that differs from an existing brand only by a leading space returns 201`() {
-        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(postBrand(name = " 루퍼스")).hasStatus(HttpStatus.CREATED).bodyJson()
         body.extractingPath("$.data.name").isEqualTo(" 루퍼스")
@@ -102,7 +104,7 @@ class BrandAdminApiMockMvcTest(
     fun `registering a name that differs from an existing brand only by trailing spaces or case returns 409 and saves nothing`(
         name: String,
     ) {
-        brandService.register(createBrandAdminRegisterRequest(name = "Loopers"))
+        brandRegister.register(createBrandAdminRegisterRequest(name = "Loopers"))
 
         val body = assertThat(postBrand(name = name)).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
@@ -135,22 +137,22 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `getting a brand as a user returns 403`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(USER)).hasStatus(HttpStatus.FORBIDDEN)
     }
 
     @Test
     fun `getting a brand anonymously returns 403`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatus(HttpStatus.FORBIDDEN)
     }
 
     @Test
     fun `admin lists active brands newest first as a slice`() {
-        brandService.register(createBrandAdminRegisterRequest())
-        brandService.register(createBrandAdminRegisterRequest(name = "둘째"))
+        brandRegister.register(createBrandAdminRegisterRequest())
+        brandRegister.register(createBrandAdminRegisterRequest(name = "둘째"))
 
         val body = assertThat(
             mvc.get().uri(ENDPOINT)
@@ -168,7 +170,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing without paging parameters uses the first page of twenty`() {
-        brandService.register(createBrandAdminRegisterRequest())
+        brandRegister.register(createBrandAdminRegisterRequest())
 
         val body = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).hasStatusOk().bodyJson()
         body.extractingPath("$.data.page").isEqualTo(0)
@@ -178,9 +180,9 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `listing a deleted brand leaves it out`() {
-        val deleted = brandService.register(createBrandAdminRegisterRequest())
-        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
-        brandService.delete(deleted.id)
+        val deleted = brandRegister.register(createBrandAdminRegisterRequest())
+        brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        brandRegister.delete(deleted.id)
 
         val body = assertThat(mvc.get().uri(ENDPOINT).with(ADMIN)).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items.length()").isEqualTo(1)
@@ -216,7 +218,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `admin renames a brand with surrounding spaces and reads the new name back as sent`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         val body = assertThat(putBrand(brand.id, name = " 무신사 ")).hasStatusOk().bodyJson()
         body.extractingPath("$.data.id").isEqualToLong(brand.id)
@@ -228,8 +230,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name an active brand uses returns 409 and keeps the old name`() {
-        brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
-        val renamed = brandService.register(createBrandAdminRegisterRequest(name = "무신사"))
+        brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val renamed = brandRegister.register(createBrandAdminRegisterRequest(name = "무신사"))
 
         val body = assertThat(putBrand(renamed.id, name = "루퍼스")).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
@@ -242,7 +244,7 @@ class BrandAdminApiMockMvcTest(
     /** 자기 행은 중복 조회에서 빠지므로, 바꾸지 않은 이름을 그대로 저장해도 충돌이 아니다. */
     @Test
     fun `renaming a brand to its own current name returns 200`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(putBrand(brand.id, name = "루퍼스")).hasStatusOk().bodyJson()
         body.extractingPath("$.data.name").isEqualTo("루퍼스")
@@ -250,7 +252,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a blank name returns 400 and keeps the old name`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(putBrand(brand.id, name = "   ")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.message").asString().contains("이름은 공백일 수 없습니다")
@@ -261,7 +263,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming to a name over a hundred chars returns 400 and keeps the old name`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         val body = assertThat(putBrand(brand.id, name = "가".repeat(101))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.message").asString().contains("100자 이하여야")
@@ -278,8 +280,8 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming a deleted brand returns 404`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
-        brandService.delete(brand.id)
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
+        brandRegister.delete(brand.id)
         entityManager.flushAndClear()
 
         assertThat(putBrand(brand.id, name = "무신사")).hasStatus(HttpStatus.NOT_FOUND)
@@ -287,16 +289,16 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `renaming as a user returns 403 and keeps the old name`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
 
         assertThat(putBrand(brand.id, name = "무신사", principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
-        assertThat(brandService.find(brand.id).name).isEqualTo("루퍼스")
+        assertThat(brandFinder.find(brand.id).name).isEqualTo("루퍼스")
     }
 
     @Test
     fun `admin deletes a brand and it disappears from the detail and the list`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         val body = assertThat(deleteBrand(brand.id)).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -311,7 +313,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand stamps the row instead of erasing it`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         assertThat(deleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
@@ -322,7 +324,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand twice returns 404 the second time`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
         assertThat(deleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
 
@@ -337,7 +339,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting as a user returns 403 and keeps the brand`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
 
         assertThat(deleteBrand(brand.id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
@@ -346,7 +348,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand that still has an active product returns 409 and leaves the row unstamped`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
         productRepository.save(createProduct(brand))
         entityManager.flushAndClear()
 
@@ -363,7 +365,7 @@ class BrandAdminApiMockMvcTest(
 
     @Test
     fun `deleting a brand goes through once its last product is deleted`() {
-        val brand = brandService.register(createBrandAdminRegisterRequest())
+        val brand = brandRegister.register(createBrandAdminRegisterRequest())
         productRepository.save(createProduct(brand)).delete()
         entityManager.flushAndClear()
 

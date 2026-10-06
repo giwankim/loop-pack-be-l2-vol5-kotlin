@@ -1,45 +1,37 @@
 package com.loopers.application.brand
 
+import com.loopers.application.brand.provided.BrandAdminRegisterRequest
+import com.loopers.application.brand.provided.BrandAdminUpdateRequest
+import com.loopers.application.brand.provided.BrandFinder
+import com.loopers.application.brand.provided.BrandRegister
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.product.ProductRepository
-import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
-import jakarta.validation.Valid
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.validation.annotation.Validated
+import com.loopers.support.stereotype.ValidatedApplicationService
 
-@Service
-@Validated
-class BrandService(
+/** [BrandRegister]의 구현. 바꿀 브랜드는 [BrandFinder]로 읽어 없는 브랜드를 같은 오류로 거절한다. */
+@ValidatedApplicationService
+class BrandModifyService(
+    private val brandFinder: BrandFinder,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
-) {
+) : BrandRegister {
     /** 이름 규칙을 지나는 브랜드를 만든 뒤, 저장하기 전에 중복을 본다. 이름은 받은 그대로 저장한다. */
-    @Transactional
-    fun register(@Valid request: BrandAdminRegisterRequest): Brand {
+    override fun register(request: BrandAdminRegisterRequest): Brand {
         val brand = Brand(request.name)
         checkDuplicateName(brand.name)
 
         return brandRepository.save(brand)
     }
 
-    @Transactional(readOnly = true)
-    fun find(id: Long): Brand =
-        brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
-
-    @Transactional(readOnly = true)
-    fun findAll(@Valid request: BrandAdminListRequest): PageSlice<Brand> = brandRepository.findAll(request.page, request.size)
-
     /**
      * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 다른 브랜드가 그 이름을 쓰는지 본다.
      * 이름은 받은 그대로 저장되므로 받은 이름으로 묻는다.
      */
-    @Transactional
-    fun update(id: Long, @Valid request: BrandAdminUpdateRequest): Brand {
-        val brand = find(id)
+    override fun update(id: Long, request: BrandAdminUpdateRequest): Brand {
+        val brand = brandFinder.find(id)
         checkDuplicateName(request.name, excludingId = brand.id)
         brand.update(request.name)
 
@@ -53,9 +45,8 @@ class BrandService(
      * 거절되면 브랜드가 그대로 남아야 하므로 [Brand.delete] 앞에서 묻는다. 뒤에서 물으면 찍힌 삭제 시각이
      * 영속성 컨텍스트에 남아 flush 때 저장된다.
      */
-    @Transactional
-    fun delete(id: Long) {
-        val brand = find(id)
+    override fun delete(id: Long) {
+        val brand = brandFinder.find(id)
         if (productRepository.existsByBrandId(brand.id)) {
             throw CoreException(ErrorType.BRAND_HAS_PRODUCTS)
         }

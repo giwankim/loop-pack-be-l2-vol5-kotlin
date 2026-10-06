@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * [PointService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.BrandServiceTest]와 같다.
+ * [PointService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  *
  * 잔액은 저장 약속을 거치지 않고 테이블을 SQL로 읽는다. "잔액이 그대로다"는 테이블의 사실이다.
  * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [PointServiceTransactionTest]가 따로 본다.

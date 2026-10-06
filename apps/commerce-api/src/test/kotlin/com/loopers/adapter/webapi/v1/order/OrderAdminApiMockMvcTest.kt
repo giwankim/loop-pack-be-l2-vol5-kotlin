@@ -1,10 +1,10 @@
 package com.loopers.adapter.webapi.v1.order
 
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.OrderService
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.createOrderCreateRequest
 import com.loopers.domain.product.ProductRepository

@@ -1,7 +1,7 @@
 package com.loopers.adapter.persistence.product
 
 import com.loopers.adapter.persistence.shared.fetchSlice
-import com.loopers.adapter.persistence.shared.toPageSlice
+import com.loopers.application.shared.toPageSlice
 import com.loopers.domain.like.QLike.like
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository

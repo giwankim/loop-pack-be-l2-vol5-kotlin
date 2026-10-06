@@ -1,8 +1,8 @@
 package com.loopers.adapter.webapi.v1.product
 
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.product.ProductService
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository

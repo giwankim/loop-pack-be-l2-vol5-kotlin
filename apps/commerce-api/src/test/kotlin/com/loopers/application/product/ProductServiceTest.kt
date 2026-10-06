@@ -1,6 +1,6 @@
 package com.loopers.application.product
 
-import com.loopers.domain.brand.BrandRepository
+import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
@@ -23,7 +23,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * [ProductService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.BrandServiceTest]와 같다.
+ * [ProductService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  */
 @SpringBootTest
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
