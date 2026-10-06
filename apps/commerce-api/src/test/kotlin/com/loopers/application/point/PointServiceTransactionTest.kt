@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Import
  * 남은 행은 [DatabaseCleanUp]으로 지운다.
  *
  * 충전은 `point_account` 한 행만 바꾸므로 함께 되돌릴 다른 쓰기가 없다. 늦은 실패의 롤백은 여러 행을 쓰는 확정에서
- * 본다([com.loopers.interfaces.api.v1.order.OrderConfirmationApiMockMvcTest], 설계 18.1).
+ * 본다([com.loopers.adapter.webapi.v1.order.OrderConfirmationApiMockMvcTest], 설계 18.1).
  */
 @SpringBootTest
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)

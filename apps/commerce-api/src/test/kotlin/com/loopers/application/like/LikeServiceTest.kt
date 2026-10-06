@@ -224,7 +224,7 @@ class LikeServiceTest(
     }
 
     /**
-     * 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.product.ProductRepositoryTest]가 SQL로 이미 고정한다.
+     * 조각의 차례와 `hasNext`는 [com.loopers.adapter.persistence.product.ProductRepositoryTest]가 SQL로 이미 고정한다.
      * 여기서는 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 값이 항목에 실리는지를 본다(설계 6).
      * 좋아요 수는 상품에 걸린 관계의 개수이므로 요청자의 것만 세지 않는다.
      */

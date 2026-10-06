@@ -31,8 +31,9 @@ import org.springframework.transaction.annotation.Transactional
  * [OrderService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은
  * [com.loopers.application.like.LikeServiceTest]와 같다.
  *
- * 생성과 상세는 [com.loopers.interfaces.api.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
- * 여기서는 조회와, 생성이 요청마다 새 주문이라는 계약만 본다(ADR 0005). 조각의 차례와 `hasNext`는 [com.loopers.infrastructure.order.OrderRepositoryTest]가 SQL로 고정한다.
+ * 생성과 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
+ * 여기서는 조회와, 생성이 요청마다 새 주문이라는 계약만 본다(ADR 0005).
+ * 조각의 차례와 `hasNext`는 [com.loopers.adapter.persistence.order.OrderRepositoryTest]가 SQL로 고정한다.
  *
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과
  * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).

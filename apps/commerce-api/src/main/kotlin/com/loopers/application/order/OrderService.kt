@@ -51,7 +51,7 @@ class OrderService(
      * 만들 때의 값 그대로다(ADR 0002, 설계 9 조회).
      *
      * 옮기는 일을 [PageSlice.map]에 맡겨 품목을 읽는 것이 이 읽기 트랜잭션 안에서 끝나게 한다.
-     * `open-in-view`가 꺼져 있어 interfaces에서는 품목을 읽을 수 없다.
+     * `open-in-view`가 꺼져 있어 adapter.webapi에서는 품목을 읽을 수 없다.
      */
     @Transactional(readOnly = true)
     fun findAll(userId: Long, @Valid request: OrderListRequest): PageSlice<OrderInfo> {

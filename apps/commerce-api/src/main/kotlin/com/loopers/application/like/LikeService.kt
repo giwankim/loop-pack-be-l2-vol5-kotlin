@@ -17,7 +17,7 @@ import org.springframework.validation.annotation.Validated
 /**
  * 좋아요 누르기·취소. 관계 자체에는 규칙이 없고 유스케이스가 순서를 정한다(도메인 문서 좋아요).
  *
- * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 헤더가 없는 것은 interfaces가 401로 거절하고,
+ * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 헤더가 없는 것은 adapter.webapi가 401로 거절하고,
  * 그 사용자가 있는지는 여기서 본다. Controller를 거치지 않는 호출도 같은 검사를 받게 하려는 것이다(설계 5.25, 5.27).
  */
 @Service
@@ -55,7 +55,7 @@ class LikeService(
      * 요청자가 좋아요를 누른, 삭제되지 않은 상품 한 조각. 최근에 누른 상품이 앞선다.
      *
      * 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없다. 경로가 가리키는 사용자와 요청자가
-     * 같은지는 둘 다 HTTP가 실은 값이라 interfaces가 본다(설계 5.30).
+     * 같은지는 둘 다 HTTP가 실은 값이라 adapter.webapi가 본다(설계 5.30).
      *
      * 항목은 고객 상품 목록의 항목과 같은 [ProductInfo]다. 옮기는 규칙이 상품 목록과 하나이므로 그 일은
      * [ProductInfoAssembler]가 하고, 여기서는 어느 상품을 읽을지만 정한다(설계 5.31).

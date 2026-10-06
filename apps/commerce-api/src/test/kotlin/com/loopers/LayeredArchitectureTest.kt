@@ -29,18 +29,21 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
     ],
 )
 class LayeredArchitectureTest {
+    // splearn's three layers, with its single adapter layer split in two so that the web and persistence adapters
+    // cannot reach each other. ApiControllerAdvice sits at the adapter root as in splearn, but it only answers web
+    // requests, so that one package belongs to the web adapter.
     @ArchTest
     val dependenciesPointInward: ArchRule = layeredArchitecture()
         .consideringAllDependencies()
         .layer("domain").definedBy("$ROOT.domain..")
         .layer("application").definedBy("$ROOT.application..")
-        .layer("interfaces").definedBy("$ROOT.interfaces..")
-        .layer("infrastructure").definedBy("$ROOT.infrastructure..")
+        .layer("adapter.webapi").definedBy("$ROOT.adapter", "$ROOT.adapter.webapi..")
+        .layer("adapter.persistence").definedBy("$ROOT.adapter.persistence..")
         .layer("support").definedBy("$ROOT.support..")
-        .whereLayer("domain").mayOnlyBeAccessedByLayers("application", "interfaces", "infrastructure")
-        .whereLayer("application").mayOnlyBeAccessedByLayers("interfaces")
-        .whereLayer("interfaces").mayNotBeAccessedByAnyLayer()
-        .whereLayer("infrastructure").mayNotBeAccessedByAnyLayer()
+        .whereLayer("domain").mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence")
+        .whereLayer("application").mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence")
+        .whereLayer("adapter.webapi").mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
     // Cycles are checked inside one layer at a time. application.brand reading domain.product while
@@ -51,13 +54,12 @@ class LayeredArchitectureTest {
     @ArchTest
     val applicationSlicesAreFreeOfCycles: ArchRule = slicesOf("application").shouldBeFreeOfCycles()
 
+    // v* absorbs the API version segment, so the feature stays the slice.
     @ArchTest
-    val infrastructureSlicesAreFreeOfCycles: ArchRule = slicesOf("infrastructure").shouldBeFreeOfCycles()
+    val webApiSlicesAreFreeOfCycles: ArchRule = slicesOf("adapter.webapi.v*").shouldBeFreeOfCycles()
 
-    // The first alternative absorbs the API version segment and the second the technology segment (api, scheduler, ...),
-    // so the feature stays the slice. api.v* comes first because alternatives are tried in order.
     @ArchTest
-    val interfacesSlicesAreFreeOfCycles: ArchRule = slicesOf("interfaces.[api.v*|*]").shouldBeFreeOfCycles()
+    val persistenceSlicesAreFreeOfCycles: ArchRule = slicesOf("adapter.persistence").shouldBeFreeOfCycles()
 
     @ArchTest
     val domainSlicesOnlyReadEachOther: ArchRule = slicesOf("domain")
