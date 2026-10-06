@@ -102,6 +102,39 @@ class ProductFinderTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
+    @Test
+    fun `the orderable lookup gives a product of a brand that is not deleted`() {
+        val brand = brandRepository.save(createBrand())
+        val request = createProductAdminRegisterRequest(brandId = brand.id)
+        val registered = productRegister.register(request)
+        entityManager.flushAndClear()
+
+        val found = productFinder.findOrderable(registered.id)
+
+        assertThat(found?.id).isEqualTo(registered.id)
+        assertThat(found?.name).isEqualTo(request.name)
+        assertThat(found?.price?.amount).isEqualTo(request.price)
+    }
+
+    /**
+     * 주문은 없음을 오류가 아니라 정상 결과로 받아 자기 오류로 옮긴다. 그래서 세 경우 모두 던지지 않고 null이다.
+     * 삭제된 브랜드의 상품은 상품 행이 남아 있어도 주문할 수 없다.
+     */
+    @Test
+    fun `the orderable lookup gives null for an unknown or deleted product and for a product of a deleted brand`() {
+        val brand = brandRepository.save(createBrand())
+        val deleted = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
+        productRegister.delete(deleted.id)
+        val closedBrand = brandRepository.save(createBrand())
+        val ofClosedBrand = productRegister.register(createProductAdminRegisterRequest(brandId = closedBrand.id))
+        closedBrand.delete()
+        entityManager.flushAndClear()
+
+        assertThat(productFinder.findOrderable(Long.MAX_VALUE)).isNull()
+        assertThat(productFinder.findOrderable(deleted.id)).isNull()
+        assertThat(productFinder.findOrderable(ofClosedBrand.id)).isNull()
+    }
+
     /**
      * 삭제 필터·브랜드 필터·`hasNext`는 저장소 테스트가 지키므로 여기서 되풀이하지 않는다(설계 6).
      * 이 자리가 보는 것은 입력의 기본값이 조각에 닿는지와, 항목이 트랜잭션 안에서 브랜드 이름까지 채워지는지다.

@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.order.OrderService
+import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.config.security.AdminSecurityConfig
@@ -47,7 +47,7 @@ class OrderConfirmationApiMockMvcTest(
     private val userFixture: UserFixture,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
-    private val orderService: OrderService,
+    private val orderCreator: OrderCreator,
     private val pointCharger: PointCharger,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
@@ -75,7 +75,7 @@ class OrderConfirmationApiMockMvcTest(
         pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(5))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(second to 1, first to 5)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(second to 1, first to 5)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
         assertThat(draft.json()["data"]["totalAmount"].longValue()).isEqualTo(7_000)
@@ -110,7 +110,7 @@ class OrderConfirmationApiMockMvcTest(
         pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(4))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(first to 2, second to 5)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(first to 2, second to 5)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
 
@@ -134,7 +134,7 @@ class OrderConfirmationApiMockMvcTest(
         pointCharger.charge(userId, createPointChargeRequest(amount = 3_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
 
@@ -160,7 +160,7 @@ class OrderConfirmationApiMockMvcTest(
         val productId = productRepository.save(
             createProduct(brand, name = "원래 이름", price = Money(1_000), stock = Stock(10)),
         ).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         jdbc.update("update orders set created_at = '2020-01-01 00:00:00.123456' where id = ?", orderId)
         transaction.executeWithoutResult { productRepository.findById(productId)!!.update("바뀐 이름", Money(newPrice)) }
 
@@ -183,7 +183,7 @@ class OrderConfirmationApiMockMvcTest(
         val first = productRepository.save(createProduct(brand, stock = Stock(10))).id
         val secondBrand = brandRepository.save(createBrand())
         val second = productRepository.save(createProduct(secondBrand, stock = Stock(10))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second))).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(first, second))).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
         if (deleted == "product") {
@@ -212,7 +212,7 @@ class OrderConfirmationApiMockMvcTest(
         pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand)).id
         val second = productRepository.save(createProduct(brand)).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
         val (short, unavailable) = if (shortageFirst) first to second else second to first
@@ -233,7 +233,7 @@ class OrderConfirmationApiMockMvcTest(
     fun `requester and ownership checks precede both first confirmation and the already confirmed rejection`() {
         pointCharger.charge(userId, createPointChargeRequest(amount = 1_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
         val otherUser = userFixture.registerUser().id
@@ -278,10 +278,10 @@ class OrderConfirmationApiMockMvcTest(
     fun `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`() {
         pointCharger.charge(userId, createPointChargeRequest(amount = 3_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(3))).id
-        val firstId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val firstId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val confirmed = confirm(firstId)
         assertThat(confirmed).hasStatusOk()
-        val secondId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
+        val secondId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
         assertThat(confirm(secondId)).hasStatusOk()
         balance(0)
         assertStock(productId, 0)
@@ -305,7 +305,7 @@ class OrderConfirmationApiMockMvcTest(
     fun `a missing point account is an internal error and rolls back stock without creating an account`() {
         userId = userFixture.registerUserWithoutAccount().id
         val productId = productRepository.save(createProduct(brand, stock = Stock(10))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
 
@@ -332,7 +332,7 @@ class OrderConfirmationApiMockMvcTest(
         pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(6))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(2))).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(first to 5, second to 1)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(first to 5, second to 1)).orderId
         val draft = detail(orderId)
         assertThat(draft).hasStatusOk()
         jdbc.execute("alter table point_account add constraint fail_paid_balance check (balance <> 3000)")

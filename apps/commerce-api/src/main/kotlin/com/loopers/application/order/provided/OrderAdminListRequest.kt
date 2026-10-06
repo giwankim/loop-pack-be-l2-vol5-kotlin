@@ -1,4 +1,4 @@
-package com.loopers.application.order
+package com.loopers.application.order.provided
 
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min

@@ -1,10 +1,10 @@
-package com.loopers.application.order
+package com.loopers.application.order.provided
 
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 
 /**
- * 내 주문 목록 입력. 사용자 식별자는 요청자에서 오므로 여기 없고 [OrderService.findAll]의 파라미터다(카탈로그 설계 5.27).
+ * 내 주문 목록 입력. 사용자 식별자는 요청자에서 오므로 여기 없고 [OrderFinder.findAll]의 파라미터다(카탈로그 설계 5.27).
  * 정렬 기준은 고르지 않는다. 주문 목록의 차례는 최신순 하나뿐이다(설계 6).
  * 고르는 차례가 있는 것은 상품 목록뿐이고 그 낱말도 상품의 것이다(CONTEXT.md 상품 목록 정렬).
  *

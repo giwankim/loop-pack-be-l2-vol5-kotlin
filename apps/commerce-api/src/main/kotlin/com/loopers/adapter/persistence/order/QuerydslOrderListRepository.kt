@@ -1,28 +1,24 @@
 package com.loopers.adapter.persistence.order
 
 import com.loopers.adapter.persistence.shared.fetchSlice
+import com.loopers.application.order.required.OrderListRepository
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.QOrder.order
 import com.loopers.domain.shared.PageSlice
 import com.querydsl.jpa.impl.JPAQueryFactory
 import org.springframework.stereotype.Component
 
 /**
- * [OrderRepository]의 구현. 메서드 이름만으로 끝나는 일은 [OrderJpaRepository]에 맡기고, 목록만 QueryDSL로 짠다.
- * 두 인터페이스를 하나로 합치지 않는다(카탈로그 설계 5.20).
+ * [OrderListRepository]의 QueryDSL 구현. 주문 하나는 Spring Data의
+ * [com.loopers.application.order.required.OrderRepository]가 맡고, 여기는 주문 목록만 짠다.
+ *
+ * 이름에 `OrderRepositoryImpl`을 쓰지 않는 까닭은
+ * [com.loopers.adapter.persistence.product.QuerydslProductListRepository]와 같다.
  */
 @Component
-class OrderRepositoryImpl(
-    private val orderJpaRepository: OrderJpaRepository,
+class QuerydslOrderListRepository(
     private val queryFactory: JPAQueryFactory,
-) : OrderRepository {
-    override fun save(order: Order): Order = orderJpaRepository.save(order)
-
-    override fun findById(id: Long): Order? = orderJpaRepository.findById(id)
-
-    override fun findByIdAndUserId(id: Long, userId: Long): Order? = orderJpaRepository.findByIdAndUserId(id, userId)
-
+) : OrderListRepository {
     /**
      * 조각은 주문만 센다. 품목을 fetch join으로 함께 읽으면 `limit`이 주문이 아니라 조인된 행을 자르므로
      * 품목이 여럿인 주문에서 조각의 크기가 뒤틀린다(설계 9 조회, 14.1).

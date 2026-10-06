@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.order.OrderAdminListRequest
+import com.loopers.application.order.provided.OrderAdminListRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn

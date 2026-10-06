@@ -3,8 +3,8 @@ package com.loopers.adapter.webapi.v1.order
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.order.OrderCreateRequest
-import com.loopers.application.order.OrderListRequest
+import com.loopers.application.order.provided.OrderCreateRequest
+import com.loopers.application.order.provided.OrderListRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn

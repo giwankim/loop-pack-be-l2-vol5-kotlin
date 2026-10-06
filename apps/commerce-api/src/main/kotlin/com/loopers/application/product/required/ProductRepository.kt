@@ -27,6 +27,15 @@ interface ProductRepository : Repository<Product, Long> {
     fun findById(id: Long): Product?
 
     /**
+     * [id] 상품을 브랜드와 함께 읽는다. 상품이 없거나 삭제됐거나 브랜드가 삭제됐으면 null이다.
+     *
+     * 브랜드를 inner join으로 건너므로 [com.loopers.domain.brand.Brand]의 `@SQLRestriction`이 그 조인에도 붙어
+     * 삭제된 브랜드의 상품은 행이 남아 있어도 나오지 않는다. 상품 목록이 삭제된 브랜드를 거르는 방법과 같다(설계 7).
+     */
+    @Query("select p from Product p join fetch p.brand where p.id = :id")
+    fun findByIdWithActiveBrand(id: Long): Product?
+
+    /**
      * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고, 누른 시각이 같으면 나중에 누른 쪽이 앞선다.
      * 차례를 정하는 값이 상품이 아니라 관계에 있으므로 정렬 기준을 받는 [ProductListRepository.findAll]과 달리 기준을 고르지 않는다.
      *

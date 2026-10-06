@@ -3,9 +3,11 @@ package com.loopers.adapter.webapi.v1.order
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.order.OrderCreateRequest
-import com.loopers.application.order.OrderListRequest
-import com.loopers.application.order.OrderService
+import com.loopers.application.order.provided.OrderConfirmer
+import com.loopers.application.order.provided.OrderCreateRequest
+import com.loopers.application.order.provided.OrderCreator
+import com.loopers.application.order.provided.OrderFinder
+import com.loopers.application.order.provided.OrderListRequest
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -21,13 +23,17 @@ import org.springframework.web.bind.annotation.ResponseStatus
 /** 고객 주문. 요청자는 헤더에서 읽는다([UserIdHeader]). 생성은 요청마다 새 주문이다(ADR 0005). */
 @WebApiAdapter
 @RequestMapping("/api/v1/orders")
-class OrderApi(private val orderService: OrderService) : OrderApiSpec {
+class OrderApi(
+    private val orderFinder: OrderFinder,
+    private val orderCreator: OrderCreator,
+    private val orderConfirmer: OrderConfirmer,
+) : OrderApiSpec {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun create(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @RequestBody @Valid request: OrderCreateRequest,
-    ): ApiResponse<OrderResponse> = orderService
+    ): ApiResponse<OrderResponse> = orderCreator
         .create(UserIdHeader.require(userId), request)
         .let { ApiResponse.success(OrderResponse.from(it)) }
 
@@ -36,7 +42,7 @@ class OrderApi(private val orderService: OrderService) : OrderApiSpec {
     override fun findAll(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @ModelAttribute @Valid request: OrderListRequest,
-    ): ApiResponse<PageResponse<OrderResponse>> = orderService.findAll(UserIdHeader.require(userId), request)
+    ): ApiResponse<PageResponse<OrderResponse>> = orderFinder.findAll(UserIdHeader.require(userId), request)
         .let { PageResponse.from(it, OrderResponse::from) }
         .let { ApiResponse.success(it) }
 
@@ -44,13 +50,13 @@ class OrderApi(private val orderService: OrderService) : OrderApiSpec {
     override fun find(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @PathVariable orderId: Long,
-    ): ApiResponse<OrderResponse> = orderService.find(UserIdHeader.require(userId), orderId)
+    ): ApiResponse<OrderResponse> = orderFinder.find(UserIdHeader.require(userId), orderId)
         .let { ApiResponse.success(OrderResponse.from(it)) }
 
     @PostMapping("/{orderId}/confirm")
     override fun confirm(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @PathVariable orderId: Long,
-    ): ApiResponse<OrderResponse> = orderService.confirm(UserIdHeader.require(userId), orderId)
+    ): ApiResponse<OrderResponse> = orderConfirmer.confirm(UserIdHeader.require(userId), orderId)
         .let { ApiResponse.success(OrderResponse.from(it)) }
 }

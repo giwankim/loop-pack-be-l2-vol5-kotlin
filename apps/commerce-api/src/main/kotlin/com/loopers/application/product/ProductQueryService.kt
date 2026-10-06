@@ -6,6 +6,7 @@ import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRepository
 import com.loopers.application.product.required.ProductRepository
+import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
@@ -30,6 +31,9 @@ class ProductQueryService(
         val product = productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
         return productInfoAssembler.toInfo(product)
     }
+
+    @Transactional(readOnly = true)
+    override fun findOrderable(id: Long): Product? = productRepository.findByIdWithActiveBrand(id)
 
     @Transactional(readOnly = true)
     override fun findAll(request: ProductAdminListRequest): PageSlice<ProductInfo> =

@@ -1,6 +1,6 @@
 package com.loopers.domain.order
 
-import com.loopers.application.order.OrderCreateRequest
+import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
 import org.instancio.kotlin.KInstancio

@@ -1,5 +1,6 @@
-package com.loopers.adapter.persistence.order
+package com.loopers.application.order.required
 
+import com.loopers.adapter.persistence.order.QuerydslOrderListRepository
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
@@ -7,7 +8,6 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.createOrder
 import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.product.createProduct
@@ -22,8 +22,8 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import
 
 /**
- * [OrderRepositoryImpl]이 [OrderRepository] 계약을 실제 MySQL에서 지키는지 확인한다.
- * 구현을 알아야 하므로 adapter.persistence 패키지에 두고(설계 5.20), 설정과 정리 방식의 이유는
+ * Spring Data가 만든 [OrderRepository]와 QueryDSL로 짠 [OrderListRepository]가 실제 MySQL에서 계약을 지키는지 확인한다.
+ * 설정과 패키지 위치, 목록의 구현 [QuerydslOrderListRepository]를 직접 가져오는 이유는
  * [com.loopers.application.product.required.ProductRepositoryTest]와 같다.
  *
  * 주문은 사용자와 상품을 식별자로만 가리키지만 두 참조에 물리 외래 키가 있으므로(설계 13) 준비 단계가 사용자·브랜드·상품
@@ -38,10 +38,11 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    OrderRepositoryImpl::class,
+    QuerydslOrderListRepository::class,
 )
 class OrderRepositoryTest(
     private val orderRepository: OrderRepository,
+    private val orderListRepository: OrderListRepository,
     private val userRepository: UserRepository,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
@@ -67,7 +68,7 @@ class OrderRepositoryTest(
         setCreatedAt(foreign.id, "2026-09-19 10:00:00.000000")
         entityManager.flushAndClear()
 
-        val slice = orderRepository.findAll(userId = owner.id, page = 0, size = 10)
+        val slice = orderListRepository.findAll(userId = owner.id, page = 0, size = 10)
 
         assertThat(slice.items.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id)
         assertThat(slice.page).isZero()
@@ -88,9 +89,9 @@ class OrderRepositoryTest(
         val second = orderRepository.save(createOrder(owner.id, products.reversed().map { createOrderProduct(it) }))
         entityManager.flushAndClear()
 
-        val firstPage = orderRepository.findAll(owner.id, page = 0, size = 1)
-        val secondPage = orderRepository.findAll(owner.id, page = 1, size = 1)
-        val thirdPage = orderRepository.findAll(owner.id, page = 2, size = 1)
+        val firstPage = orderListRepository.findAll(owner.id, page = 0, size = 1)
+        val secondPage = orderListRepository.findAll(owner.id, page = 1, size = 1)
+        val thirdPage = orderListRepository.findAll(owner.id, page = 2, size = 1)
 
         val productIds = products.map { it.id }.sorted()
         assertThat(firstPage.items.map { it.id }).containsExactly(second.id)
@@ -112,7 +113,7 @@ class OrderRepositoryTest(
         val second = orderRepository.save(createOrder(userRepository.save(User()).id, listOf(createOrderProduct(product))))
         entityManager.flushAndClear()
 
-        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
 
         assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
     }
@@ -131,7 +132,7 @@ class OrderRepositoryTest(
         setCreatedAt(backDated.id, "2026-09-17 00:00:00.000000")
         entityManager.flushAndClear()
 
-        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
 
         assertThat(slice.items.map { it.id }).containsExactly(recent.id, backDated.id)
     }
@@ -150,7 +151,7 @@ class OrderRepositoryTest(
         orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(shared))))
         entityManager.flushAndClear()
 
-        val slice = orderRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
         entityManager.clear()
 
         assertThat(slice.items.map { order -> order.items.map { it.productId } })
@@ -159,7 +160,7 @@ class OrderRepositoryTest(
 
     @Test
     fun `findAll gives an empty slice without a next page when nothing matches`() {
-        val slice = orderRepository.findAll(userId = userRepository.save(User()).id, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = userRepository.save(User()).id, page = 0, size = 20)
 
         assertThat(slice.items).isEmpty()
         assertThat(slice.hasNext).isFalse()

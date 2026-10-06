@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.order
 
-import com.loopers.application.order.OrderInfo
+import com.loopers.application.order.provided.OrderInfo
 
 /**
  * 주문 품목 하나. 고객 응답과 관리자 응답이 함께 쓴다.

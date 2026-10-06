@@ -118,6 +118,34 @@ class ProductRepositoryTest(
         assertThat(productRepository.findById(999L)).isNull()
     }
 
+    /** 주문은 이 조회를 받은 뒤 트랜잭션 밖에서 브랜드를 건너도 지연 로딩에 닿지 않아야 한다. */
+    @Test
+    fun `findByIdWithActiveBrand reads the brand together with the product`() {
+        val brand = brandRepository.save(createBrand())
+        val saved = productRepository.save(createProduct(brand))
+        entityManager.flushAndClear()
+
+        val found = productRepository.findByIdWithActiveBrand(saved.id)!!
+
+        assertThat(found.id).isEqualTo(saved.id)
+        assertThat(Hibernate.isInitialized(found.brand)).isTrue()
+    }
+
+    /** [ProductRepository.findById]는 브랜드의 삭제를 보지 않으므로, 같은 상품을 두 조회가 다르게 답하는 것을 함께 본다. */
+    @Test
+    fun `findByIdWithActiveBrand returns null for a deleted product and for an active product whose brand was deleted`() {
+        val brand = brandRepository.save(createBrand())
+        val deleted = productRepository.save(createProduct(brand).apply { delete() })
+        val closedBrand = brandRepository.save(createBrand())
+        val ofClosedBrand = productRepository.save(createProduct(closedBrand))
+        closedBrand.delete()
+        entityManager.flushAndClear()
+
+        assertThat(productRepository.findByIdWithActiveBrand(deleted.id)).isNull()
+        assertThat(productRepository.findById(ofClosedBrand.id)).isNotNull()
+        assertThat(productRepository.findByIdWithActiveBrand(ofClosedBrand.id)).isNull()
+    }
+
     @Test
     fun `findAll returns the products of every brand, latest registered first`() {
         val brand = brandRepository.save(createBrand())

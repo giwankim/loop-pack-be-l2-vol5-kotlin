@@ -2,7 +2,7 @@ package com.loopers.domain.order
 
 import com.loopers.adapter.persistence.product.QuerydslProductListRepository
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.order.OrderCreateRequest
+import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig

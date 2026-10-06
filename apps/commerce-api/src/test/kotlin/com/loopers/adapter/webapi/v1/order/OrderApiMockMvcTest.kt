@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.order.OrderService
+import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
@@ -51,7 +51,7 @@ class OrderApiMockMvcTest(
     private val userRepository: UserRepository,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
-    private val orderService: OrderService,
+    private val orderCreator: OrderCreator,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
     private val entityManagerFactory: EntityManagerFactory,
@@ -310,7 +310,7 @@ class OrderApiMockMvcTest(
     @Test
     fun `foreign keys and order product uniqueness are enforced by MySQL`() {
         val id = productRepository.save(createProduct(brand)).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(id))).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(id))).orderId
         val original = detail(orderId)
         assertThat(original).hasStatusOk()
         val foreignKeys = jdbc.queryForList(
@@ -360,7 +360,7 @@ class OrderApiMockMvcTest(
     @Test
     fun `database rejects inconsistent payment state and nonpositive item values`() {
         val productId = productRepository.save(createProduct(brand)).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId))).orderId
         val original = detail(orderId)
         assertThat(original).hasStatusOk()
         listOf(
@@ -379,7 +379,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `Hibernate schema recreation drops scalar references and recreates every order foreign key`() {
-        orderService.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
+        orderCreator.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
         val schema = entityManagerFactory.unwrap(SessionFactory::class.java).schemaManager
         try {
             schema.dropMappedObjects(false)
@@ -417,11 +417,11 @@ class OrderApiMockMvcTest(
         val shirt = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
         val socks = productRepository.save(createProduct(brand, price = Money(2_000))).id
         // 품목을 상품 ID의 거꾸로 넣는다. 응답이 넣은 차례 그대로면 품목의 차례를 확인한 것이 아니다.
-        val older = detail(orderService.create(userId, createOrderCreateRequest(socks to 1, shirt to 2)).orderId)
+        val older = detail(orderCreator.create(userId, createOrderCreateRequest(socks to 1, shirt to 2)).orderId)
             .json()["data"]
-        val newer = detail(orderService.create(userId, createOrderCreateRequest(listOf(socks))).orderId).json()["data"]
+        val newer = detail(orderCreator.create(userId, createOrderCreateRequest(listOf(socks))).orderId).json()["data"]
         val otherUser = userRepository.save(User()).id
-        val foreign = orderService.create(otherUser, createOrderCreateRequest(listOf(shirt))).orderId
+        val foreign = orderCreator.create(otherUser, createOrderCreateRequest(listOf(shirt))).orderId
         transaction.executeWithoutResult {
             productRepository.findById(shirt)!!.update("바뀐 이름", Money(9_000))
             productRepository.findById(socks)!!.delete()
@@ -452,8 +452,8 @@ class OrderApiMockMvcTest(
     @Test
     fun `the order list shows draft and confirmed entries with their stored payment fields`() {
         val id = productRepository.save(createProduct(brand, price = Money(1_000))).id
-        orderService.create(userId, createOrderCreateRequest(listOf(id)))
-        val confirmed = orderService.create(userId, createOrderCreateRequest(listOf(id), quantity = 2)).orderId
+        orderCreator.create(userId, createOrderCreateRequest(listOf(id)))
+        val confirmed = orderCreator.create(userId, createOrderCreateRequest(listOf(id), quantity = 2)).orderId
         jdbc.update(
             "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
@@ -476,9 +476,9 @@ class OrderApiMockMvcTest(
     @Test
     fun `the page and size in the query string reach the order slice and equal creation times break by id`() {
         val productIds = List(2) { productRepository.save(createProduct(brand)).id }
-        val oldest = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
-        val tied = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
-        val tiedLater = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
+        val oldest = orderCreator.create(userId, createOrderCreateRequest(productIds)).orderId
+        val tied = orderCreator.create(userId, createOrderCreateRequest(productIds)).orderId
+        val tiedLater = orderCreator.create(userId, createOrderCreateRequest(productIds)).orderId
         jdbc.update("update orders set created_at = '2026-09-17 10:00:00.000000' where id = ?", oldest)
         jdbc.update("update orders set created_at = '2026-09-18 10:00:00.000000' where id in (?, ?)", tied, tiedLater)
 
@@ -515,7 +515,7 @@ class OrderApiMockMvcTest(
 
     @Test
     fun `listing orders needs a requester and a user without orders gets an empty page`() {
-        orderService.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
+        orderCreator.create(userId, createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id)))
         listOf(null, Long.MAX_VALUE).forEach { requester ->
             val body = assertThat(list(requester = requester)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
             body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")

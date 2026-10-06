@@ -1,4 +1,4 @@
-package com.loopers.application.order
+package com.loopers.application.order.provided
 
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus

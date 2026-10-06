@@ -1,7 +1,7 @@
 package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.order.OrderService
+import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
@@ -34,7 +34,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
 /**
- * 관리자 주문 조회. 주문은 [OrderService]로 만들고 관리자 API로 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은
+ * 관리자 주문 조회. 주문은 [OrderCreator]로 만들고 관리자 API로 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은
  * [OrderApiMockMvcTest]와 같다. 준비와 요청마다 서비스 트랜잭션이 끝나고 다음 요청은 새 영속성 컨텍스트에서 읽는다.
  *
  * 관리자 경계는 기존 테스트 전용 설정을 쓴다([AdminSecurityConfig]). 운영 인증 수단을 더하는 것이 아니다.
@@ -48,7 +48,7 @@ class OrderAdminApiMockMvcTest(
     private val userRepository: UserRepository,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
-    private val orderService: OrderService,
+    private val orderCreator: OrderCreator,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
     transactionManager: PlatformTransactionManager,
@@ -79,8 +79,8 @@ class OrderAdminApiMockMvcTest(
         val pants = productRepository.save(createProduct(brand, price = Money(2_000))).id
         val userId = userRepository.save(User()).id
         val otherUserId = userRepository.save(User()).id
-        val first = orderService.create(userId, createOrderCreateRequest(pants to 1, shirt to 2)).orderId
-        val second = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
+        val first = orderCreator.create(userId, createOrderCreateRequest(pants to 1, shirt to 2)).orderId
+        val second = orderCreator.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
         val body = assertThat(getOrders()).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -113,8 +113,8 @@ class OrderAdminApiMockMvcTest(
         val userId = userRepository.save(User()).id
         val otherUserId = userRepository.save(User()).id
         // 품목을 상품 ID의 거꾸로 넣는다. 응답이 넣은 차례 그대로면 품목의 차례를 확인한 것이 아니다.
-        val older = orderService.create(userId, createOrderCreateRequest(listOf(socks, shirt))).orderId
-        val newer = orderService.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
+        val older = orderCreator.create(userId, createOrderCreateRequest(listOf(socks, shirt))).orderId
+        val newer = orderCreator.create(otherUserId, createOrderCreateRequest(listOf(shirt))).orderId
 
         val orders = getOrders()
         val body = assertThat(orders).hasStatusOk().bodyJson()
@@ -135,9 +135,9 @@ class OrderAdminApiMockMvcTest(
         val userId = userRepository.save(User()).id
         val otherUserId = userRepository.save(User()).id
         val quietUserId = userRepository.save(User()).id
-        val first = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
-        orderService.create(otherUserId, createOrderCreateRequest(listOf(productId)))
-        val second = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val first = orderCreator.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        orderCreator.create(otherUserId, createOrderCreateRequest(listOf(productId)))
+        val second = orderCreator.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
         val body = assertThat(getOrders("userId" to userId.toString())).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items.length()").isEqualTo(2)
@@ -163,11 +163,11 @@ class OrderAdminApiMockMvcTest(
         val request = createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id))
         val userId = userRepository.save(User()).id
         val otherUserId = userRepository.save(User()).id
-        val oldest = orderService.create(userId, request).orderId
-        val foreignOlder = orderService.create(otherUserId, request).orderId
-        val middle = orderService.create(userId, request).orderId
-        val foreignNewer = orderService.create(otherUserId, request).orderId
-        val newest = orderService.create(userId, request).orderId
+        val oldest = orderCreator.create(userId, request).orderId
+        val foreignOlder = orderCreator.create(otherUserId, request).orderId
+        val middle = orderCreator.create(userId, request).orderId
+        val foreignNewer = orderCreator.create(otherUserId, request).orderId
+        val newest = orderCreator.create(userId, request).orderId
 
         val firstPage = getOrders("userId" to userId.toString(), "size" to "2")
         val body = assertThat(firstPage).hasStatusOk().bodyJson()
@@ -190,7 +190,7 @@ class OrderAdminApiMockMvcTest(
     fun `admin reads any user's order detail and a missing order is not found`() {
         val shirt = productRepository.save(createProduct(brand, price = Money(1_000))).id
         val userId = userRepository.save(User()).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(shirt), quantity = 3)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(shirt), quantity = 3)).orderId
 
         val body = assertThat(getOrder(orderId)).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -217,8 +217,8 @@ class OrderAdminApiMockMvcTest(
     fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {
         val productId = productRepository.save(createProduct(brand, price = Money(1_000))).id
         val userId = userRepository.save(User()).id
-        val draft = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
-        val confirmed = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
+        val draft = orderCreator.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val confirmed = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
         jdbc.update(
             "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
@@ -245,7 +245,7 @@ class OrderAdminApiMockMvcTest(
     fun `reading as a user or without identification returns 403`() {
         val userId = userRepository.save(User()).id
         val productId = productRepository.save(createProduct(brand)).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId))).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId))).orderId
 
         listOf(USER, null).forEach { principal ->
             assertThat(getOrders(principal = principal)).hasStatus(HttpStatus.FORBIDDEN)
@@ -270,7 +270,7 @@ class OrderAdminApiMockMvcTest(
     fun `orders created in the same microsecond are listed with the later id first`() {
         val request = createOrderCreateRequest(listOf(productRepository.save(createProduct(brand)).id))
         val userId = userRepository.save(User()).id
-        val ids = List(3) { orderService.create(userId, request).orderId }
+        val ids = List(3) { orderCreator.create(userId, request).orderId }
         jdbc.update("update orders set created_at = '2026-09-18 00:00:00.000000'")
 
         val body = assertThat(getOrders("page" to "0", "size" to "2")).hasStatusOk().bodyJson()
@@ -289,8 +289,8 @@ class OrderAdminApiMockMvcTest(
     fun `a multi item order fills one page entry and keeps all of its items`() {
         val productIds = List(3) { productRepository.save(createProduct(brand)).id }
         val userId = userRepository.save(User()).id
-        val many = orderService.create(userId, createOrderCreateRequest(productIds)).orderId
-        val one = orderService.create(userId, createOrderCreateRequest(listOf(productIds.first()))).orderId
+        val many = orderCreator.create(userId, createOrderCreateRequest(productIds)).orderId
+        val one = orderCreator.create(userId, createOrderCreateRequest(listOf(productIds.first()))).orderId
 
         val body = assertThat(getOrders("size" to "1")).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items.length()").isEqualTo(1)
@@ -310,7 +310,7 @@ class OrderAdminApiMockMvcTest(
     fun `catalog edits and soft deletion leave the stored order readable`() {
         val productId = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000))).id
         val userId = userRepository.save(User()).id
-        val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
+        val orderId = orderCreator.create(userId, createOrderCreateRequest(listOf(productId), quantity = 2)).orderId
         val original = getOrder(orderId)
         assertThat(original).hasStatusOk()
 

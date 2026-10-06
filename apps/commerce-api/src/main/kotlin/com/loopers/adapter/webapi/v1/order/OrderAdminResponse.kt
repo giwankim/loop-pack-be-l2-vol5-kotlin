@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.order
 
-import com.loopers.application.order.OrderInfo
+import com.loopers.application.order.provided.OrderInfo
 import com.loopers.domain.order.OrderStatus
 import java.time.Instant
 
