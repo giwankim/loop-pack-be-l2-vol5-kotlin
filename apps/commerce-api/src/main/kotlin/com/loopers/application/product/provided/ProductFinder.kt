@@ -19,4 +19,12 @@ interface ProductFinder : ActiveProductChecker {
 
     /** 고객 목록. 고객이 고른 차례로 놓인 한 조각. 모르는 정렬 기준이면 `INVALID_SORT`를 던진다(설계 5.24). */
     fun findAll(@Valid request: ProductListRequest): PageSlice<ProductInfo>
+
+    /**
+     * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고 삭제된 상품은 빠진다.
+     * 좋아요 조각의 내 좋아요 목록이 부른다. 항목이 고객 목록의 항목과 같은 [ProductInfo]라 옮기는 일은 상품 안에 남는다(설계 5.31).
+     *
+     * 페이지 값은 부르는 쪽이 이미 검증한 것을 받는다. 좋아요 목록의 입력은 좋아요의 Request이고, 상품은 좋아요를 모른다.
+     */
+    fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<ProductInfo>
 }

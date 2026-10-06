@@ -54,6 +54,11 @@ class ProductQueryService(
             sort = ProductSort.from(request.sort) ?: throw CoreException(ErrorType.INVALID_SORT),
         )
 
+    /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
+    @Transactional(readOnly = true)
+    override fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<ProductInfo> =
+        productInfoAssembler.toInfos(productRepository.findAllLikedBy(userId = userId, page = page, size = size))
+
     /** 삭제된 상품은 [com.loopers.domain.product.Product]의 `@SQLRestriction`이 걸러 주므로 남은 상품이 있는지만 묻는다. */
     @Transactional(readOnly = true)
     override fun hasActiveProducts(brandId: Long): Boolean = productRepository.existsByBrandId(brandId)

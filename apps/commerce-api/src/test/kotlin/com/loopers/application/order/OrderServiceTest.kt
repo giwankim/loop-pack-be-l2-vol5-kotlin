@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * [OrderService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은
- * [com.loopers.application.like.LikeServiceTest]와 같다.
+ * [com.loopers.application.like.provided.LikerTest]와 같다.
  *
  * 생성과 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
  * 여기서는 조회와, 생성이 요청마다 새 주문이라는 계약만 본다(ADR 0005).
@@ -128,7 +128,7 @@ class OrderServiceTest(
      * `jpa.yml`의 `default_batch_fetch_size`와 이 상한이 같다는 것이었고, #16이 품목을 명시적으로 읽게 되어
      * 이제는 전역 설정과 무관하게 하나다(설계 16.1). 상한을 채운 이 경우가 그것을 확인한다.
      *
-     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.like.LikeServiceTest]와 같다.
+     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.like.provided.LikeFinderTest]와 같다.
      */
     @Test
     fun `a slice filled to the maximum size still reads its items in one query`() {

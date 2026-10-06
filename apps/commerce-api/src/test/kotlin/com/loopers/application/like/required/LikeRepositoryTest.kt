@@ -1,8 +1,7 @@
-package com.loopers.adapter.persistence.like
+package com.loopers.application.like.required
 
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.like.Like
-import com.loopers.domain.like.LikeRepository
 import com.loopers.support.countLikes
 import com.loopers.support.flushAndClear
 import com.loopers.support.likeRowExists
@@ -17,15 +16,18 @@ import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 
 /**
- * [LikeRepositoryImpl]이 [LikeRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현을 알아야 하므로
- * adapter.persistence 패키지에 두고(설계 5.20), 설정의 이유는 [com.loopers.application.product.required.ProductRepositoryTest]와 같다.
+ * Spring Data가 만든 [LikeRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 설정과 패키지 위치의 이유는
+ * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
+ *
+ * 여러 상품의 좋아요 수 [LikeRepository.countByProductIds]는 본문을 가진 인터페이스 메서드다. 그 테스트는 Spring Data가
+ * 본문을 쿼리로 만들지 않고 실행해 좋아요가 없는 상품을 0으로 채운다는 것도 함께 고정한다.
  *
  * 좋아요는 사용자와 상품을 식별자로만 가리키므로(설계 2) 사용자·상품 행 없이 식별자만으로 만든다.
  * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, LikeRepositoryImpl::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class LikeRepositoryTest(
     private val likeRepository: LikeRepository,
     private val entityManager: EntityManager,

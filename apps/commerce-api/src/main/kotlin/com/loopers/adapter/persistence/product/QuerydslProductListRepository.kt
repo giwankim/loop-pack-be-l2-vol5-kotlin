@@ -47,7 +47,7 @@ class QuerydslProductListRepository(
      * 좋아요 많은순만 조인과 `group by`가 함께 붙는다. 정렬 키가 상품의 컬럼이 아니라 관계를 세어 나오는 값이라서다.
      * `left join`이라 좋아요가 하나도 없는 상품도 0으로 남아 목록의 끝에 온다. 다른 두 기준은 이 조인을 치르지 않는다.
      *
-     * 세어 나온 값은 정렬에만 쓰고 돌려주지 않는다. 항목의 `likeCount`는 [com.loopers.domain.like.LikeRepository]가
+     * 세어 나온 값은 정렬에만 쓰고 돌려주지 않는다. 항목의 `likeCount`는 [com.loopers.application.product.required.LikeCounter]가
      * 따로 센다(설계 5.28의 C). 그래서 이 저장소의 반환은 기준이 무엇이든 [Product]다.
      *
      * 가격은 `Money`가 `@Embeddable`이므로 경로가 `price`가 아니라 `price.amount`다.

@@ -4,7 +4,7 @@ import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.adapter.webapi.v1.product.ProductResponse
-import com.loopers.application.like.LikeListRequest
+import com.loopers.application.like.provided.LikeListRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn

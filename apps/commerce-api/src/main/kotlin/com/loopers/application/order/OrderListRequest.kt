@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Min
  * 정렬 기준은 고르지 않는다. 주문 목록의 차례는 최신순 하나뿐이다(설계 6).
  * 고르는 차례가 있는 것은 상품 목록뿐이고 그 낱말도 상품의 것이다(CONTEXT.md 상품 목록 정렬).
  *
- * 제약이 붙는 자리와 까닭, 페이지 값의 범위는 [com.loopers.application.like.LikeListRequest]와 같다(카탈로그 설계 5.17, 5.18, 5.22).
+ * 제약이 붙는 자리와 까닭, 페이지 값의 범위는 [com.loopers.application.like.provided.LikeListRequest]와 같다(카탈로그 설계 5.17, 5.18, 5.22).
  * 개념마다 Request를 따로 두어 한쪽의 범위가 바뀌어도 다른 쪽이 따라가지 않게 한다.
  */
 data class OrderListRequest(

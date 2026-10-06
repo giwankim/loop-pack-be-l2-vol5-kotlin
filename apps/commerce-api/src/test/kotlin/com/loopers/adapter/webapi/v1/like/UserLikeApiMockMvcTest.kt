@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.like
 
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.like.LikeService
+import com.loopers.application.like.provided.Liker
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional
  * [AdminSecurityConfig]를 가져오는 까닭은 [com.loopers.adapter.webapi.v1.brand.BrandApiMockMvcTest]와 같다.
  *
  * 차례와 삭제 필터, `hasNext`는 [com.loopers.application.product.required.ProductRepositoryTest]가 SQL로,
- * 요청자 구분과 삭제된 상품은 [com.loopers.application.like.LikeServiceTest]가 MySQL 위에서 이미 고정한다.
+ * 요청자 구분과 삭제된 상품은 [com.loopers.application.like.provided.LikeFinderTest]가 MySQL 위에서 이미 고정한다.
  * 여기서는 경로와 헤더가 요청자로 이어지는지, 쿼리 문자열이 조각에 닿는지, 응답 JSON의 모양만 본다(설계 6).
  */
 @SpringBootTest
@@ -43,7 +43,7 @@ class UserLikeApiMockMvcTest(
     private val mvc: MockMvcTester,
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
-    private val likeService: LikeService,
+    private val liker: Liker,
     private val userRepository: UserRepository,
     private val entityManager: EntityManager,
 ) {
@@ -58,8 +58,8 @@ class UserLikeApiMockMvcTest(
         val brand = brandRepository.save(createBrand(name = "루퍼스"))
         val earlierId = productRepository.save(createProduct(brand)).id
         val socksId = productRepository.save(createProduct(brand, name = "양말", price = Money(3_000), stock = Stock(0))).id
-        likeService.like(userId = userId, productId = earlierId)
-        likeService.like(userId = userId, productId = socksId)
+        liker.like(userId = userId, productId = earlierId)
+        liker.like(userId = userId, productId = socksId)
         entityManager.flushAndClear()
 
         val body = assertThat(getLikes(userId, userId)).hasStatusOk().bodyJson()
@@ -96,7 +96,7 @@ class UserLikeApiMockMvcTest(
         val userId = registerUser()
         val otherUserId = registerUser()
         val productId = productRepository.save(createProduct(brandRepository.save(createBrand()))).id
-        likeService.like(userId = otherUserId, productId = productId)
+        liker.like(userId = otherUserId, productId = productId)
         entityManager.flushAndClear()
 
         val body = assertThat(getLikes(userId = userId, pathUserId = otherUserId)).hasStatus(HttpStatus.FORBIDDEN).bodyJson()
@@ -141,8 +141,8 @@ class UserLikeApiMockMvcTest(
         val brand = brandRepository.save(createBrand())
         val earlierId = productRepository.save(createProduct(brand)).id
         val laterId = productRepository.save(createProduct(brand)).id
-        likeService.like(userId = userId, productId = earlierId)
-        likeService.like(userId = userId, productId = laterId)
+        liker.like(userId = userId, productId = earlierId)
+        liker.like(userId = userId, productId = laterId)
         entityManager.flushAndClear()
 
         val body = assertThat(getLikes(userId, userId, "size" to "1")).hasStatusOk().bodyJson()

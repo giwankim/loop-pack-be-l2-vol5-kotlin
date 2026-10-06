@@ -1,11 +1,11 @@
 package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
-import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear

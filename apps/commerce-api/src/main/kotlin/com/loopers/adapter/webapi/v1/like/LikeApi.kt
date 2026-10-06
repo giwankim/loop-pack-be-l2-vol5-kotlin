@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.like
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.like.LikeService
+import com.loopers.application.like.provided.Liker
 import com.loopers.support.stereotype.WebApiAdapter
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -17,14 +17,14 @@ import org.springframework.web.bind.annotation.RequestMapping
 @WebApiAdapter
 @RequestMapping("/api/v1/products/{productId}/likes")
 class LikeApi(
-    private val likeService: LikeService,
+    private val liker: Liker,
 ) : LikeApiSpec {
     @PostMapping
     override fun like(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
-        likeService.like(userId = UserIdHeader.require(userId), productId = productId)
+        liker.like(userId = UserIdHeader.require(userId), productId = productId)
         return ApiResponse.success()
     }
 
@@ -33,7 +33,7 @@ class LikeApi(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
-        likeService.unlike(userId = UserIdHeader.require(userId), productId = productId)
+        liker.unlike(userId = UserIdHeader.require(userId), productId = productId)
         return ApiResponse.success()
     }
 }

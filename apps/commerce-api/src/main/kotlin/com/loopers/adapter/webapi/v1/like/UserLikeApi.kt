@@ -4,8 +4,8 @@ import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.adapter.webapi.v1.product.ProductResponse
-import com.loopers.application.like.LikeListRequest
-import com.loopers.application.like.LikeService
+import com.loopers.application.like.provided.LikeFinder
+import com.loopers.application.like.provided.LikeListRequest
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 @WebApiAdapter
 @RequestMapping("/api/v1/users/{userId}/likes")
 class UserLikeApi(
-    private val likeService: LikeService,
+    private val likeFinder: LikeFinder,
 ) : UserLikeApiSpec {
     /**
      * 요청자와 경로의 사용자를 [UserIdHeader.requireSelf]가 견주어 본다. application으로는 요청자만 넘어간다.
@@ -36,7 +36,7 @@ class UserLikeApi(
         @PathVariable("userId") pathUserId: Long,
         @ModelAttribute @Valid request: LikeListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
-        return likeService
+        return likeFinder
             .findLikedProducts(userId = UserIdHeader.requireSelf(userId, pathUserId), request = request)
             .let { PageResponse.from(it, ProductResponse::from) }
             .let { ApiResponse.success(it) }
