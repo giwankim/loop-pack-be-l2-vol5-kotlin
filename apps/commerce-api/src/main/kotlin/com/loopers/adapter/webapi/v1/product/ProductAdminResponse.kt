@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.product
 
-import com.loopers.application.product.ProductInfo
+import com.loopers.application.product.provided.ProductInfo
 import java.time.ZonedDateTime
 
 data class ProductAdminResponse(

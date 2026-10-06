@@ -3,12 +3,12 @@ package com.loopers.adapter.webapi.v1.order
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.OrderService
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.createOrderCreateRequest
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money

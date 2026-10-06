@@ -2,11 +2,12 @@ package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.product.ProductAdminListRequest
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductService
-import com.loopers.application.product.ProductAdminStockUpdateRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
+import com.loopers.application.product.provided.ProductAdminListRequest
+import com.loopers.application.product.provided.ProductAdminRegisterRequest
+import com.loopers.application.product.provided.ProductAdminStockUpdateRequest
+import com.loopers.application.product.provided.ProductAdminUpdateRequest
+import com.loopers.application.product.provided.ProductFinder
+import com.loopers.application.product.provided.ProductRegister
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -23,14 +24,15 @@ import org.springframework.web.bind.annotation.ResponseStatus
 @WebApiAdapter
 @RequestMapping("/api-admin/v1/products")
 class ProductAdminApi(
-    private val productService: ProductService,
+    private val productFinder: ProductFinder,
+    private val productRegister: ProductRegister,
 ) : ProductAdminApiSpec {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     override fun register(
         @RequestBody @Valid request: ProductAdminRegisterRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productService.register(request)
+        return productRegister.register(request)
             .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -40,7 +42,7 @@ class ProductAdminApi(
     override fun getProducts(
         @ModelAttribute @Valid request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>> {
-        return productService.findAll(request)
+        return productFinder.findAll(request)
             .let { PageResponse.from(it, ProductAdminResponse::from) }
             .let { ApiResponse.success(it) }
     }
@@ -49,7 +51,7 @@ class ProductAdminApi(
     override fun getProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductAdminResponse> {
-        return productService.find(productId)
+        return productFinder.find(productId)
             .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -59,7 +61,7 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
         @RequestBody @Valid request: ProductAdminUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productService.update(productId, request)
+        return productRegister.update(productId, request)
             .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -69,7 +71,7 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
         @RequestBody @Valid request: ProductAdminStockUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productService.updateStock(productId, request)
+        return productRegister.updateStock(productId, request)
             .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -78,7 +80,7 @@ class ProductAdminApi(
     override fun deleteProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
-        productService.delete(productId)
+        productRegister.delete(productId)
         return ApiResponse.success()
     }
 }

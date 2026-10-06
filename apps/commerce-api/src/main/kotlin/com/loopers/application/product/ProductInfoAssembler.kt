@@ -1,5 +1,6 @@
 package com.loopers.application.product
 
+import com.loopers.application.product.provided.ProductInfo
 import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.PageSlice

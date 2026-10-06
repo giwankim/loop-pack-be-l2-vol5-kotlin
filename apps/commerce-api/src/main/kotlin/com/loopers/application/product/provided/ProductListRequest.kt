@@ -1,4 +1,4 @@
-package com.loopers.application.product
+package com.loopers.application.product.provided
 
 import com.loopers.domain.product.ProductSort
 import jakarta.validation.constraints.Max
@@ -15,7 +15,7 @@ import jakarta.validation.constraints.Min
  * [sort]에는 제약 애노테이션이 없다. `page`·`size`는 숫자의 범위라 Bean Validation이 그대로 말할 수 있지만
  * 정렬 기준은 [ProductSort]가 아는 낱말이라, 제약으로 옮기려면 철자를 정규식에 한 벌 더 적거나
  * [ProductSort.from]만 부르는 검사기를 따로 만들어야 한다. 어느 쪽이든 철자를 아는 곳이 둘이 된다.
- * 그래서 [sort]는 [ProductService]가 기준으로 옮기면서 거른다(설계 5.24).
+ * 그래서 [sort]는 [ProductFinder.findAll]이 기준으로 옮기면서 거른다(설계 5.24).
  */
 data class ProductListRequest(
     val brandId: Long? = null,

@@ -1,12 +1,12 @@
 package com.loopers.domain.order
 
-import com.loopers.adapter.persistence.product.ProductRepositoryImpl
+import com.loopers.adapter.persistence.product.QuerydslProductListRepository
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.OrderCreateRequest
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.createBrand
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.testcontainers.MySqlTestContainersConfig
@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Import
  * `OrderFixtures.kt`가 약속하는 기본값의 범위를 확인한다. 기본값이 범위를 벗어나면 그것을 쓰는 테스트가 가끔만 깨지므로,
  * 여기서 기본값을 많이 뽑아 결정적으로 드러낸다(ADR 0010).
  *
- * 상품을 스냅숏하는 품목은 저장된 상품의 식별자가 있어야 만들어지므로 [com.loopers.adapter.persistence.product.ProductRepositoryTest]와
+ * 상품을 스냅숏하는 품목은 저장된 상품의 식별자가 있어야 만들어지므로 [com.loopers.application.product.required.ProductRepositoryTest]와
  * 같은 설정으로 상품을 저장한다. 같은 설정이라 Spring 컨텍스트를 함께 쓴다.
  */
 @DataJpaTest
@@ -30,7 +30,7 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    ProductRepositoryImpl::class,
+    QuerydslProductListRepository::class,
 )
 class OrderFixturesTest(
     private val brandRepository: BrandRepository,

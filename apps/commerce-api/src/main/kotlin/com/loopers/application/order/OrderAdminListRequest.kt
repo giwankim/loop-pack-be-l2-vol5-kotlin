@@ -9,8 +9,8 @@ import jakarta.validation.constraints.Min
  *
  * 페이지 값의 범위는 [OrderListRequest]의 companion을 읽는다. 역할에 따라 달라지지 않는 값이므로 한 기능 안에서는
  * 수식어가 없는 쪽이 갖고, 수식어가 붙은 쪽이 읽는다(카탈로그 설계 5.24의 마지막 줄).
- * 카탈로그에서 [com.loopers.application.product.ProductAdminListRequest]가
- * [com.loopers.application.product.ProductListRequest]의 companion을 읽는 모양 그대로다.
+ * 카탈로그에서 [com.loopers.application.product.provided.ProductAdminListRequest]가
+ * [com.loopers.application.product.provided.ProductListRequest]의 companion을 읽는 모양 그대로다.
  * 주문 기능 밖의 목록과는 상수를 나눠 갖는다. 개념마다 Request를 따로 두어 한쪽의 범위가 바뀌어도 다른 쪽이
  * 따라가지 않게 하기 때문이다(카탈로그 설계 5.17).
  */

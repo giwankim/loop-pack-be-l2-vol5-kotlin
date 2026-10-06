@@ -1,5 +1,6 @@
-package com.loopers.adapter.persistence.product
+package com.loopers.application.product.required
 
+import com.loopers.adapter.persistence.product.QuerydslProductListRepository
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
@@ -7,7 +8,6 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.product.Stock
@@ -23,10 +23,13 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import
 
 /**
- * [ProductRepositoryImpl]이 [ProductRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현 클래스는 등록만 하고 부르는 것은 인터페이스다.
- * 슬라이스는 사용자 `@Configuration`과 `@Component`를 스캔하지 않으므로 데이터소스 설정, QueryDSL 설정, 컨테이너 설정,
- * 저장소 구현을 직접 가져오고, 내장 DB로 바꾸지 않게 한다. 구현을 알아야 하므로 domain이 아니라 adapter.persistence 패키지에 둔다(설계 5.20).
+ * Spring Data가 만든 [ProductRepository]와 QueryDSL로 짠 [ProductListRepository]가 실제 MySQL에서 계약을 지키는지 확인한다.
+ * 설정과 패키지 위치의 이유는 [com.loopers.application.user.required.UserRepositoryTest]와 같다. 슬라이스는 `@Component`를
+ * 스캔하지 않으므로 목록의 구현 [QuerydslProductListRepository]와 그것이 쓰는 QueryDSL 설정은 직접 가져온다. 부르는 것은 포트다.
  * 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ *
+ * 좋아요 목록 [ProductRepository.findAllLikedBy]는 본문을 가진 인터페이스 메서드다. 좋아요 목록 테스트는 Spring Data가
+ * 그 본문을 쿼리로 만들지 않고 실행한다는 것도 함께 고정한다.
  *
  * 상품이 브랜드를 참조하므로 브랜드도 저장한다. 브랜드 저장소는 Spring Data가 만들어 슬라이스가 등록한다.
  */
@@ -36,10 +39,11 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    ProductRepositoryImpl::class,
+    QuerydslProductListRepository::class,
 )
 class ProductRepositoryTest(
     private val productRepository: ProductRepository,
+    private val productListRepository: ProductListRepository,
     private val brandRepository: BrandRepository,
     private val entityManager: EntityManager,
 ) {
@@ -123,7 +127,7 @@ class ProductRepositoryTest(
         val third = productRepository.save(createProduct(brand))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
     }
@@ -136,7 +140,7 @@ class ProductRepositoryTest(
         val middling = productRepository.save(createProduct(brand, price = Money(20_000)))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
 
         assertThat(slice.items.map { it.id }).containsExactly(cheap.id, middling.id, dear.id)
     }
@@ -149,7 +153,7 @@ class ProductRepositoryTest(
         val third = productRepository.save(createProduct(brand, price = Money(10_000)))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.PRICE_ASC)
 
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
     }
@@ -168,7 +172,7 @@ class ProductRepositoryTest(
         listOf(first, second, third).forEach { shareCreatedAt(table = "product", id = it.id) }
         entityManager.clear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
     }
@@ -188,7 +192,7 @@ class ProductRepositoryTest(
         likedBy(middling, users = 2)
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
         assertThat(slice.items.map { it.id }).containsExactly(most.id, middling.id, fewest.id)
         // group by가 붙는 유일한 기준이라 브랜드를 함께 읽는 일이 여기서만 깨질 수 있다.
@@ -212,7 +216,7 @@ class ProductRepositoryTest(
         listOf(first, second, third).forEach { shareCreatedAt(table = "product", id = it.id) }
         entityManager.clear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
         assertThat(slice.items.map { it.id }).containsExactly(third.id, second.id, first.id)
     }
@@ -235,7 +239,7 @@ class ProductRepositoryTest(
         likedBy(mostLiked, users = 2)
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LIKES_DESC)
 
         assertThat(slice.items.map { it.id }).containsExactly(mostLiked.id, liked.id, unliked.id)
     }
@@ -259,8 +263,8 @@ class ProductRepositoryTest(
         likedBy(othersMostLiked, users = 9)
         entityManager.flushAndClear()
 
-        val first = productRepository.findAll(brandId = brand.id, page = 0, size = 2, sort = ProductSort.LIKES_DESC)
-        val second = productRepository.findAll(brandId = brand.id, page = 1, size = 2, sort = ProductSort.LIKES_DESC)
+        val first = productListRepository.findAll(brandId = brand.id, page = 0, size = 2, sort = ProductSort.LIKES_DESC)
+        val second = productListRepository.findAll(brandId = brand.id, page = 1, size = 2, sort = ProductSort.LIKES_DESC)
 
         assertThat(first.items.map { it.id }).containsExactly(most.id, middling.id)
         assertThat(first.hasNext).isTrue()
@@ -279,7 +283,7 @@ class ProductRepositoryTest(
         brand.delete()
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items).isEmpty()
         assertThat(slice.hasNext).isFalse()
@@ -292,7 +296,7 @@ class ProductRepositoryTest(
         productRepository.save(createProduct(brand).apply { delete() })
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(active.id)
     }
@@ -305,7 +309,7 @@ class ProductRepositoryTest(
         productRepository.save(createProduct(other))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = brand.id, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items.map { it.id }).containsExactly(mine.id)
     }
@@ -316,7 +320,7 @@ class ProductRepositoryTest(
         productRepository.save(createProduct(brand))
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = 999L, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = 999L, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(slice.items).isEmpty()
         assertThat(slice.hasNext).isFalse()
@@ -328,8 +332,8 @@ class ProductRepositoryTest(
         repeat(3) { productRepository.save(createProduct(brand)) }
         entityManager.flushAndClear()
 
-        val first = productRepository.findAll(brandId = null, page = 0, size = 2, sort = ProductSort.LATEST)
-        val second = productRepository.findAll(brandId = null, page = 1, size = 2, sort = ProductSort.LATEST)
+        val first = productListRepository.findAll(brandId = null, page = 0, size = 2, sort = ProductSort.LATEST)
+        val second = productListRepository.findAll(brandId = null, page = 1, size = 2, sort = ProductSort.LATEST)
 
         assertThat(first.items).hasSize(2)
         assertThat(first.hasNext).isTrue()
@@ -352,7 +356,7 @@ class ProductRepositoryTest(
         brand.delete()
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = null, page = 0, size = 20, sort = ProductSort.LATEST)
 
         assertThat(productRepository.findById(active.id)).isNotNull()
         assertThat(slice.items).isEmpty()

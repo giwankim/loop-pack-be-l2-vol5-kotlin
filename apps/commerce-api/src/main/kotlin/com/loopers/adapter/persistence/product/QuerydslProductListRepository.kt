@@ -1,32 +1,28 @@
 package com.loopers.adapter.persistence.product
 
 import com.loopers.adapter.persistence.shared.fetchSlice
-import com.loopers.application.shared.toPageSlice
+import com.loopers.application.product.required.ProductListRepository
 import com.loopers.domain.like.QLike.like
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.QProduct.product
 import com.loopers.domain.shared.PageSlice
 import com.querydsl.core.types.OrderSpecifier
 import com.querydsl.jpa.impl.JPAQuery
 import com.querydsl.jpa.impl.JPAQueryFactory
-import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Component
 
 /**
- * [ProductRepository]의 구현. 메서드 이름만으로 끝나는 일과 좋아요 목록은 [ProductJpaRepository]에 맡기고, 상품 목록만 QueryDSL로 짠다.
- * 두 인터페이스를 하나로 합치지 않는다(설계 5.20).
+ * [ProductListRepository]의 QueryDSL 구현. 상품 하나와 좋아요 목록은 Spring Data의
+ * [com.loopers.application.product.required.ProductRepository]가 맡고, 여기는 상품 목록만 짠다.
+ *
+ * 이름에 `ProductRepositoryImpl`을 쓰지 않는다. Spring Data는 그 이름의 빈을 패키지와 상관없이 `ProductRepository`의
+ * custom 구현으로 말없이 붙인다.
  */
 @Component
-class ProductRepositoryImpl(
-    private val productJpaRepository: ProductJpaRepository,
+class QuerydslProductListRepository(
     private val queryFactory: JPAQueryFactory,
-) : ProductRepository {
-    override fun save(product: Product): Product = productJpaRepository.save(product)
-
-    override fun findById(id: Long): Product? = productJpaRepository.findById(id)
-
+) : ProductListRepository {
     /**
      * 브랜드 필터도 정렬 기준도 조각마다 달라지므로 목록은 QueryDSL로 짠다(설계 5.32).
      * 정렬 기준이 셋인데 그중 하나만 조인을 요구하므로, 조회 메서드를 기준마다 두면 기준이 늘 때마다 메서드가 는다.
@@ -44,12 +40,6 @@ class ProductRepositoryImpl(
             .where(brandId?.let { product.brand.id.eq(it) })
             .orderedBy(sort)
             .fetchSlice(page, size)
-
-    /** 차례는 쿼리가 적으므로 [PageRequest]에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리의 것을 덮는다. */
-    override fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<Product> =
-        productJpaRepository.findAllLikedBy(userId, PageRequest.of(page, size)).toPageSlice()
-
-    override fun existsByBrandId(brandId: Long): Boolean = productJpaRepository.existsByBrandId(brandId)
 
     /**
      * 정렬 기준이 요구하는 차례를 쿼리에 붙인다. 어느 기준이든 마지막은 id 내림차순이라 동률이 남지 않는다.

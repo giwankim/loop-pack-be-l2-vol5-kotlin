@@ -1,11 +1,11 @@
 package com.loopers.application.like
 
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
 import com.loopers.support.countLikes
@@ -224,7 +224,7 @@ class LikeServiceTest(
     }
 
     /**
-     * 조각의 차례와 `hasNext`는 [com.loopers.adapter.persistence.product.ProductRepositoryTest]가 SQL로 이미 고정한다.
+     * 조각의 차례와 `hasNext`는 [com.loopers.application.product.required.ProductRepositoryTest]가 SQL로 이미 고정한다.
      * 여기서는 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 값이 항목에 실리는지를 본다(설계 6).
      * 좋아요 수는 상품에 걸린 관계의 개수이므로 요청자의 것만 세지 않는다.
      */
@@ -251,7 +251,7 @@ class LikeServiceTest(
     /**
      * 조각에 몇 개가 담기든 조회는 셋이다. 요청자 확인 하나, 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나.
      * 항목마다 브랜드를 읽거나 좋아요를 세면 조각 크기만큼 늘어난다(설계 5.28, 5.29).
-     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.product.ProductServiceTest]와 같다.
+     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.product.provided.ProductFinderTest]와 같다.
      */
     @Test
     fun `the like list reads a slice of any size in three queries`() {

@@ -1,8 +1,8 @@
 package com.loopers.application.brand.provided
 
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.brand.createBrandAdminUpdateRequest
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.CoreException

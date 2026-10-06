@@ -2,9 +2,9 @@ package com.loopers.adapter.webapi.v1.brand
 
 import com.loopers.application.brand.provided.BrandFinder
 import com.loopers.application.brand.provided.BrandRegister
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear

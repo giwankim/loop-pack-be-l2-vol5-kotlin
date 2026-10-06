@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.product
 
-import com.loopers.application.product.ProductInfo
+import com.loopers.application.product.provided.ProductInfo
 
 /**
  * 고객 상품 응답. 같은 [ProductInfo]를 읽지만 관리자와 달리 재고 수량과 등록·수정 시각은 내보내지 않고,

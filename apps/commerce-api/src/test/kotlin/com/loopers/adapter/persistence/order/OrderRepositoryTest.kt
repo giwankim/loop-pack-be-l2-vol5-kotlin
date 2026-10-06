@@ -1,7 +1,7 @@
 package com.loopers.adapter.persistence.order
 
-import com.loopers.adapter.persistence.product.ProductRepositoryImpl
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
@@ -10,7 +10,6 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderRepository
 import com.loopers.domain.order.createOrder
 import com.loopers.domain.order.createOrderProduct
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
 import com.loopers.support.flushAndClear
@@ -24,10 +23,11 @@ import org.springframework.context.annotation.Import
 
 /**
  * [OrderRepositoryImpl]이 [OrderRepository] 계약을 실제 MySQL에서 지키는지 확인한다.
- * 설정과 정리 방식, 패키지 위치의 이유는 [com.loopers.adapter.persistence.product.ProductRepositoryTest]와 같다.
+ * 구현을 알아야 하므로 adapter.persistence 패키지에 두고(설계 5.20), 설정과 정리 방식의 이유는
+ * [com.loopers.application.product.required.ProductRepositoryTest]와 같다.
  *
  * 주문은 사용자와 상품을 식별자로만 가리키지만 두 참조에 물리 외래 키가 있으므로(설계 13) 준비 단계가 사용자·브랜드·상품
- * 저장소로 실제 행을 만든다. 상품은 구현을 함께 등록하고, 브랜드·사용자 저장소는 Spring Data가 만든다.
+ * 저장소로 실제 행을 만든다. 세 저장소는 Spring Data가 만든다.
  *
  * `findAll`은 내 목록(#15)과 관리자 목록(#16)이 함께 쓴다. 그래서 거를 사용자를 넣은 경우와 넣지 않은 경우를
  * 한 클래스에서 함께 본다(설계 16.2).
@@ -38,7 +38,6 @@ import org.springframework.context.annotation.Import
     DataSourceConfig::class,
     QueryDslConfig::class,
     MySqlTestContainersConfig::class,
-    ProductRepositoryImpl::class,
     OrderRepositoryImpl::class,
 )
 class OrderRepositoryTest(

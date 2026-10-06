@@ -1,7 +1,7 @@
 package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.product.ProductService
+import com.loopers.application.product.provided.ProductRegister
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.product.createProductAdminRegisterRequest
@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional
 class ProductAdminApiMockMvcTest(
     private val mvc: MockMvcTester,
     private val brandRepository: BrandRepository,
-    private val productService: ProductService,
+    private val productRegister: ProductRegister,
     private val entityManager: EntityManager,
 ) {
     companion object {
@@ -135,7 +135,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `admin updates the name as sent and the price and the brand stays`() {
         val brand = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         val body = assertThat(putProduct(id, json = """{"name": " 후드티 ", "price": 25000}""")).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -152,7 +152,7 @@ class ProductAdminApiMockMvcTest(
     fun `a brandId in the update body is ignored and the product keeps its brand`() {
         val brand = brandRepository.save(createBrand())
         val other = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         // 수정 입력에 brandId가 없으므로 본문에 실어도 바인딩되지 않는다. Boot가 모르는 필드를 버리므로 거절도 아니다.
         val body = assertThat(
@@ -166,7 +166,7 @@ class ProductAdminApiMockMvcTest(
     fun `an update rejected for its price returns 400 and a re-read shows the stored values`() {
         val brand = brandRepository.save(createBrand())
         val id =
-            productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
+            productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
 
         val body = assertThat(
             putProduct(id, json = """{"name": "후드티", "price": 0}"""),
@@ -183,7 +183,7 @@ class ProductAdminApiMockMvcTest(
     fun `an update rejected for its name returns 400 and a re-read shows the stored values`() {
         val brand = brandRepository.save(createBrand())
         val id =
-            productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
+            productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000)).id
 
         val body = assertThat(
             putProduct(id, json = """{"name": "  ", "price": 25000}"""),
@@ -199,7 +199,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `admin sets the stock to a final quantity, zero included`() {
         val brand = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         val body = assertThat(putStock(id, quantity = 0)).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -210,7 +210,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `a negative stock returns 400 and a re-read shows the stored stock`() {
         val brand = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 7)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 7)).id
 
         val body = assertThat(putStock(id, quantity = -1)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
@@ -223,7 +223,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `admin deletes a product and it stops existing for every admin call`() {
         val brand = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         val body = assertThat(deleteProduct(id)).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -255,9 +255,9 @@ class ProductAdminApiMockMvcTest(
     fun `admin lists the products of one brand as a latest-first slice`() {
         val brand = brandRepository.save(createBrand())
         val other = brandRepository.save(createBrand())
-        val first = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
-        productService.register(createProductAdminRegisterRequest(brandId = other.id))
-        val second = productService.register(createProductAdminRegisterRequest(brandId = brand.id, name = "후드티")).id
+        val first = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        productRegister.register(createProductAdminRegisterRequest(brandId = other.id))
+        val second = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, name = "후드티")).id
 
         val body = assertThat(
             getProducts("brandId" to brand.id.toString(), "page" to "0", "size" to "1"),
@@ -289,7 +289,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `listing without paging parameters falls back to the first slice of twenty`() {
         val brand = brandRepository.save(createBrand())
-        productService.register(createProductAdminRegisterRequest(brandId = brand.id))
+        productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
 
         val body = assertThat(getProducts("brandId" to brand.id.toString())).hasStatusOk().bodyJson()
         body.extractingPath("$.data.page").isEqualTo(0)
@@ -300,7 +300,7 @@ class ProductAdminApiMockMvcTest(
     @Test
     fun `writing as a user returns 403`() {
         val brand = brandRepository.save(createBrand())
-        val id = productService.register(createProductAdminRegisterRequest(brandId = brand.id)).id
+        val id = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)).id
 
         assertThat(putProduct(id, json = """{"name": "후드티", "price": 25000}""", principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
         assertThat(putStock(id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)

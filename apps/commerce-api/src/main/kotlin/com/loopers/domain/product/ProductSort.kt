@@ -25,7 +25,7 @@ enum class ProductSort(val apiValue: String) {
          * 밖에서 온 철자를 기준으로 옮긴다. 모르는 철자면 null이다.
          *
          * 모르는 값이 400인지 아닌지는 부르는 쪽이 정한다. 도메인은 전송 방식을 모르므로
-         * 여기서 예외를 던지지 않는다([com.loopers.application.product.ProductService]가
+         * 여기서 예외를 던지지 않는다([com.loopers.application.product.provided.ProductFinder]가
          * `INVALID_SORT`로 옮긴다).
          */
         fun from(value: String): ProductSort? = entries.find { it.apiValue == value }

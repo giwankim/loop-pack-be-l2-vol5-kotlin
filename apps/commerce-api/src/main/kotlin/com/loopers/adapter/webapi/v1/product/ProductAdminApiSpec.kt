@@ -2,10 +2,10 @@ package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.product.ProductAdminListRequest
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductAdminStockUpdateRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
+import com.loopers.application.product.provided.ProductAdminListRequest
+import com.loopers.application.product.provided.ProductAdminRegisterRequest
+import com.loopers.application.product.provided.ProductAdminStockUpdateRequest
+import com.loopers.application.product.provided.ProductAdminUpdateRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag

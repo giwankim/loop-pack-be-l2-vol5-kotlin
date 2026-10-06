@@ -1,8 +1,8 @@
 package com.loopers.domain.product
 
-import com.loopers.application.product.ProductAdminRegisterRequest
-import com.loopers.application.product.ProductAdminStockUpdateRequest
-import com.loopers.application.product.ProductAdminUpdateRequest
+import com.loopers.application.product.provided.ProductAdminRegisterRequest
+import com.loopers.application.product.provided.ProductAdminStockUpdateRequest
+import com.loopers.application.product.provided.ProductAdminUpdateRequest
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.shared.Money
 import com.loopers.domain.unsaved

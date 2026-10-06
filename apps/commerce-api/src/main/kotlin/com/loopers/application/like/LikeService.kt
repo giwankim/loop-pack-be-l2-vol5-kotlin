@@ -1,11 +1,11 @@
 package com.loopers.application.like
 
-import com.loopers.application.product.ProductInfo
 import com.loopers.application.product.ProductInfoAssembler
+import com.loopers.application.product.provided.ProductInfo
+import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.provided.UserFinder
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
-import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType

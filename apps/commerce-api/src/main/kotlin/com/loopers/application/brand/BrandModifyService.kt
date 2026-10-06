@@ -4,9 +4,9 @@ import com.loopers.application.brand.provided.BrandAdminRegisterRequest
 import com.loopers.application.brand.provided.BrandAdminUpdateRequest
 import com.loopers.application.brand.provided.BrandFinder
 import com.loopers.application.brand.provided.BrandRegister
+import com.loopers.application.brand.required.ActiveProductChecker
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.product.ProductRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
@@ -16,7 +16,7 @@ import com.loopers.support.stereotype.ValidatedApplicationService
 class BrandModifyService(
     private val brandFinder: BrandFinder,
     private val brandRepository: BrandRepository,
-    private val productRepository: ProductRepository,
+    private val activeProductChecker: ActiveProductChecker,
 ) : BrandRegister {
     /** 이름 규칙을 지나는 브랜드를 만든 뒤, 저장하기 전에 중복을 본다. 이름은 받은 그대로 저장한다. */
     override fun register(request: BrandAdminRegisterRequest): Brand {
@@ -41,13 +41,13 @@ class BrandModifyService(
     /**
      * 삭제 시각을 찍는다. 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다. 재고가 0인 상품도 남은 상품이다.
      *
-     * 이 조건은 [Brand] 안의 불변식이 아니다. 브랜드는 자기 상품을 모르고, 답은 상품 저장소에만 있다(설계 5.1, 5.8).
+     * 이 조건은 [Brand] 안의 불변식이 아니다. 브랜드는 자기 상품을 모르고, 답은 상품 조각에만 있어 [ActiveProductChecker]로 묻는다(설계 5.1, 5.8).
      * 거절되면 브랜드가 그대로 남아야 하므로 [Brand.delete] 앞에서 묻는다. 뒤에서 물으면 찍힌 삭제 시각이
      * 영속성 컨텍스트에 남아 flush 때 저장된다.
      */
     override fun delete(id: Long) {
         val brand = brandFinder.find(id)
-        if (productRepository.existsByBrandId(brand.id)) {
+        if (activeProductChecker.hasActiveProducts(brand.id)) {
             throw CoreException(ErrorType.BRAND_HAS_PRODUCTS)
         }
         brand.delete()

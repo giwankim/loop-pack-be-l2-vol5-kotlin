@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.application.product.ProductListRequest
+import com.loopers.application.product.provided.ProductListRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag
