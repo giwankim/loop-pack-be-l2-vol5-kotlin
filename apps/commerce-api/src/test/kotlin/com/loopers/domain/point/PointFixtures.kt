@@ -1,6 +1,6 @@
 package com.loopers.domain.point
 
-import com.loopers.application.point.PointChargeRequest
+import com.loopers.application.point.provided.PointChargeRequest
 import org.instancio.kotlin.KInstancio
 import org.instancio.kotlin.KInstancio.gen
 import org.instancio.kotlin.KSelect.field

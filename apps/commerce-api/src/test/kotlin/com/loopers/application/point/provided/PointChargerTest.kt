@@ -1,6 +1,6 @@
-package com.loopers.application.point
+package com.loopers.application.point.provided
 
-import com.loopers.domain.point.PointAccountRepository
+import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.user.UserFixture
@@ -9,28 +9,23 @@ import com.loopers.support.countPointAccounts
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
+import com.loopers.support.stereotype.ApplicationServiceTest
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
-import org.springframework.transaction.annotation.Transactional
 
 /**
- * [PointService]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
+ * [PointCharger]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  *
  * 잔액은 저장 약속을 거치지 않고 테이블을 SQL로 읽는다. "잔액이 그대로다"는 테이블의 사실이다.
- * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [PointServiceTransactionTest]가 따로 본다.
+ * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [PointChargerTransactionTest]가 따로 본다.
  */
-@SpringBootTest
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
-@Transactional
-class PointServiceTest(
-    private val pointService: PointService,
+@ApplicationServiceTest
+class PointChargerTest(
+    private val pointCharger: PointCharger,
+    private val pointAccountFinder: PointAccountFinder,
     private val pointAccountRepository: PointAccountRepository,
     private val userFixture: UserFixture,
     private val entityManager: EntityManager,
@@ -40,7 +35,7 @@ class PointServiceTest(
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
+        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
@@ -52,29 +47,15 @@ class PointServiceTest(
     @Test
     fun `charging the same amount twice adds it twice`() {
         val user = userFixture.registerUser()
-        pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
+        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
         val accountId = accountIdOf(user.id)
 
         assertThat(info.balance).isEqualTo(20_000L)
         assertThat(entityManager.balanceOf(accountId)).isEqualTo(20_000L)
-    }
-
-    @Test
-    fun `findBalance is zero for a fresh account and the current balance after charges`() {
-        val user = userFixture.registerUser()
-        entityManager.flushAndClear()
-        val fresh = pointService.findBalance(user.id)
-
-        pointService.charge(user.id, createPointChargeRequest(amount = 10_000))
-        pointService.charge(user.id, createPointChargeRequest(amount = 500))
-        entityManager.flushAndClear()
-
-        assertThat(fresh.balance).isZero()
-        assertThat(pointService.findBalance(user.id).balance).isEqualTo(10_500L)
     }
 
     /** 상품 가격의 상한은 잔액의 상한이 아니다(설계 5.7). */
@@ -83,11 +64,11 @@ class PointServiceTest(
         val user = userFixture.registerUser()
         entityManager.flushAndClear()
 
-        val info = pointService.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
+        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
         entityManager.flushAndClear()
 
         assertThat(info.balance).isEqualTo(1_000_000_001L)
-        assertThat(pointService.findBalance(user.id).balance).isEqualTo(1_000_000_001L)
+        assertThat(pointAccountFinder.findBalance(user.id).balance).isEqualTo(1_000_000_001L)
     }
 
     @Test
@@ -97,12 +78,12 @@ class PointServiceTest(
 
         assertThat(
             assertThrows<ConstraintViolationException> {
-                pointService.charge(user.id, createPointChargeRequest(amount = 0))
+                pointCharger.charge(user.id, createPointChargeRequest(amount = 0))
             }.constraintViolations.map { it.message },
         ).containsExactly("충전액은 1원 이상이어야 합니다.")
         assertThat(
             assertThrows<ConstraintViolationException> {
-                pointService.charge(user.id, createPointChargeRequest(amount = -1))
+                pointCharger.charge(user.id, createPointChargeRequest(amount = -1))
             }.constraintViolations.map { it.message },
         ).containsExactly("충전액은 1원 이상이어야 합니다.")
         entityManager.flushAndClear()
@@ -112,11 +93,11 @@ class PointServiceTest(
     @Test
     fun `a charge that overflows the balance is rejected and changes nothing`() {
         val user = userFixture.registerUser()
-        pointService.charge(user.id, createPointChargeRequest(amount = Long.MAX_VALUE))
+        pointCharger.charge(user.id, createPointChargeRequest(amount = Long.MAX_VALUE))
         entityManager.flushAndClear()
 
         assertThrows<InvalidMoneyException> {
-            pointService.charge(user.id, createPointChargeRequest(amount = 1))
+            pointCharger.charge(user.id, createPointChargeRequest(amount = 1))
         }
         entityManager.flushAndClear()
 
@@ -126,17 +107,8 @@ class PointServiceTest(
     @Test
     fun `charging as an unknown user throws UNAUTHORIZED and creates no account`() {
         val exception = assertThrows<CoreException> {
-            pointService.charge(999L, createPointChargeRequest())
+            pointCharger.charge(999L, createPointChargeRequest())
         }
-        entityManager.flushAndClear()
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
-        assertThat(entityManager.countPointAccounts(999L)).isZero()
-    }
-
-    @Test
-    fun `finding the balance of an unknown user throws UNAUTHORIZED and creates no account`() {
-        val exception = assertThrows<CoreException> { pointService.findBalance(999L) }
         entityManager.flushAndClear()
 
         assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
@@ -145,18 +117,16 @@ class PointServiceTest(
 
     /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */
     @Test
-    fun `an existing user without an account is an internal error for both charging and reading, and no account is created`() {
+    fun `charging as an existing user without an account is an internal error and creates no account`() {
         val user = userFixture.registerUserWithoutAccount()
         entityManager.flushAndClear()
 
-        val chargeException = assertThrows<CoreException> {
-            pointService.charge(user.id, createPointChargeRequest())
+        val exception = assertThrows<CoreException> {
+            pointCharger.charge(user.id, createPointChargeRequest())
         }
-        val readException = assertThrows<CoreException> { pointService.findBalance(user.id) }
         entityManager.flushAndClear()
 
-        assertThat(chargeException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)
-        assertThat(readException.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)
+        assertThat(exception.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)
         assertThat(entityManager.countPointAccounts(user.id)).isZero()
     }
 

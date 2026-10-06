@@ -1,9 +1,8 @@
-package com.loopers.adapter.persistence.point
+package com.loopers.application.point.required
 
 import com.loopers.application.user.required.UserRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.point.PointAccount
-import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.flushAndClear
@@ -19,15 +18,15 @@ import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 
 /**
- * [PointAccountRepositoryImpl]이 [PointAccountRepository] 계약을 실제 MySQL에서 지키는지 확인한다. 구현을 알아야 하므로
- * adapter.persistence 패키지에 두고(설계 5.20), 설정의 이유는 [com.loopers.application.product.required.ProductRepositoryTest]와 같다.
+ * Spring Data가 만든 [PointAccountRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 설정과 패키지 위치의 이유는
+ * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
  *
  * 사용자당 계정 하나와 사용자를 향한 외래 키는 DB가 지키는 약속이라 여기서 본다. 제약이 실제로 만들어졌는지는
  * `information_schema`에서도 확인한다(설계 10 DB 참조 무결성).
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, PointAccountRepositoryImpl::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class PointAccountRepositoryTest(
     private val pointAccountRepository: PointAccountRepository,
     private val userRepository: UserRepository,

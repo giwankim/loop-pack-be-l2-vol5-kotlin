@@ -3,7 +3,7 @@ package com.loopers.adapter.webapi.v1.order
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.OrderService
-import com.loopers.application.point.PointService
+import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.Brand
@@ -48,7 +48,7 @@ class OrderConfirmationApiMockMvcTest(
     private val brandRepository: BrandRepository,
     private val productRepository: ProductRepository,
     private val orderService: OrderService,
-    private val pointService: PointService,
+    private val pointCharger: PointCharger,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
     transactionManager: PlatformTransactionManager,
@@ -72,7 +72,7 @@ class OrderConfirmationApiMockMvcTest(
     @Test
     fun `charging creating and confirming deduct stock and points once and read back the confirmed order`() {
         balance(0)
-        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(5))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(second to 1, first to 5)).orderId
@@ -107,7 +107,7 @@ class OrderConfirmationApiMockMvcTest(
 
     @Test
     fun `a later item shortage rolls back all deductions and replenishment makes the same draft confirmable`() {
-        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(4))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(first to 2, second to 5)).orderId
@@ -131,7 +131,7 @@ class OrderConfirmationApiMockMvcTest(
 
     @Test
     fun `insufficient points rolls back every item and charging allows the same order to be confirmed`() {
-        pointService.charge(userId, createPointChargeRequest(amount = 3_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 3_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
         val second = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(2))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
@@ -145,7 +145,7 @@ class OrderConfirmationApiMockMvcTest(
         balance(3_000)
         assertStock(first, 2)
         assertStock(second, 2)
-        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 1_000))
         val confirmBody = assertThat(confirm(orderId)).hasStatusOk().bodyJson()
         confirmBody.extractingPath("$.data.paidAmount").isEqualTo(4_000)
         balance(0)
@@ -156,7 +156,7 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(longs = [500, 2_000])
     fun `an old draft confirms at its saved price after a catalog price increase or decrease`(newPrice: Long) {
-        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 1_000))
         val productId = productRepository.save(
             createProduct(brand, name = "원래 이름", price = Money(1_000), stock = Stock(10)),
         ).id
@@ -179,7 +179,7 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(strings = ["product", "brand"])
     fun `unavailable products or brands reject the whole confirmation and preserve the draft`(deleted: String) {
-        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, stock = Stock(10))).id
         val secondBrand = brandRepository.save(createBrand())
         val second = productRepository.save(createProduct(secondBrand, stock = Stock(10))).id
@@ -209,7 +209,7 @@ class OrderConfirmationApiMockMvcTest(
     @ParameterizedTest
     @ValueSource(booleans = [true, false])
     fun `an unavailable product outranks a shortage whichever item comes first`(shortageFirst: Boolean) {
-        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand)).id
         val second = productRepository.save(createProduct(brand)).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(first, second), quantity = 2)).orderId
@@ -231,7 +231,7 @@ class OrderConfirmationApiMockMvcTest(
 
     @Test
     fun `requester and ownership checks precede both first confirmation and the already confirmed rejection`() {
-        pointService.charge(userId, createPointChargeRequest(amount = 1_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 1_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(10))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val draft = detail(orderId)
@@ -276,7 +276,7 @@ class OrderConfirmationApiMockMvcTest(
      */
     @Test
     fun `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`() {
-        pointService.charge(userId, createPointChargeRequest(amount = 3_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 3_000))
         val productId = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(3))).id
         val firstId = orderService.create(userId, createOrderCreateRequest(listOf(productId), quantity = 1)).orderId
         val confirmed = confirm(firstId)
@@ -329,7 +329,7 @@ class OrderConfirmationApiMockMvcTest(
      */
     @Test
     fun `a failure on the last write at commit rolls back the earlier stock and order writes and permits retry`() {
-        pointService.charge(userId, createPointChargeRequest(amount = 10_000))
+        pointCharger.charge(userId, createPointChargeRequest(amount = 10_000))
         val first = productRepository.save(createProduct(brand, price = Money(1_000), stock = Stock(6))).id
         val second = productRepository.save(createProduct(brand, price = Money(2_000), stock = Stock(2))).id
         val orderId = orderService.create(userId, createOrderCreateRequest(first to 5, second to 1)).orderId

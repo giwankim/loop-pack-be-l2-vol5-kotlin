@@ -1,4 +1,4 @@
-package com.loopers.application.point
+package com.loopers.application.point.provided
 
 import com.loopers.domain.point.PointAccount
 

@@ -2,7 +2,7 @@ package com.loopers.adapter.webapi.v1.point
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.point.PointChargeRequest
+import com.loopers.application.point.provided.PointChargeRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn

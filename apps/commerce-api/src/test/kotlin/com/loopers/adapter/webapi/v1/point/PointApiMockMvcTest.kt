@@ -1,8 +1,8 @@
 package com.loopers.adapter.webapi.v1.point
 
 import com.loopers.adapter.webapi.UserIdHeader
+import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.user.UserFixture
 import com.loopers.support.balanceOf
 import com.loopers.support.countPointAccounts
@@ -27,7 +27,8 @@ import org.springframework.transaction.annotation.Transactional
  * 고객 포인트 API. 요청자는 `X-USER-ID` 헤더로 식별하며 관리자 경계 밖이라 principal은 싣지 않는다.
  * [AdminSecurityConfig]를 가져오는 까닭은 [com.loopers.adapter.webapi.v1.brand.BrandApiMockMvcTest]와 같다.
  *
- * 계정 없음과 충전이 잔액에 더해지는 규칙은 [com.loopers.application.point.PointServiceTest]가 MySQL 위에서 이미 고정한다.
+ * 계정 없음과 충전이 잔액에 더해지는 규칙은 [com.loopers.application.point.provided.PointChargerTest]와
+ * [com.loopers.application.point.provided.PointAccountFinderTest]가 MySQL 위에서 이미 고정한다.
  * 여기서는 헤더가 요청자로 이어지는지, 본문의 JSON 토큰을 어디까지 받는지, 오류가 어느 status와 code로
  * 내려가는지, 거절 뒤 잔액이 그대로인지를 본다(설계 5.10, 6). 요청 사이를 비우는 까닭은
  * [com.loopers.adapter.webapi.v1.product.ProductApiMockMvcTest]와 같다.

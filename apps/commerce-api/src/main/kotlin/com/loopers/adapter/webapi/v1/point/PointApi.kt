@@ -2,8 +2,9 @@ package com.loopers.adapter.webapi.v1.point
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.point.PointChargeRequest
-import com.loopers.application.point.PointService
+import com.loopers.application.point.provided.PointAccountFinder
+import com.loopers.application.point.provided.PointChargeRequest
+import com.loopers.application.point.provided.PointCharger
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
@@ -19,14 +20,15 @@ import org.springframework.web.bind.annotation.RequestMapping
 @WebApiAdapter
 @RequestMapping("/api/v1/points")
 class PointApi(
-    private val pointService: PointService,
+    private val pointAccountFinder: PointAccountFinder,
+    private val pointCharger: PointCharger,
 ) : PointApiSpec {
     @PostMapping("/charge")
     override fun charge(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
         @RequestBody @Valid request: PointChargeRequest,
     ): ApiResponse<PointAccountResponse> {
-        return pointService.charge(UserIdHeader.require(userId), request)
+        return pointCharger.charge(UserIdHeader.require(userId), request)
             .let { PointAccountResponse.from(it) }
             .let { ApiResponse.success(it) }
     }
@@ -35,7 +37,7 @@ class PointApi(
     override fun getBalance(
         @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
     ): ApiResponse<PointAccountResponse> {
-        return pointService.findBalance(UserIdHeader.require(userId))
+        return pointAccountFinder.findBalance(UserIdHeader.require(userId))
             .let { PointAccountResponse.from(it) }
             .let { ApiResponse.success(it) }
     }

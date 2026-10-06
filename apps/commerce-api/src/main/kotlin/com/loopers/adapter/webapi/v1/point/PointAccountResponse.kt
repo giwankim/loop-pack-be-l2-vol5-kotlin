@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.point
 
-import com.loopers.application.point.PointAccountInfo
+import com.loopers.application.point.provided.PointAccountInfo
 
 /** 고객 포인트 응답. 충전에서는 그 충전 직후의 잔액, 조회에서는 현재 잔액이다(설계 6). */
 data class PointAccountResponse(

@@ -1,12 +1,12 @@
 package com.loopers.application.order
 
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.provided.UserFinder
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderRepository
-import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
