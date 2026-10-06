@@ -1,5 +1,6 @@
 package com.loopers.application.order
 
+import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.OrderRepository
@@ -11,7 +12,6 @@ import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear

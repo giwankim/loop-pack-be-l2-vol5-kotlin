@@ -1,5 +1,6 @@
 package com.loopers.application.like
 
+import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
@@ -7,7 +8,6 @@ import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.countLikes
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType

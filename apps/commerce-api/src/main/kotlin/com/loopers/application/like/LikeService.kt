@@ -2,11 +2,11 @@ package com.loopers.application.like
 
 import com.loopers.application.product.ProductInfo
 import com.loopers.application.product.ProductInfoAssembler
+import com.loopers.application.user.provided.UserFinder
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.PageSlice
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -25,7 +25,7 @@ import org.springframework.validation.annotation.Validated
 class LikeService(
     private val likeRepository: LikeRepository,
     private val productRepository: ProductRepository,
-    private val userRepository: UserRepository,
+    private val userFinder: UserFinder,
     private val productInfoAssembler: ProductInfoAssembler,
 ) {
     /**
@@ -34,7 +34,7 @@ class LikeService(
      */
     @Transactional
     fun like(userId: Long, productId: Long) {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         productRepository.findById(productId) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
         if (likeRepository.existsByUserIdAndProductId(userId, productId)) return
 
@@ -47,7 +47,7 @@ class LikeService(
      */
     @Transactional
     fun unlike(userId: Long, productId: Long) {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         likeRepository.findByUserIdAndProductId(userId, productId)?.let { likeRepository.delete(it) }
     }
 
@@ -62,16 +62,9 @@ class LikeService(
      */
     @Transactional(readOnly = true)
     fun findLikedProducts(userId: Long, @Valid request: LikeListRequest): PageSlice<ProductInfo> {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         return productInfoAssembler.toInfos(
             productRepository.findAllLikedBy(userId = userId, page = request.page, size = request.size),
         )
-    }
-
-    /** 요청자가 가리키는 사용자가 없으면 요청자가 없는 것이다. */
-    private fun checkUserExists(userId: Long) {
-        if (!userRepository.existsById(userId)) {
-            throw CoreException(ErrorType.UNAUTHORIZED)
-        }
     }
 }

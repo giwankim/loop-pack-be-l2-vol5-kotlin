@@ -1,5 +1,6 @@
 package com.loopers.application.order
 
+import com.loopers.application.user.provided.UserFinder
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
@@ -8,7 +9,6 @@ import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.shared.PageSlice
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -20,7 +20,7 @@ import org.springframework.validation.annotation.Validated
 @Validated
 class OrderService(
     private val orderRepository: OrderRepository,
-    private val userRepository: UserRepository,
+    private val userFinder: UserFinder,
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
     private val pointAccountRepository: PointAccountRepository,
@@ -28,7 +28,7 @@ class OrderService(
     /** 요청마다 새 확정 전 주문이다. 같은 품목을 다시 보내면 주문이 하나 더 생긴다(ADR 0005). */
     @Transactional
     fun create(userId: Long, @Valid request: OrderCreateRequest): OrderInfo {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         val products = request.items.map { item ->
             val product = availableProduct(item.productId)
             OrderProduct(product.id, product.name, product.price, item.quantity)
@@ -38,7 +38,7 @@ class OrderService(
 
     @Transactional(readOnly = true)
     fun find(userId: Long, orderId: Long): OrderInfo {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         val order = orderRepository.findByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
         return OrderInfo.from(order)
     }
@@ -55,7 +55,7 @@ class OrderService(
      */
     @Transactional(readOnly = true)
     fun findAll(userId: Long, @Valid request: OrderListRequest): PageSlice<OrderInfo> {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         return orderRepository.findAll(userId = userId, page = request.page, size = request.size)
             .map(OrderInfo::from)
     }
@@ -67,7 +67,7 @@ class OrderService(
      */
     @Transactional
     fun confirm(userId: Long, orderId: Long): OrderInfo {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         val order = orderRepository.findByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
         order.validateConfirmable()
 
@@ -104,10 +104,6 @@ class OrderService(
     fun findForAdmin(orderId: Long): OrderInfo {
         val order = orderRepository.findById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
         return OrderInfo.from(order)
-    }
-
-    private fun checkUserExists(userId: Long) {
-        if (!userRepository.existsById(userId)) throw CoreException(ErrorType.UNAUTHORIZED)
     }
 
     /** 논리 삭제된 상품·브랜드는 주문할 수도 확정할 수도 없다. 생성과 확정이 같은 판단을 쓴다. */

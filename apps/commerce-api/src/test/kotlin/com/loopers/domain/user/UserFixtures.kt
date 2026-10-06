@@ -3,6 +3,7 @@
 
 package com.loopers.domain.user
 
+import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
 import org.springframework.stereotype.Component

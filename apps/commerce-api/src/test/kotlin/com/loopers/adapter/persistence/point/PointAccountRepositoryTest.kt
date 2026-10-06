@@ -1,12 +1,11 @@
 package com.loopers.adapter.persistence.point
 
-import com.loopers.adapter.persistence.user.UserRepositoryImpl
+import com.loopers.application.user.required.UserRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.flushAndClear
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -28,7 +27,7 @@ import org.springframework.dao.DataIntegrityViolationException
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, UserRepositoryImpl::class, PointAccountRepositoryImpl::class)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class, PointAccountRepositoryImpl::class)
 class PointAccountRepositoryTest(
     private val pointAccountRepository: PointAccountRepository,
     private val userRepository: UserRepository,

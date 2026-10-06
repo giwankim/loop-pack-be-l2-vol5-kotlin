@@ -1,9 +1,9 @@
 package com.loopers.application.point
 
+import com.loopers.application.user.provided.UserFinder
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.PointAccountRepository
 import com.loopers.domain.shared.Money
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import jakarta.validation.Valid
@@ -22,7 +22,7 @@ import org.springframework.validation.annotation.Validated
 @Validated
 class PointService(
     private val pointAccountRepository: PointAccountRepository,
-    private val userRepository: UserRepository,
+    private val userFinder: UserFinder,
 ) {
     /**
      * 충전한다. 잔액만 바꾸며 충전의 기록은 따로 남기지 않는다(ADR 0006).
@@ -30,7 +30,7 @@ class PointService(
      */
     @Transactional
     fun charge(userId: Long, @Valid request: PointChargeRequest): PointAccountInfo {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         val account = findAccount(userId)
         account.charge(Money(request.amount))
         return PointAccountInfo.from(account)
@@ -39,15 +39,8 @@ class PointService(
     /** 요청자의 현재 잔액. */
     @Transactional(readOnly = true)
     fun findBalance(userId: Long): PointAccountInfo {
-        checkUserExists(userId)
+        userFinder.checkExists(userId)
         return PointAccountInfo.from(findAccount(userId))
-    }
-
-    /** 요청자가 가리키는 사용자가 없으면 요청자가 없는 것이다. */
-    private fun checkUserExists(userId: Long) {
-        if (!userRepository.existsById(userId)) {
-            throw CoreException(ErrorType.UNAUTHORIZED)
-        }
     }
 
     private fun findAccount(userId: Long): PointAccount =

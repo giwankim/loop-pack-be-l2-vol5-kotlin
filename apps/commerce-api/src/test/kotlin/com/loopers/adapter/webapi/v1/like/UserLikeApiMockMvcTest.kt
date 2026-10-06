@@ -2,6 +2,7 @@ package com.loopers.adapter.webapi.v1.like
 
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.like.LikeService
+import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.BrandRepository
 import com.loopers.domain.brand.createBrand
@@ -10,7 +11,6 @@ import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
 import com.loopers.support.isEqualToLong

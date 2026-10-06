@@ -1,6 +1,7 @@
 package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.application.order.OrderService
+import com.loopers.application.user.required.UserRepository
 import com.loopers.config.security.AdminSecurityConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.BrandRepository
@@ -10,7 +11,6 @@ import com.loopers.domain.product.ProductRepository
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
-import com.loopers.domain.user.UserRepository
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.isEqualToLong
 import com.loopers.testcontainers.MySqlTestContainersConfig
