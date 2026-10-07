@@ -15,6 +15,21 @@
 
 - 단언은 차례로 적는다. `assertAll`이나 soft assertion(`assertSoftly`, `SoftAssertions`)으로 묶지 않는다. 테스트는 동작 하나를 보므로 첫 실패에서 멈추면 충분하다.
 
+### 쿼리 수
+
+- 쿼리 수를 세는 테스트는 jpa `testFixtures`의 `withStatistics`로 Hibernate 통계를 켠다. 검증하는 동작과 그 단언을 블록 안에 적는다.
+
+  ```kotlin
+  entityManager.withStatistics { statistics ->
+      val slice = productFinder.findAll(ProductListRequest())
+
+      assertThat(slice.content).hasSize(3)
+      assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+  }
+  ```
+- 컨텍스트 속성(`hibernate.generate_statistics`)으로 켜지 않는다. 속성이 다르면 컨텍스트 캐시 키가 갈려 Spring 컨텍스트가 하나 더 뜬다.
+- 통계를 손으로 켜고 try/finally로 끄지 않는다. 켠 통계는 컨텍스트를 나눠 쓰는 다음 테스트까지 남으므로, 끄는 일은 도우미가 맡는다.
+
 ### HTTP 테스트
 
 HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르지 않은 대안은 [ADR 0011](docs/adr/0011-http-tests-assert-through-mockmvctester.md)에 있다.

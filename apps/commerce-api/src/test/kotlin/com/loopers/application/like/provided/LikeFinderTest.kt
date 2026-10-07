@@ -10,8 +10,8 @@ import com.loopers.support.countLikes
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.statistics
 import com.loopers.support.stereotype.ApplicationServiceTest
+import com.loopers.support.withStatistics
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
@@ -97,7 +97,6 @@ class LikeFinderTest(
     /**
      * 조각에 몇 개가 담기든 조회는 셋이다. 요청자 확인 하나, 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나.
      * 항목마다 브랜드를 읽거나 좋아요를 세면 조각 크기만큼 늘어난다(설계 5.28, 5.29).
-     * 통계를 실행 중에 켜고 끄는 까닭은 [com.loopers.application.product.provided.ProductFinderTest]와 같다.
      */
     @Test
     fun `the like list reads a slice of any size in three queries`() {
@@ -105,11 +104,8 @@ class LikeFinderTest(
         val products = List(3) { productRepository.save(createProduct(brandRepository.save(createBrand()))) }
         products.forEach { liker.like(userId = user.id, productId = it.id) }
         entityManager.flushAndClear()
-        val statistics = entityManager.statistics
-        statistics.isStatisticsEnabled = true
-        statistics.clear()
 
-        try {
+        entityManager.withStatistics { statistics ->
             val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
 
             assertThat(slice.content).hasSize(3)
@@ -117,8 +113,6 @@ class LikeFinderTest(
                 .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
             assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(3L)
-        } finally {
-            statistics.isStatisticsEnabled = false
         }
     }
 

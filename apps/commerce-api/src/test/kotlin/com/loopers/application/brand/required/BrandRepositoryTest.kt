@@ -4,7 +4,7 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.support.flushAndClear
-import com.loopers.support.statistics
+import com.loopers.support.withStatistics
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
@@ -24,10 +24,10 @@ import java.time.ZonedDateTime
  * `SimpleJpaRepository`의 기본 구현이 아니라 파생 조회로 간다는 것도 함께 고정한다. 짧은 이름 `findAll(Pageable)`로 바꾸면
  * 호출이 기본 구현으로 가서 차례가 사라지고 count 쿼리가 붙는다.
  *
- * Hibernate 통계를 켜는 까닭은 목록이 보내는 쿼리 수를 세기 위한 것이다. 총 개수를 세지 않는다는 약속은
+ * 목록 테스트 하나는 목록이 보내는 쿼리 수를 센다. 총 개수를 세지 않는다는 약속은
  * 반환 타입이 `Slice`라는 사실에만 걸려 있어, 세어 보지 않으면 `Page`로 바꿔도 아무 테스트가 깨지지 않는다.
  */
-@DataJpaTest(properties = ["spring.jpa.properties.hibernate.generate_statistics=true"])
+@DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class BrandRepositoryTest(
@@ -196,12 +196,13 @@ class BrandRepositoryTest(
     fun `findAllByOrderByCreatedAtDescIdDesc reads a slice with a single query and never counts the total`() {
         repeat(3) { brandRepository.save(createBrand()) }
         entityManager.flushAndClear()
-        entityManager.statistics.clear()
 
-        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
+        entityManager.withStatistics { statistics ->
+            val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
 
-        assertThat(slice.hasNext()).isTrue()
-        assertThat(entityManager.statistics.prepareStatementCount).isOne()
+            assertThat(slice.hasNext()).isTrue()
+            assertThat(statistics.prepareStatementCount).isOne()
+        }
     }
 
     /**

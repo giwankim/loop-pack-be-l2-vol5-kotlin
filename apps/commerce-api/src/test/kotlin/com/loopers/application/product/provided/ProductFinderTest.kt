@@ -8,8 +8,8 @@ import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.statistics
 import com.loopers.support.stereotype.ApplicationServiceTest
+import com.loopers.support.withStatistics
 import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
@@ -60,7 +60,7 @@ class ProductFinderTest(
 
     /**
      * 목록의 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다(설계 5.28). 항목마다 세면 조각 크기만큼 SQL이 늘어난다.
-     * 조각 조회 하나와 집계 하나, 둘이어야 한다. 통계는 컨텍스트를 새로 띄우지 않으려고 실행 중에 켠다.
+     * 조각 조회 하나와 집계 하나, 둘이어야 한다.
      */
     @Test
     fun `listing counts the likes of the whole slice in one query`() {
@@ -68,18 +68,13 @@ class ProductFinderTest(
         val products = List(3) { productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)) }
         products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
         entityManager.flushAndClear()
-        val statistics = entityManager.statistics
-        statistics.isStatisticsEnabled = true
-        statistics.clear()
 
-        try {
+        entityManager.withStatistics { statistics ->
             val slice = productFinder.findAll(ProductListRequest())
 
             assertThat(slice.content).hasSize(3)
             assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
-        } finally {
-            statistics.isStatisticsEnabled = false
         }
     }
 
@@ -218,18 +213,13 @@ class ProductFinderTest(
         val products = List(3) { productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)) }
         products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
         entityManager.flushAndClear()
-        val statistics = entityManager.statistics
-        statistics.isStatisticsEnabled = true
-        statistics.clear()
 
-        try {
+        entityManager.withStatistics { statistics ->
             val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
             assertThat(slice.content).hasSize(3)
             assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
-        } finally {
-            statistics.isStatisticsEnabled = false
         }
     }
 
