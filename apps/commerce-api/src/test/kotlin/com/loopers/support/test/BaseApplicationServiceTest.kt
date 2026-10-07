@@ -1,12 +1,20 @@
 package com.loopers.support.test
 
 import com.loopers.application.brand.provided.BrandRegister
+import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.like.provided.Liker
+import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.application.product.required.ProductRepository
+import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
+import com.loopers.domain.like.Like
+import com.loopers.domain.point.PointAccount
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.createProductAdminRegisterRequest
+import com.loopers.domain.user.User
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -21,8 +29,10 @@ import org.springframework.transaction.annotation.Transactional
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`와 트랜잭션에서 빠지는 표시뿐이다(ADR 0012).
  *
  * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 조각의 provided 포트로 만든다.
- * 포트가 `Info`를 돌려주면 엔티티를 ID로 다시 읽는다. 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의
- * 기본값으로 불린 `prepare`도 필드를 바꾼다. 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
+ * 포트가 `Info`를 돌려주면 엔티티를 ID로 다시 읽는다. 포트가 없는 데이터(사용자, 포인트 계정)와 포트가 막는 상태는
+ * 저장소에 엔티티를 저장해 만들고, 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.
+ * 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾼다.
+ * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
  */
 @SpringBootTest
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
@@ -35,16 +45,37 @@ abstract class BaseApplicationServiceTest {
     private lateinit var brandRegister: BrandRegister
 
     @Autowired
+    private lateinit var brandRepository: BrandRepository
+
+    @Autowired
     private lateinit var productRegister: ProductRegister
 
     @Autowired
     private lateinit var productRepository: ProductRepository
+
+    @Autowired
+    private lateinit var userRepository: UserRepository
+
+    @Autowired
+    private lateinit var pointAccountRepository: PointAccountRepository
+
+    @Autowired
+    private lateinit var liker: Liker
+
+    @Autowired
+    private lateinit var likeRepository: LikeRepository
 
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
     /** 마지막으로 준비한 상품. */
     protected lateinit var product: Product
+
+    /** 마지막으로 준비한 사용자. */
+    protected lateinit var user: User
+
+    /** 마지막으로 준비한 좋아요. */
+    protected lateinit var like: Like
 
     protected fun prepareBrand(name: String? = null): Brand =
         brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
@@ -62,8 +93,32 @@ abstract class BaseApplicationServiceTest {
         return productRepository.findById(registered.id)!!.also { product = it }
     }
 
+    /** 사용자를 만드는 포트가 없어 저장소로 만든다. 처음 잔액이 0원인 포인트 계정도 함께 저장한다(설계 5.9). */
+    protected fun prepareUser(): User =
+        userRepository.save(User()).also {
+            pointAccountRepository.save(PointAccount(it))
+            user = it
+        }
+
+    /** [Liker]는 아무것도 돌려주지 않으므로 좋아요는 사용자와 상품으로 다시 읽는다. */
+    protected fun prepareLike(
+        user: User = prepareUser(),
+        product: Product = prepareProduct(),
+    ): Like {
+        liker.like(userId = user.id, productId = product.id)
+        return likeRepository.findByUserIdAndProductId(userId = user.id, productId = product.id)!!.also { like = it }
+    }
+
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
+    }
+
+    /**
+     * 살아 있는 상품을 남긴 채 브랜드를 삭제한다. [BrandRegister]가 막는 상태(`BRAND_HAS_PRODUCTS`)라 저장소로 만든다.
+     * 어긋난 데이터를 막는 테스트만 쓴다. 테스트 트랜잭션 없이도 남도록 삭제 시각을 찍어 명시적으로 저장한다.
+     */
+    protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
+        brandRepository.save(brand.apply { delete() })
     }
 
     protected fun deleteProduct(product: Product = this.product) {

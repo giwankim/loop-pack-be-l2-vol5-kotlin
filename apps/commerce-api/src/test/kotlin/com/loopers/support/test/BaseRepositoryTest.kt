@@ -1,9 +1,20 @@
 package com.loopers.support.test
 
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.point.required.PointAccountRepository
+import com.loopers.application.product.required.ProductRepository
+import com.loopers.application.user.required.UserRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
+import com.loopers.domain.like.Like
+import com.loopers.domain.point.PointAccount
+import com.loopers.domain.product.Product
+import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
+import com.loopers.domain.shared.Money
+import com.loopers.domain.user.User
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.springframework.beans.factory.annotation.Autowired
@@ -34,14 +45,69 @@ abstract class BaseRepositoryTest {
     @Autowired
     private lateinit var brandRepository: BrandRepository
 
+    @Autowired
+    private lateinit var productRepository: ProductRepository
+
+    @Autowired
+    private lateinit var userRepository: UserRepository
+
+    @Autowired
+    private lateinit var pointAccountRepository: PointAccountRepository
+
+    @Autowired
+    private lateinit var likeRepository: LikeRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
+
+    /** 마지막으로 준비한 상품. */
+    protected lateinit var product: Product
+
+    /** 마지막으로 준비한 사용자. */
+    protected lateinit var user: User
+
+    /** 마지막으로 준비한 좋아요. */
+    protected lateinit var like: Like
 
     protected fun prepareBrand(name: String? = null): Brand =
         brandRepository.save(createBrand(name = name)).also { brand = it }
 
+    protected fun prepareProduct(
+        brand: Brand = prepareBrand(),
+        name: String? = null,
+        price: Money? = null,
+        stock: Stock? = null,
+    ): Product =
+        productRepository.save(createProduct(brand, name = name, price = price, stock = stock)).also { product = it }
+
+    /** 처음 잔액이 0원인 포인트 계정도 함께 저장한다. 이름이 같은 [BaseApplicationServiceTest.prepareUser]와 같은 상태다. */
+    protected fun prepareUser(): User =
+        userRepository.save(User()).also {
+            pointAccountRepository.save(PointAccount(it))
+            user = it
+        }
+
+    protected fun prepareLike(
+        user: User = prepareUser(),
+        product: Product = prepareProduct(),
+    ): Like =
+        likeRepository.save(Like(userId = user.id, productId = product.id)).also { like = it }
+
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRepository.save(brand.apply { delete() })
+    }
+
+    /**
+     * 살아 있는 상품을 남긴 채 브랜드를 삭제한다. 운영에서는 브랜드 삭제가 막는 상태라 [deleteBrand]와 같은 일을 하지만
+     * 이름에 우회를 드러낸다. 이 상태는 어긋난 데이터를 막는 테스트만 만든다.
+     */
+    protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
+        brandRepository.save(brand.apply { delete() })
+    }
+
+    /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    protected fun deleteProduct(product: Product = this.product) {
+        productRepository.save(product.apply { delete() })
     }
 }

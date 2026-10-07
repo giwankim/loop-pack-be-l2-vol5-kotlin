@@ -1,63 +1,44 @@
 package com.loopers.application.product.required
 
 import com.loopers.adapter.persistence.product.QuerydslProductListRepository
-import com.loopers.application.brand.required.BrandRepository
-import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.createBrand
-import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
-import com.loopers.domain.product.createProduct
 import com.loopers.domain.product.Stock
+import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.support.flushAndClear
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import jakarta.persistence.EntityManager
+import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Hibernate
 import org.junit.jupiter.api.Test
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageRequest
 
 /**
  * Spring Data가 만든 [ProductRepository]와 QueryDSL로 짠 [ProductListRepository]가 실제 MySQL에서 계약을 지키는지 확인한다.
- * 설정과 패키지 위치의 이유는 [com.loopers.application.user.required.UserRepositoryTest]와 같다. 슬라이스는 `@Component`를
+ * 패키지 위치의 이유는 [com.loopers.application.user.required.UserRepositoryTest]와 같다. 슬라이스는 `@Component`를
  * 스캔하지 않으므로 목록의 구현 [QuerydslProductListRepository]와 그것이 쓰는 QueryDSL 설정은 직접 가져온다. 부르는 것은 포트다.
- * 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
  *
  * 좋아요 목록 [ProductRepository.findAllLikedBy]는 Spring Data가 `@Query`로 만드는 조회이고 그 결과가 곧 포트의 조각이다.
  * 경계 사례(크기와 같을 때, 하나 더 있을 때, `page = 1`의 offset)는 Spring Data의 `Slice`가 내주는 값으로 본다.
- *
- * 상품이 브랜드를 참조하므로 브랜드도 저장한다. 브랜드 저장소는 Spring Data가 만들어 슬라이스가 등록한다.
  */
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(
-    DataSourceConfig::class,
-    QueryDslConfig::class,
-    MySqlTestContainersConfig::class,
-    QuerydslProductListRepository::class,
-)
+@Import(QueryDslConfig::class, QuerydslProductListRepository::class)
 class ProductRepositoryTest(
     private val productRepository: ProductRepository,
     private val productListRepository: ProductListRepository,
-    private val brandRepository: BrandRepository,
-    private val entityManager: EntityManager,
-) {
+) : BaseRepositoryTest() {
     @Test
     fun `findById reads a saved product back with its brand, price, and stock after flush and clear`() {
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
-        val saved = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(12_000), stock = Stock(7)))
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand, name = "티셔츠", price = Money(12_000), stock = Stock(7))
         entityManager.flushAndClear()
 
-        val found = productRepository.findById(saved.id)
+        val found = productRepository.findById(product.id)
 
-        assertThat(found).isNotNull().isNotSameAs(saved)
-        assertThat(found?.id).isEqualTo(saved.id)
+        assertThat(found).isNotNull().isNotSameAs(product)
+        assertThat(found?.id).isEqualTo(product.id)
         assertThat(found?.brand?.id).isEqualTo(brand.id)
         assertThat(found?.brand?.name).isEqualTo("루퍼스")
         assertThat(found?.name).isEqualTo("티셔츠")
@@ -70,11 +51,11 @@ class ProductRepositoryTest(
 
     @Test
     fun `findById leaves the brand as an uninitialized proxy until a field other than id is read`() {
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
-        val saved = productRepository.save(createProduct(brand))
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand)
         entityManager.flushAndClear()
 
-        val found = productRepository.findById(saved.id)!!
+        val found = productRepository.findById(product.id)!!
 
         // 엔티티와 BaseEntity 가 allOpen 으로 열려 있어야 Hibernate 가 Brand 서브클래스 프록시를 만든다
         // (build-logic 의 loopers.jpa 컨벤션). 하나라도 final 이면 HHH000305 를 남기고 곧바로 조회한다.
@@ -89,7 +70,7 @@ class ProductRepositoryTest(
 
     @Test
     fun `save stores price and stock in the price and stock_quantity columns`() {
-        val brand = brandRepository.save(createBrand())
+        prepareBrand()
         val saved = productRepository.save(createProduct(brand, price = Money(12_000), stock = Stock(7)))
         entityManager.flushAndClear()
 
@@ -105,11 +86,11 @@ class ProductRepositoryTest(
 
     @Test
     fun `findById returns null for a deleted product`() {
-        val brand = brandRepository.save(createBrand())
-        val deleted = productRepository.save(createProduct(brand).apply { delete() })
+        prepareProduct()
+        deleteProduct()
         entityManager.flushAndClear()
 
-        val found = productRepository.findById(deleted.id)
+        val found = productRepository.findById(product.id)
 
         assertThat(found).isNull()
     }
@@ -122,24 +103,23 @@ class ProductRepositoryTest(
     /** 주문은 이 조회를 받은 뒤 트랜잭션 밖에서 브랜드를 건너도 지연 로딩에 닿지 않아야 한다. */
     @Test
     fun `findByIdWithActiveBrand reads the brand together with the product`() {
-        val brand = brandRepository.save(createBrand())
-        val saved = productRepository.save(createProduct(brand))
+        prepareProduct()
         entityManager.flushAndClear()
 
-        val found = productRepository.findByIdWithActiveBrand(saved.id)!!
+        val found = productRepository.findByIdWithActiveBrand(product.id)!!
 
-        assertThat(found.id).isEqualTo(saved.id)
+        assertThat(found.id).isEqualTo(product.id)
         assertThat(Hibernate.isInitialized(found.brand)).isTrue()
     }
 
     /** [ProductRepository.findById]는 브랜드의 삭제를 보지 않으므로, 같은 상품을 두 조회가 다르게 답하는 것을 함께 본다. */
     @Test
     fun `findByIdWithActiveBrand returns null for a deleted product and for an active product whose brand was deleted`() {
-        val brand = brandRepository.save(createBrand())
-        val deleted = productRepository.save(createProduct(brand).apply { delete() })
-        val closedBrand = brandRepository.save(createBrand())
-        val ofClosedBrand = productRepository.save(createProduct(closedBrand))
-        closedBrand.delete()
+        val deleted = prepareProduct()
+        deleteProduct(deleted)
+        val closedBrand = prepareBrand()
+        val ofClosedBrand = prepareProduct(closedBrand)
+        deleteBrandKeepingProducts(closedBrand)
         entityManager.flushAndClear()
 
         assertThat(productRepository.findByIdWithActiveBrand(deleted.id)).isNull()
@@ -149,11 +129,9 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll returns the products of every brand, latest registered first`() {
-        val brand = brandRepository.save(createBrand())
-        val other = brandRepository.save(createBrand())
-        val first = productRepository.save(createProduct(brand))
-        val second = productRepository.save(createProduct(other))
-        val third = productRepository.save(createProduct(brand))
+        val first = prepareProduct()
+        val second = prepareProduct()
+        val third = prepareProduct(first.brand)
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
@@ -163,10 +141,10 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll sorted by price puts the cheapest first`() {
-        val brand = brandRepository.save(createBrand())
-        val dear = productRepository.save(createProduct(brand, price = Money(30_000)))
-        val cheap = productRepository.save(createProduct(brand, price = Money(10_000)))
-        val middling = productRepository.save(createProduct(brand, price = Money(20_000)))
+        prepareBrand()
+        val dear = prepareProduct(brand, price = Money(30_000))
+        val cheap = prepareProduct(brand, price = Money(10_000))
+        val middling = prepareProduct(brand, price = Money(20_000))
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 20), sort = ProductSort.PRICE_ASC)
@@ -176,10 +154,10 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll sorted by price breaks a tie with the later id first`() {
-        val brand = brandRepository.save(createBrand())
-        val first = productRepository.save(createProduct(brand, price = Money(10_000)))
-        val second = productRepository.save(createProduct(brand, price = Money(10_000)))
-        val third = productRepository.save(createProduct(brand, price = Money(10_000)))
+        prepareBrand()
+        val first = prepareProduct(brand, price = Money(10_000))
+        val second = prepareProduct(brand, price = Money(10_000))
+        val third = prepareProduct(brand, price = Money(10_000))
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 20), sort = ProductSort.PRICE_ASC)
@@ -193,10 +171,10 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll sorted by latest breaks a tie with the later id first`() {
-        val brand = brandRepository.save(createBrand())
-        val first = productRepository.save(createProduct(brand))
-        val second = productRepository.save(createProduct(brand))
-        val third = productRepository.save(createProduct(brand))
+        prepareBrand()
+        val first = prepareProduct(brand)
+        val second = prepareProduct(brand)
+        val third = prepareProduct(brand)
         entityManager.flushAndClear()
         listOf(first, second, third).forEach { shareCreatedAt(table = "product", id = it.id) }
         entityManager.clear()
@@ -211,10 +189,10 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll sorted by likes puts the most liked first`() {
-        val brand = brandRepository.save(createBrand())
-        val most = productRepository.save(createProduct(brand))
-        val fewest = productRepository.save(createProduct(brand))
-        val middling = productRepository.save(createProduct(brand))
+        prepareBrand()
+        val most = prepareProduct(brand)
+        val fewest = prepareProduct(brand)
+        val middling = prepareProduct(brand)
         entityManager.flushAndClear()
         likedBy(most, users = 3)
         likedBy(fewest, users = 1)
@@ -235,10 +213,10 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll sorted by likes breaks a tie with the later id first`() {
-        val brand = brandRepository.save(createBrand())
-        val first = productRepository.save(createProduct(brand))
-        val second = productRepository.save(createProduct(brand))
-        val third = productRepository.save(createProduct(brand))
+        prepareBrand()
+        val first = prepareProduct(brand)
+        val second = prepareProduct(brand)
+        val third = prepareProduct(brand)
         entityManager.flushAndClear()
         listOf(first, second, third).forEach { likedBy(it, users = 2) }
         entityManager.flushAndClear()
@@ -259,10 +237,10 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll sorted by likes keeps a product nobody liked, last`() {
-        val brand = brandRepository.save(createBrand())
-        val liked = productRepository.save(createProduct(brand))
-        val unliked = productRepository.save(createProduct(brand))
-        val mostLiked = productRepository.save(createProduct(brand))
+        prepareBrand()
+        val liked = prepareProduct(brand)
+        val unliked = prepareProduct(brand)
+        val mostLiked = prepareProduct(brand)
         entityManager.flushAndClear()
         likedBy(liked, users = 1)
         likedBy(mostLiked, users = 2)
@@ -279,12 +257,12 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll sorted by likes keeps the brand filter and slices with hasNext`() {
-        val brand = brandRepository.save(createBrand())
-        val other = brandRepository.save(createBrand())
-        val fewest = productRepository.save(createProduct(brand))
-        val most = productRepository.save(createProduct(brand))
-        val middling = productRepository.save(createProduct(brand))
-        val othersMostLiked = productRepository.save(createProduct(other))
+        val asked = prepareBrand()
+        val other = prepareBrand()
+        val fewest = prepareProduct(asked)
+        val most = prepareProduct(asked)
+        val middling = prepareProduct(asked)
+        val othersMostLiked = prepareProduct(other)
         entityManager.flushAndClear()
         likedBy(fewest, users = 1)
         likedBy(most, users = 3)
@@ -293,9 +271,9 @@ class ProductRepositoryTest(
         entityManager.flushAndClear()
 
         val first =
-            productListRepository.findAll(brandId = brand.id, pageable = PageRequest.of(0, 2), sort = ProductSort.LIKES_DESC)
+            productListRepository.findAll(brandId = asked.id, pageable = PageRequest.of(0, 2), sort = ProductSort.LIKES_DESC)
         val second =
-            productListRepository.findAll(brandId = brand.id, pageable = PageRequest.of(1, 2), sort = ProductSort.LIKES_DESC)
+            productListRepository.findAll(brandId = asked.id, pageable = PageRequest.of(1, 2), sort = ProductSort.LIKES_DESC)
 
         assertThat(first.content.map { it.id }).containsExactly(most.id, middling.id)
         assertThat(first.hasNext()).isTrue()
@@ -310,9 +288,8 @@ class ProductRepositoryTest(
     /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
     @Test
     fun `findAll with a deleted brand's id is empty`() {
-        val brand = brandRepository.save(createBrand())
-        productRepository.save(createProduct(brand))
-        brand.delete()
+        prepareProduct()
+        deleteBrandKeepingProducts()
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = brand.id, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
@@ -323,9 +300,9 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll leaves out deleted products`() {
-        val brand = brandRepository.save(createBrand())
-        val active = productRepository.save(createProduct(brand))
-        productRepository.save(createProduct(brand).apply { delete() })
+        prepareBrand()
+        val active = prepareProduct(brand)
+        deleteProduct(prepareProduct(brand))
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
@@ -335,21 +312,20 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll with a brandId keeps only that brand's products`() {
-        val brand = brandRepository.save(createBrand())
-        val other = brandRepository.save(createBrand())
-        val mine = productRepository.save(createProduct(brand))
-        productRepository.save(createProduct(other))
+        val asked = prepareBrand()
+        val other = prepareBrand()
+        val mine = prepareProduct(asked)
+        prepareProduct(other)
         entityManager.flushAndClear()
 
-        val slice = productListRepository.findAll(brandId = brand.id, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
+        val slice = productListRepository.findAll(brandId = asked.id, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
 
         assertThat(slice.content.map { it.id }).containsExactly(mine.id)
     }
 
     @Test
     fun `findAll with an unknown brandId is empty`() {
-        val brand = brandRepository.save(createBrand())
-        productRepository.save(createProduct(brand))
+        prepareProduct()
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = 999L, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
@@ -360,8 +336,8 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll reports hasNext while a later slice remains`() {
-        val brand = brandRepository.save(createBrand())
-        repeat(3) { productRepository.save(createProduct(brand)) }
+        prepareBrand()
+        repeat(3) { prepareProduct(brand) }
         entityManager.flushAndClear()
 
         val first = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 2), sort = ProductSort.LATEST)
@@ -379,8 +355,8 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAll has no next slice when the products fill the page exactly`() {
-        val brand = brandRepository.save(createBrand())
-        repeat(2) { productRepository.save(createProduct(brand)) }
+        prepareBrand()
+        repeat(2) { prepareProduct(brand) }
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 2), sort = ProductSort.LATEST)
@@ -398,21 +374,19 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAll leaves out an active product whose brand was deleted`() {
-        val brand = brandRepository.save(createBrand())
-        val active = productRepository.save(createProduct(brand))
-        brand.delete()
+        prepareProduct()
+        deleteBrandKeepingProducts()
         entityManager.flushAndClear()
 
         val slice = productListRepository.findAll(brandId = null, pageable = PageRequest.of(0, 20), sort = ProductSort.LATEST)
 
-        assertThat(productRepository.findById(active.id)).isNotNull()
+        assertThat(productRepository.findById(product.id)).isNotNull()
         assertThat(slice.content).isEmpty()
     }
 
     @Test
     fun `existsByBrandId is true while the brand has a product`() {
-        val brand = brandRepository.save(createBrand())
-        productRepository.save(createProduct(brand))
+        prepareProduct()
         entityManager.flushAndClear()
 
         assertThat(productRepository.existsByBrandId(brand.id)).isTrue()
@@ -421,8 +395,8 @@ class ProductRepositoryTest(
     /** 브랜드 삭제 조건이 기대는 사실이다. 삭제된 상품이 남은 상품으로 세어지면 그 브랜드는 영영 삭제할 수 없다. */
     @Test
     fun `existsByBrandId does not count deleted products`() {
-        val brand = brandRepository.save(createBrand())
-        productRepository.save(createProduct(brand).apply { delete() })
+        prepareProduct()
+        deleteProduct()
         entityManager.flushAndClear()
 
         assertThat(productRepository.existsByBrandId(brand.id)).isFalse()
@@ -430,12 +404,12 @@ class ProductRepositoryTest(
 
     @Test
     fun `existsByBrandId does not count another brand's products`() {
-        val brand = brandRepository.save(createBrand())
-        val other = brandRepository.save(createBrand())
-        productRepository.save(createProduct(other))
+        val asked = prepareBrand()
+        val other = prepareBrand()
+        prepareProduct(other)
         entityManager.flushAndClear()
 
-        assertThat(productRepository.existsByBrandId(brand.id)).isFalse()
+        assertThat(productRepository.existsByBrandId(asked.id)).isFalse()
     }
 
     @Test
@@ -449,14 +423,15 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAllLikedBy returns the products the user liked, the most recently liked first`() {
-        val brand = brandRepository.save(createBrand())
-        val registeredFirst = productRepository.save(createProduct(brand))
-        val registeredSecond = productRepository.save(createProduct(brand))
-        val registeredThird = productRepository.save(createProduct(brand))
-        listOf(registeredSecond, registeredThird, registeredFirst).forEach { like(userId = 1L, productId = it.id) }
+        prepareBrand()
+        val registeredFirst = prepareProduct(brand)
+        val registeredSecond = prepareProduct(brand)
+        val registeredThird = prepareProduct(brand)
+        prepareUser()
+        listOf(registeredSecond, registeredThird, registeredFirst).forEach { prepareLike(user, it) }
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20))
+        val slice = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 20))
 
         assertThat(slice.content.map { it.id })
             .containsExactly(registeredFirst.id, registeredThird.id, registeredSecond.id)
@@ -469,17 +444,18 @@ class ProductRepositoryTest(
      */
     @Test
     fun `findAllLikedBy breaks a tie in the like time with the later like first`() {
-        val brand = brandRepository.save(createBrand())
-        val registeredFirst = productRepository.save(createProduct(brand))
-        val registeredSecond = productRepository.save(createProduct(brand))
-        val registeredThird = productRepository.save(createProduct(brand))
+        prepareBrand()
+        val registeredFirst = prepareProduct(brand)
+        val registeredSecond = prepareProduct(brand)
+        val registeredThird = prepareProduct(brand)
+        prepareUser()
         val likes = listOf(registeredThird, registeredFirst, registeredSecond)
-            .map { like(userId = 1L, productId = it.id) }
+            .map { prepareLike(user, it) }
         entityManager.flushAndClear()
         likes.forEach { shareCreatedAt(table = "likes", id = it.id) }
         entityManager.clear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20))
+        val slice = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 20))
 
         assertThat(slice.content.map { it.id })
             .containsExactly(registeredSecond.id, registeredFirst.id, registeredThird.id)
@@ -488,15 +464,16 @@ class ProductRepositoryTest(
     /** 삭제된 상품은 없는 상품이므로 남은 좋아요가 목록을 되살리지 않는다. 좋아요 행은 그대로 있다(ADR 0001). */
     @Test
     fun `findAllLikedBy leaves out deleted products`() {
-        val brand = brandRepository.save(createBrand())
-        val active = productRepository.save(createProduct(brand))
-        val deleted = productRepository.save(createProduct(brand))
-        like(userId = 1L, productId = active.id)
-        like(userId = 1L, productId = deleted.id)
-        deleted.delete()
+        prepareBrand()
+        val active = prepareProduct(brand)
+        val deleted = prepareProduct(brand)
+        prepareUser()
+        prepareLike(user, active)
+        prepareLike(user, deleted)
+        deleteProduct(deleted)
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20))
+        val slice = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 20))
 
         assertThat(slice.content.map { it.id }).containsExactly(active.id)
         assertThat(slice.hasNext()).isFalse()
@@ -504,39 +481,41 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAllLikedBy leaves out the products another user liked`() {
-        val brand = brandRepository.save(createBrand())
-        val mine = productRepository.save(createProduct(brand))
-        val theirs = productRepository.save(createProduct(brand))
-        like(userId = 1L, productId = mine.id)
-        like(userId = 2L, productId = theirs.id)
+        prepareBrand()
+        val mine = prepareProduct(brand)
+        val theirs = prepareProduct(brand)
+        val me = prepareUser()
+        prepareLike(me, mine)
+        prepareLike(product = theirs)
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20))
+        val slice = productRepository.findAllLikedBy(userId = me.id, pageable = PageRequest.of(0, 20))
 
         assertThat(slice.content.map { it.id }).containsExactly(mine.id)
     }
 
     @Test
     fun `findAllLikedBy leaves out a product the user never liked`() {
-        val brand = brandRepository.save(createBrand())
-        val liked = productRepository.save(createProduct(brand))
-        productRepository.save(createProduct(brand))
-        like(userId = 1L, productId = liked.id)
+        prepareBrand()
+        val liked = prepareProduct(brand)
+        prepareProduct(brand)
+        prepareLike(product = liked)
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20))
+        val slice = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 20))
 
         assertThat(slice.content.map { it.id }).containsExactly(liked.id)
     }
 
     @Test
     fun `findAllLikedBy reports hasNext while a later slice remains`() {
-        val brand = brandRepository.save(createBrand())
-        repeat(3) { like(userId = 1L, productId = productRepository.save(createProduct(brand)).id) }
+        prepareBrand()
+        prepareUser()
+        repeat(3) { prepareLike(user, prepareProduct(brand)) }
         entityManager.flushAndClear()
 
-        val first = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 2))
-        val second = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(1, 2))
+        val first = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 2))
+        val second = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(1, 2))
 
         assertThat(first.content).hasSize(2)
         assertThat(first.hasNext()).isTrue()
@@ -550,11 +529,12 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAllLikedBy has no next slice when the liked products fill the page exactly`() {
-        val brand = brandRepository.save(createBrand())
-        repeat(2) { like(userId = 1L, productId = productRepository.save(createProduct(brand)).id) }
+        prepareBrand()
+        prepareUser()
+        repeat(2) { prepareLike(user, prepareProduct(brand)) }
         entityManager.flushAndClear()
 
-        val slice = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 2))
+        val slice = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 2))
 
         assertThat(slice.content).hasSize(2)
         assertThat(slice.hasNext()).isFalse()
@@ -564,8 +544,7 @@ class ProductRepositoryTest(
 
     @Test
     fun `findAllLikedBy is empty for a user without likes`() {
-        val brand = brandRepository.save(createBrand())
-        like(userId = 1L, productId = productRepository.save(createProduct(brand)).id)
+        prepareLike()
         entityManager.flushAndClear()
 
         val slice = productRepository.findAllLikedBy(userId = 999L, pageable = PageRequest.of(0, 20))
@@ -577,25 +556,17 @@ class ProductRepositoryTest(
     /** 브랜드 이름을 읽어야 하므로 좋아요 목록도 상품마다 브랜드를 따로 조회하지 않는다(설계 7). */
     @Test
     fun `findAllLikedBy reads the brand together with the product`() {
-        val brand = brandRepository.save(createBrand())
-        like(userId = 1L, productId = productRepository.save(createProduct(brand)).id)
+        prepareLike()
         entityManager.flushAndClear()
 
-        val found = productRepository.findAllLikedBy(userId = 1L, pageable = PageRequest.of(0, 20)).content.single()
+        val found = productRepository.findAllLikedBy(userId = user.id, pageable = PageRequest.of(0, 20)).content.single()
 
         assertThat(Hibernate.isInitialized(found.brand)).isTrue()
     }
 
-    /** 좋아요 관계 하나. 좋아요는 사용자와 상품을 식별자로만 가리키므로(설계 2) 사용자 행 없이 만든다. */
-    private fun like(userId: Long, productId: Long): Like =
-        Like(userId = userId, productId = productId).also { entityManager.persist(it) }
-
-    /**
-     * [users]명이 [product]를 좋아한다. 좋아요는 사용자를 식별자로만 가리키므로 `users` 행은 없어도 된다(설계 2).
-     * 같은 사용자–상품 쌍은 하나뿐이라 사용자 식별자를 상품마다 1부터 새로 센다.
-     */
+    /** [users]명이 [product]를 좋아한다. 같은 사용자–상품 쌍은 하나뿐이라 좋아요마다 사용자를 새로 준비한다. */
     private fun likedBy(product: Product, users: Int) {
-        (1..users).forEach { entityManager.persist(Like(userId = it.toLong(), productId = product.id)) }
+        repeat(users) { prepareLike(product = product) }
     }
 
     /**

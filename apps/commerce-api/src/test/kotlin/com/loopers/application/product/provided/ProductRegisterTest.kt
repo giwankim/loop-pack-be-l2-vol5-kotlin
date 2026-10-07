@@ -1,15 +1,12 @@
 package com.loopers.application.product.provided
 
-import com.loopers.application.brand.required.BrandRepository
-import com.loopers.domain.brand.createBrand
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.stereotype.ApplicationServiceTest
-import jakarta.persistence.EntityManager
+import com.loopers.support.test.BaseApplicationServiceTest
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -18,19 +15,14 @@ import org.junit.jupiter.api.assertThrows
 /**
  * [ProductRegister]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  * 결과는 같은 조각의 [ProductFinder]로 읽는다.
- *
- * 브랜드는 브랜드 유스케이스가 아니라 저장 약속으로 만든다. 다른 조각의 준비물이라, 브랜드 등록 규칙이 바뀌어도 상품 테스트는 흔들리지 않는다.
  */
-@ApplicationServiceTest
 class ProductRegisterTest(
     private val productRegister: ProductRegister,
     private val productFinder: ProductFinder,
-    private val brandRepository: BrandRepository,
-    private val entityManager: EntityManager,
-) {
+) : BaseApplicationServiceTest() {
     @Test
     fun `registering under an active brand saves a product, name as sent, that can be fetched back`() {
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
+        prepareBrand(name = "루퍼스")
 
         val registered = productRegister.register(
             createProductAdminRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7),
@@ -65,11 +57,12 @@ class ProductRegisterTest(
 
     @Test
     fun `registering under a deleted brand throws BRAND_NOT_FOUND and saves nothing`() {
-        val deleted = brandRepository.save(createBrand().apply { delete() })
+        prepareBrand()
+        deleteBrand()
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
-            productRegister.register(createProductAdminRegisterRequest(brandId = deleted.id))
+            productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
         }
         entityManager.flushAndClear()
 
@@ -79,7 +72,7 @@ class ProductRegisterTest(
 
     @Test
     fun `registering a price of zero is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(createBrand())
+        prepareBrand()
 
         val exception = assertThrows<ConstraintViolationException> {
             productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, price = 0))
@@ -92,7 +85,7 @@ class ProductRegisterTest(
 
     @Test
     fun `registering a blank name is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(createBrand())
+        prepareBrand()
 
         val exception = assertThrows<ConstraintViolationException> {
             productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, name = "   "))
@@ -105,7 +98,7 @@ class ProductRegisterTest(
 
     @Test
     fun `registering a negative stock is rejected by request validation before the domain and saves nothing`() {
-        val brand = brandRepository.save(createBrand())
+        prepareBrand()
 
         val exception = assertThrows<ConstraintViolationException> {
             productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, stock = -1))
@@ -118,13 +111,12 @@ class ProductRegisterTest(
 
     @Test
     fun `updating a product changes the name as sent and the price and keeps the brand`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
+        prepareProduct()
         entityManager.flushAndClear()
 
-        productRegister.update(registered.id, createProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
+        productRegister.update(product.id, createProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
         entityManager.flushAndClear()
-        val found = productFinder.find(registered.id)
+        val found = productFinder.find(product.id)
 
         assertThat(found.name).isEqualTo(" 후드티 ")
         assertThat(found.price).isEqualTo(25_000L)
@@ -133,13 +125,12 @@ class ProductRegisterTest(
 
     @Test
     fun `updating the stock sets the final quantity, including zero`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
+        prepareProduct()
         entityManager.flushAndClear()
 
-        productRegister.updateStock(registered.id, createProductAdminStockUpdateRequest(quantity = 0))
+        productRegister.updateStock(product.id, createProductAdminStockUpdateRequest(quantity = 0))
         entityManager.flushAndClear()
-        val found = productFinder.find(registered.id)
+        val found = productFinder.find(product.id)
 
         assertThat(found.stock).isZero()
         assertThat(found.soldOut).isTrue()
@@ -147,18 +138,17 @@ class ProductRegisterTest(
 
     @Test
     fun `deleting a product makes it a product that does not exist`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
+        prepareProduct()
         entityManager.flushAndClear()
 
-        productRegister.delete(registered.id)
+        productRegister.delete(product.id)
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { productFinder.find(registered.id) }
+        val exception = assertThrows<CoreException> { productFinder.find(product.id) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
         assertThat(countProducts()).isZero()
-        assertThat(deletedAtOf(registered.id)).isNotNull()
+        assertThat(deletedAtOf(product.id)).isNotNull()
     }
 
     @Test
@@ -172,30 +162,27 @@ class ProductRegisterTest(
 
     @Test
     fun `updating, setting the stock of, and deleting a deleted product all throw PRODUCT_NOT_FOUND`() {
-        val brand = brandRepository.save(createBrand())
-        val deleted = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        productRegister.delete(deleted.id)
+        prepareProduct()
+        deleteProduct()
         entityManager.flushAndClear()
 
-        assertThat(errorTypeOf { productRegister.update(deleted.id, createProductAdminUpdateRequest()) })
+        assertThat(errorTypeOf { productRegister.update(product.id, createProductAdminUpdateRequest()) })
             .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-        assertThat(errorTypeOf { productRegister.updateStock(deleted.id, createProductAdminStockUpdateRequest()) })
+        assertThat(errorTypeOf { productRegister.updateStock(product.id, createProductAdminStockUpdateRequest()) })
             .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-        assertThat(errorTypeOf { productRegister.delete(deleted.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productRegister.delete(product.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
     @Test
     fun `an update rejected by request validation keeps the stored name and price`() {
-        val brand = brandRepository.save(createBrand())
-        val registered =
-            productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, name = "티셔츠", price = 12_000))
+        prepareProduct(name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productRegister.update(registered.id, createProductAdminUpdateRequest(price = 0))
+            productRegister.update(product.id, createProductAdminUpdateRequest(price = 0))
         }
         entityManager.flushAndClear()
-        val found = productFinder.find(registered.id)
+        val found = productFinder.find(product.id)
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.")
         assertThat(found.name).isEqualTo("티셔츠")
@@ -204,17 +191,16 @@ class ProductRegisterTest(
 
     @Test
     fun `a negative stock is rejected by request validation and keeps the stored stock`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 7))
+        prepareProduct(stock = 7)
         entityManager.flushAndClear()
 
         val exception = assertThrows<ConstraintViolationException> {
-            productRegister.updateStock(registered.id, createProductAdminStockUpdateRequest(quantity = -1))
+            productRegister.updateStock(product.id, createProductAdminStockUpdateRequest(quantity = -1))
         }
         entityManager.flushAndClear()
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
-        assertThat(productFinder.find(registered.id).stock).isEqualTo(7)
+        assertThat(productFinder.find(product.id).stock).isEqualTo(7)
     }
 
     /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */

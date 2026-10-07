@@ -1,42 +1,32 @@
 package com.loopers.application.product.provided
 
-import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.like.required.LikeRepository
-import com.loopers.domain.brand.createBrand
-import com.loopers.domain.like.Like
-import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.stereotype.ApplicationServiceTest
+import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
-import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [ProductFinder]를 실제 MySQL 위에서 확인한다. 읽을 상품은 같은 조각의 [ProductRegister]로 만든다.
- * 정리와 flush/clear, 브랜드를 저장 약속으로 만드는 까닭은 [ProductRegisterTest]와 같다. 좋아요도 다른 조각의 준비물이라 저장 약속으로 만든다.
+ * [ProductFinder]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [ProductRegisterTest]와 같다.
  */
-@ApplicationServiceTest
 class ProductFinderTest(
     private val productFinder: ProductFinder,
-    private val productRegister: ProductRegister,
-    private val brandRepository: BrandRepository,
-    private val likeRepository: LikeRepository,
-    private val entityManager: EntityManager,
-) {
-    /** 좋아요 수는 관계에서 센다. 사용자 행은 필요 없다. 좋아요는 사용자를 식별자로만 가리킨다(설계 2). */
+) : BaseApplicationServiceTest() {
+    /** 좋아요 수는 관계에서 센다. */
     @Test
     fun `finding a product counts the likes on it`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        val other = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        likeRepository.save(Like(userId = 1L, productId = registered.id))
-        likeRepository.save(Like(userId = 2L, productId = registered.id))
-        likeRepository.save(Like(userId = 1L, productId = other.id))
+        prepareBrand()
+        val registered = prepareProduct(brand)
+        val other = prepareProduct(brand)
+        val firstUser = prepareUser()
+        val secondUser = prepareUser()
+        prepareLike(firstUser, registered)
+        prepareLike(secondUser, registered)
+        prepareLike(firstUser, other)
         entityManager.flushAndClear()
 
         val found = productFinder.find(registered.id)
@@ -46,11 +36,11 @@ class ProductFinderTest(
 
     @Test
     fun `listing carries each product's own like count and zero for a product without likes`() {
-        val brand = brandRepository.save(createBrand())
-        val liked = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        val unliked = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        likeRepository.save(Like(userId = 1L, productId = liked.id))
-        likeRepository.save(Like(userId = 2L, productId = liked.id))
+        prepareBrand()
+        val liked = prepareProduct(brand)
+        val unliked = prepareProduct(brand)
+        prepareLike(product = liked)
+        prepareLike(product = liked)
         entityManager.flushAndClear()
 
         val slice = productFinder.findAll(ProductListRequest())
@@ -64,9 +54,10 @@ class ProductFinderTest(
      */
     @Test
     fun `listing counts the likes of the whole slice in one query`() {
-        val brand = brandRepository.save(createBrand())
-        val products = List(3) { productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)) }
-        products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
+        prepareBrand()
+        val products = List(3) { prepareProduct(brand) }
+        prepareUser()
+        products.forEach { prepareLike(user, it) }
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
@@ -80,11 +71,10 @@ class ProductFinderTest(
 
     @Test
     fun `finding a product with zero stock reports it as sold out`() {
-        val brand = brandRepository.save(createBrand())
-        val registered = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, stock = 0))
+        prepareProduct(stock = 0)
         entityManager.flushAndClear()
 
-        val found = productFinder.find(registered.id)
+        val found = productFinder.find(product.id)
 
         assertThat(found.stock).isZero()
         assertThat(found.soldOut).isTrue()
@@ -99,16 +89,14 @@ class ProductFinderTest(
 
     @Test
     fun `the orderable lookup gives a product of a brand that is not deleted`() {
-        val brand = brandRepository.save(createBrand())
-        val request = createProductAdminRegisterRequest(brandId = brand.id)
-        val registered = productRegister.register(request)
+        prepareProduct(name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
-        val found = productFinder.findOrderable(registered.id)
+        val found = productFinder.findOrderable(product.id)
 
-        assertThat(found?.id).isEqualTo(registered.id)
-        assertThat(found?.name).isEqualTo(request.name)
-        assertThat(found?.price?.amount).isEqualTo(request.price)
+        assertThat(found?.id).isEqualTo(product.id)
+        assertThat(found?.name).isEqualTo("티셔츠")
+        assertThat(found?.price?.amount).isEqualTo(12_000L)
     }
 
     /**
@@ -117,12 +105,11 @@ class ProductFinderTest(
      */
     @Test
     fun `the orderable lookup gives null for an unknown or deleted product and for a product of a deleted brand`() {
-        val brand = brandRepository.save(createBrand())
-        val deleted = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        productRegister.delete(deleted.id)
-        val closedBrand = brandRepository.save(createBrand())
-        val ofClosedBrand = productRegister.register(createProductAdminRegisterRequest(brandId = closedBrand.id))
-        closedBrand.delete()
+        val deleted = prepareProduct()
+        deleteProduct(deleted)
+        val closedBrand = prepareBrand()
+        val ofClosedBrand = prepareProduct(closedBrand)
+        deleteBrandKeepingProducts(closedBrand)
         entityManager.flushAndClear()
 
         assertThat(productFinder.findOrderable(Long.MAX_VALUE)).isNull()
@@ -136,9 +123,9 @@ class ProductFinderTest(
      */
     @Test
     fun `listing carries the default page and size into the slice and fills the brand name`() {
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
-        productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand)
+        prepareProduct(brand)
         entityManager.flushAndClear()
 
         val slice = productFinder.findAll(ProductAdminListRequest())
@@ -156,9 +143,9 @@ class ProductFinderTest(
      */
     @Test
     fun `listing for a customer carries the default page, size, and sort into the slice`() {
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
-        val first = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000))
-        val second = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000))
+        prepareBrand(name = "루퍼스")
+        val first = prepareProduct(brand, price = 3_000)
+        val second = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
         val slice = productFinder.findAll(ProductListRequest())
@@ -171,9 +158,9 @@ class ProductFinderTest(
 
     @Test
     fun `listing a customer sort reaches the slice order`() {
-        val brand = brandRepository.save(createBrand())
-        val cheap = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, price = 3_000))
-        val dear = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id, price = 30_000))
+        prepareBrand()
+        val cheap = prepareProduct(brand, price = 3_000)
+        val dear = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
         val slice = productFinder.findAll(ProductListRequest(sort = "price_asc"))
@@ -187,13 +174,15 @@ class ProductFinderTest(
      */
     @Test
     fun `listing by likes orders the slice and carries each product's own count`() {
-        val brand = brandRepository.save(createBrand())
-        val liked = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        val unliked = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        val mostLiked = productRegister.register(createProductAdminRegisterRequest(brandId = brand.id))
-        likeRepository.save(Like(userId = 1L, productId = liked.id))
-        likeRepository.save(Like(userId = 1L, productId = mostLiked.id))
-        likeRepository.save(Like(userId = 2L, productId = mostLiked.id))
+        prepareBrand()
+        val liked = prepareProduct(brand)
+        val unliked = prepareProduct(brand)
+        val mostLiked = prepareProduct(brand)
+        val firstUser = prepareUser()
+        val secondUser = prepareUser()
+        prepareLike(firstUser, liked)
+        prepareLike(firstUser, mostLiked)
+        prepareLike(secondUser, mostLiked)
         entityManager.flushAndClear()
 
         val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
@@ -209,9 +198,10 @@ class ProductFinderTest(
      */
     @Test
     fun `listing by likes counts the likes of the whole slice in one query`() {
-        val brand = brandRepository.save(createBrand())
-        val products = List(3) { productRegister.register(createProductAdminRegisterRequest(brandId = brand.id)) }
-        products.forEach { likeRepository.save(Like(userId = 1L, productId = it.id)) }
+        prepareBrand()
+        val products = List(3) { prepareProduct(brand) }
+        prepareUser()
+        products.forEach { prepareLike(user, it) }
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
