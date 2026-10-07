@@ -108,6 +108,7 @@ class OrderRepositoryTest(
         assertThat(thirdPage.content).isEmpty()
         assertThat(thirdPage.number).isEqualTo(2)
         assertThat(thirdPage.hasNext()).isFalse()
+        assertThat(thirdPage.size).isOne()
     }
 
     @Test

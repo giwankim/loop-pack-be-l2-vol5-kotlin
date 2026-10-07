@@ -304,6 +304,7 @@ class ProductRepositoryTest(
         assertThat(second.content.map { it.id }).containsExactly(fewest.id)
         assertThat(second.hasNext()).isFalse()
         assertThat(second.number).isEqualTo(1)
+        assertThat(second.size).isEqualTo(2)
     }
 
     /** 삭제된 브랜드를 가리키는 필터는 비어 있다. 브랜드가 살아 있지 않으면 그 아래 상품도 목록에 오르지 않는다. */
