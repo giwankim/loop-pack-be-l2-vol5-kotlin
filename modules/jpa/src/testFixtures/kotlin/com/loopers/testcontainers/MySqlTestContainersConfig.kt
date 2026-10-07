@@ -11,6 +11,9 @@ import org.testcontainers.utility.DockerImageName
  *
  * 최상위 `@TestConfiguration`은 컴포넌트 스캔에서 빠지므로, DB를 쓰는 테스트가 `@Import`로 명시해서 쓴다.
  * 시스템 프로퍼티와 달리 다른 컨텍스트로 새지 않으므로, `@Import`를 빠뜨린 테스트는 실행 순서와 상관없이 `${MYSQL_HOST}`를 풀지 못해 실패한다.
+ *
+ * 메타데이터 잠금을 기다리는 시간(`lock_wait_timeout`)은 10초로 줄인다. 테스트 트랜잭션이 쥔 메타데이터 잠금을 스키마 도구의
+ * 다른 연결이 기다리면, 기본값 1년으로는 실패하지 않고 멈춘다. 행 잠금의 `innodb_lock_wait_timeout`은 그대로다.
  */
 @TestConfiguration(proxyBeanMethods = false)
 class MySqlTestContainersConfig {
@@ -24,6 +27,7 @@ class MySqlTestContainersConfig {
                 withCommand(
                     "--character-set-server=utf8mb4",
                     "--collation-server=utf8mb4_general_ci",
+                    "--lock-wait-timeout=10",
                 )
                 start()
             }
