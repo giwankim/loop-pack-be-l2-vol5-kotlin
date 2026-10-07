@@ -1,0 +1,47 @@
+package com.loopers.support.test
+
+import com.loopers.application.brand.required.BrandRepository
+import com.loopers.config.jpa.DataSourceConfig
+import com.loopers.domain.brand.Brand
+import com.loopers.domain.brand.createBrand
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import jakarta.persistence.EntityManager
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.context.annotation.Import
+
+/**
+ * 저장소(required 포트) 테스트의 기반. JPA 슬라이스를 실제 MySQL 위에 띄우고, 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
+ * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`뿐이다(ADR 0012).
+ *
+ * `replace = NONE`이 없으면 Boot 4.1.1의 기본값 `NON_TEST`가 [DataSourceConfig]가 직접 만든 `HikariDataSource`를 내장 DB로
+ * 바꾸려 한다. 내장 DB가 클래스 경로에 없어 컨텍스트가 뜨지 않는다.
+ *
+ * 슬라이스는 `@Component`를 스캔하지 않으므로 QueryDSL로 짠 저장소를 시험하는 클래스는 `QueryDslConfig`와 그 어댑터를 스스로
+ * 가져온다. 여기에 두면 그것을 쓰지 않는 저장소 테스트의 컨텍스트 캐시 키가 바뀐다.
+ *
+ * 컨텍스트에 포트가 없으므로 `prepare<Type>`과 변경 도우미는 저장소에 엔티티 fixture를 저장한다.
+ * 이름과 필드의 규칙은 [BaseApplicationServiceTest]와 같다.
+ */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
+abstract class BaseRepositoryTest {
+    @Autowired
+    protected lateinit var entityManager: EntityManager
+
+    @Autowired
+    private lateinit var brandRepository: BrandRepository
+
+    /** 마지막으로 준비한 브랜드. */
+    protected lateinit var brand: Brand
+
+    protected fun prepareBrand(name: String? = null): Brand =
+        brandRepository.save(createBrand(name = name)).also { brand = it }
+
+    /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    protected fun deleteBrand(brand: Brand = this.brand) {
+        brandRepository.save(brand.apply { delete() })
+    }
+}

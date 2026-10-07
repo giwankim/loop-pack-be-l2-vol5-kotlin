@@ -1,20 +1,13 @@
 package com.loopers.adapter.webapi
 
-import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
+import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.assertj.MockMvcTester
 import org.springframework.test.web.servlet.assertj.MvcTestResult
-import org.springframework.transaction.annotation.Transactional
 
 /**
  * 본문을 읽다 난 오류(`HttpMessageNotReadableException`)가 [com.loopers.adapter.ApiControllerAdvice]의 분기마다 내는 응답을 고정한다.
@@ -24,13 +17,7 @@ import org.springframework.transaction.annotation.Transactional
  *
  * enum 값 불일치와 그 밖의 매핑 오류 분기는 지금 어느 본문에도 enum 필드가 없고 매핑 오류를 낼 길이 없어 HTTP로 닿지 않는다.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
-@Transactional
-class RequestBodyErrorMockMvcTest(
-    private val mvc: MockMvcTester,
-) {
+class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     companion object {
         private const val PRODUCTS = "/api-admin/v1/products"
         private val ADMIN = user("admin").roles("ADMIN")

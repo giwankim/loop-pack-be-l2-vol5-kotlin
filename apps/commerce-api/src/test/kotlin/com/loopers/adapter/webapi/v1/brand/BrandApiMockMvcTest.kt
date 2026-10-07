@@ -1,42 +1,23 @@
 package com.loopers.adapter.webapi.v1.brand
 
-import com.loopers.application.brand.provided.BrandRegister
-import com.loopers.config.security.AdminSecurityConfig
-import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
 import com.loopers.support.isEqualToLong
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
-import jakarta.persistence.EntityManager
+import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.web.servlet.assertj.MockMvcTester
-import org.springframework.transaction.annotation.Transactional
 
 /**
  * 고객 브랜드 API. 식별 없이 부를 수 있어야 하므로 요청에 아무 principal도 싣지 않는다.
  *
- * [AdminSecurityConfig]를 가져오는 까닭은 관리자 경계가 필요해서만이 아니다. Spring Security가 테스트 클래스패스에 있어서
- * `SecurityFilterChain` 빈이 하나도 없는 컨텍스트에는 Boot 기본 체인이 들어가 모든 경로에 인증을 요구한다(설계 5.10).
- * 이 빈이 있으면 체인은 관리자 경로 하나뿐이고, 고객 경로(`/api/` 아래)는 어느 체인에도 걸리지 않아 그대로 지나간다.
+ * [com.loopers.config.security.AdminSecurityConfig]를 가져오는 까닭과 고객 경로가 인증 없이 지나가는 까닭은
+ * [BaseWebApiAdapterTest]에 있다.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, AdminSecurityConfig::class)
-@Transactional
-class BrandApiMockMvcTest(
-    private val mvc: MockMvcTester,
-    private val brandRegister: BrandRegister,
-    private val entityManager: EntityManager,
-) {
+class BrandApiMockMvcTest : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api/v1/brands"
         private const val ADMIN_ENDPOINT = "/api-admin/v1/brands"
@@ -45,7 +26,7 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `a customer reads a brand without any identification`() {
-        val brand = brandRegister.register(createBrandAdminRegisterRequest(name = "루퍼스"))
+        prepareBrand(name = "루퍼스")
 
         val body = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatusOk().bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
@@ -65,8 +46,8 @@ class BrandApiMockMvcTest(
 
     @Test
     fun `reading a deleted brand returns 404`() {
-        val brand = brandRegister.register(createBrandAdminRegisterRequest())
-        brandRegister.delete(brand.id)
+        prepareBrand()
+        deleteBrand()
         entityManager.flushAndClear()
 
         assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatus(HttpStatus.NOT_FOUND)
@@ -80,7 +61,7 @@ class BrandApiMockMvcTest(
      */
     @Test
     fun `a name an admin changed shows up in the customer detail`() {
-        val brand = brandRegister.register(createBrandAdminRegisterRequest())
+        prepareBrand()
 
         assertThat(
             mvc.put().uri("$ADMIN_ENDPOINT/${brand.id}")

@@ -1,26 +1,20 @@
 package com.loopers.application.brand.provided
 
-import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.stereotype.ApplicationServiceTest
-import jakarta.persistence.EntityManager
+import com.loopers.support.test.BaseApplicationServiceTest
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [BrandFinder]를 실제 MySQL 위에서 확인한다. 읽을 브랜드는 같은 조각의 [BrandRegister]로 만든다.
- * 정리와 flush/clear의 까닭은 [BrandRegisterTest]와 같다.
+ * [BrandFinder]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [BrandRegisterTest]와 같다.
  */
-@ApplicationServiceTest
 class BrandFinderTest(
     private val brandFinder: BrandFinder,
-    private val brandRegister: BrandRegister,
-    private val entityManager: EntityManager,
-) {
+) : BaseApplicationServiceTest() {
     @Test
     fun `getting an unknown brand throws BRAND_NOT_FOUND`() {
         val exception = assertThrows<CoreException> { brandFinder.find(999L) }
@@ -30,8 +24,8 @@ class BrandFinderTest(
 
     @Test
     fun `listing brands returns the active ones newest first as a slice`() {
-        brandRegister.register(createBrandAdminRegisterRequest())
-        brandRegister.register(createBrandAdminRegisterRequest(name = "둘째"))
+        prepareBrand()
+        prepareBrand(name = "둘째")
         entityManager.flushAndClear()
 
         val slice = brandFinder.findAll(BrandAdminListRequest(page = 0, size = 1))

@@ -1,23 +1,18 @@
 package com.loopers.application.brand.required
 
-import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.support.flushAndClear
+import com.loopers.support.test.BaseRepositoryTest
 import com.loopers.support.withStatistics
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
-import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageRequest
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 /**
- * Spring Data가 만든 [BrandRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 설정과 패키지 위치의 이유는
+ * Spring Data가 만든 [BrandRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 패키지 위치의 이유는
  * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
  *
  * 목록 [BrandRepository.findAllByOrderByCreatedAtDescIdDesc]는 이름이 차례를 적는 파생 조회다. 목록 테스트는 그 이름이
@@ -27,27 +22,23 @@ import java.time.ZonedDateTime
  * 목록 테스트 하나는 목록이 보내는 쿼리 수를 센다. 총 개수를 세지 않는다는 약속은
  * 반환 타입이 `Slice`라는 사실에만 걸려 있어, 세어 보지 않으면 `Page`로 바꿔도 아무 테스트가 깨지지 않는다.
  */
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(DataSourceConfig::class, MySqlTestContainersConfig::class)
 class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
-    private val entityManager: EntityManager,
-) {
+) : BaseRepositoryTest() {
     companion object {
         private val FIRST_REGISTERED_AT: ZonedDateTime = ZonedDateTime.of(2026, 9, 18, 10, 0, 0, 0, ZoneOffset.UTC)
     }
 
     @Test
     fun `findById reads a saved brand back with the same values after flush and clear`() {
-        val saved = brandRepository.save(createBrand())
+        prepareBrand()
         entityManager.flushAndClear()
 
-        val found = brandRepository.findById(saved.id)
+        val found = brandRepository.findById(brand.id)
 
-        assertThat(found).isNotNull().isNotSameAs(saved)
-        assertThat(found?.id).isEqualTo(saved.id)
-        assertThat(found?.name).isEqualTo(saved.name)
+        assertThat(found).isNotNull().isNotSameAs(brand)
+        assertThat(found?.id).isEqualTo(brand.id)
+        assertThat(found?.name).isEqualTo(brand.name)
         assertThat(found?.createdAt).isNotNull()
         assertThat(found?.updatedAt).isNotNull()
         assertThat(found?.deletedAt).isNull()
@@ -55,16 +46,18 @@ class BrandRepositoryTest(
 
     @Test
     fun `findById returns null for a deleted brand`() {
-        val deleted = saveDeleted(createBrand())
+        prepareBrand()
+        deleteBrand()
+        entityManager.flushAndClear()
 
-        val found = brandRepository.findById(deleted.id)
+        val found = brandRepository.findById(brand.id)
 
         assertThat(found).isNull()
     }
 
     @Test
     fun `existsByName is true for a name a saved brand uses and false for an unused one`() {
-        brandRepository.save(createBrand(name = "루퍼스"))
+        prepareBrand(name = "루퍼스")
         entityManager.flushAndClear()
 
         val taken = brandRepository.existsByName("루퍼스")
@@ -76,17 +69,19 @@ class BrandRepositoryTest(
 
     @Test
     fun `existsByName is false when only a deleted brand uses the name`() {
-        val deleted = saveDeleted(createBrand())
+        prepareBrand()
+        deleteBrand()
+        entityManager.flushAndClear()
 
-        val taken = brandRepository.existsByName(deleted.name)
+        val taken = brandRepository.existsByName(brand.name)
 
         assertThat(taken).isFalse()
     }
 
     @Test
     fun `existsByNameAndIdNot is true when another active brand uses the name`() {
-        val other = brandRepository.save(createBrand())
-        val renaming = brandRepository.save(createBrand())
+        val other = prepareBrand()
+        val renaming = prepareBrand()
         entityManager.flushAndClear()
 
         val taken = brandRepository.existsByNameAndIdNot(other.name, renaming.id)
@@ -98,7 +93,7 @@ class BrandRepositoryTest(
     /** 자기 이름으로 바꾸는 수정이 자기 행을 찾아 중복이 되지 않아야 한다. */
     @Test
     fun `existsByNameAndIdNot is false for the brand's own name`() {
-        val brand = brandRepository.save(createBrand())
+        prepareBrand()
         entityManager.flushAndClear()
 
         val taken = brandRepository.existsByNameAndIdNot(brand.name, brand.id)
@@ -109,8 +104,9 @@ class BrandRepositoryTest(
     /** 삭제된 브랜드는 없는 브랜드이므로 그 이름은 비어 있다. 수정이 그 이름을 가져갈 수 있어야 한다. */
     @Test
     fun `existsByNameAndIdNot is false when only a deleted brand uses the name`() {
-        val deleted = saveDeleted(createBrand())
-        val renaming = brandRepository.save(createBrand())
+        val deleted = prepareBrand()
+        deleteBrand(deleted)
+        val renaming = prepareBrand()
         entityManager.flushAndClear()
 
         val taken = brandRepository.existsByNameAndIdNot(deleted.name, renaming.id)
@@ -142,7 +138,8 @@ class BrandRepositoryTest(
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc leaves out deleted brands`() {
         saveRegisteredAt(createBrand(name = "루퍼스"), registeredAt = FIRST_REGISTERED_AT)
-        saveDeleted(createBrand())
+        deleteBrand(prepareBrand())
+        entityManager.flushAndClear()
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
@@ -151,7 +148,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc has no next slice when the active brands fill the page exactly`() {
-        repeat(2) { brandRepository.save(createBrand()) }
+        repeat(2) { prepareBrand() }
         entityManager.flushAndClear()
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
@@ -164,7 +161,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc has a next slice when one more active brand follows the page`() {
-        repeat(3) { brandRepository.save(createBrand()) }
+        repeat(3) { prepareBrand() }
         entityManager.flushAndClear()
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
@@ -194,7 +191,7 @@ class BrandRepositoryTest(
      */
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc reads a slice with a single query and never counts the total`() {
-        repeat(3) { brandRepository.save(createBrand()) }
+        repeat(3) { prepareBrand() }
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
@@ -219,8 +216,4 @@ class BrandRepositoryTest(
         entityManager.flushAndClear()
         return saved
     }
-
-    private fun saveDeleted(brand: Brand): Brand =
-        brandRepository.save(brand.apply { delete() })
-            .also { entityManager.flushAndClear() }
 }
