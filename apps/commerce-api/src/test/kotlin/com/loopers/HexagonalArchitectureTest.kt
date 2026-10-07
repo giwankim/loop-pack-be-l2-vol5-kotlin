@@ -28,7 +28,7 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
         ImportOption.DoNotIncludeJars::class,
     ],
 )
-class LayeredArchitectureTest {
+class HexagonalArchitectureTest {
     // splearn's three layers, with its single adapter layer split in two so that the web and persistence adapters
     // cannot reach each other. ApiControllerAdvice sits at the adapter root as in splearn, but it only answers web
     // requests, so that one package belongs to the web adapter.
@@ -46,8 +46,9 @@ class LayeredArchitectureTest {
         .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
-    // Cycles are checked inside one layer at a time. application.brand reading domain.product while
-    // domain.product refers to domain.brand is a use case looking down at two aggregates, not a loop (design 5.16).
+    // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
+    // likes while application.like calls application.product is two layers each looking one way, not a loop
+    // (design 5.16).
     @ArchTest
     val domainSlicesAreFreeOfCycles: ArchRule = slicesOf("domain").shouldBeFreeOfCycles()
 

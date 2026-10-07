@@ -67,7 +67,7 @@ class ProductApiMockMvcTest(
         body.extractingPath("$.data.likeCount").isEqualTo(0)
     }
 
-    /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.ProductInfo]에서 온다. */
+    /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.provided.ProductInfo]에서 온다. */
     @Test
     fun `the customer detail leaves out the stock count and the timestamps`() {
         val brand = brandRepository.save(createBrand())
