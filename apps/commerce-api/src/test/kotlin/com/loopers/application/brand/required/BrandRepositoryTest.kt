@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
+import org.springframework.data.domain.PageRequest
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
@@ -19,8 +20,9 @@ import java.time.ZonedDateTime
  * Spring Data가 만든 [BrandRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 설정과 패키지 위치의 이유는
  * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
  *
- * 목록 [BrandRepository.findAll]은 본문을 가진 인터페이스 메서드다. 목록 테스트는 Spring Data가 그 본문을 쿼리로 만들지 않고
- * 실행한다는 것도 함께 고정한다.
+ * 목록 [BrandRepository.findAllByOrderByCreatedAtDescIdDesc]는 이름이 차례를 적는 파생 조회다. 목록 테스트는 그 이름이
+ * `SimpleJpaRepository`의 기본 구현이 아니라 파생 조회로 간다는 것도 함께 고정한다. 짧은 이름 `findAll(Pageable)`로 바꾸면
+ * 호출이 기본 구현으로 가서 차례가 사라지고 count 쿼리가 붙는다.
  *
  * Hibernate 통계를 켜는 까닭은 목록이 보내는 쿼리 수를 세기 위한 것이다. 총 개수를 세지 않는다는 약속은
  * 반환 타입이 `Slice`라는 사실에만 걸려 있어, 세어 보지 않으면 `Page`로 바꿔도 아무 테스트가 깨지지 않는다.
@@ -117,85 +119,88 @@ class BrandRepositoryTest(
     }
 
     @Test
-    fun `findAll returns active brands with the newest registration first`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc returns active brands with the newest registration first`() {
         saveRegisteredAt(createBrand(name = "첫째"), registeredAt = FIRST_REGISTERED_AT)
         saveRegisteredAt(createBrand(name = "둘째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
         saveRegisteredAt(createBrand(name = "셋째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
 
-        val slice = brandRepository.findAll(page = 0, size = 20)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
-        assertThat(slice.items.map { it.name }).containsExactly("셋째", "둘째", "첫째")
+        assertThat(slice.content.map { it.name }).containsExactly("셋째", "둘째", "첫째")
     }
 
     @Test
-    fun `findAll breaks a tie on registration time with the higher id first`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc breaks a tie on registration time with the higher id first`() {
         val first = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
         val second = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
 
-        val slice = brandRepository.findAll(page = 0, size = 20)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
-        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(slice.content.map { it.id }).containsExactly(second.id, first.id)
     }
 
     @Test
-    fun `findAll leaves out deleted brands`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc leaves out deleted brands`() {
         saveRegisteredAt(createBrand(name = "루퍼스"), registeredAt = FIRST_REGISTERED_AT)
         saveDeleted(createBrand())
 
-        val slice = brandRepository.findAll(page = 0, size = 20)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
-        assertThat(slice.items.map { it.name }).containsExactly("루퍼스")
+        assertThat(slice.content.map { it.name }).containsExactly("루퍼스")
     }
 
     @Test
-    fun `findAll has no next slice when the active brands fill the page exactly`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc has no next slice when the active brands fill the page exactly`() {
         repeat(2) { brandRepository.save(createBrand()) }
         entityManager.flushAndClear()
 
-        val slice = brandRepository.findAll(page = 0, size = 2)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
 
-        assertThat(slice.items).hasSize(2)
-        assertThat(slice.hasNext).isFalse()
-        assertThat(slice.page).isZero()
+        assertThat(slice.content).hasSize(2)
+        assertThat(slice.hasNext()).isFalse()
+        assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(2)
     }
 
     @Test
-    fun `findAll has a next slice when one more active brand follows the page`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc has a next slice when one more active brand follows the page`() {
         repeat(3) { brandRepository.save(createBrand()) }
         entityManager.flushAndClear()
 
-        val slice = brandRepository.findAll(page = 0, size = 2)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
 
-        assertThat(slice.items).hasSize(2)
-        assertThat(slice.hasNext).isTrue()
+        assertThat(slice.content).hasSize(2)
+        assertThat(slice.hasNext()).isTrue()
+        assertThat(slice.number).isZero()
+        assertThat(slice.size).isEqualTo(2)
     }
 
     /** 1분 간격으로 등록한다. 목록은 최신순이므로 가장 먼저 등록한 브랜드만 둘째 조각에 남는다. */
     @Test
-    fun `findAll skips the brands the earlier pages already read`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc skips the brands the earlier pages already read`() {
         val brands = List(3) { saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
 
-        val slice = brandRepository.findAll(page = 1, size = 2)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(1, 2))
 
-        assertThat(slice.items.map { it.id }).containsExactly(brands.first().id)
-        assertThat(slice.hasNext).isFalse()
-        assertThat(slice.page).isEqualTo(1)
+        assertThat(slice.content.map { it.id }).containsExactly(brands.first().id)
+        assertThat(slice.hasNext()).isFalse()
+        assertThat(slice.number).isEqualTo(1)
+        assertThat(slice.size).isEqualTo(2)
     }
 
     /**
      * 한 조각을 읽는 데 쿼리는 하나뿐이다. 총 개수를 세는 쿼리가 따라붙지 않는다는 것이 이 하나의 뜻이다(설계 5.5).
-     * 파생 조회의 반환 타입을 `Page`로 바꾸면 count 쿼리가 늘어 이 테스트가 깨진다.
+     * 파생 조회의 반환 타입을 `Page`로 바꾸거나 이름을 `findAll(Pageable)`로 줄이면 count 쿼리가 늘어 이 테스트가 깨진다.
      */
     @Test
-    fun `findAll reads a slice with a single query and never counts the total`() {
+    fun `findAllByOrderByCreatedAtDescIdDesc reads a slice with a single query and never counts the total`() {
         repeat(3) { brandRepository.save(createBrand()) }
         entityManager.flushAndClear()
         entityManager.statistics.clear()
 
-        val slice = brandRepository.findAll(page = 0, size = 2)
+        val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 2))
 
-        assertThat(slice.hasNext).isTrue()
+        assertThat(slice.hasNext()).isTrue()
         assertThat(entityManager.statistics.prepareStatementCount).isOne()
     }
 

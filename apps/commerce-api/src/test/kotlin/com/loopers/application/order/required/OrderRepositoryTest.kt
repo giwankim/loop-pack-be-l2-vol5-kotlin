@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
+import org.springframework.data.domain.PageRequest
 
 /**
  * Spring Data가 만든 [OrderRepository]와 QueryDSL로 짠 [OrderListRepository]가 실제 MySQL에서 계약을 지키는지 확인한다.
@@ -68,12 +69,12 @@ class OrderRepositoryTest(
         setCreatedAt(foreign.id, "2026-09-19 10:00:00.000000")
         entityManager.flushAndClear()
 
-        val slice = orderListRepository.findAll(userId = owner.id, page = 0, size = 10)
+        val slice = orderListRepository.findAll(userId = owner.id, pageable = PageRequest.of(0, 10))
 
-        assertThat(slice.items.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id)
-        assertThat(slice.page).isZero()
+        assertThat(slice.content.map { it.id }).containsExactly(tiedLater.id, tied.id, older.id)
+        assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(10)
-        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.hasNext()).isFalse()
     }
 
     /**
@@ -89,20 +90,39 @@ class OrderRepositoryTest(
         val second = orderRepository.save(createOrder(owner.id, products.reversed().map { createOrderProduct(it) }))
         entityManager.flushAndClear()
 
-        val firstPage = orderListRepository.findAll(owner.id, page = 0, size = 1)
-        val secondPage = orderListRepository.findAll(owner.id, page = 1, size = 1)
-        val thirdPage = orderListRepository.findAll(owner.id, page = 2, size = 1)
+        val firstPage = orderListRepository.findAll(owner.id, pageable = PageRequest.of(0, 1))
+        val secondPage = orderListRepository.findAll(owner.id, pageable = PageRequest.of(1, 1))
+        val thirdPage = orderListRepository.findAll(owner.id, pageable = PageRequest.of(2, 1))
 
         val productIds = products.map { it.id }.sorted()
-        assertThat(firstPage.items.map { it.id }).containsExactly(second.id)
-        assertThat(firstPage.hasNext).isTrue()
-        assertThat(firstPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
-        assertThat(secondPage.items.map { it.id }).containsExactly(first.id)
-        assertThat(secondPage.hasNext).isFalse()
-        assertThat(secondPage.items.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
-        assertThat(thirdPage.items).isEmpty()
-        assertThat(thirdPage.page).isEqualTo(2)
-        assertThat(thirdPage.hasNext).isFalse()
+        assertThat(firstPage.content.map { it.id }).containsExactly(second.id)
+        assertThat(firstPage.hasNext()).isTrue()
+        assertThat(firstPage.number).isZero()
+        assertThat(firstPage.size).isOne()
+        assertThat(firstPage.content.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(secondPage.content.map { it.id }).containsExactly(first.id)
+        assertThat(secondPage.hasNext()).isFalse()
+        assertThat(secondPage.number).isEqualTo(1)
+        assertThat(secondPage.size).isOne()
+        assertThat(secondPage.content.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(thirdPage.content).isEmpty()
+        assertThat(thirdPage.number).isEqualTo(2)
+        assertThat(thirdPage.hasNext()).isFalse()
+    }
+
+    @Test
+    fun `findAll has no next slice when the orders fill the page exactly`() {
+        val owner = userRepository.save(User())
+        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        repeat(2) { orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(product)))) }
+        entityManager.flushAndClear()
+
+        val slice = orderListRepository.findAll(owner.id, pageable = PageRequest.of(0, 2))
+
+        assertThat(slice.content).hasSize(2)
+        assertThat(slice.hasNext()).isFalse()
+        assertThat(slice.number).isZero()
+        assertThat(slice.size).isEqualTo(2)
     }
 
     /** 거를 사용자가 없으면 모든 사용자의 주문이 한 조각에 오른다. 관리자 목록이 쓰는 길이다. */
@@ -113,9 +133,9 @@ class OrderRepositoryTest(
         val second = orderRepository.save(createOrder(userRepository.save(User()).id, listOf(createOrderProduct(product))))
         entityManager.flushAndClear()
 
-        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, pageable = PageRequest.of(0, 20))
 
-        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(slice.content.map { it.id }).containsExactly(second.id, first.id)
     }
 
     /**
@@ -132,9 +152,9 @@ class OrderRepositoryTest(
         setCreatedAt(backDated.id, "2026-09-17 00:00:00.000000")
         entityManager.flushAndClear()
 
-        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, pageable = PageRequest.of(0, 20))
 
-        assertThat(slice.items.map { it.id }).containsExactly(recent.id, backDated.id)
+        assertThat(slice.content.map { it.id }).containsExactly(recent.id, backDated.id)
     }
 
     /**
@@ -151,20 +171,20 @@ class OrderRepositoryTest(
         orderRepository.save(createOrder(owner.id, listOf(createOrderProduct(shared))))
         entityManager.flushAndClear()
 
-        val slice = orderListRepository.findAll(userId = null, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = null, pageable = PageRequest.of(0, 20))
         entityManager.clear()
 
-        assertThat(slice.items.map { order -> order.items.map { it.productId } })
+        assertThat(slice.content.map { order -> order.items.map { it.productId } })
             .containsExactly(listOf(shared.id), listOf(shared.id, other.id).sorted())
     }
 
     @Test
     fun `findAll gives an empty slice without a next page when nothing matches`() {
-        val slice = orderListRepository.findAll(userId = userRepository.save(User()).id, page = 0, size = 20)
+        val slice = orderListRepository.findAll(userId = userRepository.save(User()).id, pageable = PageRequest.of(0, 20))
 
-        assertThat(slice.items).isEmpty()
-        assertThat(slice.hasNext).isFalse()
-        assertThat(slice.page).isZero()
+        assertThat(slice.content).isEmpty()
+        assertThat(slice.hasNext()).isFalse()
+        assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(20)
     }
 

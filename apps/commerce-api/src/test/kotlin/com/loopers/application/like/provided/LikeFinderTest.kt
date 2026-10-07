@@ -48,7 +48,7 @@ class LikeFinderTest(
 
         val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
 
-        assertThat(slice.items.map { it.id }).containsExactly(mine.id)
+        assertThat(slice.content.map { it.id }).containsExactly(mine.id)
     }
 
     /** 삭제된 상품은 없는 상품이라 목록에서 빠진다. 좋아요 행은 남아 있어 취소할 수 있다(ADR 0001). */
@@ -65,7 +65,7 @@ class LikeFinderTest(
 
         val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
 
-        assertThat(slice.items.map { it.id }).containsExactly(active.id)
+        assertThat(slice.content.map { it.id }).containsExactly(active.id)
         assertThat(entityManager.countLikes(user.id, deleted.id)).isOne()
     }
 
@@ -86,12 +86,12 @@ class LikeFinderTest(
 
         val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
 
-        assertThat(slice.page).isEqualTo(LikeListRequest.DEFAULT_PAGE)
+        assertThat(slice.number).isEqualTo(LikeListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(LikeListRequest.DEFAULT_SIZE)
-        assertThat(slice.hasNext).isFalse()
-        assertThat(slice.items.single().brandName).isEqualTo("루퍼스")
-        assertThat(slice.items.single().name).isEqualTo("티셔츠")
-        assertThat(slice.items.single().likeCount).isEqualTo(2L)
+        assertThat(slice.hasNext()).isFalse()
+        assertThat(slice.content.single().brandName).isEqualTo("루퍼스")
+        assertThat(slice.content.single().name).isEqualTo("티셔츠")
+        assertThat(slice.content.single().likeCount).isEqualTo(2L)
     }
 
     /**
@@ -112,10 +112,10 @@ class LikeFinderTest(
         try {
             val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
 
-            assertThat(slice.items).hasSize(3)
-            assertThat(slice.items.map { it.brandName })
+            assertThat(slice.content).hasSize(3)
+            assertThat(slice.content.map { it.brandName })
                 .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
-            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         } finally {
             statistics.isStatisticsEnabled = false

@@ -6,10 +6,11 @@ import com.loopers.domain.like.QLike.like
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.QProduct.product
-import com.loopers.domain.shared.PageSlice
 import com.querydsl.core.types.OrderSpecifier
 import com.querydsl.jpa.impl.JPAQuery
 import com.querydsl.jpa.impl.JPAQueryFactory
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Slice
 import org.springframework.stereotype.Component
 
 /**
@@ -33,13 +34,13 @@ class QuerydslProductListRepository(
      * `@ManyToOne(optional = false)`이라 inner join이고, [com.loopers.domain.brand.Brand]의 `@SQLRestriction`이
      * 그 조인에도 붙어 삭제된 브랜드의 상품은 목록에서 빠진다(설계 7).
      */
-    override fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<Product> =
+    override fun findAll(brandId: Long?, pageable: Pageable, sort: ProductSort): Slice<Product> =
         queryFactory
             .selectFrom(product)
             .innerJoin(product.brand).fetchJoin()
             .where(brandId?.let { product.brand.id.eq(it) })
             .orderedBy(sort)
-            .fetchSlice(page, size)
+            .fetchSlice(pageable)
 
     /**
      * 정렬 기준이 요구하는 차례를 쿼리에 붙인다. 어느 기준이든 마지막은 id 내림차순이라 동률이 남지 않는다.

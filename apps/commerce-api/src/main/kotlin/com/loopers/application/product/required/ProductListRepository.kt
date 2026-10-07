@@ -2,7 +2,8 @@ package com.loopers.application.product.required
 
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
-import com.loopers.domain.shared.PageSlice
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Slice
 
 /**
  * 상품 목록. 브랜드 필터도 정렬 기준도 조각마다 달라져 QueryDSL로 짜는데(설계 5.32), application은 QueryDSL을 모르므로
@@ -14,7 +15,7 @@ import com.loopers.domain.shared.PageSlice
 interface ProductListRepository {
     /**
      * [sort]가 정한 차례로 놓인 한 조각. [brandId]가 있으면 그 브랜드의 상품만 고른다.
-     * 어느 기준이든 동률은 id 내림차순으로 깬다.
+     * 어느 기준이든 동률은 id 내림차순으로 깬다. [pageable]은 조각의 위치와 크기만 정한다. 차례는 [sort] 하나가 정한다.
      */
-    fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<Product>
+    fun findAll(brandId: Long?, pageable: Pageable, sort: ProductSort): Slice<Product>
 }

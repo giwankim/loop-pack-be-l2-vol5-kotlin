@@ -7,10 +7,11 @@ import com.loopers.application.order.provided.OrderListRequest
 import com.loopers.application.order.required.OrderListRepository
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.user.provided.UserFinder
-import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Slice
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -32,13 +33,13 @@ class OrderQueryService(
     }
 
     /**
-     * 옮기는 일을 [PageSlice.map]에 맡겨 품목을 읽는 것이 이 읽기 트랜잭션 안에서 끝나게 한다.
+     * 옮기는 일을 [Slice.map]에 맡겨 품목을 읽는 것이 이 읽기 트랜잭션 안에서 끝나게 한다.
      * `open-in-view`가 꺼져 있어 adapter.webapi에서는 품목을 읽을 수 없다.
      */
     @Transactional(readOnly = true)
-    override fun findAll(userId: Long, request: OrderListRequest): PageSlice<OrderInfo> {
+    override fun findAll(userId: Long, request: OrderListRequest): Slice<OrderInfo> {
         userFinder.checkExists(userId)
-        return orderListRepository.findAll(userId = userId, page = request.page, size = request.size)
+        return orderListRepository.findAll(userId = userId, pageable = PageRequest.of(request.page, request.size))
             .map(OrderInfo::from)
     }
 
@@ -47,8 +48,8 @@ class OrderQueryService(
      * [OrderInfo]로 옮기는 일이 이 트랜잭션 안에서 끝난다(설계 9 조회).
      */
     @Transactional(readOnly = true)
-    override fun findAll(request: OrderAdminListRequest): PageSlice<OrderInfo> =
-        orderListRepository.findAll(userId = request.userId, page = request.page, size = request.size)
+    override fun findAll(request: OrderAdminListRequest): Slice<OrderInfo> =
+        orderListRepository.findAll(userId = request.userId, pageable = PageRequest.of(request.page, request.size))
             .map(OrderInfo::from)
 
     @Transactional(readOnly = true)

@@ -6,9 +6,9 @@ import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.user.provided.UserFinder
-import com.loopers.domain.shared.PageSlice
 import com.loopers.support.stereotype.ValidatedApplicationService
 import org.springframework.context.annotation.Lazy
+import org.springframework.data.domain.Slice
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -27,7 +27,7 @@ class LikeQueryService(
     private val userFinder: UserFinder,
 ) : LikeFinder {
     @Transactional(readOnly = true)
-    override fun findLikedProducts(userId: Long, request: LikeListRequest): PageSlice<ProductInfo> {
+    override fun findLikedProducts(userId: Long, request: LikeListRequest): Slice<ProductInfo> {
         userFinder.checkExists(userId)
         return productFinder.findAllLikedBy(userId = userId, page = request.page, size = request.size)
     }

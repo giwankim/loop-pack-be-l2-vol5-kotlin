@@ -4,10 +4,11 @@ import com.loopers.application.brand.provided.BrandAdminListRequest
 import com.loopers.application.brand.provided.BrandFinder
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Slice
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -23,6 +24,6 @@ class BrandQueryService(
         brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
 
     @Transactional(readOnly = true)
-    override fun findAll(request: BrandAdminListRequest): PageSlice<Brand> =
-        brandRepository.findAll(request.page, request.size)
+    override fun findAll(request: BrandAdminListRequest): Slice<Brand> =
+        brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(request.page, request.size))
 }

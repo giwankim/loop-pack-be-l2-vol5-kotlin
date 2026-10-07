@@ -4,8 +4,9 @@ import com.loopers.adapter.persistence.shared.fetchSlice
 import com.loopers.application.order.required.OrderListRepository
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.QOrder.order
-import com.loopers.domain.shared.PageSlice
 import com.querydsl.jpa.impl.JPAQueryFactory
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Slice
 import org.springframework.stereotype.Component
 
 /**
@@ -29,13 +30,13 @@ class QuerydslOrderListRepository(
      * 사용자 필터가 조각마다 있거나 없으므로 이름만으로 끝나지 않아 QueryDSL로 짠다(카탈로그 설계 5.32).
      * 내 목록과 관리자 목록이 이 하나를 쓰므로 차례를 정하는 규칙도 한 자리에만 적힌다.
      */
-    override fun findAll(userId: Long?, page: Int, size: Int): PageSlice<Order> {
+    override fun findAll(userId: Long?, pageable: Pageable): Slice<Order> {
         val slice = queryFactory
             .selectFrom(order)
             .where(userId?.let { order.userId.eq(it) })
             .orderBy(order.createdAt.desc(), order.id.desc())
-            .fetchSlice(page, size)
-        loadItemsOf(slice.items)
+            .fetchSlice(pageable)
+        loadItemsOf(slice.content)
         return slice
     }
 

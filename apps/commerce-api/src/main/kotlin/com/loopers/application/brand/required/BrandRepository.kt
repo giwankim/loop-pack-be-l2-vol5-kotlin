@@ -1,9 +1,6 @@
 package com.loopers.application.brand.required
 
-import com.loopers.application.shared.toPageSlice
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.shared.PageSlice
-import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.repository.Repository
@@ -22,18 +19,15 @@ interface BrandRepository : Repository<Brand, Long> {
     fun findById(id: Long): Brand?
 
     /**
-     * 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각 읽는다.
+     * 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각 읽는다. 차례는 이름이 적으므로
+     * [pageable]에는 조각의 위치와 크기만 싣는다.
      *
-     * 본문이 있는 메서드는 JVM default method가 되고, Spring Data는 그것을 쿼리로 만들지 않고 본문을 실행한다.
-     * 컴파일러 설정 `jvmDefault`를 `DISABLE`로 바꾸면 default method가 사라져 이 메서드가 쿼리 메서드로 읽힌다.
-     */
-    fun findAll(page: Int, size: Int): PageSlice<Brand> =
-        findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(page, size)).toPageSlice()
-
-    /**
-     * [findAll]이 맡기는 파생 조회. 포트가 Spring Data의 조각을 내주지 않도록 바깥에서는 [findAll]을 부른다.
      * Spring Data의 [Slice]이므로 `size + 1`개를 조회해 `hasNext`를 정하고 총 개수는 세지 않는다(설계 5.5).
      * `Page`로 바꾸면 count 쿼리가 말없이 따라붙는다. `BrandRepositoryTest`가 조회 한 번을 세어 그 실수를 잡는다.
+     *
+     * 이름을 `findAll(Pageable)`로 줄이지 않는다. 그 이름과 매개변수는 `SimpleJpaRepository.findAll(Pageable)`과 같아,
+     * `@Query`가 없으면 Spring Data가 호출을 그 기본 구현으로 보내고 차례 없이 count 쿼리가 붙은 `Page`를 돌려준다.
+     * 짝을 찾을 때 반환 타입은 보지 않고 `Page`는 [Slice]이므로 컴파일도 된다.
      */
     fun findAllByOrderByCreatedAtDescIdDesc(pageable: Pageable): Slice<Brand>
 

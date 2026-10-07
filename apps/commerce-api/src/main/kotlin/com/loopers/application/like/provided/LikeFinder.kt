@@ -2,8 +2,8 @@ package com.loopers.application.like.provided
 
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.required.LikeCounter
-import com.loopers.domain.shared.PageSlice
 import jakarta.validation.Valid
+import org.springframework.data.domain.Slice
 
 /**
  * 좋아요 조각이 내주는 읽기. 고객의 내 좋아요 목록이 부른다.
@@ -18,5 +18,5 @@ interface LikeFinder : LikeCounter {
      * 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없다. 경로가 가리키는 사용자와 요청자가
      * 같은지는 둘 다 HTTP가 실은 값이라 adapter.webapi가 본다(설계 5.30).
      */
-    fun findLikedProducts(userId: Long, @Valid request: LikeListRequest): PageSlice<ProductInfo>
+    fun findLikedProducts(userId: Long, @Valid request: LikeListRequest): Slice<ProductInfo>
 }

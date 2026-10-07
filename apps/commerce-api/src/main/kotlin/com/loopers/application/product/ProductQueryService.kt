@@ -8,10 +8,11 @@ import com.loopers.application.product.required.ProductListRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
-import com.loopers.domain.shared.PageSlice
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Slice
 import org.springframework.transaction.annotation.Transactional
 
 /**
@@ -36,7 +37,7 @@ class ProductQueryService(
     override fun findOrderable(id: Long): Product? = productRepository.findByIdWithActiveBrand(id)
 
     @Transactional(readOnly = true)
-    override fun findAll(request: ProductAdminListRequest): PageSlice<ProductInfo> =
+    override fun findAll(request: ProductAdminListRequest): Slice<ProductInfo> =
         findAll(
             brandId = request.brandId,
             page = request.page,
@@ -50,7 +51,7 @@ class ProductQueryService(
      * [ProductSort]는 전송 방식을 모르므로 모르는 철자에 null을 돌려주고, 그것이 400이라는 것은 여기서 정한다.
      */
     @Transactional(readOnly = true)
-    override fun findAll(request: ProductListRequest): PageSlice<ProductInfo> =
+    override fun findAll(request: ProductListRequest): Slice<ProductInfo> =
         findAll(
             brandId = request.brandId,
             page = request.page,
@@ -60,16 +61,16 @@ class ProductQueryService(
 
     /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
     @Transactional(readOnly = true)
-    override fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<ProductInfo> =
-        productInfoAssembler.toInfos(productRepository.findAllLikedBy(userId = userId, page = page, size = size))
+    override fun findAllLikedBy(userId: Long, page: Int, size: Int): Slice<ProductInfo> =
+        productInfoAssembler.toInfos(productRepository.findAllLikedBy(userId = userId, pageable = PageRequest.of(page, size)))
 
     /** 삭제된 상품은 [com.loopers.domain.product.Product]의 `@SQLRestriction`이 걸러 주므로 남은 상품이 있는지만 묻는다. */
     @Transactional(readOnly = true)
     override fun hasActiveProducts(brandId: Long): Boolean = productRepository.existsByBrandId(brandId)
 
     /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
-    private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): PageSlice<ProductInfo> =
+    private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): Slice<ProductInfo> =
         productInfoAssembler.toInfos(
-            productListRepository.findAll(brandId = brandId, page = page, size = size, sort = sort),
+            productListRepository.findAll(brandId = brandId, pageable = PageRequest.of(page, size), sort = sort),
         )
 }

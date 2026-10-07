@@ -55,7 +55,7 @@ class ProductFinderTest(
 
         val slice = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.items.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+        assertThat(slice.content.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
     }
 
     /**
@@ -75,8 +75,8 @@ class ProductFinderTest(
         try {
             val slice = productFinder.findAll(ProductListRequest())
 
-            assertThat(slice.items).hasSize(3)
-            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(slice.content).hasSize(3)
+            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false
@@ -148,9 +148,9 @@ class ProductFinderTest(
 
         val slice = productFinder.findAll(ProductAdminListRequest())
 
-        assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(slice.number).isEqualTo(ProductListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
-        assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스")
+        assertThat(slice.content.map { it.brandName }).containsOnly("루퍼스")
     }
 
     /**
@@ -168,10 +168,10 @@ class ProductFinderTest(
 
         val slice = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(slice.number).isEqualTo(ProductListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
-        assertThat(slice.items.map { it.id }).containsExactly(second.id, first.id)
-        assertThat(slice.items.map { it.brandName }).containsOnly("루퍼스")
+        assertThat(slice.content.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(slice.content.map { it.brandName }).containsOnly("루퍼스")
     }
 
     @Test
@@ -183,7 +183,7 @@ class ProductFinderTest(
 
         val slice = productFinder.findAll(ProductListRequest(sort = "price_asc"))
 
-        assertThat(slice.items.map { it.id }).containsExactly(cheap.id, dear.id)
+        assertThat(slice.content.map { it.id }).containsExactly(cheap.id, dear.id)
     }
 
     /**
@@ -203,7 +203,7 @@ class ProductFinderTest(
 
         val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-        assertThat(slice.items.map { it.id to it.likeCount })
+        assertThat(slice.content.map { it.id to it.likeCount })
             .containsExactly(mostLiked.id to 2L, liked.id to 1L, unliked.id to 0L)
     }
 
@@ -225,8 +225,8 @@ class ProductFinderTest(
         try {
             val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-            assertThat(slice.items).hasSize(3)
-            assertThat(slice.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(slice.content).hasSize(3)
+            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false

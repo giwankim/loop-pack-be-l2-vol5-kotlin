@@ -1,8 +1,8 @@
 package com.loopers.application.brand.provided
 
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.shared.PageSlice
 import jakarta.validation.Valid
+import org.springframework.data.domain.Slice
 
 /**
  * 브랜드 조각이 내주는 읽기. 고객과 관리자의 브랜드 조회가 부른다.
@@ -13,5 +13,5 @@ interface BrandFinder {
     fun find(id: Long): Brand
 
     /** 관리자 목록. 최신 등록순으로 읽고 총 개수는 세지 않는다(설계 5.5). */
-    fun findAll(@Valid request: BrandAdminListRequest): PageSlice<Brand>
+    fun findAll(@Valid request: BrandAdminListRequest): Slice<Brand>
 }

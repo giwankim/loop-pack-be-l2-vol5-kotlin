@@ -36,10 +36,10 @@ class BrandFinderTest(
 
         val slice = brandFinder.findAll(BrandAdminListRequest(page = 0, size = 1))
 
-        assertThat(slice.items.map { it.name }).containsExactly("둘째")
-        assertThat(slice.page).isZero()
+        assertThat(slice.content.map { it.name }).containsExactly("둘째")
+        assertThat(slice.number).isZero()
         assertThat(slice.size).isOne()
-        assertThat(slice.hasNext).isTrue()
+        assertThat(slice.hasNext()).isTrue()
     }
 
     @Test

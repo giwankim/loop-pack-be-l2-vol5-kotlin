@@ -3,7 +3,7 @@ package com.loopers.application.product
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.required.LikeCounter
 import com.loopers.domain.product.Product
-import com.loopers.domain.shared.PageSlice
+import org.springframework.data.domain.Slice
 import org.springframework.stereotype.Component
 
 /**
@@ -26,8 +26,8 @@ class ProductInfoAssembler(
     /**
      * 조각 하나. 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다. 항목마다 세면 조각 크기만큼 조회가 붙는다(설계 5.28).
      */
-    fun toInfos(slice: PageSlice<Product>): PageSlice<ProductInfo> {
-        val likeCounts = likeCounter.countLikes(slice.items.map { it.id })
+    fun toInfos(slice: Slice<Product>): Slice<ProductInfo> {
+        val likeCounts = likeCounter.countLikes(slice.content.map { it.id })
         return slice.map { ProductInfo.from(it, likeCount = likeCounts.getValue(it.id)) }
     }
 }

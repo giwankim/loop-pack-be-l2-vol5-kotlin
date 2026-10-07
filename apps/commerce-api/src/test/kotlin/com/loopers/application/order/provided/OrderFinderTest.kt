@@ -55,10 +55,10 @@ class OrderFinderTest(
 
         val slice = orderFinder.findAll(owner.id, OrderListRequest())
 
-        val listed = slice.items.single()
-        assertThat(slice.page).isEqualTo(OrderListRequest.DEFAULT_PAGE)
+        val listed = slice.content.single()
+        assertThat(slice.number).isEqualTo(OrderListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
-        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.hasNext()).isFalse()
         assertThat(listed.status).isEqualTo(OrderStatus.DRAFT)
         assertThat(listed.totalAmount).isEqualTo(4_000L)
         assertThat(listed.paidAmount).isNull()
@@ -114,8 +114,8 @@ class OrderFinderTest(
         try {
             val slice = orderFinder.findAll(owner.id, OrderListRequest(size = size))
 
-            assertThat(slice.items).hasSize(size)
-            assertThat(slice.items.flatMap { it.items }).hasSize(size)
+            assertThat(slice.content).hasSize(size)
+            assertThat(slice.content.flatMap { it.items }).hasSize(size)
             assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         } finally {
             statistics.isStatisticsEnabled = false
@@ -134,11 +134,11 @@ class OrderFinderTest(
 
         val slice = orderFinder.findAll(OrderAdminListRequest())
 
-        assertThat(slice.items.map { it.orderId }).containsExactly(second, first)
-        assertThat(slice.items.map { it.userId }).containsExactly(theirs, mine)
-        assertThat(slice.page).isZero()
+        assertThat(slice.content.map { it.orderId }).containsExactly(second, first)
+        assertThat(slice.content.map { it.userId }).containsExactly(theirs, mine)
+        assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
-        assertThat(slice.hasNext).isFalse()
+        assertThat(slice.hasNext()).isFalse()
     }
 
     /**
@@ -160,8 +160,8 @@ class OrderFinderTest(
         try {
             val slice = orderFinder.findAll(OrderAdminListRequest())
 
-            assertThat(slice.items.map { it.items.size }).containsExactly(1, 3)
-            assertThat(slice.items.flatMap { it.items }.map { it.quantity }).containsExactly(2, 1, 1, 1)
+            assertThat(slice.content.map { it.items.size }).containsExactly(1, 3)
+            assertThat(slice.content.flatMap { it.items }.map { it.quantity }).containsExactly(2, 1, 1, 1)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         } finally {
             statistics.isStatisticsEnabled = false

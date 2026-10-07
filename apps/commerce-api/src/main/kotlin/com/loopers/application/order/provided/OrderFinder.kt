@@ -1,7 +1,7 @@
 package com.loopers.application.order.provided
 
-import com.loopers.domain.shared.PageSlice
 import jakarta.validation.Valid
+import org.springframework.data.domain.Slice
 
 /**
  * 주문 조각이 내주는 읽기. 고객의 내 주문 상세·목록과 관리자의 주문 목록·상세가 부른다.
@@ -20,7 +20,7 @@ interface OrderFinder {
      * 요청자가 만든 주문 한 조각. 늦게 만든 주문이 앞선다. 받는 사용자 식별자는 요청자 하나뿐이라
      * 남의 목록을 내줄 길이 없다(카탈로그 설계 5.30).
      */
-    fun findAll(userId: Long, @Valid request: OrderListRequest): PageSlice<OrderInfo>
+    fun findAll(userId: Long, @Valid request: OrderListRequest): Slice<OrderInfo>
 
     /**
      * 관리자가 보는 주문 한 조각. [OrderAdminListRequest.userId]가 있으면 그 사용자가 만든 주문만 고른다.
@@ -28,7 +28,7 @@ interface OrderFinder {
      * 소유권을 묻지 않는다는 것이 이름이나 입력에 드러나야 하므로 관리자 조회는 [OrderAdminListRequest]를 받는다.
      * 요청자를 넣는 [findAll]과 차례가 같으며, 거르는 사용자가 없을 수 있다는 것만 다르다.
      */
-    fun findAll(@Valid request: OrderAdminListRequest): PageSlice<OrderInfo>
+    fun findAll(@Valid request: OrderAdminListRequest): Slice<OrderInfo>
 
     /**
      * 관리자가 보는 주문 하나. 주문한 사용자가 누구든 저장된 스냅샷을 그대로 준다. 없으면 `ORDER_NOT_FOUND`다.

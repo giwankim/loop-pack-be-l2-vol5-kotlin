@@ -166,7 +166,7 @@ class BrandRegisterTest(
         val exception = assertThrows<CoreException> { brandFinder.find(registered.id) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
-        assertThat(brandFinder.findAll(BrandAdminListRequest()).items).isEmpty()
+        assertThat(brandFinder.findAll(BrandAdminListRequest()).content).isEmpty()
         assertThat(countBrands()).isZero()
     }
 

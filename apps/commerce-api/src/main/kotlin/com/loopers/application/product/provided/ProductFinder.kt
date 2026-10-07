@@ -2,8 +2,8 @@ package com.loopers.application.product.provided
 
 import com.loopers.application.brand.required.ActiveProductChecker
 import com.loopers.domain.product.Product
-import com.loopers.domain.shared.PageSlice
 import jakarta.validation.Valid
+import org.springframework.data.domain.Slice
 
 /**
  * 상품 조각이 내주는 읽기. 고객과 관리자의 상품 조회가 부른다. 삭제된 상품은 없는 상품이므로 어느 읽기에도 나오지 않는다.
@@ -26,10 +26,10 @@ interface ProductFinder : ActiveProductChecker {
     fun findOrderable(id: Long): Product?
 
     /** 관리자 목록. 늦게 등록된 상품이 앞서는 한 조각이고 정렬 기준을 고르지 않는다. 총 개수는 세지 않는다(설계 5.5). */
-    fun findAll(@Valid request: ProductAdminListRequest): PageSlice<ProductInfo>
+    fun findAll(@Valid request: ProductAdminListRequest): Slice<ProductInfo>
 
     /** 고객 목록. 고객이 고른 차례로 놓인 한 조각. 모르는 정렬 기준이면 `INVALID_SORT`를 던진다(설계 5.24). */
-    fun findAll(@Valid request: ProductListRequest): PageSlice<ProductInfo>
+    fun findAll(@Valid request: ProductListRequest): Slice<ProductInfo>
 
     /**
      * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고 삭제된 상품은 빠진다.
@@ -37,5 +37,5 @@ interface ProductFinder : ActiveProductChecker {
      *
      * 페이지 값은 부르는 쪽이 이미 검증한 것을 받는다. 좋아요 목록의 입력은 좋아요의 Request이고, 상품은 좋아요를 모른다.
      */
-    fun findAllLikedBy(userId: Long, page: Int, size: Int): PageSlice<ProductInfo>
+    fun findAllLikedBy(userId: Long, page: Int, size: Int): Slice<ProductInfo>
 }
