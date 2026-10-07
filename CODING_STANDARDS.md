@@ -48,7 +48,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   Hamcrest와 `ResultMatcher`(`andExpect`)는 쓰지 않는다.
 
   ```kotlin
-  val body = assertThat(postBrand(name = "루퍼스")).hasStatus(HttpStatus.CREATED).bodyJson()
+  val body = assertThat(requestPostBrand(name = "루퍼스")).hasStatus(HttpStatus.CREATED).bodyJson()
   body.extractingPath("$.data.name").isEqualTo("루퍼스")
   body.extractingPath("$.data.createdAt").isNotNull()
   ```
@@ -56,7 +56,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 요청 빌더는 `assertThat`에 넘기거나 `exchange()`를 부를 때마다 실행된다.
   - 단언에 한 번 넘기는 요청은 빌더를 그대로 `assertThat`에 넘긴다.
   - 두 번 이상 단언하거나 단언하지 않는 요청은 `exchange()`로 한 번 실행하고 그 결과를 쓴다.
-- 요청 도우미(`postBrand` 등)는 요청을 실행하고 `MvcTestResult`를 돌려준다. 결과는 여러 번 단언해도 요청을 다시 보내지 않는다. 관리자 요청 도우미는 요청마다 `with(…)`로 요청자를 걸고, 쓰기 요청이면 `with(csrf())`도 건다. 요청자를 바꿔 보는 테스트(403 등)가 있는 클래스의 도우미는 `principal: RequestPostProcessor? = ADMIN`을 받는다. `principal`이 `null`이면 식별 없는 요청이다.
+- 요청 도우미는 요청을 실행하고 `MvcTestResult`를 돌려준다. 이름은 `request`로 시작한다(`requestPostBrand`, `requestDeleteBrand`, `requestLike`). 기반 클래스의 준비·변경 도우미(`deleteBrand` 등)와 이름이 겹치지 않아, 준비와 검증하는 요청이 한눈에 갈린다. 결과는 여러 번 단언해도 요청을 다시 보내지 않는다. 관리자 요청 도우미는 요청마다 `with(…)`로 요청자를 걸고, 쓰기 요청이면 `with(csrf())`도 건다. 요청자를 바꿔 보는 테스트(403 등)가 있는 클래스의 도우미는 `principal: RequestPostProcessor? = ADMIN`을 받는다. `principal`이 `null`이면 식별 없는 요청이다.
 - 응답의 ID를 다음 요청에 쓸 때는 그 경로의 `asNumber()` 단언에서 꺼낸다. `andReturn()`과 `JsonPath.read`를 거치지 않는다.
 
   ```kotlin

@@ -26,7 +26,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     @Test
     fun `malformed JSON returns 400 with the general body-format message`() {
         val body = assertThat(
-            postProduct(json = """{"brandId": 1, "name": "티셔츠","""),
+            requestPostProduct(json = """{"brandId": 1, "name": "티셔츠","""),
         ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
@@ -36,7 +36,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     @Test
     fun `content after the JSON body returns 400 with the general body-format message`() {
         val body = assertThat(
-            postProduct(json = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}xyz"""),
+            requestPostProduct(json = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}xyz"""),
         ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
@@ -46,7 +46,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     @Test
     fun `two JSON objects in a row return 400 with the general body-format message`() {
         val body = assertThat(
-            postProduct(json = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}{"brandId": 1, "name": "바지"}"""),
+            requestPostProduct(json = """{"brandId": 1, "name": "티셔츠", "price": 1000, "stock": 7}{"brandId": 1, "name": "바지"}"""),
         ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
@@ -55,7 +55,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
 
     @Test
     fun `an array body returns 400 with the general body-format message`() {
-        val body = assertThat(postProduct(json = """[]""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        val body = assertThat(requestPostProduct(json = """[]""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         body.extractingPath("$.meta.message").isEqualTo("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.")
@@ -63,7 +63,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
 
     @Test
     fun `a string body returns 400 with the general body-format message`() {
-        val body = assertThat(postProduct(json = """"티셔츠"""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        val body = assertThat(requestPostProduct(json = """"티셔츠"""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         body.extractingPath("$.meta.message").isEqualTo("요청 본문을 처리하는 중 오류가 발생했습니다. JSON 메세지 규격을 확인해주세요.")
@@ -73,7 +73,7 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     @Test
     fun `a value of the wrong type returns 400 naming the field, the value and the expected type`() {
         val body = assertThat(
-            postProduct(json = """{"brandId": 1, "name": "티셔츠", "price": "abc", "stock": 7}"""),
+            requestPostProduct(json = """{"brandId": 1, "name": "티셔츠", "price": "abc", "stock": 7}"""),
         ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
@@ -83,14 +83,14 @@ class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
     @Test
     fun `a missing required field returns 400 naming the field`() {
         val body = assertThat(
-            postProduct(json = """{"brandId": 1, "name": "티셔츠", "stock": 7}"""),
+            requestPostProduct(json = """{"brandId": 1, "name": "티셔츠", "stock": 7}"""),
         ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
         body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         body.extractingPath("$.meta.message").isEqualTo("필수 필드 'price'이(가) 누락되었습니다.")
     }
 
-    private fun postProduct(json: String): MvcTestResult =
+    private fun requestPostProduct(json: String): MvcTestResult =
         mvc.post().uri(PRODUCTS)
             .with(ADMIN)
             .with(csrf())
