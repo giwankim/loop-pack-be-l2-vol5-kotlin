@@ -69,6 +69,9 @@ abstract class BaseRepositoryTest {
     /** 마지막으로 준비한 좋아요. */
     protected lateinit var like: Like
 
+    /** 마지막으로 준비한 포인트 계정. [prepareUser]가 사용자와 함께 준비하고, [prepareUserWithoutAccount]는 바꾸지 않는다. */
+    protected lateinit var pointAccount: PointAccount
+
     protected fun prepareBrand(name: String? = null): Brand =
         brandRepository.save(createBrand(name = name)).also { brand = it }
 
@@ -83,9 +86,12 @@ abstract class BaseRepositoryTest {
     /** 처음 잔액이 0원인 포인트 계정도 함께 저장한다. 이름이 같은 [BaseApplicationServiceTest.prepareUser]와 같은 상태다. */
     protected fun prepareUser(): User =
         userRepository.save(User()).also {
-            pointAccountRepository.save(PointAccount(it))
+            pointAccount = pointAccountRepository.save(PointAccount(it))
             user = it
         }
+
+    /** 계정 없이 사용자만 저장한다. 사용자와 계정이 어긋난 데이터를 만들 때만 쓴다. */
+    protected fun prepareUserWithoutAccount(): User = userRepository.save(User()).also { user = it }
 
     protected fun prepareLike(
         user: User = prepareUser(),
@@ -114,5 +120,11 @@ abstract class BaseRepositoryTest {
     /** 좋아요 행을 지운다. 취소는 논리 삭제를 쓰지 않는다(ADR 0001). */
     protected fun unlike(like: Like = this.like) {
         likeRepository.delete(like)
+    }
+
+    /** 충전한 계정을 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    protected fun charge(amount: Money, account: PointAccount = this.pointAccount) {
+        account.charge(amount)
+        pointAccountRepository.save(account)
     }
 }

@@ -4,6 +4,7 @@ import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.application.product.required.ProductRepository
@@ -12,6 +13,7 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.like.Like
 import com.loopers.domain.point.PointAccount
+import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.user.User
@@ -60,6 +62,9 @@ abstract class BaseApplicationServiceTest {
     private lateinit var pointAccountRepository: PointAccountRepository
 
     @Autowired
+    private lateinit var pointCharger: PointCharger
+
+    @Autowired
     private lateinit var liker: Liker
 
     @Autowired
@@ -76,6 +81,9 @@ abstract class BaseApplicationServiceTest {
 
     /** 마지막으로 준비한 좋아요. */
     protected lateinit var like: Like
+
+    /** 마지막으로 준비한 포인트 계정. [prepareUser]가 사용자와 함께 준비하고, [prepareUserWithoutAccount]는 바꾸지 않는다. */
+    protected lateinit var pointAccount: PointAccount
 
     protected fun prepareBrand(name: String? = null): Brand =
         brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
@@ -96,9 +104,12 @@ abstract class BaseApplicationServiceTest {
     /** 사용자를 만드는 포트가 없어 저장소로 만든다. 처음 잔액이 0원인 포인트 계정도 함께 저장한다(설계 5.9). */
     protected fun prepareUser(): User =
         userRepository.save(User()).also {
-            pointAccountRepository.save(PointAccount(it))
+            pointAccount = pointAccountRepository.save(PointAccount(it))
             user = it
         }
+
+    /** 계정 없이 사용자만 저장한다. 사용자와 계정이 어긋난 데이터를 막는 테스트만 쓴다(설계 5.9, 6 끝). */
+    protected fun prepareUserWithoutAccount(): User = userRepository.save(User()).also { user = it }
 
     /** [Liker]는 아무것도 돌려주지 않으므로 좋아요는 사용자와 상품으로 다시 읽는다. */
     protected fun prepareLike(
@@ -123,5 +134,10 @@ abstract class BaseApplicationServiceTest {
 
     protected fun deleteProduct(product: Product = this.product) {
         productRegister.delete(product.id)
+    }
+
+    /** 사용자의 포인트 계정에 충전액만큼 충전한다. */
+    protected fun charge(amount: Long, user: User = this.user) {
+        pointCharger.charge(user.id, createPointChargeRequest(amount = amount))
     }
 }
