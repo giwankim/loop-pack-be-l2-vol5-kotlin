@@ -1,9 +1,8 @@
 package com.loopers.support
 
-import jakarta.persistence.Entity
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
-import jakarta.persistence.Table
+import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.springframework.beans.factory.InitializingBean
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -15,10 +14,10 @@ class DatabaseCleanUp(
     private val tableNames = mutableListOf<String>()
 
     override fun afterPropertiesSet() {
-        entityManager.metamodel.entities
-            .filter { entity -> entity.javaType.getAnnotation(Entity::class.java) != null }
-            .map { entity -> entity.javaType.getAnnotation(Table::class.java).name }
-            .forEach { tableNames.add(it) }
+        entityManager.entityManagerFactory
+            .unwrap(SessionFactoryImplementor::class.java)
+            .mappingMetamodel
+            .forEachEntityDescriptor { entity -> tableNames.add(entity.mappedTableDetails.tableName) }
     }
 
     @Transactional
