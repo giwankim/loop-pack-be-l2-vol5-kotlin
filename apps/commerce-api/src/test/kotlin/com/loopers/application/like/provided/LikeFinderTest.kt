@@ -1,52 +1,37 @@
 package com.loopers.application.like.provided
 
-import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.product.required.ProductRepository
-import com.loopers.application.user.required.UserRepository
-import com.loopers.domain.brand.createBrand
-import com.loopers.domain.product.createProduct
-import com.loopers.domain.user.User
 import com.loopers.support.countLikes
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.stereotype.ApplicationServiceTest
+import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
-import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [LikeFinder]를 실제 MySQL 위에서 확인한다. 목록에 오를 좋아요는 같은 조각의 [Liker]로 만든다.
- * 정리와 flush/clear, 관계를 `likes` 테이블에서 세는 까닭은 [LikerTest]와 같다.
+ * [LikeFinder]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear, 관계를 `likes` 테이블에서 세는 까닭은 [LikerTest]와 같다.
  */
-@ApplicationServiceTest
 class LikeFinderTest(
     private val likeFinder: LikeFinder,
-    private val liker: Liker,
-    private val userRepository: UserRepository,
-    private val brandRepository: BrandRepository,
-    private val productRepository: ProductRepository,
-    private val entityManager: EntityManager,
-) {
+) : BaseApplicationServiceTest() {
     /**
      * 요청자 구분. 포트가 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없고,
      * 같은 상품을 둘이 눌러도 각자의 목록에는 자기 관계만 오른다.
      */
     @Test
     fun `the like list gives only the user's own likes`() {
-        val user = userRepository.save(User())
-        val other = userRepository.save(User())
-        val brand = brandRepository.save(createBrand())
-        val mine = productRepository.save(createProduct(brand))
-        val theirs = productRepository.save(createProduct(brand))
-        liker.like(userId = user.id, productId = mine.id)
-        liker.like(userId = other.id, productId = theirs.id)
+        val me = prepareUser()
+        prepareBrand()
+        val mine = prepareProduct(brand)
+        val theirs = prepareProduct(brand)
+        prepareLike(me, mine)
+        prepareLike(product = theirs)
         entityManager.flushAndClear()
 
-        val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
+        val slice = likeFinder.findLikedProducts(me.id, LikeListRequest())
 
         assertThat(slice.content.map { it.id }).containsExactly(mine.id)
     }
@@ -54,13 +39,13 @@ class LikeFinderTest(
     /** 삭제된 상품은 없는 상품이라 목록에서 빠진다. 좋아요 행은 남아 있어 취소할 수 있다(ADR 0001). */
     @Test
     fun `the like list leaves out a product that was deleted after it was liked`() {
-        val user = userRepository.save(User())
-        val brand = brandRepository.save(createBrand())
-        val active = productRepository.save(createProduct(brand))
-        val deleted = productRepository.save(createProduct(brand))
-        liker.like(userId = user.id, productId = active.id)
-        liker.like(userId = user.id, productId = deleted.id)
-        deleted.delete()
+        prepareUser()
+        prepareBrand()
+        val active = prepareProduct(brand)
+        val deleted = prepareProduct(brand)
+        prepareLike(user, active)
+        prepareLike(user, deleted)
+        deleteProduct(deleted)
         entityManager.flushAndClear()
 
         val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
@@ -76,15 +61,14 @@ class LikeFinderTest(
      */
     @Test
     fun `the like list carries the default page and size into the slice and fills the brand name and like count`() {
-        val user = userRepository.save(User())
-        val other = userRepository.save(User())
-        val brand = brandRepository.save(createBrand(name = "루퍼스"))
-        val product = productRepository.save(createProduct(brand, name = "티셔츠"))
-        liker.like(userId = user.id, productId = product.id)
-        liker.like(userId = other.id, productId = product.id)
+        val me = prepareUser()
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand, name = "티셔츠")
+        prepareLike(me, product)
+        prepareLike(product = product)
         entityManager.flushAndClear()
 
-        val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
+        val slice = likeFinder.findLikedProducts(me.id, LikeListRequest())
 
         assertThat(slice.number).isEqualTo(LikeListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(LikeListRequest.DEFAULT_SIZE)
@@ -100,9 +84,9 @@ class LikeFinderTest(
      */
     @Test
     fun `the like list reads a slice of any size in three queries`() {
-        val user = userRepository.save(User())
-        val products = List(3) { productRepository.save(createProduct(brandRepository.save(createBrand()))) }
-        products.forEach { liker.like(userId = user.id, productId = it.id) }
+        prepareUser()
+        val products = List(3) { prepareProduct() }
+        products.forEach { prepareLike(user, it) }
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
@@ -126,7 +110,7 @@ class LikeFinderTest(
 
     @Test
     fun `listing likes outside the page and size bounds is rejected by request validation`() {
-        val user = userRepository.save(User())
+        prepareUser()
         entityManager.flushAndClear()
 
         assertThat(

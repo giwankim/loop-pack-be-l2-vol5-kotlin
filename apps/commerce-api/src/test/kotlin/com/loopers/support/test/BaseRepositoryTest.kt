@@ -110,4 +110,9 @@ abstract class BaseRepositoryTest {
     protected fun deleteProduct(product: Product = this.product) {
         productRepository.save(product.apply { delete() })
     }
+
+    /** 좋아요 행을 지운다. 취소는 논리 삭제를 쓰지 않는다(ADR 0001). */
+    protected fun unlike(like: Like = this.like) {
+        likeRepository.delete(like)
+    }
 }
