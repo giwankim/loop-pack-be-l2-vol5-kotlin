@@ -11,7 +11,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
-import jakarta.persistence.Table
 import org.hibernate.annotations.SQLRestriction
 
 /**
@@ -19,7 +18,6 @@ import org.hibernate.annotations.SQLRestriction
  * [brand]는 읽기용 참조이고 브랜드는 자기 저장소를 가진 별도 애그리거트다.
  */
 @Entity
-@Table(name = "product")
 @SQLRestriction("deleted_at is null")
 class Product(
     brand: Brand,

@@ -25,7 +25,6 @@ import jakarta.persistence.UniqueConstraint
  */
 @Entity
 @Table(
-    name = "point_account",
     uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_USER_ID", columnNames = ["user_id"])],
 )
 class PointAccount(

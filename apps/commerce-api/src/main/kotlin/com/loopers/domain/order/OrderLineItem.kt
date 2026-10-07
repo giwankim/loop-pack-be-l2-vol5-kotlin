@@ -18,7 +18,6 @@ import jakarta.persistence.UniqueConstraint
 
 @Entity
 @Table(
-    name = "order_line_item",
     uniqueConstraints = [
         UniqueConstraint(name = "UK_ORDER_LINE_ITEM_PRODUCT", columnNames = ["order_id", "product_id"]),
     ],
