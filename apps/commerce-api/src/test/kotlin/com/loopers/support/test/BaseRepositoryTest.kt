@@ -2,6 +2,7 @@ package com.loopers.support.test
 
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
@@ -9,6 +10,9 @@ import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
+import com.loopers.domain.order.Order
+import com.loopers.domain.order.createOrder
+import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.Stock
@@ -57,6 +61,9 @@ abstract class BaseRepositoryTest {
     @Autowired
     private lateinit var likeRepository: LikeRepository
 
+    @Autowired
+    private lateinit var orderRepository: OrderRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -71,6 +78,9 @@ abstract class BaseRepositoryTest {
 
     /** 마지막으로 준비한 포인트 계정. [prepareUser]가 사용자와 함께 준비하고, [prepareUserWithoutAccount]는 바꾸지 않는다. */
     protected lateinit var pointAccount: PointAccount
+
+    /** 마지막으로 준비한 주문. */
+    protected lateinit var order: Order
 
     protected fun prepareBrand(name: String? = null): Brand =
         brandRepository.save(createBrand(name = name)).also { brand = it }
@@ -98,6 +108,13 @@ abstract class BaseRepositoryTest {
         product: Product = prepareProduct(),
     ): Like =
         likeRepository.save(Like(userId = user.id, productId = product.id)).also { like = it }
+
+    /** 넘긴 상품마다 그 상품을 스냅숏한 품목 하나를 담는다. 품목의 상품 ID가 외래 키에 걸리므로 저장한 상품을 받는다. */
+    protected fun prepareOrder(
+        user: User = prepareUser(),
+        products: List<Product> = listOf(prepareProduct()),
+    ): Order =
+        orderRepository.save(createOrder(user.id, products.map { createOrderProduct(it) })).also { order = it }
 
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {

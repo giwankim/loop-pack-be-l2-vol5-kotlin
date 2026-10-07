@@ -1,27 +1,18 @@
 package com.loopers.application.order.provided
 
-import com.loopers.application.brand.required.BrandRepository
-import com.loopers.application.product.required.ProductRepository
-import com.loopers.application.user.required.UserRepository
-import com.loopers.domain.brand.createBrand
 import com.loopers.domain.order.OrderStatus
-import com.loopers.domain.order.createOrderCreateRequest
-import com.loopers.domain.product.createProduct
-import com.loopers.domain.shared.Money
-import com.loopers.domain.user.User
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
-import com.loopers.support.stereotype.ApplicationServiceTest
+import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
-import jakarta.persistence.EntityManager
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 같은 조각의 [OrderCreator]로 만든다.
+ * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 조각의 [OrderCreator]로 만든다.
  * 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
  * 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로 여기서는 목록과
@@ -30,30 +21,23 @@ import org.junit.jupiter.api.assertThrows
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과
  * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).
  */
-@ApplicationServiceTest
 class OrderFinderTest(
     private val orderFinder: OrderFinder,
-    private val orderCreator: OrderCreator,
-    private val userRepository: UserRepository,
-    private val brandRepository: BrandRepository,
-    private val productRepository: ProductRepository,
-    private val entityManager: EntityManager,
-) {
+) : BaseApplicationServiceTest() {
     /**
      * 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 품목이 항목에 실리는지를 본다.
      * `open-in-view`가 꺼져 있으므로 품목을 옮기는 일은 이 읽기 트랜잭션 안에서 끝나야 한다(설계 9 조회).
      */
     @Test
     fun `the order list carries the default page and size into the slice and fills the stored items`() {
-        val owner = userRepository.save(User())
-        val brand = brandRepository.save(createBrand())
-        val shirt = productRepository.save(createProduct(brand, name = "티셔츠", price = Money(1_000)))
-        val socks = productRepository.save(createProduct(brand, name = "양말", price = Money(2_000)))
+        prepareBrand()
+        val shirt = prepareProduct(brand, name = "티셔츠", price = 1_000)
+        val socks = prepareProduct(brand, name = "양말", price = 2_000)
         // 품목을 상품 ID의 거꾸로 넣는다. 그대로 실리면 차례를 확인한 것이 아니다.
-        orderCreator.create(owner.id, createOrderCreateRequest(socks.id to 1, shirt.id to 2))
+        prepareOrder(socks to 1, shirt to 2)
         entityManager.flushAndClear()
 
-        val slice = orderFinder.findAll(owner.id, OrderListRequest())
+        val slice = orderFinder.findAll(user.id, OrderListRequest())
 
         val listed = slice.content.single()
         assertThat(slice.number).isEqualTo(OrderListRequest.DEFAULT_PAGE)
@@ -81,12 +65,12 @@ class OrderFinderTest(
 
     @Test
     fun `listing orders outside the page and size bounds is rejected by request validation`() {
-        val owner = userRepository.save(User())
+        prepareUser()
         entityManager.flushAndClear()
 
-        assertThat(violationsOf(owner.id, OrderListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.")
-        assertThat(violationsOf(owner.id, OrderListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.")
-        assertThat(violationsOf(owner.id, OrderListRequest(size = OrderListRequest.MAX_SIZE + 1)))
+        assertThat(violationsOf(user.id, OrderListRequest(page = -1))).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(violationsOf(user.id, OrderListRequest(size = 0))).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(violationsOf(user.id, OrderListRequest(size = OrderListRequest.MAX_SIZE + 1)))
             .containsExactly("size는 ${OrderListRequest.MAX_SIZE} 이하여야 합니다.")
     }
 
@@ -100,14 +84,14 @@ class OrderFinderTest(
      */
     @Test
     fun `a slice filled to the maximum size still reads its items in one query`() {
-        val owner = userRepository.save(User())
-        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
+        prepareUser()
+        prepareProduct()
         val size = OrderListRequest.MAX_SIZE
-        repeat(size) { orderCreator.create(owner.id, createOrderCreateRequest(listOf(product.id))) }
+        repeat(size) { prepareOrder(user, listOf(product)) }
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            val slice = orderFinder.findAll(owner.id, OrderListRequest(size = size))
+            val slice = orderFinder.findAll(user.id, OrderListRequest(size = size))
 
             assertThat(slice.content).hasSize(size)
             assertThat(slice.content.flatMap { it.items }).hasSize(size)
@@ -118,17 +102,17 @@ class OrderFinderTest(
     /** 관리자 목록은 거를 사용자가 없으면 모든 사용자의 주문을 보고, 주문한 사용자의 식별자를 함께 싣는다. */
     @Test
     fun `the admin list gives the orders of every user latest first with the ordering user id`() {
-        val mine = userRepository.save(User()).id
-        val theirs = userRepository.save(User()).id
-        val product = productRepository.save(createProduct(brandRepository.save(createBrand())))
-        val first = orderCreator.create(mine, createOrderCreateRequest(listOf(product.id))).orderId
-        val second = orderCreator.create(theirs, createOrderCreateRequest(listOf(product.id))).orderId
+        val mine = prepareUser()
+        val theirs = prepareUser()
+        prepareProduct()
+        val first = prepareOrder(mine, listOf(product)).id
+        val second = prepareOrder(theirs, listOf(product)).id
         entityManager.flushAndClear()
 
         val slice = orderFinder.findAll(OrderAdminListRequest())
 
         assertThat(slice.content.map { it.orderId }).containsExactly(second, first)
-        assertThat(slice.content.map { it.userId }).containsExactly(theirs, mine)
+        assertThat(slice.content.map { it.userId }).containsExactly(theirs.id, mine.id)
         assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
         assertThat(slice.hasNext()).isFalse()
@@ -140,11 +124,11 @@ class OrderFinderTest(
      */
     @Test
     fun `the admin list reads the page of orders and all of their items in two queries`() {
-        val owner = userRepository.save(User()).id
-        val brand = brandRepository.save(createBrand())
-        val products = List(3) { productRepository.save(createProduct(brand)) }
-        orderCreator.create(owner, createOrderCreateRequest(products.map { it.id }, quantity = 1))
-        orderCreator.create(owner, createOrderCreateRequest(products.first().id to 2))
+        prepareUser()
+        prepareBrand()
+        val products = List(3) { prepareProduct(brand) }
+        prepareOrder(user, products, quantity = 1)
+        prepareOrder(user, listOf(products.first()), quantity = 2)
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
@@ -170,17 +154,16 @@ class OrderFinderTest(
 
     @Test
     fun `the admin detail gives another user's order with the ordering user id and the stored snapshot`() {
-        val owner = userRepository.save(User()).id
-        val brand = brandRepository.save(createBrand())
-        val shirt = productRepository.save(createProduct(brand, price = Money(1_000)))
-        val pants = productRepository.save(createProduct(brand, price = Money(2_000)))
-        val saved = orderCreator.create(owner, createOrderCreateRequest(pants.id to 1, shirt.id to 2))
+        prepareBrand()
+        val shirt = prepareProduct(brand, price = 1_000)
+        val pants = prepareProduct(brand, price = 2_000)
+        prepareOrder(pants to 1, shirt to 2)
         entityManager.flushAndClear()
 
-        val info = orderFinder.findForAdmin(saved.orderId)
+        val info = orderFinder.findForAdmin(order.id)
 
-        assertThat(info.orderId).isEqualTo(saved.orderId)
-        assertThat(info.userId).isEqualTo(owner)
+        assertThat(info.orderId).isEqualTo(order.id)
+        assertThat(info.userId).isEqualTo(user.id)
         assertThat(info.status).isEqualTo(OrderStatus.DRAFT)
         assertThat(info.totalAmount).isEqualTo(4_000L)
         assertThat(info.items.map { it.productId }).containsExactly(shirt.id, pants.id)

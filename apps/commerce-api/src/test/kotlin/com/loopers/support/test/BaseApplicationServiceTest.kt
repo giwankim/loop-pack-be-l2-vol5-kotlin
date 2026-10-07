@@ -4,6 +4,9 @@ import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.order.provided.OrderCreator
+import com.loopers.application.order.provided.OrderInfo
+import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -12,10 +15,14 @@ import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.like.Like
+import com.loopers.domain.order.Order
+import com.loopers.domain.order.createOrderCreateRequest
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.createProductAdminRegisterRequest
+import com.loopers.domain.product.createProductAdminStockUpdateRequest
+import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.domain.user.User
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
@@ -70,6 +77,12 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var likeRepository: LikeRepository
 
+    @Autowired
+    private lateinit var orderCreator: OrderCreator
+
+    @Autowired
+    private lateinit var orderRepository: OrderRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -84,6 +97,9 @@ abstract class BaseApplicationServiceTest {
 
     /** 마지막으로 준비한 포인트 계정. [prepareUser]가 사용자와 함께 준비하고, [prepareUserWithoutAccount]는 바꾸지 않는다. */
     protected lateinit var pointAccount: PointAccount
+
+    /** 마지막으로 준비한 주문. */
+    protected lateinit var order: Order
 
     protected fun prepareBrand(name: String? = null): Brand =
         brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
@@ -120,6 +136,28 @@ abstract class BaseApplicationServiceTest {
         return likeRepository.findByUserIdAndProductId(userId = user.id, productId = product.id)!!.also { like = it }
     }
 
+    /**
+     * 넘긴 상품마다 품목 하나를 담아 주문을 생성한다. 수량이 `null`이면 품목마다 fixture가 뽑는다.
+     * 포트가 [OrderInfo]를 돌려주므로 엔티티는 ID로 다시 읽는다.
+     */
+    protected fun prepareOrder(
+        user: User = prepareUser(),
+        products: List<Product> = listOf(prepareProduct()),
+        quantity: Int? = null,
+    ): Order = readBack(orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity)))
+
+    /**
+     * 품목마다 수량이 다른 주문. 상품과 수량의 짝마다 품목 하나를 담고, 수량이 `null`인 품목은 fixture가 뽑는다.
+     * 짝이 `vararg`라 사용자는 뒤에 두고 이름으로 넘긴다(`prepareOrder(shirt to 2, user = owner)`).
+     * 짝 없이 부르면(`prepareOrder()`, `prepareOrder(user = owner)`) Kotlin이 `vararg`가 아닌 위의 오버로드를 고른다.
+     */
+    protected fun prepareOrder(vararg items: Pair<Product, Int?>, user: User = prepareUser()): Order {
+        val request = createOrderCreateRequest(*items.map { (product, quantity) -> product.id to quantity }.toTypedArray())
+        return readBack(orderCreator.create(user.id, request))
+    }
+
+    private fun readBack(info: OrderInfo): Order = orderRepository.findById(info.orderId)!!.also { order = it }
+
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
     }
@@ -130,6 +168,15 @@ abstract class BaseApplicationServiceTest {
      */
     protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
         brandRepository.save(brand.apply { delete() })
+    }
+
+    protected fun updateProduct(name: String? = null, price: Long? = null, product: Product = this.product) {
+        productRegister.update(product.id, createProductAdminUpdateRequest(name = name, price = price))
+    }
+
+    /** 재고를 [quantity]개로 맞춘다. 빼거나 더하지 않는다. */
+    protected fun updateProductStock(quantity: Int, product: Product = this.product) {
+        productRegister.updateStock(product.id, createProductAdminStockUpdateRequest(quantity = quantity))
     }
 
     protected fun deleteProduct(product: Product = this.product) {
