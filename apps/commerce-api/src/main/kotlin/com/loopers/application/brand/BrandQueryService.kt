@@ -9,21 +9,15 @@ import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Slice
-import org.springframework.transaction.annotation.Transactional
 
-/**
- * [BrandFinder]의 구현. 관리자 목록이 Request를 받으므로 검증하는 Service다.
- * 읽기 메서드는 클래스의 `@Transactional`보다 앞서는 `@Transactional(readOnly = true)`를 단다.
- */
-@ValidatedApplicationService
+/** [BrandFinder]의 구현. 관리자 목록이 Request를 받으므로 검증하는 Service다. */
+@ValidatedApplicationService(readOnly = true)
 class BrandQueryService(
     private val brandRepository: BrandRepository,
 ) : BrandFinder {
-    @Transactional(readOnly = true)
     override fun find(id: Long): Brand =
         brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
 
-    @Transactional(readOnly = true)
     override fun findAll(request: BrandAdminListRequest): Slice<Brand> =
         brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(request.page, request.size))
 }
