@@ -58,7 +58,7 @@
 | `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
 | `createdAt` | `Instant` | 생성 시각. `BaseEntity`가 저장할 때 마이크로초로 잘라 찍는다 |
 
-테이블 `orders`. `users`로 외래 키(`FK_ORDERS_USER`), 조회용 인덱스 `idx_orders_user_created`·`idx_orders_created`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
+테이블 `orders`. `users`로 외래 키(`FK_ORDERS_USER`), 조회용 인덱스 `IDX_ORDERS_USER_CREATED`·`IDX_ORDERS_CREATED`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
 
 ### 규칙
 
