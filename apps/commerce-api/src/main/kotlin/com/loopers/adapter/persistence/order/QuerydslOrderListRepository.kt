@@ -54,7 +54,9 @@ class QuerydslOrderListRepository(
      * 버리는 목록이라 `distinct`를 걸지 않는다. 차례도 첫 조회가 정했으므로 여기서 정하지 않는다.
      */
     private fun loadItemsOf(orders: List<Order>) {
-        if (orders.isEmpty()) return
+        if (orders.isEmpty()) {
+            return
+        }
         queryFactory
             .selectFrom(order)
             .leftJoin(order.lineItems).fetchJoin()

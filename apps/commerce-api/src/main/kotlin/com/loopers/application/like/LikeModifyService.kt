@@ -22,7 +22,9 @@ class LikeModifyService(
      */
     override fun like(userId: Long, productId: Long) {
         likeValidator.validateForLike(productId)
-        if (likeRepository.existsByUserIdAndProductId(userId, productId)) return
+        if (likeRepository.existsByUserIdAndProductId(userId, productId)) {
+            return
+        }
 
         likeRepository.save(Like(userId = userId, productId = productId))
     }

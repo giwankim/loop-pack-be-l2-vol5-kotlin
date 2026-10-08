@@ -34,7 +34,9 @@ class LikeQueryService(
      * 빈 목록은 SQL을 보내지 않는다. Hibernate가 빈 `in`을 `1=0`으로 바꿔 보내 답은 같지만, 빈 조각마다 헛된 왕복이 한 번 나간다.
      */
     override fun countLikes(productIds: Collection<Long>): Map<Long, Long> {
-        if (productIds.isEmpty()) return emptyMap()
+        if (productIds.isEmpty()) {
+            return emptyMap()
+        }
         val counted = likeRepository.findProductLikeCounts(productIds).associate { it.productId to it.likeCount }
         return productIds.associateWith { counted[it] ?: 0L }
     }

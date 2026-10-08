@@ -37,10 +37,17 @@ class RequesterIdArgumentResolver(
         binderFactory: WebDataBinderFactory?,
     ): Long {
         val header = webRequest.getHeader(UserIdHeader.NAME)
-        if (header.isNullOrEmpty()) throw CoreException(ErrorType.UNAUTHORIZED)
+        if (header.isNullOrEmpty()) {
+            throw CoreException(ErrorType.UNAUTHORIZED)
+        }
+
         val userId = header.toLongOrNull()
             ?: throw MethodArgumentTypeMismatchException(header, Long::class.javaObjectType, UserIdHeader.NAME, parameter, null)
-        if (!userFinder.exists(userId)) throw CoreException(ErrorType.UNAUTHORIZED)
+
+        if (!userFinder.exists(userId)) {
+            throw CoreException(ErrorType.UNAUTHORIZED)
+        }
+
         return userId
     }
 }

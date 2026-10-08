@@ -54,8 +54,12 @@ class PointAccount(
      * 주문과 재고의 변경·저장은 application이 조율한다.
      */
     fun pay(amount: Money) {
-        if (amount <= Money.ZERO) throw InvalidPaymentAmountException()
-        if (amount > balance) throw InsufficientPointsException()
+        if (amount <= Money.ZERO) {
+            throw InvalidPaymentAmountException()
+        }
+        if (amount > balance) {
+            throw InsufficientPointsException()
+        }
         balance = balance - amount
     }
 }
