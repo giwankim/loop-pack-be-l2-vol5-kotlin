@@ -20,8 +20,9 @@ class ProductInfoAssembler(
     private val likeCounter: LikeCounter,
 ) {
     /** 상품 하나. 좋아요 수는 관계를 세어 채운다. 관리자 응답도 이 count 쿼리 한 번을 치른다(설계 5.7). */
-    fun toInfo(product: Product): ProductInfo =
-        ProductInfo.from(product, likeCount = likeCounter.countLikes(product.id))
+    fun toInfo(product: Product): ProductInfo {
+        return ProductInfo.from(product, likeCount = likeCounter.countLikes(product.id))
+    }
 
     /**
      * 조각 하나. 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다. 항목마다 세면 조각 크기만큼 조회가 붙는다(설계 5.28).

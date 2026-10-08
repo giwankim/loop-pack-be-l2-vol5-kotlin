@@ -90,11 +90,12 @@ class RequestBodyErrorApiTest : BaseWebApiAdapterTest() {
         body.extractingPath("$.meta.message").isEqualTo("필수 필드 'price'이(가) 누락되었습니다.")
     }
 
-    private fun requestPostProduct(json: String): MvcTestResult =
-        mvc.post().uri(PRODUCTS)
+    private fun requestPostProduct(json: String): MvcTestResult {
+        return mvc.post().uri(PRODUCTS)
             .with(ADMIN)
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content(json)
             .exchange()
+    }
 }

@@ -26,12 +26,13 @@ class RedisTestContainersConfig {
     }
 
     @Bean
-    fun redisContainerProperties(): DynamicPropertyRegistrar =
-        DynamicPropertyRegistrar { registry ->
+    fun redisContainerProperties(): DynamicPropertyRegistrar {
+        return DynamicPropertyRegistrar { registry ->
             registry.add("datasource.redis.database") { 0 }
             registry.add("datasource.redis.master.host") { redisContainer.host }
             registry.add("datasource.redis.master.port") { redisContainer.firstMappedPort }
             registry.add("datasource.redis.replicas[0].host") { redisContainer.host }
             registry.add("datasource.redis.replicas[0].port") { redisContainer.firstMappedPort }
         }
+    }
 }

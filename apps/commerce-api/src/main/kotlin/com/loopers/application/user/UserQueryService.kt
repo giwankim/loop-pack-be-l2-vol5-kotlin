@@ -9,5 +9,7 @@ import com.loopers.support.stereotype.ApplicationService
 class UserQueryService(
     private val userRepository: UserRepository,
 ) : UserFinder {
-    override fun exists(userId: Long): Boolean = userRepository.existsById(userId)
+    override fun exists(userId: Long): Boolean {
+        return userRepository.existsById(userId)
+    }
 }

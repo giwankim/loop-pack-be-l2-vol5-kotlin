@@ -352,48 +352,55 @@ class BrandAdminApiTest(
     }
 
     /** 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다. */
-    private fun requestPostBrand(name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.post().uri(ENDPOINT)
+    private fun requestPostBrand(name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.post().uri(ENDPOINT)
             .apply { principal?.let { with(it) } }
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"name": "$name"}""")
             .exchange()
+    }
 
-    private fun requestPutBrand(brandId: Long, name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.put().uri("$ENDPOINT/$brandId")
+    private fun requestPutBrand(brandId: Long, name: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.put().uri("$ENDPOINT/$brandId")
             .apply { principal?.let { with(it) } }
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"name": "$name"}""")
             .exchange()
+    }
 
-    private fun requestDeleteBrand(brandId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.delete().uri("$ENDPOINT/$brandId")
+    private fun requestDeleteBrand(brandId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.delete().uri("$ENDPOINT/$brandId")
             .apply { principal?.let { with(it) } }
             .with(csrf())
             .exchange()
+    }
 
     /** 삭제 시각과 상관없이 브랜드 행이 남아 있는지. 물리 삭제와 논리 삭제를 가른다. */
-    private fun brandRowExists(brandId: Long): Boolean =
-        countRawBrands("select count(*) from brand where id = :id", brandId) == 1L
+    private fun brandRowExists(brandId: Long): Boolean {
+        return countRawBrands("select count(*) from brand where id = :id", brandId) == 1L
+    }
 
     /** 삭제 시각이 찍힌 브랜드 행 수. */
-    private fun countStampedBrands(brandId: Long): Long =
-        countRawBrands("select count(*) from brand where id = :id and deleted_at is not null", brandId)
+    private fun countStampedBrands(brandId: Long): Long {
+        return countRawBrands("select count(*) from brand where id = :id and deleted_at is not null", brandId)
+    }
 
     /** 엔티티의 SQL 제한이 붙으면 삭제된 행이 보이지 않으므로, 삭제 여부를 직접 묻는 조회는 네이티브여야 한다. */
-    private fun countRawBrands(sql: String, brandId: Long): Long =
-        (
+    private fun countRawBrands(sql: String, brandId: Long): Long {
+        return (
             entityManager
                 .createNativeQuery(sql)
                 .setParameter("id", brandId)
                 .singleResult as Number
             ).toLong()
+    }
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
-    private fun countBrands(): Long =
-        entityManager
+    private fun countBrands(): Long {
+        return entityManager
             .createQuery("select count(b) from Brand b", Long::class.java)
             .singleResult
+    }
 }

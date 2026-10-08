@@ -34,13 +34,14 @@ class QuerydslProductListRepository(
      * `@ManyToOne(optional = false)`이라 inner join이고, [com.loopers.domain.brand.Brand]의 `@SQLRestriction`이
      * 그 조인에도 붙어 삭제된 브랜드의 상품은 목록에서 빠진다(설계 7).
      */
-    override fun findAll(brandId: Long?, pageable: Pageable, sort: ProductSort): Slice<Product> =
-        queryFactory
+    override fun findAll(brandId: Long?, pageable: Pageable, sort: ProductSort): Slice<Product> {
+        return queryFactory
             .selectFrom(product)
             .innerJoin(product.brand).fetchJoin()
             .where(brandId?.let { product.brand.id.eq(it) })
             .orderedBy(sort)
             .fetchSlice(pageable)
+    }
 
     /**
      * 정렬 기준이 요구하는 차례를 쿼리에 붙인다. 어느 기준이든 마지막은 id 내림차순이라 동률이 남지 않는다.
@@ -54,15 +55,17 @@ class QuerydslProductListRepository(
      * 가격은 `Money`가 `@Embeddable`이므로 경로가 `price`가 아니라 `price.amount`다.
      * 이런 매핑 지식은 adapter.persistence의 것이고 [ProductSort]는 무엇을 읽는지 모른다.
      */
-    private fun JPAQuery<Product>.orderedBy(sort: ProductSort): JPAQuery<Product> = when (sort) {
-        ProductSort.LATEST -> orderBy(product.createdAt.desc(), ID_DESC)
+    private fun JPAQuery<Product>.orderedBy(sort: ProductSort): JPAQuery<Product> {
+        return when (sort) {
+            ProductSort.LATEST -> orderBy(product.createdAt.desc(), ID_DESC)
 
-        ProductSort.PRICE_ASC -> orderBy(product.price.amount.asc(), ID_DESC)
+            ProductSort.PRICE_ASC -> orderBy(product.price.amount.asc(), ID_DESC)
 
-        ProductSort.LIKES_DESC ->
-            leftJoin(like).on(like.productId.eq(product.id))
-                .groupBy(product, product.brand)
-                .orderBy(like.count().desc(), ID_DESC)
+            ProductSort.LIKES_DESC ->
+                leftJoin(like).on(like.productId.eq(product.id))
+                    .groupBy(product, product.brand)
+                    .orderBy(like.count().desc(), ID_DESC)
+        }
     }
 
     companion object {

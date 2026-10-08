@@ -53,7 +53,8 @@ class OrderCreatorTest(
             .containsExactlyInAnyOrder("상품 ID는 1 이상이어야 합니다.", "수량은 1개 이상이어야 합니다.")
     }
 
-    private fun violationsOf(userId: Long, request: OrderCreateRequest): List<String> =
-        assertThrows<ConstraintViolationException> { orderCreator.create(userId, request) }
+    private fun violationsOf(userId: Long, request: OrderCreateRequest): List<String> {
+        return assertThrows<ConstraintViolationException> { orderCreator.create(userId, request) }
             .constraintViolations.map { it.message }
+    }
 }

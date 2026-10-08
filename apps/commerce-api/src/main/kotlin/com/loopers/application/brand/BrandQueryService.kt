@@ -15,9 +15,11 @@ import org.springframework.data.domain.Slice
 class BrandQueryService(
     private val brandRepository: BrandRepository,
 ) : BrandFinder {
-    override fun find(id: Long): Brand =
-        brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
+    override fun find(id: Long): Brand {
+        return brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
+    }
 
-    override fun findAll(request: BrandAdminListRequest): Slice<Brand> =
-        brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(request.page, request.size))
+    override fun findAll(request: BrandAdminListRequest): Slice<Brand> {
+        return brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(request.page, request.size))
+    }
 }

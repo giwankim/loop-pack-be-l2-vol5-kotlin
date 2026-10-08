@@ -69,10 +69,13 @@ class HexagonalArchitectureTest {
 }
 
 /** Slices of one layer: the package segment right after [layerPattern] names the feature. */
-private fun slicesOf(layerPattern: String) = slices().matching("$ROOT.$layerPattern.(*)..")
+private fun slicesOf(layerPattern: String): GivenSlices {
+    return slices().matching("$ROOT.$layerPattern.(*)..")
+}
 
-private fun GivenSlices.shouldBeFreeOfCycles(): ArchRule =
-    should().beFreeOfCycles().because("peer features in one layer must depend on each other in one direction only")
+private fun GivenSlices.shouldBeFreeOfCycles(): ArchRule {
+    return should().beFreeOfCycles().because("peer features in one layer must depend on each other in one direction only")
+}
 
 /**
  * A call from one slice into another may only read: a getter, a method of an enum, or a method of a record.
@@ -80,8 +83,8 @@ private fun GivenSlices.shouldBeFreeOfCycles(): ArchRule =
  * Constructor calls are not method calls, so a slice may still create another slice's values and exceptions.
  * Calls to classes outside every slice (the layer root, the JDK) are not checked.
  */
-private fun onlyReadOtherSlices() =
-    object : ArchCondition<Slice>("only read classes of other slices") {
+private fun onlyReadOtherSlices(): ArchCondition<Slice> {
+    return object : ArchCondition<Slice>("only read classes of other slices") {
         private val classesInAnySlice = mutableSetOf<JavaClass>()
 
         override fun init(allSlices: Collection<Slice>) {
@@ -95,12 +98,15 @@ private fun onlyReadOtherSlices() =
                 .forEach { events.add(SimpleConditionEvent.violated(it, it.description)) }
         }
     }
+}
 
-private fun JavaMethodCall.onlyReads(): Boolean =
-    target.isGetter() || targetOwner.isEnum || targetOwner.isRecord || targetOwner.isImmutableDataClass()
+private fun JavaMethodCall.onlyReads(): Boolean {
+    return target.isGetter() || targetOwner.isEnum || targetOwner.isRecord || targetOwner.isImmutableDataClass()
+}
 
-private fun MethodCallTarget.isGetter(): Boolean =
-    GETTER_NAME.matches(name) && rawParameterTypes.isEmpty() && rawReturnType.name != "void"
+private fun MethodCallTarget.isGetter(): Boolean {
+    return GETTER_NAME.matches(name) && rawParameterTypes.isEmpty() && rawReturnType.name != "void"
+}
 
 private fun JavaClass.isImmutableDataClass(): Boolean {
     val type = reflect()

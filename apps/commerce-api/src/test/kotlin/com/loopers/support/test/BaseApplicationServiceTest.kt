@@ -97,8 +97,9 @@ abstract class BaseApplicationServiceTest {
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
 
-    protected fun prepareBrand(name: String? = null): Brand =
-        brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
+    protected fun prepareBrand(name: String? = null): Brand {
+        return brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
+    }
 
     /** 포트가 [com.loopers.application.product.provided.ProductInfo]를 돌려주므로 엔티티는 ID로 다시 읽는다. */
     protected fun prepareProduct(
@@ -114,14 +115,17 @@ abstract class BaseApplicationServiceTest {
     }
 
     /** 사용자를 만드는 포트가 없어 저장소로 만든다. 처음 잔액이 0원인 포인트 계정도 함께 저장한다(설계 5.9). */
-    protected fun prepareUser(): User =
-        userRepository.save(User()).also {
+    protected fun prepareUser(): User {
+        return userRepository.save(User()).also {
             pointAccount = pointAccountRepository.save(PointAccount(it.id))
             user = it
         }
+    }
 
     /** 계정 없이 사용자만 저장한다. 사용자와 계정이 어긋난 데이터를 막는 테스트만 쓴다(설계 5.9, 6 끝). */
-    protected fun prepareUserWithoutAccount(): User = userRepository.save(User()).also { user = it }
+    protected fun prepareUserWithoutAccount(): User {
+        return userRepository.save(User()).also { user = it }
+    }
 
     /** [Liker]는 아무것도 돌려주지 않으므로 좋아요는 사용자와 상품으로 다시 읽는다. */
     protected fun prepareLike(
@@ -140,9 +144,10 @@ abstract class BaseApplicationServiceTest {
         user: User = prepareUser(),
         products: List<Product> = listOf(prepareProduct()),
         quantity: Int? = null,
-    ): Order =
-        orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity))
+    ): Order {
+        return orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity))
             .also { order = it }
+    }
 
     /**
      * 품목마다 수량이 다른 주문. 상품과 수량의 짝마다 품목 하나를 담고, 수량이 `null`인 품목은 fixture가 뽑는다.

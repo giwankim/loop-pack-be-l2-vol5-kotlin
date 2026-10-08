@@ -299,19 +299,21 @@ class ProductAdminApiTest : BaseWebApiAdapterTest() {
         body.extractingPath("$.data.stock").isEqualTo(7)
     }
 
-    private fun requestGetProducts(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.get().uri(ENDPOINT)
+    private fun requestGetProducts(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.get().uri(ENDPOINT)
             .apply { principal?.let { with(it) } }
             .apply { query.forEach { (name, value) -> param(name, value) } }
             .exchange()
+    }
 
-    private fun requestPutProduct(productId: Long, json: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.put().uri("$ENDPOINT/$productId")
+    private fun requestPutProduct(productId: Long, json: String, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.put().uri("$ENDPOINT/$productId")
             .apply { principal?.let { with(it) } }
             .with(csrf())
             .contentType(MediaType.APPLICATION_JSON)
             .content(json)
             .exchange()
+    }
 
     /** [quantity]가 null이면 fixture가 뽑은 수량을 싣는다. */
     private fun requestPutStock(productId: Long, quantity: Int? = null, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
@@ -324,11 +326,12 @@ class ProductAdminApiTest : BaseWebApiAdapterTest() {
             .exchange()
     }
 
-    private fun requestDeleteProduct(productId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.delete().uri("$ENDPOINT/$productId")
+    private fun requestDeleteProduct(productId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.delete().uri("$ENDPOINT/$productId")
             .apply { principal?.let { with(it) } }
             .with(csrf())
             .exchange()
+    }
 
     /**
      * 쓰기 요청이므로 거절 경로에서도 csrf 토큰을 넣는다. [principal]이 null이면 식별 없는 요청이다.
@@ -352,8 +355,9 @@ class ProductAdminApiTest : BaseWebApiAdapterTest() {
     }
 
     /** 삭제되지 않은 상품 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
-    private fun countProducts(): Long =
-        entityManager
+    private fun countProducts(): Long {
+        return entityManager
             .createQuery("select count(p) from Product p", Long::class.java)
             .singleResult
+    }
 }

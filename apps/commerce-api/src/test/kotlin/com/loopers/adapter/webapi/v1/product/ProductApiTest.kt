@@ -197,8 +197,9 @@ class ProductApiTest : BaseWebApiAdapterTest() {
         body.extractingPath("$.data.items[0].id").isEqualToLong(mineId)
     }
 
-    private fun requestGetProducts(vararg query: Pair<String, String>): MvcTestResult =
-        mvc.get().uri(ENDPOINT)
+    private fun requestGetProducts(vararg query: Pair<String, String>): MvcTestResult {
+        return mvc.get().uri(ENDPOINT)
             .apply { query.forEach { (name, value) -> param(name, value) } }
             .exchange()
+    }
 }

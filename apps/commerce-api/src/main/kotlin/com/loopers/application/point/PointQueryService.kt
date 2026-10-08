@@ -17,6 +17,7 @@ import com.loopers.support.stereotype.ApplicationService
 class PointQueryService(
     private val pointAccountRepository: PointAccountRepository,
 ) : PointAccountFinder {
-    override fun findByUser(userId: Long): PointAccount =
-        pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
+    override fun findByUser(userId: Long): PointAccount {
+        return pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
+    }
 }

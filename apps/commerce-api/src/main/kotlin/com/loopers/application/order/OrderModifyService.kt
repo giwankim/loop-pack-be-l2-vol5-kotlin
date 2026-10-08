@@ -64,6 +64,7 @@ class OrderModifyService(
     }
 
     /** 논리 삭제된 상품·브랜드는 주문할 수도 확정할 수도 없다. 생성과 확정이 같은 판단을 쓴다. */
-    private fun availableProduct(productId: Long): Product =
-        productFinder.findOrderableOrNull(productId) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+    private fun availableProduct(productId: Long): Product {
+        return productFinder.findOrderableOrNull(productId) ?: throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
+    }
 }

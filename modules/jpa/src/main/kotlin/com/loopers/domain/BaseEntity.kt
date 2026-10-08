@@ -49,7 +49,7 @@ abstract class BaseEntity {
      *
      * 이 메소드는 [PrePersist] 및 [PreUpdate] 시점에 호출된다.
      */
-    open fun guard() = Unit
+    open fun guard() {}
 
     @PrePersist
     private fun prePersist() {
@@ -75,5 +75,7 @@ abstract class BaseEntity {
         deletedAt ?: run { deletedAt = nowInMicros() }
     }
 
-    private fun nowInMicros(): Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
+    private fun nowInMicros(): Instant {
+        return Instant.now().truncatedTo(ChronoUnit.MICROS)
+    }
 }

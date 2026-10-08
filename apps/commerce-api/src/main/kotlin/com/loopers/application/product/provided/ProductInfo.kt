@@ -22,8 +22,8 @@ data class ProductInfo(
     val updatedAt: Instant,
 ) {
     companion object {
-        fun from(product: Product, likeCount: Long): ProductInfo =
-            ProductInfo(
+        fun from(product: Product, likeCount: Long): ProductInfo {
+            return ProductInfo(
                 id = product.id,
                 brandId = product.brand.id,
                 brandName = product.brand.name,
@@ -35,5 +35,6 @@ data class ProductInfo(
                 createdAt = product.createdAt,
                 updatedAt = product.updatedAt,
             )
+        }
     }
 }

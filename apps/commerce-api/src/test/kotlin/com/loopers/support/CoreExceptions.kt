@@ -9,5 +9,6 @@ import org.junit.jupiter.api.assertThrows
  *
  * 같은 거절을 여러 호출에 대고 한 테스트에서 견주는 자리(모르는 정렬 철자 셋, 없는 상품의 세 가지 쓰기)가 쓴다.
  */
-fun errorTypeOf(call: () -> Unit): ErrorType =
-    assertThrows<CoreException> { call() }.errorType
+fun errorTypeOf(call: () -> Unit): ErrorType {
+    return assertThrows<CoreException> { call() }.errorType
+}

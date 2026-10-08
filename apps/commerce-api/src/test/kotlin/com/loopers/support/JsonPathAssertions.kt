@@ -11,6 +11,8 @@ import org.springframework.test.json.JsonPathValueAssert
  *
  * 이름이 `isEqualTo`면 멤버 `isEqualTo(Object)`가 먼저 골라져 이 확장이 불리지 않는다(ADR 0011).
  */
-fun JsonPathValueAssert.isEqualToLong(expected: Long): JsonPathValueAssert = apply {
-    asNumber().extracting { if (it is Int) it.toLong() else it }.isEqualTo(expected)
+fun JsonPathValueAssert.isEqualToLong(expected: Long): JsonPathValueAssert {
+    return apply {
+        asNumber().extracting { if (it is Int) it.toLong() else it }.isEqualTo(expected)
+    }
 }

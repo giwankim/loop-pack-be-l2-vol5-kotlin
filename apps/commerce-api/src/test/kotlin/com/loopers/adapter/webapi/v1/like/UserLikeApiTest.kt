@@ -155,9 +155,10 @@ class UserLikeApiTest : BaseWebApiAdapterTest() {
     }
 
     /** 파라미터의 차례는 [UserLikeApi.getLikedProducts]와 같게 둔다. 둘 다 `Long`이라 차례가 어긋나면 알아채기 어렵다. */
-    private fun requestGetLikes(userId: Long, pathUserId: Long, vararg query: Pair<String, String>): MvcTestResult =
-        mvc.get().uri("$USERS/$pathUserId/likes")
+    private fun requestGetLikes(userId: Long, pathUserId: Long, vararg query: Pair<String, String>): MvcTestResult {
+        return mvc.get().uri("$USERS/$pathUserId/likes")
             .header(UserIdHeader.NAME, userId)
             .apply { query.forEach { (name, value) -> param(name, value) } }
             .exchange()
+    }
 }

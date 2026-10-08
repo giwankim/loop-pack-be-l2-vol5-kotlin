@@ -27,8 +27,9 @@ import org.springframework.web.method.support.ModelAndViewContainer
 class RequesterIdArgumentResolver(
     private val userFinder: UserFinder,
 ) : HandlerMethodArgumentResolver {
-    override fun supportsParameter(parameter: MethodParameter): Boolean =
-        parameter.hasParameterAnnotation(RequesterId::class.java)
+    override fun supportsParameter(parameter: MethodParameter): Boolean {
+        return parameter.hasParameterAnnotation(RequesterId::class.java)
+    }
 
     override fun resolveArgument(
         parameter: MethodParameter,

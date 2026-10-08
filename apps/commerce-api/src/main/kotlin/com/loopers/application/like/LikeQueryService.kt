@@ -23,10 +23,13 @@ class LikeQueryService(
     private val likeRepository: LikeRepository,
     @Lazy private val productFinder: ProductFinder,
 ) : LikeFinder {
-    override fun findLikedProducts(userId: Long, request: LikeListRequest): Slice<ProductInfo> =
-        productFinder.findAllLikedBy(userId, ProductLikedListRequest(page = request.page, size = request.size))
+    override fun findLikedProducts(userId: Long, request: LikeListRequest): Slice<ProductInfo> {
+        return productFinder.findAllLikedBy(userId, ProductLikedListRequest(page = request.page, size = request.size))
+    }
 
-    override fun countLikes(productId: Long): Long = likeRepository.countByProductId(productId)
+    override fun countLikes(productId: Long): Long {
+        return likeRepository.countByProductId(productId)
+    }
 
     /**
      * 그룹 집계는 좋아요가 있는 상품만 돌려주므로 요청한 식별자마다 0을 기본으로 채운다. 요청한 상품마다 값이 있다는 것은

@@ -192,11 +192,13 @@ class OrderFinderTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.ORDER_NOT_FOUND)
     }
 
-    private fun violationsOf(userId: Long, request: OrderListRequest): List<String> =
-        assertThrows<ConstraintViolationException> { orderFinder.findAll(userId, request) }
+    private fun violationsOf(userId: Long, request: OrderListRequest): List<String> {
+        return assertThrows<ConstraintViolationException> { orderFinder.findAll(userId, request) }
             .constraintViolations.map { it.message }
+    }
 
-    private fun violationsOf(request: OrderAdminListRequest): List<String> =
-        assertThrows<ConstraintViolationException> { orderFinder.findAll(request) }
+    private fun violationsOf(request: OrderAdminListRequest): List<String> {
+        return assertThrows<ConstraintViolationException> { orderFinder.findAll(request) }
             .constraintViolations.map { it.message }
+    }
 }

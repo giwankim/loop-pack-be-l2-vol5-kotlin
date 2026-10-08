@@ -247,8 +247,9 @@ class BrandRegisterTest(
     }
 
     /** 삭제되지 않은 브랜드 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
-    private fun countBrands(): Long =
-        entityManager
+    private fun countBrands(): Long {
+        return entityManager
             .createQuery("select count(b) from Brand b", Long::class.java)
             .singleResult
+    }
 }

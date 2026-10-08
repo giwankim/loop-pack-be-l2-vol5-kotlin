@@ -299,16 +299,20 @@ class OrderAdminApiTest(
         body.extractingPath("$.data.items[0].totalAmount").isEqualTo(2_000)
     }
 
-    private fun requestGetOrders(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.get().uri(ENDPOINT)
+    private fun requestGetOrders(vararg query: Pair<String, String>, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.get().uri(ENDPOINT)
             .apply { principal?.let { with(it) } }
             .apply { query.forEach { (name, value) -> param(name, value) } }
             .exchange()
+    }
 
-    private fun requestGetOrder(orderId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult =
-        mvc.get().uri("$ENDPOINT/$orderId")
+    private fun requestGetOrder(orderId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.get().uri("$ENDPOINT/$orderId")
             .apply { principal?.let { with(it) } }
             .exchange()
+    }
 
-    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode {
+        return objectMapper.readTree(response.contentAsString)
+    }
 }

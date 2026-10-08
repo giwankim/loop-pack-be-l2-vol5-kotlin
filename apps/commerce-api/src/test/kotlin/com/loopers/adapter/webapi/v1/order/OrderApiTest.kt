@@ -38,22 +38,26 @@ class OrderApiTest(
     companion object {
         /** 본문을 JSON으로 읽을 수조차 없는 것. Spring·Jackson의 범용 400이다(설계 13.1). */
         @JvmStatic
-        fun unreadableJsons(): List<String> = listOf("", "null", "{")
+        fun unreadableJsons(): List<String> {
+            return listOf("", "null", "{")
+        }
 
         /**
          * Jackson 기본 바인딩이 거절하는 모양. 숫자 문자열·소수 표기의 정수는 받으므로 여기 없다(설계 5.10).
          * 양수 조건은 Request 제약이라 여기 없다.
          */
         @JvmStatic
-        fun malformedJsons(): List<String> = listOf(
-            "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}", "{\"items\":\"text\"}",
-            "{\"items\":true}", "{\"items\":1}", "{\"items\":[null]}", "{\"items\":[1]}",
-            "{\"items\":[[]]}", "{\"items\":[{}]}", "{\"items\":[{\"productId\":PRODUCT_ID}]}",
-            "{\"items\":[{\"quantity\":1}]}",
-        ) + listOf("null", "true", "[]", "{}", "\"abc\"", "9223372036854775808")
-            .map { """{"items":[{"productId":$it,"quantity":1}]}""" } +
-            listOf("null", "true", "[]", "{}", "\"abc\"", "2147483648", "9223372036854775808")
-                .map { """{"items":[{"productId":PRODUCT_ID,"quantity":$it}]}""" }
+        fun malformedJsons(): List<String> {
+            return listOf(
+                "[]", "true", "123", "\"text\"", "{}", "{\"items\":null}", "{\"items\":\"text\"}",
+                "{\"items\":true}", "{\"items\":1}", "{\"items\":[null]}", "{\"items\":[1]}",
+                "{\"items\":[[]]}", "{\"items\":[{}]}", "{\"items\":[{\"productId\":PRODUCT_ID}]}",
+                "{\"items\":[{\"quantity\":1}]}",
+            ) + listOf("null", "true", "[]", "{}", "\"abc\"", "9223372036854775808")
+                .map { """{"items":[{"productId":$it,"quantity":1}]}""" } +
+                listOf("null", "true", "[]", "{}", "\"abc\"", "2147483648", "9223372036854775808")
+                    .map { """{"items":[{"productId":PRODUCT_ID,"quantity":$it}]}""" }
+        }
     }
 
     /**
@@ -529,36 +533,46 @@ class OrderApiTest(
         list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
-    private fun item(id: Long, quantity: Int = 1): String = """{"items":[{"productId":$id,"quantity":$quantity}]}"""
+    private fun item(id: Long, quantity: Int = 1): String {
+        return """{"items":[{"productId":$id,"quantity":$quantity}]}"""
+    }
 
-    private fun items(id: Long, quantities: String): String = quantities.split(',')
-        .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
+    private fun items(id: Long, quantities: String): String {
+        return quantities.split(',')
+            .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
+    }
 
-    private fun items(productIds: List<Long>): String =
-        productIds.joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$it,"quantity":1}""" }
+    private fun items(productIds: List<Long>): String {
+        return productIds.joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$it,"quantity":1}""" }
+    }
 
     private fun assertNoOrders() {
         assertThat(jdbc.queryForObject("select count(*) from orders", Long::class.java)!!).isZero()
         assertThat(jdbc.queryForObject("select count(*) from order_line_item", Long::class.java)!!).isZero()
     }
 
-    private fun requestCreate(json: String, requester: Long? = owner.id): MvcTestResult =
-        mvc.post().uri("/api/v1/orders")
+    private fun requestCreate(json: String, requester: Long? = owner.id): MvcTestResult {
+        return mvc.post().uri("/api/v1/orders")
             .apply { requester?.let { header(UserIdHeader.NAME, it) } }
             .contentType(MediaType.APPLICATION_JSON)
             .content(json)
             .exchange()
+    }
 
-    private fun requestDetail(orderId: Long, requester: Long? = owner.id): MvcTestResult =
-        mvc.get().uri("/api/v1/orders/$orderId")
+    private fun requestDetail(orderId: Long, requester: Long? = owner.id): MvcTestResult {
+        return mvc.get().uri("/api/v1/orders/$orderId")
             .apply { requester?.let { header(UserIdHeader.NAME, it) } }
             .exchange()
+    }
 
-    private fun requestList(vararg query: Pair<String, String>, requester: Long? = owner.id): MvcTestResult =
-        mvc.get().uri("/api/v1/orders")
+    private fun requestList(vararg query: Pair<String, String>, requester: Long? = owner.id): MvcTestResult {
+        return mvc.get().uri("/api/v1/orders")
             .apply { requester?.let { header(UserIdHeader.NAME, it) } }
             .apply { query.forEach { (name, value) -> param(name, value) } }
             .exchange()
+    }
 
-    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode {
+        return objectMapper.readTree(response.contentAsString)
+    }
 }

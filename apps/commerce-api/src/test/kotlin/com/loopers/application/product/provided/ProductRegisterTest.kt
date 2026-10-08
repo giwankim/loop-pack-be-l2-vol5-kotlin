@@ -205,15 +205,17 @@ class ProductRegisterTest(
     }
 
     /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */
-    private fun deletedAtOf(id: Long): Any? =
-        entityManager
+    private fun deletedAtOf(id: Long): Any? {
+        return entityManager
             .createNativeQuery("select deleted_at from product where id = :id")
             .setParameter("id", id)
             .singleResult
+    }
 
     /** 삭제되지 않은 상품 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */
-    private fun countProducts(): Long =
-        entityManager
+    private fun countProducts(): Long {
+        return entityManager
             .createQuery("select count(p) from Product p", Long::class.java)
             .singleResult
+    }
 }

@@ -168,12 +168,15 @@ class ApiControllerAdvice {
         return failureResponse(errorType = errorType)
     }
 
-    private fun failureResponse(errorType: ErrorType, errorMessage: String? = null): ResponseEntity<ApiResponse<*>> =
-        ResponseEntity(
+    private fun failureResponse(errorType: ErrorType, errorMessage: String? = null): ResponseEntity<ApiResponse<*>> {
+        return ResponseEntity(
             ApiResponse.fail(errorCode = errorType.code, errorMessage = errorMessage ?: errorType.message),
             errorType.status,
         )
+    }
 }
 
 /** 오류가 난 필드의 경로. 이름이 없는 단계(배열 원소 등)는 `?`로 적는다. */
-private fun DatabindException.fieldPath(): String = path.joinToString(".") { it.propertyName ?: "?" }
+private fun DatabindException.fieldPath(): String {
+    return path.joinToString(".") { it.propertyName ?: "?" }
+}

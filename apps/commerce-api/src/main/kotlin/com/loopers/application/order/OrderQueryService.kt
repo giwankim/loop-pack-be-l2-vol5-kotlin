@@ -22,16 +22,20 @@ class OrderQueryService(
     private val orderRepository: OrderRepository,
     private val orderListRepository: OrderListRepository,
 ) : OrderFinder {
-    override fun find(userId: Long, orderId: Long): Order =
-        orderRepository.findWithLineItemsByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    override fun find(userId: Long, orderId: Long): Order {
+        return orderRepository.findWithLineItemsByIdAndUserId(orderId, userId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    }
 
-    override fun findAll(userId: Long, request: OrderListRequest): Slice<Order> =
-        orderListRepository.findAll(userId = userId, pageable = PageRequest.of(request.page, request.size))
+    override fun findAll(userId: Long, request: OrderListRequest): Slice<Order> {
+        return orderListRepository.findAll(userId = userId, pageable = PageRequest.of(request.page, request.size))
+    }
 
     /** 요청자를 넣는 [findAll]과 같은 저장소 조회를 쓴다. 갈리는 것은 거를 사용자의 유무다(설계 9 조회). */
-    override fun findAll(request: OrderAdminListRequest): Slice<Order> =
-        orderListRepository.findAll(userId = request.userId, pageable = PageRequest.of(request.page, request.size))
+    override fun findAll(request: OrderAdminListRequest): Slice<Order> {
+        return orderListRepository.findAll(userId = request.userId, pageable = PageRequest.of(request.page, request.size))
+    }
 
-    override fun findForAdmin(orderId: Long): Order =
-        orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    override fun findForAdmin(orderId: Long): Order {
+        return orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    }
 }

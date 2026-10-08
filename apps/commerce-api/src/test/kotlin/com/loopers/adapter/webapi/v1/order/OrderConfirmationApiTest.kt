@@ -345,13 +345,17 @@ class OrderConfirmationApiTest(
         body.extractingPath("$.data.balance").isEqualToLong(expected)
     }
 
-    private fun requestConfirm(orderId: Long, requester: Long? = owner.id): MvcTestResult =
-        mvc.post().uri("/api/v1/orders/$orderId/confirm")
+    private fun requestConfirm(orderId: Long, requester: Long? = owner.id): MvcTestResult {
+        return mvc.post().uri("/api/v1/orders/$orderId/confirm")
             .apply { requester?.let { header(UserIdHeader.NAME, it) } }
             .exchange()
+    }
 
-    private fun requestDetail(orderId: Long): MvcTestResult =
-        mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, owner.id).exchange()
+    private fun requestDetail(orderId: Long): MvcTestResult {
+        return mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, owner.id).exchange()
+    }
 
-    private fun MvcTestResult.json(): JsonNode = objectMapper.readTree(response.contentAsString)
+    private fun MvcTestResult.json(): JsonNode {
+        return objectMapper.readTree(response.contentAsString)
+    }
 }

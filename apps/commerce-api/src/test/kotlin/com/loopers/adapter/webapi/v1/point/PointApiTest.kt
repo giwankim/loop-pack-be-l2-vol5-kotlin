@@ -222,15 +222,17 @@ class PointApiTest : BaseWebApiAdapterTest() {
         body.extractingPath("$.data.balance").isEqualToLong(1_000_000_001L)
     }
 
-    private fun requestCharge(userId: Long, json: String): MvcTestResult =
-        mvc.post().uri(CHARGE)
+    private fun requestCharge(userId: Long, json: String): MvcTestResult {
+        return mvc.post().uri(CHARGE)
             .header(UserIdHeader.NAME, userId)
             .contentType(MediaType.APPLICATION_JSON)
             .content(json)
             .exchange()
+    }
 
-    private fun requestGetBalance(userId: Long): MvcTestResult =
-        mvc.get().uri(POINTS).header(UserIdHeader.NAME, userId).exchange()
+    private fun requestGetBalance(userId: Long): MvcTestResult {
+        return mvc.get().uri(POINTS).header(UserIdHeader.NAME, userId).exchange()
+    }
 
     /** 거절 뒤 잔액이 0원 그대로다. */
     private fun assertUnchanged(accountId: Long) {

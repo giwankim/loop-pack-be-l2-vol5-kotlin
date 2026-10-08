@@ -28,6 +28,8 @@ enum class ProductSort(val apiValue: String) {
          * 여기서 예외를 던지지 않는다([com.loopers.application.product.provided.ProductFinder]가
          * `INVALID_SORT`로 옮긴다).
          */
-        fun from(value: String): ProductSort? = entries.find { it.apiValue == value }
+        fun from(value: String): ProductSort? {
+            return entries.find { it.apiValue == value }
+        }
     }
 }

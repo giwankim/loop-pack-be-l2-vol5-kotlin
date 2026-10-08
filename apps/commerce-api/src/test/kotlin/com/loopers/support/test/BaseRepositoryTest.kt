@@ -82,39 +82,46 @@ abstract class BaseRepositoryTest {
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
 
-    protected fun prepareBrand(name: String? = null): Brand =
-        brandRepository.save(createBrand(name = name)).also { brand = it }
+    protected fun prepareBrand(name: String? = null): Brand {
+        return brandRepository.save(createBrand(name = name)).also { brand = it }
+    }
 
     protected fun prepareProduct(
         brand: Brand = prepareBrand(),
         name: String? = null,
         price: Money? = null,
         stock: Stock? = null,
-    ): Product =
-        productRepository.save(createProduct(brand, name = name, price = price, stock = stock)).also { product = it }
+    ): Product {
+        return productRepository.save(createProduct(brand, name = name, price = price, stock = stock)).also { product = it }
+    }
 
     /** 처음 잔액이 0원인 포인트 계정도 함께 저장한다. 이름이 같은 [BaseApplicationServiceTest.prepareUser]와 같은 상태다. */
-    protected fun prepareUser(): User =
-        userRepository.save(User()).also {
+    protected fun prepareUser(): User {
+        return userRepository.save(User()).also {
             pointAccount = pointAccountRepository.save(PointAccount(it.id))
             user = it
         }
+    }
 
     /** 계정 없이 사용자만 저장한다. 사용자와 계정이 어긋난 데이터를 만들 때만 쓴다. */
-    protected fun prepareUserWithoutAccount(): User = userRepository.save(User()).also { user = it }
+    protected fun prepareUserWithoutAccount(): User {
+        return userRepository.save(User()).also { user = it }
+    }
 
     protected fun prepareLike(
         user: User = prepareUser(),
         product: Product = prepareProduct(),
-    ): Like =
-        likeRepository.save(Like(userId = user.id, productId = product.id)).also { like = it }
+    ): Like {
+        return likeRepository.save(Like(userId = user.id, productId = product.id)).also { like = it }
+    }
 
     /** 넘긴 상품마다 그 상품을 스냅숏한 품목 하나를 담는다. 품목의 상품 ID가 외래 키에 걸리므로 저장한 상품을 받는다. */
     protected fun prepareOrder(
         user: User = prepareUser(),
         products: List<Product> = listOf(prepareProduct()),
-    ): Order =
-        orderRepository.save(createOrder(user.id, products.map { createOrderProduct(it) })).also { order = it }
+    ): Order {
+        return orderRepository.save(createOrder(user.id, products.map { createOrderProduct(it) })).also { order = it }
+    }
 
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {

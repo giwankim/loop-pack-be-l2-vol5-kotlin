@@ -34,12 +34,13 @@ class MySqlTestContainersConfig {
     }
 
     @Bean
-    fun mySqlContainerProperties(): DynamicPropertyRegistrar =
-        DynamicPropertyRegistrar { registry ->
+    fun mySqlContainerProperties(): DynamicPropertyRegistrar {
+        return DynamicPropertyRegistrar { registry ->
             registry.add("datasource.mysql-jpa.main.jdbc-url") {
                 mySqlContainer.let { "jdbc:mysql://${it.host}:${it.firstMappedPort}/${it.databaseName}" }
             }
             registry.add("datasource.mysql-jpa.main.username") { mySqlContainer.username }
             registry.add("datasource.mysql-jpa.main.password") { mySqlContainer.password }
         }
+    }
 }

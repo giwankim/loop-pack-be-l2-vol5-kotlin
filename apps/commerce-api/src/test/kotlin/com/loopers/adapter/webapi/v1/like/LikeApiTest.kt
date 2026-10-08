@@ -173,9 +173,11 @@ class LikeApiTest : BaseWebApiAdapterTest() {
         assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
-    private fun requestLike(productId: Long, userId: Long): MvcTestResult =
-        mvc.post().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
+    private fun requestLike(productId: Long, userId: Long): MvcTestResult {
+        return mvc.post().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
+    }
 
-    private fun requestUnlike(productId: Long, userId: Long): MvcTestResult =
-        mvc.delete().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
+    private fun requestUnlike(productId: Long, userId: Long): MvcTestResult {
+        return mvc.delete().uri("$PRODUCTS/$productId/likes").header(UserIdHeader.NAME, userId).exchange()
+    }
 }
