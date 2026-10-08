@@ -55,7 +55,7 @@ abstract class BaseEntity {
     private fun prePersist() {
         guard()
 
-        val now = now()
+        val now = nowInMicros()
         createdAt = now
         updatedAt = now
     }
@@ -64,7 +64,7 @@ abstract class BaseEntity {
     private fun preUpdate() {
         guard()
 
-        val now = now()
+        val now = nowInMicros()
         updatedAt = now
     }
 
@@ -72,8 +72,8 @@ abstract class BaseEntity {
      * delete 연산은 멱등하게 동작할 수 있도록 한다. (삭제된 엔티티를 다시 삭제해도 동일한 결과가 나오도록)
      */
     fun delete() {
-        deletedAt ?: run { deletedAt = now() }
+        deletedAt ?: run { deletedAt = nowInMicros() }
     }
 
-    private fun now(): Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
+    private fun nowInMicros(): Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
 }

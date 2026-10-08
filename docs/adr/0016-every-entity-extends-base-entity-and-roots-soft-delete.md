@@ -16,7 +16,7 @@ date: 2026-10-08
 3. **딸린 엔티티는 루트를 따른다.** 필터를 붙이지 않고 `delete()`를 부르지 않으며, 루트를 거쳐서만 읽는다. 딸린 엔티티를 가리는 것은 루트의 필터다. `OrderLineItem`에 필터를 두지 않는 까닭이 있다. 주문은 품목을 `@EntityGraph` 조인으로 읽고([ADR 0014](./0014-finders-load-whole-aggregates.md)), 대상의 `@SQLRestriction`은 조인에도 붙는다. `ProductRepository`가 브랜드에서 이미 기대는 동작이다. 필터에 걸린 품목은 주문에서 빠지지만 `totalAmount`는 그 품목을 계속 센다.
 4. **`Like`는 하나뿐인 예외로 행을 지운다(ADR 0001).** 취소한 좋아요가 행으로 남으면 같은 쌍을 다시 누를 때 `(user_id, product_id)` 유일 키와 충돌한다. `delete()`는 지금처럼 쓰지 않는다.
 5. **`BaseEntity`의 시각은 마이크로초로 자른 `Instant`다.** `createdAt`, `updatedAt`, `deletedAt` 셋 다 그렇다. `Order`는 자기 `id`와 `createdAt`을 버리고 물려받는다. `confirmedAt`은 `Order`가 스스로 자른다.
-6. **`Like`는 `userId`와 `productId`를 `@NaturalId`로 표시한다.** 좋아요의 정체가 그 쌍이라는 것을 적는다. Spring Data의 파생 조회(`findByUserIdAndProductId`, `existsByUserIdAndProductId`)는 이 애노테이션을 보지 않고 그대로 SQL을 보낸다. 자연 식별자로 읽으려면 포트 뒤에서 `Session` API를 써야 하고, 2차 캐시도 없다. 그래서 지금은 정체를 적고 불변을 지킬 뿐 읽는 방식은 바꾸지 않는다. 이름 있는 `UK_LIKES_USER_ID_PRODUCT_ID`는 그대로다. Hibernate가 자연 식별자 열에 제 유일 키를 따로 만들지 않는다는 것은 `LikeRepositoryTest`가 `information_schema`로 고정한다.
+6. **`Like`는 `userId`와 `productId`를 `@NaturalId`로 표시한다.** 좋아요의 정체가 그 쌍이라는 것을 적는다. Spring Data의 파생 조회(`findByUserIdAndProductId`, `existsByUserIdAndProductId`)는 이 애노테이션을 보지 않고 그대로 SQL을 보낸다. 자연 식별자로 읽으려면 포트 뒤에서 `Session` API를 써야 하고, 2차 캐시도 없다. 그래서 지금은 정체를 적고 불변을 지킬 뿐 읽는 방식은 바꾸지 않는다. 이름 있는 `UK_LIKES_USER_ID_PRODUCT_ID`는 그대로다. Hibernate는 자연 식별자 열에 제 유일 키를 만들 수 있으므로, 쌍의 유일 인덱스가 이름 있는 그것 하나뿐임을 `LikeRepositoryTest`가 `information_schema`로 고정한다.
 
 ## 고르지 않은 것
 
@@ -42,6 +42,6 @@ date: 2026-10-08
 
 ## 바꾸는 결정
 
-ADR 0001에서 브랜드·상품만 하던 논리 삭제는 이 결정의 규칙 2로 넓어졌고, 좋아요의 물리 삭제는 이 결정의 예외로 남는다. ADR 0001, 포인트·주문 설계 8.1·12.1·13, 카탈로그 설계 5.27은 원문을 그대로 두고 날짜 메모를 달았다. 지금의 모양을 적는 도메인 문서(`docs/domain`)는 그 자리에서 고쳤다.
+ADR 0001에서 브랜드·상품만 하던 논리 삭제는 이 결정의 규칙 2로 넓어졌고, 좋아요의 물리 삭제는 이 결정의 예외로 남는다. ADR 0001, 포인트·주문 설계 8.1·12.1·13, 카탈로그 설계 5.27·7은 원문을 그대로 두고 날짜 메모를 달았다. 카탈로그 설계의 클래스 다이어그램은 `deletedAt`의 타입만 `Instant?`로 그 자리에서 고쳤다. 지금의 모양을 적는 도메인 문서(`docs/domain`)도 그 자리에서 고쳤다.
 
 `CONTEXT.md`는 그대로다. 그 "삭제됨"은 도메인이 할 수 있는 일을 적는데, 지울 수 있는 것은 브랜드와 상품뿐이다. 사용자·주문의 논리 삭제는 기술의 기본값이지 도메인의 말이 아니다.
