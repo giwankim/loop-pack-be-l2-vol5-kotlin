@@ -12,7 +12,7 @@ import org.junit.jupiter.api.assertThrows
 /**
  * [OrderCreator]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
- * 생성의 거절과 품목·합계는 [com.loopers.adapter.webapi.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로
+ * 생성의 거절과 품목·합계는 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로
  * 여기서는 생성이 요청마다 새 주문이라는 계약(ADR 0005)과, 포트가 Request를 검증한다는 것만 본다.
  * 만든 주문은 같은 조각의 [OrderFinder]로 읽는다.
  */

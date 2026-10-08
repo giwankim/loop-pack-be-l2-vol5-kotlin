@@ -18,7 +18,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
  * 요청자 구분과 삭제된 상품은 [com.loopers.application.like.provided.LikeFinderTest]가 MySQL 위에서 이미 고정한다.
  * 여기서는 경로와 헤더가 요청자로 이어지는지, 쿼리 문자열이 조각에 닿는지, 응답 JSON의 모양만 본다(설계 6).
  */
-class UserLikeApiMockMvcTest : BaseWebApiAdapterTest() {
+class UserLikeApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val USERS = "/api/v1/users"
     }

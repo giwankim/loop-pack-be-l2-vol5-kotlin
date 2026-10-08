@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
  *
  * enum 값 불일치와 그 밖의 매핑 오류 분기는 지금 어느 본문에도 enum 필드가 없고 매핑 오류를 낼 길이 없어 HTTP로 닿지 않는다.
  */
-class RequestBodyErrorMockMvcTest : BaseWebApiAdapterTest() {
+class RequestBodyErrorApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val PRODUCTS = "/api-admin/v1/products"
         private val ADMIN = user("admin").roles("ADMIN")

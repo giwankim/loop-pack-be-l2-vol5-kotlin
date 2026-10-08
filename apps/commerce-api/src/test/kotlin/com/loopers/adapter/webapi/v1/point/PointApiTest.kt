@@ -21,9 +21,9 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
  * [com.loopers.application.point.provided.PointAccountFinderTest]가 MySQL 위에서 이미 고정한다.
  * 여기서는 헤더가 요청자로 이어지는지, 본문의 JSON 토큰을 어디까지 받는지, 오류가 어느 status와 code로
  * 내려가는지, 거절 뒤 잔액이 그대로인지를 본다(설계 5.10, 6). 요청 사이를 비우는 까닭은
- * [com.loopers.adapter.webapi.v1.product.ProductApiMockMvcTest]와 같다.
+ * [com.loopers.adapter.webapi.v1.product.ProductApiTest]와 같다.
  */
-class PointApiMockMvcTest : BaseWebApiAdapterTest() {
+class PointApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val POINTS = "/api/v1/points"
         private const val CHARGE = "$POINTS/charge"

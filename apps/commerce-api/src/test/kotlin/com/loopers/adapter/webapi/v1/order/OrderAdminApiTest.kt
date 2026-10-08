@@ -19,13 +19,13 @@ import tools.jackson.databind.ObjectMapper
 
 /**
  * 관리자 주문 조회. 주문은 `prepareOrder`가 [com.loopers.application.order.provided.OrderCreator]로 만들고 관리자 API로
- * 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은 [OrderApiMockMvcTest]와 같다. 준비와 요청마다 서비스 트랜잭션이
+ * 읽으므로, 테스트 전체를 트랜잭션으로 감싸지 않는 까닭은 [OrderApiTest]와 같다. 준비와 요청마다 서비스 트랜잭션이
  * 끝나고 다음 요청은 새 영속성 컨텍스트에서 읽는다.
  *
  * 관리자 경계는 기존 테스트 전용 설정을 쓴다([com.loopers.config.security.AdminSecurityConfig]). 운영 인증 수단을 더하는 것이 아니다.
  */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class OrderAdminApiMockMvcTest(
+class OrderAdminApiTest(
     private val objectMapper: ObjectMapper,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
@@ -78,7 +78,7 @@ class OrderAdminApiMockMvcTest(
 
     /**
      * 목록의 항목은 상세와 같은 주문 응답이다. 필드를 하나씩 다시 세지 않고 상세의 JSON과 그대로 견준다.
-     * 두 관리자 응답이 말없이 어긋날 수 없게 하려는 것이며, 고객 목록이 [OrderApiMockMvcTest]에서 보는 것과 같은 자리다.
+     * 두 관리자 응답이 말없이 어긋날 수 없게 하려는 것이며, 고객 목록이 [OrderApiTest]에서 보는 것과 같은 자리다.
      */
     @Test
     fun `the admin list entries are the same order responses as the detail`() {

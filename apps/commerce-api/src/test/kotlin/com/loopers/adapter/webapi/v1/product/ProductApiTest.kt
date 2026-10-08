@@ -19,7 +19,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
  * 정렬 자체와 동률, 삭제 필터는 [com.loopers.application.product.required.ProductRepositoryTest]가 SQL로 이미 고정한다.
  * 여기서는 그 위에서 쿼리 문자열이 실제로 기준까지 이어지는지와 응답 JSON의 모양만 본다(설계 6).
  */
-class ProductApiMockMvcTest : BaseWebApiAdapterTest() {
+class ProductApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api/v1/products"
         private const val ADMIN_ENDPOINT = "/api-admin/v1/products"
@@ -73,7 +73,7 @@ class ProductApiMockMvcTest : BaseWebApiAdapterTest() {
     /**
      * 설계 문서의 대표 흐름이자 #7의 인수 조건. 관리자가 재고를 0으로 맞추면 고객 상세가 품절을 보인다.
      *
-     * 두 요청 사이를 비우는 까닭은 [com.loopers.adapter.webapi.v1.brand.BrandApiMockMvcTest]와 같다.
+     * 두 요청 사이를 비우는 까닭은 [com.loopers.adapter.webapi.v1.brand.BrandApiTest]와 같다.
      * 비우지 않으면 고객 조회가 방금 재고를 바꾼 객체를 1차 캐시에서 받아, 변경이 DB에 닿았는지와 무관하게 통과한다.
      */
     @Test

@@ -17,7 +17,7 @@ import org.junit.jupiter.api.assertThrows
  * [PointCharger]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
  *
  * 잔액은 저장 약속을 거치지 않고 테이블을 SQL로 읽는다. "잔액이 그대로다"는 테이블의 사실이다.
- * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [com.loopers.adapter.webapi.v1.order.OrderConfirmationApiMockMvcTest]가
+ * 커밋과 롤백 자체는 테스트 트랜잭션에 가려지므로 [com.loopers.adapter.webapi.v1.order.OrderConfirmationApiTest]가
  * 본다. 충전한 뒤 별도 요청으로 잔액을 읽고, 늦은 실패의 롤백은 여러 행을 쓰는 확정에서 본다(설계 18.1).
  */
 class PointChargerTest(

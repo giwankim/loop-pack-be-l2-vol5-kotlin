@@ -25,7 +25,7 @@ import java.time.Instant
 
 /** Each request ends its own transaction; read-back uses fresh persistence contexts. */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class OrderConfirmationApiMockMvcTest(
+class OrderConfirmationApiTest(
     private val objectMapper: ObjectMapper,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
@@ -171,7 +171,7 @@ class OrderConfirmationApiMockMvcTest(
         if (deleted == "product") {
             deleteProduct(second)
         } else {
-            // The catalog normally prevents this; exercise the same legacy state as OrderApiMockMvcTest.
+            // The catalog normally prevents this; exercise the same legacy state as OrderApiTest.
             deleteBrandKeepingProducts(secondBrand)
         }
 

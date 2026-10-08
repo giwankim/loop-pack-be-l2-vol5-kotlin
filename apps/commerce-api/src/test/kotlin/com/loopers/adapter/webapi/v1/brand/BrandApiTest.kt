@@ -17,7 +17,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
  * [com.loopers.config.security.AdminSecurityConfig]를 가져오는 까닭과 고객 경로가 인증 없이 지나가는 까닭은
  * [BaseWebApiAdapterTest]에 있다.
  */
-class BrandApiMockMvcTest : BaseWebApiAdapterTest() {
+class BrandApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api/v1/brands"
         private const val ADMIN_ENDPOINT = "/api-admin/v1/brands"

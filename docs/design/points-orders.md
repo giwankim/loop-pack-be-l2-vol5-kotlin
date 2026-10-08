@@ -200,10 +200,10 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 > | 입력 | 결과 |
 > | --- | --- |
 > | `"amount": "5"` 또는 `"amount": 5.0`, `"quantity": "2"` | 허용. 정수로 읽는다. 상품 ID도 같다. |
-> | `"amount": 1.5` | 허용. 소수부를 버려 1포인트를 충전한다(`PointApiMockMvcTest`가 고정). |
+> | `"amount": 1.5` | 허용. 소수부를 버려 1포인트를 충전한다(`PointApiTest`가 고정). |
 > | 숫자 필드 누락·`null`·숫자가 아닌 문자열·boolean·배열·`Long`·`Int` 범위 밖 | 400 범용 `Bad Request`. |
 > | `"items"`가 문자열·숫자·boolean·`null` | 400 범용 `Bad Request`. |
-> | `"items": {"productId": 10, "quantity": 2}` | 허용. `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 한 품목 배열로 읽는다(`OrderApiMockMvcTest`가 고정). |
+> | `"items": {"productId": 10, "quantity": 2}` | 허용. `ACCEPT_SINGLE_VALUE_AS_ARRAY`가 한 품목 배열로 읽는다(`OrderApiTest`가 고정). |
 >
 > 대가는 둘이다. 소수 금액은 오류 없이 버림되어, `1.5`를 보낸 클라이언트는 400 대신 1포인트 충전을 받는다. 품목 객체 하나는 배열로 감싸 받는다. 소수 버림은 카탈로그의 가격·재고가 이미 지던 대가다. 어느 쪽을 거절하려면 `JacksonConfig`를 바꿔 API 전체에 한 번에 적용한다.
 
@@ -566,7 +566,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - Q20이 전역 ObjectMapper를 바꾸지 않기로 했으므로 정책은 새 요청 경계에만 붙어야 한다. Request에 `@JsonDeserialize`를 두면 Jackson 정책이 application에 들어간다(7절 "Request/Info에 Jackson 입력 정책을 넣지 않는다"). 그래서 HTTP 전용 DTO가 하나 더 있다.
 - `StrictLongDeserializer`는 `VALUE_NUMBER_INT`만 받고 `Long` 범위를 넘는 정수는 `InputCoercionException`을 잡아 거절한다. 거절은 `CoreException(INVALID_POINT_ORDER_REQUEST)`이며 Jackson이 `JsonMappingException`으로, Spring이 `HttpMessageNotReadableException`으로 감싼다. `ApiControllerAdvice.handleHttpMessageNotReadable`이 근본 원인이 `CoreException`이면 그 `ErrorType`으로 답하도록 한 줄을 더했다.
 - `null` 토큰은 deserializer를 거치지 않고 null이 되고, 빠진 필드도 null이다. DTO의 `amount: Long?`가 둘을 한 자리에서 같은 code로 거절한다. Kotlin 모듈의 "필수 필드 누락" 예외에 기대면 code가 범용 `Bad Request`가 되어 버린다.
-- 알 수 없는 필드는 기존 정책대로 무시한다. 카탈로그가 숫자 문자열과 소수 표기를 계속 받는 것은 `ProductAdminApiMockMvcTest`가 붙들어 둔다.
+- 알 수 없는 필드는 기존 정책대로 무시한다. 카탈로그가 숫자 문자열과 소수 표기를 계속 받는 것은 `ProductAdminApiTest`가 붙들어 둔다.
 - 검사 순서의 한 귀퉁이: Spring이 `@RequestBody`를 핸들러에 들어가기 전에 읽으므로, 본문이 잘못된 요청은 `X-USER-ID`가 없어도 401이 아니라 400 `INVALID_POINT_ORDER_REQUEST`다. 요청자 확인은 핸들러 안(`UserIdHeader.require`)에서 한다. 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 없어 그대로 두었고, 테스트도 한 가지 잘못만 보낸다. 401을 앞세우려면 본문을 직접 읽는 인자 해석기가 필요하다.
 
 주문 생성(#13)의 `quantity`(Int)·`productId`(Long)와 `items` 배열도 같은 자리에서 같은 방식으로 가린다. `Int`용 deserializer가 필요하면 `StrictLongDeserializer` 옆에 둔다.
@@ -599,7 +599,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 > 2026-10-08 이 선택을 거뒀다([ADR 0012](../adr/0012-tests-inherit-setup-from-abstract-base-classes.md), #84). `UserFixture`는 없어지고 테스트 기반 클래스의 `prepareUser()`·`prepareUserWithoutAccount()`가 사용자와 0원 계정을 저장한다.
 
-- `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiMockMvcTest`가 `count(*)`로 확인).
+- `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiTest`가 `count(*)`로 확인).
 - 좋아요 테스트는 계정 없이 `userRepository.save(User())`로 사용자를 만든다. 포인트를 쓰지 않는 자리라 그대로 두었다. 주문 확정(#14)이 좋아요와 포인트를 함께 쓰는 테스트를 만들면 그때 `UserFixture`로 모은다.
 
 ### 12.6 이력의 범위
@@ -625,7 +625,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 | 키의 대소문자 구분(조회·유일), 계정 FK, 열 collation | `PointHistoryRepositoryTest` | 프록시 계정의 `charge`는 계정을 읽으려다 먼저 실패하므로 FK 테스트만 `PointHistory.charge` 팩토리를 직접 부른다(`internal`) |
 | 재요청 재생·409·사용자별 키·실패 키 재사용·계정 없음·요청자 없음·Request 제약 | `PointServiceTest` (`@SpringBootTest` + `@Transactional`) | 잔액과 이력은 `PointRows`가 SQL로 읽는다 |
 | 잔액과 이력이 함께 커밋·롤백 | `PointServiceTransactionTest` (`@SpringBootTest`, 트랜잭션 없음, `DatabaseCleanUp`) | `@SpykBean PointHistoryRepository`가 `save`를 실제로 실행한 뒤 던진다. 이력의 INSERT가 나간 뒤의 실패라 두 변경이 한 트랜잭션이 아니면 어느 한쪽이 남는다. 새 트랜잭션에서 읽고, 같은 키로 다시 충전해 키가 남지 않았음을 본다 |
-| 인수 흐름, 재생 본문 동일, 401·400·409·500의 status와 code, JSON 토큰 8종, 키 형식 5종, 거절 뒤 상태 불변, 카탈로그 회귀 | `PointApiMockMvcTest`, `ProductAdminApiMockMvcTest` | 재생 비교는 두 응답 본문 문자열을 flush/clear 사이에 두고 견준다 |
+| 인수 흐름, 재생 본문 동일, 401·400·409·500의 status와 code, JSON 토큰 8종, 키 형식 5종, 거절 뒤 상태 불변, 카탈로그 회귀 | `PointApiTest`, `ProductAdminApiTest` | 재생 비교는 두 응답 본문 문자열을 flush/clear 사이에 두고 견준다 |
 
 ## 13. DRAFT 생성·내 상세 구현 — Issue #13
 
@@ -641,7 +641,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
 - `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
-- `OrderApiMockMvcTest`는 테스트 전체를 트랜잭션으로 감싸지 않는다. 요청마다 서비스 트랜잭션이 종료되고 다음 요청은 새 영속성 컨텍스트에서 읽는다. FK 메타데이터·잘못된 참조·물리 삭제 제한·유일 제약을 실제 MySQL에서 검사한다. 두 번째 품목 저장을 거절하는 임시 CHECK를 넣어 앞서 저장한 주문·첫 품목·키까지 롤백되는지 확인하고, 제약을 없앤 뒤 같은 키로 성공하는지 검증한다. CONFIRMED 응답 검사는 DB fixture로 상태 형태를 준비하며 실제 확정 흐름 검증은 후속 티켓의 책임이다.
+- `OrderApiTest`는 테스트 전체를 트랜잭션으로 감싸지 않는다. 요청마다 서비스 트랜잭션이 종료되고 다음 요청은 새 영속성 컨텍스트에서 읽는다. FK 메타데이터·잘못된 참조·물리 삭제 제한·유일 제약을 실제 MySQL에서 검사한다. 두 번째 품목 저장을 거절하는 임시 CHECK를 넣어 앞서 저장한 주문·첫 품목·키까지 롤백되는지 확인하고, 제약을 없앤 뒤 같은 키로 성공하는지 검증한다. CONFIRMED 응답 검사는 DB fixture로 상태 형태를 준비하며 실제 확정 흐름 검증은 후속 티켓의 책임이다.
 
 동시 요청의 중복 삽입 복구·잠금·버전 관리와 기존 DB의 스키마 전환은 이 구현에 포함하지 않는다.
 
@@ -731,11 +731,11 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | --- | --- |
 | `OrderRepositoryTest` (새 파일, `@DataJpaTest`) | 요청자의 주문만 오르는지, 최신순과 `id` 동률 깨기, 품목이 여럿인 주문으로 쪽을 넘겨도 주문이 겹치거나 빠지지 않고 품목이 잘리지 않는지, 빈 쪽 |
 | `OrderServiceTest` (새 파일) | 기본 `page`·`size`가 조각까지 닿는지, 저장된 품목이 항목에 실리는지, 없는 사용자 401, 범위 밖 입력의 제약 메시지, 상한까지 채운 조각의 조회 세 번 |
-| `OrderApiMockMvcTest` | 공개 계약. 목록 항목이 상세 응답과 글자까지 같은지, 타인의 주문이 빠지는지, `DRAFT`·`CONFIRMED`의 결제 필드, 봉투의 기본값, 쿼리 문자열이 조각에 닿는지, 범위 밖 400, 요청자 없음 401, 빈 목록 |
+| `OrderApiTest` | 공개 계약. 목록 항목이 상세 응답과 글자까지 같은지, 타인의 주문이 빠지는지, `DRAFT`·`CONFIRMED`의 결제 필드, 봉투의 기본값, 쿼리 문자열이 조각에 닿는지, 범위 밖 400, 요청자 없음 401, 빈 목록 |
 
 - 품목의 차례를 보는 곳에서는 품목을 상품 ID의 거꾸로 넣는다. 넣은 차례가 이미 상품 ID 차례이면 응답이 그대로여도 차례를 확인한 것이 아니다.
 - 만든 시각은 `Order`가 스스로 정하므로 동률을 요청으로 만들 수 없다. 저장한 뒤 SQL로 시각을 겹쳐 놓고 남은 차례를 식별자가 가르는지 본다. 저장소와 HTTP 두 자리에서 모두 확인한다.
-- `CONFIRMED` 항목은 13과 같이 DB fixture로 상태 형태를 만든다. 확정 흐름은 #14의 `OrderConfirmationApiMockMvcTest`가 검증하며, 운영 코드에 fixture용 API를 더하지 않는다.
+- `CONFIRMED` 항목은 13과 같이 DB fixture로 상태 형태를 만든다. 확정 흐름은 #14의 `OrderConfirmationApiTest`가 검증하며, 운영 코드에 fixture용 API를 더하지 않는다.
 - 목록 항목을 필드마다 다시 세지 않고 상세의 JSON과 그대로 견준다. 두 응답이 말없이 어긋날 수 없게 하려는 것이며, 같은 테스트가 상품 이름 변경·삭제 뒤에도 스냅샷이 그대로인지 함께 본다(ADR 0002).
 
 동시 요청, 커서 페이지네이션, 상태·기간 필터, 관리자 목록은 이 구현에 포함하지 않는다.
@@ -753,11 +753,11 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 부족은 각각 `InsufficientStockException`·`InsufficientPointsException`으로 표현하고 공통 advice에서 `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`/409로 바꾼다. 다른 도메인 규칙의 기존 400 매핑은 유지한다.
 - 판매 불가와 재고 부족이 함께면 `ORDER_PRODUCT_NOT_AVAILABLE`/404가 앞선다. 확인을 차감보다 먼저 한 번에 끝내므로 응답이 품목의 차례(상품 ID 오름차순)에 흔들리지 않는다. 검사 순서를 바꾸면 이 계약도 함께 본다.
-- 생성에서도 판매 불가가 앞선다. 판매할 수 없는 상품이 중복으로 오면 `ORDER_PRODUCT_NOT_AVAILABLE`/404이며 중복의 400이 아니다. `OrderService.create`가 받은 품목마다 상품을 확인한 뒤에야 `Order`를 만들고, 중복은 `Order` 생성자가 거절하기 때문이다. 중복 검사를 Service에 한 벌 더 두지 않으려고 이 차례를 받아들였다(2026-10-03, #55, 5.2). `OrderApiMockMvcTest`의 `a request that repeats an unavailable product returns 404 and saves nothing`이 붙들어 둔다.
+- 생성에서도 판매 불가가 앞선다. 판매할 수 없는 상품이 중복으로 오면 `ORDER_PRODUCT_NOT_AVAILABLE`/404이며 중복의 400이 아니다. `OrderService.create`가 받은 품목마다 상품을 확인한 뒤에야 `Order`를 만들고, 중복은 `Order` 생성자가 거절하기 때문이다. 중복 검사를 Service에 한 벌 더 두지 않으려고 이 차례를 받아들였다(2026-10-03, #55, 5.2). `OrderApiTest`의 `a request that repeats an unavailable product returns 404 and saves nothing`이 붙들어 둔다.
 - 이미 확정된 주문의 재확정은 `Order.confirm`이 `InvalidOrderException`으로 거절한다. `OrderService.confirm`이 저장된 결과를 먼저 재생하므로 정상 흐름은 이 거절에 닿지 않으며, 애그리거트가 결제액·확정 시각을 두 번 쓰지 않도록 스스로 지킨다(#14 표준 리뷰).
 - `PointHistory.order`는 읽기용 LAZY 연관이다. `uk_point_history_order_id`가 주문당 PAYMENT 하나를 보장하고 Hibernate가 `fk_point_history_order`를 만든다. 처음에는 스칼라 참조와 import SQL을 사용했지만, 스키마 재생성 테스트에서 Hibernate가 FK를 모른 채 `orders`를 먼저 삭제해 실패했다. 연관 매핑으로 FK를 테이블보다 먼저 제거하게 하며 별도 스키마 삭제 훅은 두지 않는다. CHARGE는 키만, PAYMENT는 주문 참조만 가지며 양수 금액과 0 이상 직후 잔액을 DB CHECK로도 지킨다. CHARGE의 키 비교·재생은 그대로다.
 - 생성·확정 응답의 시각 정밀도를 MySQL `datetime(6)`에 맞춘다. 확정 후에도 생성 재요청은 최초 DRAFT/201이며 충전 재요청은 충전 당시 잔액이다. GET은 현재 상태를 읽는다.
-- 주 검증 경계는 `OrderConfirmationApiMockMvcTest`의 실제 HTTP 요청·MySQL이다. 테스트 전체를 트랜잭션으로 감싸지 않는다. 늦은 실패는 기존 `PointHistoryRepository.save` 경계에서 실제 저장과 flush 뒤 주입하고, 종료 후 새 트랜잭션으로 재조회한다. 공개 테스트 API는 추가하지 않는다.
+- 주 검증 경계는 `OrderConfirmationApiTest`의 실제 HTTP 요청·MySQL이다. 테스트 전체를 트랜잭션으로 감싸지 않는다. 늦은 실패는 기존 `PointHistoryRepository.save` 경계에서 실제 저장과 flush 뒤 주입하고, 종료 후 새 트랜잭션으로 재조회한다. 공개 테스트 API는 추가하지 않는다.
 - `PointAccountTest`의 3,000원 잔액에서 4,000원 결제 거절은 실패하는 테스트를 먼저 실행한 뒤 최소 구현을 추가했다. 기존 Product 테스트는 양수 차감·부족·마지막 재고의 규칙을 보완한다.
 
 동시성 제어, 예약·만료, 취소·환불, 외부 결제, migration 도구는 추가하지 않는다. 단일 요청의 원자성과 순차 재요청만 이번 검증의 대상이다.
@@ -817,7 +817,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | --- | --- |
 | `OrderRepositoryTest` | 최신순과 id 동률, 사용자 필터, `offset`·`hasNext`, 빈 조각, 끝을 넘긴 쪽. 품목이 많은 주문이 조각을 밀어내지 않는 것. 거를 사용자가 없는 조각 |
 | `OrderServiceTest` | 내 목록의 조회 셋과 관리자 목록의 조회 둘, 품목 누락 없음, 상한까지 채운 조각, 컨트롤러를 거치지 않는 호출의 페이지 범위 거절, 없는 사용자 401과 없는 주문 `ORDER_NOT_FOUND` |
-| `OrderAdminApiMockMvcTest` | 관리자 경계의 403, 응답 봉투와 필드, userId 필터와 거른 조각의 쪽 넘김, 목록 항목과 상세의 동일성, DRAFT의 생략과 CONFIRMED의 저장 값, 카탈로그 수정·삭제 후의 스냅샷 |
+| `OrderAdminApiTest` | 관리자 경계의 403, 응답 봉투와 필드, userId 필터와 거른 조각의 쪽 넘김, 목록 항목과 상세의 동일성, DRAFT의 생략과 CONFIRMED의 저장 값, 카탈로그 수정·삭제 후의 스냅샷 |
 
 조회 횟수가 둘과 셋으로 갈리는 것이 두 목록의 차이를 그대로 보여 준다. 내 목록은 요청자가 있는지 먼저 묻고(없으면 401) 관리자 목록은 묻지 않는다. 자격은 관리자 경계가 이미 보았고 거를 사용자는 선택 입력이다.
 
@@ -827,9 +827,9 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 거르는 자리도 쪽을 넘겨 본다. 기본 크기로만 걸러 보면 조각을 만든 뒤에 거르는 구현도 같은 답을 내므로, 거르기가 `where`에 있는지 아무 테스트도 말하지 않는다. 그래서 두 사용자의 주문을 번갈아 만들고 한쪽만 걸러 `size`를 넘기는 경우를 더했다. 조각을 만든 뒤에 거르도록 고친 구현에서 이 경우만 실패하고 기존 필터 테스트는 통과하는 것을 확인했다(리뷰가 말한 자리다).
 
-목록 항목은 필드마다 다시 세지 않고 상세의 JSON과 그대로 견준다. 두 관리자 응답이 같은 `OrderAdminResponse`를 쓰므로 말없이 어긋날 수 없게 하려는 것이고, 고객 목록이 `OrderApiMockMvcTest`에서 보는 것과 같은 자리다. 아무 테스트도 보지 않는 `createdAt`만 목록에서 어긋나게 한 구현으로 이 경우만 실패하는 것을 확인했다.
+목록 항목은 필드마다 다시 세지 않고 상세의 JSON과 그대로 견준다. 두 관리자 응답이 같은 `OrderAdminResponse`를 쓰므로 말없이 어긋날 수 없게 하려는 것이고, 고객 목록이 `OrderApiTest`에서 보는 것과 같은 자리다. 아무 테스트도 보지 않는 `createdAt`만 목록에서 어긋나게 한 구현으로 이 경우만 실패하는 것을 확인했다.
 
-같은 마이크로초에 만들어진 주문의 차례와 확정된 주문의 저장 형태는 DB fixture로 준비한다. 확정 동작의 검증은 #14의 책임이며, 여기서는 저장된 결제 결과를 관리자 조회가 그대로 싣는지만 본다(13절의 같은 판단). `OrderAdminApiMockMvcTest`도 테스트 전체를 트랜잭션으로 감싸지 않아, 고객 API가 만든 주문을 다음 요청이 새 영속성 컨텍스트에서 읽는다.
+같은 마이크로초에 만들어진 주문의 차례와 확정된 주문의 저장 형태는 DB fixture로 준비한다. 확정 동작의 검증은 #14의 책임이며, 여기서는 저장된 결제 결과를 관리자 조회가 그대로 싣는지만 본다(13절의 같은 판단). `OrderAdminApiTest`도 테스트 전체를 트랜잭션으로 감싸지 않아, 고객 API가 만든 주문을 다음 요청이 새 영속성 컨텍스트에서 읽는다.
 
 운영 인증은 이 티켓에도 없다. 기존 테스트 전용 `AdminSecurityConfig`가 `/api-admin/**`에 ADMIN을 요구하고 자격 없는 요청을 403으로 거절한다.
 
@@ -879,9 +879,9 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ### 17.4 테스트가 바뀐 자리
 
-- 키나 재생만 보던 테스트 22개를 지웠다. `PointServiceTest` 6, `PointApiMockMvcTest` 8, `OrderApiMockMvcTest` 4, `PointHistoryRepositoryTest` 4다. 다른 목적을 가진 테스트에서는 키 조항과 "키를 다시 쓸 수 있다"는 꼬리만 덜었다.
+- 키나 재생만 보던 테스트 22개를 지웠다. `PointServiceTest` 6, `PointApiTest` 8, `OrderApiTest` 4, `PointHistoryRepositoryTest` 4다. 다른 목적을 가진 테스트에서는 키 조항과 "키를 다시 쓸 수 있다"는 꼬리만 덜었다.
 - `PointHistoryRepositoryTest`의 키 조회 테스트는 `entityManager.find`로 읽는 저장 왕복 테스트로 바꿨다. 저장소가 저장만 하게 되어도 열 매핑은 여전히 확인해야 한다.
-- `OrderConfirmationApiMockMvcTest`의 MySQL 형태 테스트는 말없이 충전 재생에 기대고 있었다. 마지막 `charge(3_000)`이 기본 키로 다시 충전하며 잔액 3,000을 기대했는데 실제 잔액은 1,000이었다. 키가 없으면 실제로 충전되므로, 거절된 갱신들이 행을 바꾸지 않았다는 원래 뜻을 CHARGE 행을 SQL로 읽어 확인하도록 고쳤다.
+- `OrderConfirmationApiTest`의 MySQL 형태 테스트는 말없이 충전 재생에 기대고 있었다. 마지막 `charge(3_000)`이 기본 키로 다시 충전하며 잔액 3,000을 기대했는데 실제 잔액은 1,000이었다. 키가 없으면 실제로 충전되므로, 거절된 갱신들이 행을 바꾸지 않았다는 원래 뜻을 CHARGE 행을 SQL로 읽어 확인하도록 고쳤다.
 - 새로 넣은 것은 넷이다. `OrderTest`의 확정 가능 검사 둘, `PointServiceTest`의 같은 충전 두 번, `OrderServiceTest`의 같은 생성 두 번(Q30). `OrderServiceTest`는 조회만 본다는 클래스 설명을 생성 계약까지로 넓혔다.
 - 확정 재생을 보던 HTTP 테스트 셋은 409와 "아무것도 바뀌지 않음"을 보도록 바꿨다. 요청자·소유권 확인이 이 거절보다 앞서는 것도 그대로 본다.
 - commerce-api 테스트는 430개에서 412개가 되었다. ktlint와 ArchUnit도 통과했다.
@@ -918,8 +918,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ### 18.4 테스트가 바뀐 자리
 
-- 테스트 일곱을 지웠다. `PointHistoryRepositoryTest` 셋, `PointAccountTest`의 CHARGE 이력 하나, `PointServiceTransactionTest`의 충전 늦은 실패 하나, `OrderConfirmationApiMockMvcTest`의 MySQL 이력 형태 하나, 그리고 두 번째 이력 행으로만 갈리던 `PointServiceTest`의 두 번째 충전 하나다. 마지막 것은 이력 확인을 덜고 나면 같은 충전액을 두 번 충전하는 테스트와 모양이 같았다.
+- 테스트 일곱을 지웠다. `PointHistoryRepositoryTest` 셋, `PointAccountTest`의 CHARGE 이력 하나, `PointServiceTransactionTest`의 충전 늦은 실패 하나, `OrderConfirmationApiTest`의 MySQL 이력 형태 하나, 그리고 두 번째 이력 행으로만 갈리던 `PointServiceTest`의 두 번째 충전 하나다. 마지막 것은 이력 확인을 덜고 나면 같은 충전액을 두 번 충전하는 테스트와 모양이 같았다.
 - 확정의 늦은 실패 테스트는 `@SpykBean PointHistoryRepository` 대신 임시 CHECK를 쓴다(18.2). 바꾼 테스트를 이력을 지우기 전의 코드에서 먼저 돌려 통과를 확인했고, 지운 뒤에 flush 차례가 같은 것을 로그로 다시 확인했다.
 - 이력의 행 수나 내용을 함께 보던 테스트 19개는 그 확인만 덜었다. 이름에 이력이 들어 있던 테스트는 이름을 고쳤다. 결제가 일어났는지는 잔액·재고·주문 상세가 이미 보고 있었다.
-- `countPointHistories`·`lastPointHistoryRow`·`assertPaymentCount`를 지웠다. `OrderApiMockMvcTest`의 스키마 재생성 테스트는 `point_history`와 그 두 FK를 목록에서 뺐다.
+- `countPointHistories`·`lastPointHistoryRow`·`assertPaymentCount`를 지웠다. `OrderApiTest`의 스키마 재생성 테스트는 `point_history`와 그 두 FK를 목록에서 뺐다.
 - commerce-api 테스트는 412개에서 405개가 되었다. ktlint와 ArchUnit도 통과했다.

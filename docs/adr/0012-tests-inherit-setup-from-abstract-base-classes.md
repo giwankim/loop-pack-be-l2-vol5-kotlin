@@ -20,7 +20,7 @@ date: 2026-10-07
 - 준비한 데이터를 준비 도중에 바꾸는 도우미(`deleteProduct`, `updateProduct`, `updateProductStock`)도 포트를 거치고, 대상의 기본값은 필드다. `prepareDeleted…` 같은 변형을 두지 않고 `prepare`와 변경 도우미를 잇는다. 포트가 막는 상태는 우회를 이름에 드러낸 저장소 도우미(`deleteBrandKeepingProducts`)가 명시적으로 저장해 만든다. 테스트 트랜잭션 없이도 남아야 하기 때문이다. 도우미는 처음 쓰는 테스트가 생길 때 더한다.
 - `UserFixture`는 없어지고 `prepareUser()`·`prepareUserWithoutAccount()`가 그 일을 한다. 기반 클래스는 `entityManager`를, `BaseWebApiAdapterTest`는 `mvc`를 `protected` 필드로 준다.
 - 기반 클래스는 테스트 트랜잭션을 건다. 요청마다 커밋된 결과를 다음 요청이 읽어야 하는 주문 MockMvc 테스트 셋은 클래스에 `@Transactional(propagation = NOT_SUPPORTED)`를 달아 빠진다. 이 표시를 빠뜨리면 세 클래스가 스스로 실패한다(실험으로 확인했다). 그중 스키마를 다시 만드는 테스트 하나는 실패하지 않고 멈춘다. 테스트 트랜잭션이 쥔 메타데이터 잠금을 스키마 도구의 다른 연결이 기다리는데, MySQL의 `lock_wait_timeout` 기본값이 1년이라 풀리지 않는다. 그래서 테스트 MySQL 컨테이너에 `--lock-wait-timeout=10`을 준다.
-- `PointChargerTransactionTest`는 지운다. 그 단언은 테스트 트랜잭션이 감싸도 통과해서 커밋을 확인하지 못했다. 충전이 커밋된다는 것은 `OrderConfirmationApiMockMvcTest`가 충전 뒤 새 요청으로 잔액을 읽어 지킨다.
+- `PointChargerTransactionTest`는 지운다. 그 단언은 테스트 트랜잭션이 감싸도 통과해서 커밋을 확인하지 못했다. 충전이 커밋된다는 것은 `OrderConfirmationApiTest`가 충전 뒤 새 요청으로 잔액을 읽어 지킨다.
 - 쿼리 수를 세는 테스트는 `EntityManager.withStatistics { }`(jpa `testFixtures`, `statistics` 옆)로 통계를 켜고 끈다. 두 기반 계층이 함께 쓰고 데이터를 준비하지 않으므로 기반 클래스에 두지 않는다.
 
 ## 고르지 않은 것

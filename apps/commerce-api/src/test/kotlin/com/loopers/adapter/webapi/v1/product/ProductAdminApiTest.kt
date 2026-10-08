@@ -15,7 +15,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 
-class ProductAdminApiMockMvcTest : BaseWebApiAdapterTest() {
+class ProductAdminApiTest : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api-admin/v1/products"
         private val ADMIN = user("admin").roles("ADMIN")

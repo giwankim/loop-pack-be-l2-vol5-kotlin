@@ -15,7 +15,7 @@ import org.junit.jupiter.api.assertThrows
  * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 조각의 [OrderCreator]로 만든다.
  * 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
- * 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiMockMvcTest]가 HTTP로 이미 붙들어 두므로 여기서는 목록과
+ * 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 목록과
  * 관리자 조회를 본다. 조각의 차례와 `hasNext`는 [com.loopers.application.order.required.OrderRepositoryTest]가 SQL로 고정한다.
  *
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과

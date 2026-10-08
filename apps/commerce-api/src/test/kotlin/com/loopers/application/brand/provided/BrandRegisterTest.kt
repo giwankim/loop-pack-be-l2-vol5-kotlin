@@ -216,7 +216,7 @@ class BrandRegisterTest(
 
     /**
      * 삭제된 상품은 없는 상품이므로 남은 상품이 아니다. 상품을 모두 삭제하면 브랜드를 삭제할 수 있다.
-     * 삭제가 행을 지우지 않고 시각만 찍는다는 것은 네이티브 조회를 가진 `BrandAdminApiMockMvcTest`가 확인한다.
+     * 삭제가 행을 지우지 않고 시각만 찍는다는 것은 네이티브 조회를 가진 `BrandAdminApiTest`가 확인한다.
      */
     @Test
     fun `deleting a brand whose products were all deleted leaves it gone from the detail`() {

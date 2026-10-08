@@ -17,7 +17,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 
-class BrandAdminApiMockMvcTest(
+class BrandAdminApiTest(
     private val brandFinder: BrandFinder,
 ) : BaseWebApiAdapterTest() {
     companion object {

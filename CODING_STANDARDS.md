@@ -34,7 +34,8 @@
 
 HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르지 않은 대안은 [ADR 0011](docs/adr/0011-http-tests-assert-through-mockmvctester.md)에 있다.
 
-- `MockMvcTester`는 `BaseWebApiAdapterTest`의 `mvc` 필드로 쓴다. 클래스 이름 `*MockMvcTest`는 그대로 둔다.
+- `MockMvcTester`는 `BaseWebApiAdapterTest`의 `mvc` 필드로 쓴다.
+- HTTP 테스트의 클래스 이름은 시험하는 web API 어댑터 클래스의 이름에 `Test`를 잇는다(`BrandApi` → `BrandApiTest`). 어댑터 하나의 일부 동작만 떼어 낸 테스트는 그 동작을 이름으로 쓴다(`OrderApi`의 확정을 보는 `OrderConfirmationApiTest`, 본문 오류 응답을 보는 `RequestBodyErrorApiTest`). 테스트가 어떻게 도는지는 상속한 기반 클래스가 말하므로 이름에 `MockMvc`를 넣지 않는다. 실제 서버로 요청하는 테스트가 생기면 이름에 구분을 단다(`BrandApiE2ETest`).
 - 상태는 `hasStatusOk()`나 `hasStatus(HttpStatus.…)`로 단언한다. 본문을 단언할 때는 그 결과에서 `bodyJson()`을 받아 지역 변수에 둔다. 상태도 보면 같은 줄에서 먼저 단언한다(`assertThat(result).hasStatusOk().bodyJson()`).
 - 본문 지역 변수의 이름은 `body`다. 한 테스트에서 본문을 둘 이상 받으면 첫째가 `body`이고, 뒤의 것은 읽은 것을 따라 짓는다. 상세는 `detail`, 목록은 `list`, 오류 응답은 `error`다. 오류 응답은 쓰기 요청의 것이어도 `error`이고, 오류 응답을 또 받으면 몇 번째인지 앞에 붙인다(`secondError`). 뒤에 받는 쓰기 요청의 응답은 그 요청 이름에 `Body`를 붙인다(`unlikeBody`). 그 이름을 이미 썼으면 그 요청이 몇 번째인지 앞에 붙인다(`secondChargeBody`). 이미 쓴 이름을 다시 읽으면 무엇 뒤에 읽었는지 붙인다(`detailAfterUnlike`). 반복문 안에서 받은 본문도 그 테스트의 본문으로 센다. 반복문이 `body`를 썼으면 뒤에서는 `body`를 다시 쓰지 않는다. 단언 도우미(`assertAlreadyConfirmed`, `balance` 등)와 테스트 안의 지역 함수가 받는 본문은 그 함수 안에서 센다. 함수의 첫 본문은 `body`이고, 부르는 테스트의 본문 이름과 겹쳐도 된다.
 - 요청에 실을 JSON을 담는 파라미터와 변수의 이름은 `json`이다. 응답 본문 `body`와 겹치지 않게 한다. 요청 JSON을 만드는 도우미 함수도 `body`라 부르지 않고 무엇을 싣는지 따라 짓는다(`item`, `items`).

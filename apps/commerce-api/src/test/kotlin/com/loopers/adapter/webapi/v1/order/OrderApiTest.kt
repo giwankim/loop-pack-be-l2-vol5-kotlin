@@ -29,7 +29,7 @@ import tools.jackson.databind.ObjectMapper
 
 /** No test transaction: every HTTP request commits or rolls back before the next request reads it. */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class OrderApiMockMvcTest(
+class OrderApiTest(
     private val objectMapper: ObjectMapper,
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
