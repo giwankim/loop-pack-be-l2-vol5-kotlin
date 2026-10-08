@@ -151,6 +151,21 @@ class LikeRepositoryTest(
         assertThat(foreignKeys).containsExactlyInAnyOrder("FK_LIKES_USER:users:id", "FK_LIKES_PRODUCT:product:id")
     }
 
+    /** 자연 식별자 컬럼에는 Hibernate가 제 이름으로 유일 키를 만들 수 있다. 쌍을 지키는 유일 인덱스는 이름 붙인 하나뿐이다(ADR 0016). */
+    @Test
+    fun `the pair has exactly one unique index and it is the named one`() {
+        val uniqueIndexes = entityManager
+            .createNativeQuery(
+                "select index_name, group_concat(column_name order by seq_in_index) " +
+                    "from information_schema.statistics where table_schema = database() and table_name = 'likes' " +
+                    "and non_unique = 0 and index_name <> 'PRIMARY' group by index_name",
+            )
+            .resultList
+            .map { (it as Array<*>).joinToString(":") }
+
+        assertThat(uniqueIndexes).containsExactly("UK_LIKES_USER_ID_PRODUCT_ID:user_id,product_id")
+    }
+
     @Test
     fun `countByProductId counts the likes of one product`() {
         val firstUser = prepareUser()
