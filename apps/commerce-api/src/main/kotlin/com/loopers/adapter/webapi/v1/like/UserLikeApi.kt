@@ -2,16 +2,17 @@ package com.loopers.adapter.webapi.v1.like
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.adapter.webapi.PageResponse
-import com.loopers.adapter.webapi.UserIdHeader
+import com.loopers.adapter.webapi.RequesterId
 import com.loopers.adapter.webapi.v1.product.ProductResponse
 import com.loopers.application.like.provided.LikeFinder
 import com.loopers.application.like.provided.LikeListRequest
+import com.loopers.support.error.CoreException
+import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 
 /**
@@ -27,17 +28,21 @@ class UserLikeApi(
     private val likeFinder: LikeFinder,
 ) : UserLikeApiSpec {
     /**
-     * 요청자와 경로의 사용자를 [UserIdHeader.requireSelf]가 견주어 본다. application으로는 요청자만 넘어간다.
+     * 경로의 사용자가 요청자 자신인지 본다. 다르면 403이다. 요청자는 자기 좋아요만 다룰 수 있다(CONTEXT.md 요청자).
+     * 경로와 요청자는 둘 다 HTTP가 실어 준 값이라 그 비교도 여기서 하고, application으로는 요청자만 넘어간다(설계 5.30).
+     * 없는 요청자는 [RequesterId]가 이미 401로 거절했다. 인증이 인가보다 앞선다(ADR 0015).
+     *
      * 쿼리 문자열을 [LikeListRequest]로 바로 받는 까닭은 다른 목록과 같다(설계 5.17, 5.22).
      */
     @GetMapping
     override fun getLikedProducts(
-        @RequestHeader(UserIdHeader.NAME, required = false) userId: Long?,
+        @RequesterId userId: Long,
         @PathVariable("userId") pathUserId: Long,
         @ModelAttribute @Valid request: LikeListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
+        if (userId != pathUserId) throw CoreException(ErrorType.FORBIDDEN)
         return likeFinder
-            .findLikedProducts(userId = UserIdHeader.requireSelf(userId, pathUserId), request = request)
+            .findLikedProducts(userId = userId, request = request)
             .let { PageResponse.from(it, ProductResponse::from) }
             .let { ApiResponse.success(it) }
     }

@@ -3,7 +3,7 @@ package com.loopers.application.order.provided
 /**
  * 고객의 주문 확정(주문을 확정하다). 재고와 포인트를 함께 차감해 결제를 마친다.
  *
- * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 그 사용자가 없으면 `UNAUTHORIZED`를 던진다(카탈로그 설계 5.27).
+ * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 웹 경계가 이미 받아들인 요청자라 다시 확인하지 않는다(ADR 0015).
  */
 interface OrderConfirmer {
     /**

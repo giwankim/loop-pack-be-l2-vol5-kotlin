@@ -21,7 +21,7 @@ interface OrderApiSpec {
     )
     fun create(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
-        userId: Long?,
+        userId: Long,
         request: OrderCreateRequest,
     ): ApiResponse<OrderResponse>
 
@@ -33,14 +33,14 @@ interface OrderApiSpec {
     )
     fun findAll(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
-        userId: Long?,
+        userId: Long,
         request: OrderListRequest,
     ): ApiResponse<PageResponse<OrderResponse>>
 
     @Operation(summary = "내 주문 상세", description = "저장된 주문 스냅샷을 조회합니다. 없거나 다른 사용자의 주문은 모두 404입니다.")
     fun find(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
-        userId: Long?,
+        userId: Long,
         orderId: Long,
     ): ApiResponse<OrderResponse>
 
@@ -52,7 +52,7 @@ interface OrderApiSpec {
     )
     fun confirm(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, required = true, description = "요청자의 사용자 ID")
-        userId: Long?,
+        userId: Long,
         orderId: Long,
     ): ApiResponse<OrderResponse>
 }

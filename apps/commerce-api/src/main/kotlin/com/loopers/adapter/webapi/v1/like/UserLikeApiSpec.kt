@@ -25,7 +25,7 @@ interface UserLikeApiSpec {
     )
     fun getLikedProducts(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, description = "요청자의 사용자 ID", required = true)
-        userId: Long?,
+        userId: Long,
         @Schema(name = "사용자 ID", description = "목록을 볼 사용자의 ID. 요청자 자신이어야 합니다")
         pathUserId: Long,
         request: LikeListRequest,

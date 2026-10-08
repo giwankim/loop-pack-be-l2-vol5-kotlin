@@ -17,7 +17,7 @@ interface LikeApiSpec {
     )
     fun like(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, description = "요청자의 사용자 ID", required = true)
-        userId: Long?,
+        userId: Long,
         @Schema(name = "상품 ID", description = "좋아요를 누를 상품의 ID")
         productId: Long,
     ): ApiResponse<Any>
@@ -29,7 +29,7 @@ interface LikeApiSpec {
     )
     fun unlike(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, description = "요청자의 사용자 ID", required = true)
-        userId: Long?,
+        userId: Long,
         @Schema(name = "상품 ID", description = "좋아요를 취소할 상품의 ID")
         productId: Long,
     ): ApiResponse<Any>

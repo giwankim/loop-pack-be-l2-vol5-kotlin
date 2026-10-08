@@ -1,8 +1,6 @@
 package com.loopers.application.like.provided
 
 import com.loopers.support.countLikes
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
@@ -79,11 +77,11 @@ class LikeFinderTest(
     }
 
     /**
-     * 조각에 몇 개가 담기든 조회는 셋이다. 요청자 확인 하나, 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나.
-     * 항목마다 브랜드를 읽거나 좋아요를 세면 조각 크기만큼 늘어난다(설계 5.28, 5.29).
+     * 조각에 몇 개가 담기든 조회는 둘이다. 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나.
+     * 항목마다 브랜드를 읽거나 좋아요를 세면 조각 크기만큼 늘어난다(설계 5.28, 5.29). 요청자는 웹 경계가 확인하므로 세지 않는다(ADR 0015).
      */
     @Test
-    fun `the like list reads a slice of any size in three queries`() {
+    fun `the like list reads a slice of any size in two queries`() {
         prepareUser()
         val products = List(3) { prepareProduct() }
         products.forEach { prepareLike(user, it) }
@@ -96,16 +94,8 @@ class LikeFinderTest(
             assertThat(slice.content.map { it.brandName })
                 .containsExactlyInAnyOrderElementsOf(products.map { it.brand.name })
             assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
-            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
-    }
-
-    /** 요청자가 없으면 목록도 볼 수 없다. 누르기·취소와 같은 검사다(설계 5.27). */
-    @Test
-    fun `listing likes as an unknown user throws UNAUTHORIZED`() {
-        val exception = assertThrows<CoreException> { likeFinder.findLikedProducts(999L, LikeListRequest()) }
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
     }
 
     @Test

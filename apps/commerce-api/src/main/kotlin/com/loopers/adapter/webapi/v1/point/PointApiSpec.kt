@@ -18,7 +18,7 @@ interface PointApiSpec {
     )
     fun charge(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, description = "요청자의 사용자 ID", required = true)
-        userId: Long?,
+        userId: Long,
         request: PointChargeRequest,
     ): ApiResponse<PointAccountResponse>
 
@@ -28,6 +28,6 @@ interface PointApiSpec {
     )
     fun getBalance(
         @Parameter(name = UserIdHeader.NAME, `in` = ParameterIn.HEADER, description = "요청자의 사용자 ID", required = true)
-        userId: Long?,
+        userId: Long,
     ): ApiResponse<PointAccountResponse>
 }

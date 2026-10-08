@@ -10,7 +10,7 @@ import org.springframework.data.domain.Slice
  * 저장된 스냅샷만 싣는다. 상품을 다시 읽어 이름·단가를 채우지 않으므로 이름이 바뀌거나 삭제된 상품의 주문도
  * 만들 때의 값 그대로다(ADR 0002, 설계 9 조회).
  *
- * 고객 읽기의 `userId`는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 그 사용자가 없으면 `UNAUTHORIZED`를 던진다(카탈로그 설계 5.27).
+ * 고객 읽기의 `userId`는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 웹 경계가 이미 받아들인 요청자라 다시 확인하지 않는다(ADR 0015).
  */
 interface OrderFinder {
     /** 요청자의 주문 하나. 없는 주문도 남의 주문도 `ORDER_NOT_FOUND`다. */

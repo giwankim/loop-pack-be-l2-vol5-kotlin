@@ -130,28 +130,4 @@ class LikerTest(
 
         assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
-
-    @Test
-    fun `liking as an unknown user throws UNAUTHORIZED and saves nothing`() {
-        prepareProduct()
-        entityManager.flushAndClear()
-
-        val exception = assertThrows<CoreException> { liker.like(userId = 999L, productId = product.id) }
-        entityManager.flushAndClear()
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
-        assertThat(entityManager.countLikes(999L, product.id)).isZero()
-    }
-
-    @Test
-    fun `unliking as an unknown user throws UNAUTHORIZED and leaves the like in place`() {
-        prepareLike()
-        entityManager.flushAndClear()
-
-        val exception = assertThrows<CoreException> { liker.unlike(userId = 999L, productId = product.id) }
-        entityManager.flushAndClear()
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
-        assertThat(entityManager.countLikes(user.id, product.id)).isOne()
-    }
 }

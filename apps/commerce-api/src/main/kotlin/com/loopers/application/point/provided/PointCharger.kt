@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 /**
  * 고객의 포인트 충전. 잔액만 바꾸며 충전의 기록은 따로 남기지 않는다(ADR 0006).
  *
- * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 그 사용자가 없으면 `UNAUTHORIZED`를 던진다(카탈로그 설계 5.27).
+ * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 웹 경계가 이미 받아들인 요청자라 다시 확인하지 않는다(ADR 0015).
  */
 interface PointCharger {
     /**

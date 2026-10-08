@@ -18,8 +18,8 @@ import org.junit.jupiter.api.assertThrows
  * 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 목록과
  * 관리자 조회를 본다. 조각의 차례와 `hasNext`는 [com.loopers.application.order.required.OrderRepositoryTest]가 SQL로 고정한다.
  *
- * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 요청자 확인과
- * 거를 사용자의 유무이고, 그 차이가 조회 횟수에도 드러난다(설계 16.2).
+ * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 거를 사용자의 유무다(설계 16.2).
+ * 요청자 확인은 웹 경계로 옮겨 갔으므로(ADR 0015) 둘의 조회 횟수도 같다.
  */
 class OrderFinderTest(
     private val orderFinder: OrderFinder,
@@ -55,14 +55,6 @@ class OrderFinderTest(
         assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L)
     }
 
-    /** 요청자가 없으면 목록도 볼 수 없다. 생성·상세와 같은 검사다. */
-    @Test
-    fun `listing orders as an unknown user throws UNAUTHORIZED`() {
-        val exception = assertThrows<CoreException> { orderFinder.findAll(999L, OrderListRequest()) }
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
-    }
-
     @Test
     fun `listing orders outside the page and size bounds is rejected by request validation`() {
         prepareUser()
@@ -75,7 +67,7 @@ class OrderFinderTest(
     }
 
     /**
-     * 가득 찬 조각도 조회는 셋이다. 요청자 확인 하나, 주문 루트의 조각 하나, 품목을 모아 읽는 것 하나.
+     * 가득 찬 조각도 조회는 둘이다. 주문 루트의 조각 하나, 품목을 모아 읽는 것 하나. 요청자는 웹 경계가 확인한다(ADR 0015).
      * 주문마다 품목을 읽으면 조각 크기만큼 늘어난다(설계 9 조회, 14.1).
      *
      * 크기를 상한까지 채우는 까닭은 품목 조회가 하나로 끝나는 근거를 경계에서 확인하려는 것이다. #15는 그 근거가
@@ -95,7 +87,7 @@ class OrderFinderTest(
 
             assertThat(slice.content).hasSize(size)
             assertThat(slice.content.flatMap { it.items }).hasSize(size)
-            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
 
@@ -119,7 +111,7 @@ class OrderFinderTest(
     }
 
     /**
-     * 관리자 목록은 요청자를 확인하지 않으므로 조회가 둘이다. 주문 루트의 조각 하나와 품목을 모아 읽는 것 하나다.
+     * 관리자 목록도 조회가 둘이다. 주문 루트의 조각 하나와 품목을 모아 읽는 것 하나다.
      * 총 개수를 세지 않는다는 약속도 이 수에 걸려 있다(카탈로그 설계 5.5).
      */
     @Test

@@ -13,7 +13,7 @@ import org.springframework.data.domain.Slice
 interface LikeFinder : LikeCounter {
     /**
      * 요청자가 좋아요를 누른, 삭제되지 않은 상품 한 조각. 최근에 누른 상품이 앞선다.
-     * 요청자가 없으면 `UNAUTHORIZED`를 던진다(설계 5.27).
+     * 요청자는 웹 경계가 이미 받아들였으므로 다시 확인하지 않는다(ADR 0015).
      *
      * 받는 사용자 식별자는 요청자 하나뿐이라 남의 목록을 내줄 길이 없다. 경로가 가리키는 사용자와 요청자가
      * 같은지는 둘 다 HTTP가 실은 값이라 adapter.webapi가 본다(설계 5.30).

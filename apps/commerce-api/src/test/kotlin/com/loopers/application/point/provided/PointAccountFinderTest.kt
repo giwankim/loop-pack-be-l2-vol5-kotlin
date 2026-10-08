@@ -30,15 +30,6 @@ class PointAccountFinderTest(
         assertThat(pointAccountFinder.findBalance(user.id).balance).isEqualTo(10_500L)
     }
 
-    @Test
-    fun `finding the balance of an unknown user throws UNAUTHORIZED and creates no account`() {
-        val exception = assertThrows<CoreException> { pointAccountFinder.findBalance(999L) }
-        entityManager.flushAndClear()
-
-        assertThat(exception.errorType).isEqualTo(ErrorType.UNAUTHORIZED)
-        assertThat(entityManager.countPointAccounts(999L)).isZero()
-    }
-
     /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */
     @Test
     fun `reading the balance of an existing user without an account is an internal error and creates no account`() {

@@ -10,7 +10,7 @@ interface PointDeductor {
     /**
      * [userId] 사용자의 계정에서 [amount]를 차감한다. 계정이 없으면 `POINT_ACCOUNT_MISSING`을 던진다(설계 5.9, 6 끝).
      * 잔액이 모자라면 잔액을 그대로 두고 [com.loopers.domain.point.InsufficientPointsException]을 던진다.
-     * 요청자는 부르는 쪽이 이미 확인했으므로 다시 묻지 않는다.
+     * 요청자는 웹 경계가 이미 받아들였으므로 묻지 않는다(ADR 0015).
      */
     fun deduct(userId: Long, amount: Money)
 }

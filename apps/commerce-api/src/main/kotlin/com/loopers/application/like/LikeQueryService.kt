@@ -6,7 +6,6 @@ import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.provided.ProductLikedListRequest
-import com.loopers.application.user.provided.UserFinder
 import com.loopers.support.stereotype.ValidatedApplicationService
 import org.springframework.context.annotation.Lazy
 import org.springframework.data.domain.Slice
@@ -23,12 +22,9 @@ import org.springframework.data.domain.Slice
 class LikeQueryService(
     private val likeRepository: LikeRepository,
     @Lazy private val productFinder: ProductFinder,
-    private val userFinder: UserFinder,
 ) : LikeFinder {
-    override fun findLikedProducts(userId: Long, request: LikeListRequest): Slice<ProductInfo> {
-        userFinder.checkExists(userId)
-        return productFinder.findAllLikedBy(userId, ProductLikedListRequest(page = request.page, size = request.size))
-    }
+    override fun findLikedProducts(userId: Long, request: LikeListRequest): Slice<ProductInfo> =
+        productFinder.findAllLikedBy(userId, ProductLikedListRequest(page = request.page, size = request.size))
 
     override fun countLikes(productId: Long): Long = likeRepository.countByProductId(productId)
 

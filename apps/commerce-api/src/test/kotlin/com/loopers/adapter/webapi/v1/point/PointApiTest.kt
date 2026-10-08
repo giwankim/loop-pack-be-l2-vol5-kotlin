@@ -82,7 +82,7 @@ class PointApiTest : BaseWebApiAdapterTest() {
         assertThat(entityManager.countPointAccounts(999L)).isZero()
     }
 
-    /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. Spring의 타입 변환이 거절한다(카탈로그 설계 5.27). */
+    /** 헤더가 있으나 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이다. 웹 경계가 타입 불일치로 거절한다(ADR 0015). */
     @Test
     fun `a user header that is not a number returns 400 on both APIs`() {
         val body = assertThat(
