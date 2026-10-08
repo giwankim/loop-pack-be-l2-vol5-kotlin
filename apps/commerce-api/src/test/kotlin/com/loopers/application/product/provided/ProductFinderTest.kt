@@ -123,7 +123,7 @@ class ProductFinderTest(
      * 이 자리가 보는 것은 입력의 기본값이 조각에 닿는지와, 항목이 트랜잭션 안에서 브랜드 이름까지 채워지는지다.
      */
     @Test
-    fun `listing carries the default page and size into the slice and fills the brand name`() {
+    fun `the admin list carries the default page and size into the slice and fills the brand name`() {
         prepareBrand(name = "루퍼스")
         prepareProduct(brand)
         prepareProduct(brand)
@@ -143,7 +143,7 @@ class ProductFinderTest(
      * 하려는 것이다. 값이 같으면 두 기준이 같은 차례를 내놓아 기본값이 무엇이든 이 테스트가 지나간다.
      */
     @Test
-    fun `listing for a customer carries the default page, size, and sort into the slice`() {
+    fun `listing carries the default page, size, and sort into the slice`() {
         prepareBrand(name = "루퍼스")
         val first = prepareProduct(brand, price = 3_000)
         val second = prepareProduct(brand, price = 30_000)
@@ -158,7 +158,7 @@ class ProductFinderTest(
     }
 
     @Test
-    fun `listing a customer sort reaches the slice order`() {
+    fun `the sort in the request reaches the slice order`() {
         prepareBrand()
         val cheap = prepareProduct(brand, price = 3_000)
         val dear = prepareProduct(brand, price = 30_000)
@@ -229,7 +229,7 @@ class ProductFinderTest(
     }
 
     @Test
-    fun `listing for a customer outside the page and size bounds is rejected by request validation`() {
+    fun `listing outside the page and size bounds is rejected by request validation`() {
         assertThat(
             assertThrows<ConstraintViolationException> { productFinder.findAll(ProductListRequest(page = -1)) }
                 .constraintViolations.map { it.message },
@@ -241,7 +241,7 @@ class ProductFinderTest(
     }
 
     @Test
-    fun `listing outside the page and size bounds is rejected by request validation`() {
+    fun `the admin list outside the page and size bounds is rejected by request validation`() {
         assertThat(
             assertThrows<ConstraintViolationException> { productFinder.findAll(ProductAdminListRequest(page = -1)) }
                 .constraintViolations.map { it.message },

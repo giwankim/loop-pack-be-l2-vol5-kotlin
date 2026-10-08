@@ -25,7 +25,7 @@ class BrandApiTest : BaseWebApiAdapterTest() {
     }
 
     @Test
-    fun `a customer reads a brand without any identification`() {
+    fun `a user reads a brand without any identification`() {
         prepareBrand(name = "루퍼스")
 
         val body = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}")).hasStatusOk().bodyJson()
@@ -60,7 +60,7 @@ class BrandApiTest : BaseWebApiAdapterTest() {
      * 비우지 않으면 고객 조회가 SQL 대신 그 객체를 받아, 수정이 DB에 닿았는지와 무관하게 통과한다.
      */
     @Test
-    fun `a name an admin changed shows up in the customer detail`() {
+    fun `a name an admin changed shows up in the brand detail`() {
         prepareBrand()
 
         assertThat(

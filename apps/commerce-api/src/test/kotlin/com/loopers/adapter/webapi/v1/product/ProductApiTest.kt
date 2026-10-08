@@ -27,7 +27,7 @@ class ProductApiTest : BaseWebApiAdapterTest() {
     }
 
     @Test
-    fun `a customer reads a product without any identification`() {
+    fun `a user reads a product without any identification`() {
         prepareBrand(name = "루퍼스")
         prepareProduct(brand, name = "티셔츠", price = 12_000)
 
@@ -44,7 +44,7 @@ class ProductApiTest : BaseWebApiAdapterTest() {
 
     /** 고객은 남은 수량과 시각을 보지 않는다. 관리자 응답과 같은 [com.loopers.application.product.provided.ProductInfo]에서 온다. */
     @Test
-    fun `the customer detail leaves out the stock count and the timestamps`() {
+    fun `the product detail leaves out the stock count and the timestamps`() {
         prepareProduct()
 
         val body = assertThat(mvc.get().uri("$ENDPOINT/${product.id}")).hasStatusOk().bodyJson()
@@ -77,7 +77,7 @@ class ProductApiTest : BaseWebApiAdapterTest() {
      * 비우지 않으면 고객 조회가 방금 재고를 바꾼 객체를 1차 캐시에서 받아, 변경이 DB에 닿았는지와 무관하게 통과한다.
      */
     @Test
-    fun `stock an admin set to zero shows up as sold out in the customer detail`() {
+    fun `stock an admin set to zero shows up as sold out in the product detail`() {
         prepareProduct()
 
         val body = assertThat(mvc.get().uri("$ENDPOINT/${product.id}")).bodyJson()
@@ -102,7 +102,7 @@ class ProductApiTest : BaseWebApiAdapterTest() {
      * 값이 같으면 두 기준이 같은 차례를 내놓아 기본값이 무엇이든 이 테스트가 지나간다.
      */
     @Test
-    fun `a customer lists products latest registered first without asking for a sort`() {
+    fun `a user lists products latest registered first without asking for a sort`() {
         prepareBrand(name = "루퍼스")
         val firstId = prepareProduct(brand, price = 3_000).id
         val secondId = prepareProduct(brand, price = 30_000).id
