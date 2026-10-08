@@ -40,7 +40,7 @@ class LikeApi(
         @RequesterId userId: Long,
         @RequestBody @Valid request: LikeRequest,
     ): ApiResponse<Any> {
-        liker.like(userId, request)
+        liker.like(userId = userId, request = request)
 
         return ApiResponse.success()
     }

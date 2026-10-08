@@ -185,19 +185,28 @@ class LikeApiTest : BaseWebApiAdapterTest() {
         }
     }
 
-    /** 본문이 없거나 상품 ID가 빠진 본문은 읽지 못한 본문이라 다른 본문 오류와 같은 범용 400이다. */
+    /** 본문이 없으면 읽을 본문이 없는 것이라 다른 본문 오류와 같은 범용 400이다. */
     @Test
-    fun `liking without a body or without a product id returns 400`() {
+    fun `liking without a body returns 400`() {
         prepareUser()
         entityManager.flushAndClear()
-        val withoutBody = mvc.post().uri(LIKES)
-            .header(UserIdHeader.NAME, user.id)
-            .contentType(MediaType.APPLICATION_JSON)
-            .exchange()
-        val withoutProductId = listOf("""{}""", """{"productId": null}""").map { requestLike(json = it, userId = user.id) }
 
-        (listOf(withoutBody) + withoutProductId).forEach { result ->
-            val body = assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        val body = assertThat(
+            mvc.post().uri(LIKES).header(UserIdHeader.NAME, user.id).contentType(MediaType.APPLICATION_JSON),
+        ).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+    }
+
+    /** 상품 ID가 빠지거나 null인 본문은 `LikeRequest`로 읽지 못한다. 다른 본문 오류와 같은 범용 400이다. */
+    @Test
+    fun `liking without a product id returns 400`() {
+        prepareUser()
+        entityManager.flushAndClear()
+        val invalidJsons = listOf("""{}""", """{"productId": null}""")
+
+        invalidJsons.forEach { json ->
+            val body = assertThat(requestLike(json = json, userId = user.id)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
             body.extractingPath("$.meta.result").isEqualTo("FAIL")
             body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
         }
@@ -231,7 +240,7 @@ class LikeApiTest : BaseWebApiAdapterTest() {
 
     /** 항목은 고객 상품 목록의 항목과 같은 모양이고 최근에 누른 상품이 앞선다. */
     @Test
-    fun `a customer reads their like list, the most recently liked product first`() {
+    fun `the requester reads their like list, the most recently liked product first`() {
         prepareUser()
         prepareBrand(name = "루퍼스")
         val earlier = prepareProduct(brand)

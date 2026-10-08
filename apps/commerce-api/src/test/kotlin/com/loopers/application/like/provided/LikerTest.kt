@@ -1,5 +1,6 @@
 package com.loopers.application.like.provided
 
+import com.loopers.domain.like.createLikeRequest
 import com.loopers.support.countLikes
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -26,7 +27,7 @@ class LikerTest(
         prepareProduct()
         entityManager.flushAndClear()
 
-        liker.like(userId = user.id, request = LikeRequest(productId = product.id))
+        liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(user.id, product.id)).isOne()
@@ -43,7 +44,7 @@ class LikerTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            liker.like(userId = user.id, request = LikeRequest(productId = product.id))
+            liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
 
             assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
@@ -54,7 +55,7 @@ class LikerTest(
         prepareLike()
         entityManager.flushAndClear()
 
-        liker.like(userId = user.id, request = LikeRequest(productId = product.id))
+        liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(user.id, product.id)).isOne()
@@ -68,7 +69,7 @@ class LikerTest(
         prepareLike(me, product)
         entityManager.flushAndClear()
 
-        liker.like(userId = other.id, request = LikeRequest(productId = product.id))
+        liker.like(userId = other.id, request = createLikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(me.id, product.id)).isOne()
@@ -122,7 +123,7 @@ class LikerTest(
         entityManager.flushAndClear()
 
         val exception = assertThrows<CoreException> {
-            liker.like(userId = user.id, request = LikeRequest(productId = product.id))
+            liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
         }
         entityManager.flushAndClear()
 
@@ -134,7 +135,9 @@ class LikerTest(
     fun `liking an unknown product throws PRODUCT_NOT_FOUND`() {
         prepareUser()
 
-        val exception = assertThrows<CoreException> { liker.like(userId = user.id, request = LikeRequest(productId = 999L)) }
+        val exception = assertThrows<CoreException> {
+            liker.like(userId = user.id, request = createLikeRequest(productId = 999L))
+        }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
@@ -150,7 +153,7 @@ class LikerTest(
 
         listOf(0L, -1L).forEach { productId ->
             val exception = assertThrows<ConstraintViolationException> {
-                liker.like(userId = user.id, request = LikeRequest(productId = productId))
+                liker.like(userId = user.id, request = createLikeRequest(productId = productId))
             }
 
             assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 ID는 1 이상이어야 합니다.")
