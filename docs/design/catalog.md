@@ -294,7 +294,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.8 교차 검사의 위치
 
-브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다.
+브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.)
 
 ### 5.9 카탈로그 조회의 식별
 

@@ -35,10 +35,10 @@
 
 ### 협력
 
-- 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
-- 수정: `BrandRegister.update` → 삭제되지 않은 브랜드 조회 → 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
+- 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `BrandValidator.validateForRegister`가 받은 이름으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
+- 수정: `BrandRegister.update` → 삭제되지 않은 브랜드 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
 - 목록: `BrandFinder.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
-- 삭제: `BrandRegister.delete` → 삭제되지 않은 브랜드 조회 → `ActiveProductChecker.hasActiveProducts`로 남은 상품이 있는지 조회(상품의 `ProductFinder`가 `ProductRepository.existsByBrandId`로 답한다) → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
+- 삭제: `BrandRegister.delete` → 삭제되지 않은 브랜드 조회 → `BrandValidator.validateForDelete`가 `ActiveProductChecker.hasActiveProducts`로 남은 상품이 있는지 조회(상품의 `ProductFinder`가 `ProductRepository.existsByBrandId`로 답한다) → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
 
 ## 상품 (Product)
 
