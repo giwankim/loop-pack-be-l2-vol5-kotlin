@@ -21,7 +21,7 @@ class ProductInfoAssembler(
 ) {
     /** 상품 하나. 좋아요 수는 관계를 세어 채운다. 관리자 응답도 이 count 쿼리 한 번을 치른다(설계 5.7). */
     fun toInfo(product: Product): ProductInfo {
-        return ProductInfo.from(product, likeCount = likeCounter.countLikes(product.id))
+        return ProductInfo.from(product, likeCounter.countLikes(product.id))
     }
 
     /**
@@ -29,6 +29,6 @@ class ProductInfoAssembler(
      */
     fun toInfos(slice: Slice<Product>): Slice<ProductInfo> {
         val likeCounts = likeCounter.countLikes(slice.content.map { it.id })
-        return slice.map { ProductInfo.from(it, likeCount = likeCounts.getValue(it.id)) }
+        return slice.map { ProductInfo.from(it, likeCounts.getValue(it.id)) }
     }
 }
