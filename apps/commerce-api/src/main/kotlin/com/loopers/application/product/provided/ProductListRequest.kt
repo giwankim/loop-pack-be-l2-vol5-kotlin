@@ -1,6 +1,5 @@
 package com.loopers.application.product.provided
 
-import com.loopers.domain.product.ProductSort
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 

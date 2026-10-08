@@ -5,10 +5,10 @@ import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.provided.ProductLikedListRequest
 import com.loopers.application.product.provided.ProductListRequest
+import com.loopers.application.product.provided.ProductSort
 import com.loopers.application.product.required.ProductListRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductSort
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService

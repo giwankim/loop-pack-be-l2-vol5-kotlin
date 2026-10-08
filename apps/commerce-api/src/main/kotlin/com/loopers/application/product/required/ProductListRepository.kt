@@ -1,7 +1,7 @@
 package com.loopers.application.product.required
 
+import com.loopers.application.product.provided.ProductSort
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductSort
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 

@@ -1,4 +1,4 @@
-package com.loopers.domain.product
+package com.loopers.application.product.provided
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

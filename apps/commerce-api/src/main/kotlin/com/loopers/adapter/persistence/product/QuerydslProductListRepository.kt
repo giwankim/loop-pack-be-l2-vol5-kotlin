@@ -1,10 +1,10 @@
 package com.loopers.adapter.persistence.product
 
 import com.loopers.adapter.persistence.shared.fetchSlice
+import com.loopers.application.product.provided.ProductSort
 import com.loopers.application.product.required.ProductListRepository
 import com.loopers.domain.like.QLike.like
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.QProduct.product
 import com.querydsl.core.types.OrderSpecifier
 import com.querydsl.jpa.impl.JPAQuery

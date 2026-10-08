@@ -1,10 +1,10 @@
 package com.loopers.application.product.required
 
 import com.loopers.adapter.persistence.product.QuerydslProductListRepository
+import com.loopers.application.product.provided.ProductSort
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.support.flushAndClear
