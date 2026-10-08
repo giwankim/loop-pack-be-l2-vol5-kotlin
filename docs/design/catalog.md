@@ -505,6 +505,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.25 같은 규칙을 여러 층에서 검사하는 것
 
+> 2026-10-08 요청자 확인 하나는 이 절에서 뺐다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 헤더와 사용자의 존재는 웹 경계(`@RequesterId`)만 보고, application은 받은 사용자 식별자를 믿는다. 웹 경계가 로컬에서 API 게이트웨이를 대신하기 때문이다. 배치나 컨슈머가 Controller 없이 부르면 사용자 확인을 받지 않으며, 그 대가와 다시 볼 조건은 ADR에 있다. 입력 검증(Request의 Bean Validation)은 그대로 이 절을 따른다.
+
 - 문제: 5.22가 "같은 층에 두 번째 검사 방식을 들인다"를 대안을 물리치는 근거로 썼다. 이것이 "한 규칙을 여러 곳에서 검사하지 말라"는 말로 읽히면 이 저장소가 이미 하고 있는 일과 어긋난다.
 - 두 축을 나눈다.
   - 검사가 걸리는 자리가 여럿인 것: 규칙은 한 번 적히고 여러 경계에서 걸린다. `@Min(0) page`는 Request에 한 번 적히고 Controller(`@Valid`)와 Service(`@Validated`)에서 두 번 걸린다. 적힌 곳이 하나라 어긋날 수 없고, 값이 공짜다.
@@ -527,7 +529,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.27 요청자 식별의 자리
 
-> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 대안 C로 옮겼다([#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). 식별이 필요한 엔드포인트가 아홉이 되어 아래의 다시 볼 조건이 걸렸다. `@RequesterId` 파라미터를 `adapter.webapi`의 `RequesterIdArgumentResolver`가 채우며, 헤더가 없으면 401, 숫자가 아니면 400, 그 사용자가 없으면 401이다. 사용자의 존재는 `UserFinder.exists`로 묻는다. 그래서 선택 A의 "사용자의 존재는 application이 본다"는 더 이상 사실이 아니다. 웹 경계가 로컬에서 API 게이트웨이를 대신하고, application은 받은 `userId`를 믿는다. 5.25의 "층은 서로를 거치지 않고도 불릴 수 있다"를 요청자 확인에 한해 접은 것이며 그 대가는 ADR에 있다. `UserIdHeader`에는 헤더 이름만 남았다. 숫자가 아닌 값의 400은 resolver가 `@RequestHeader`의 타입 변환과 같은 예외를 던져 응답도 그대로다. C를 물리친 `WebMvcConfigurer`는 `adapter.webapi`의 `WebMvcConfig`다.
+> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 대안 C로 옮겼다([#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). 식별이 필요한 엔드포인트가 아홉이 되어 아래의 다시 볼 조건이 걸렸다. `@RequesterId` 파라미터를 `adapter.webapi`의 `RequesterIdArgumentResolver`가 채우며, 헤더가 없으면 401, 숫자가 아니면 400, 그 사용자가 없으면 401이다. 사용자의 존재는 `UserFinder.exists`로 묻는다. 그래서 선택 A의 "사용자의 존재는 application이 본다"는 더 이상 사실이 아니다. 웹 경계가 로컬에서 API 게이트웨이를 대신하고, application은 받은 `userId`를 믿는다. 5.25의 "층은 서로를 거치지 않고도 불릴 수 있다"를 요청자 확인에 한해 접은 것이며 그 대가는 ADR에 있다. `UserIdHeader`에는 헤더 이름만 남았다. 숫자가 아닌 값의 400은 resolver가 `@RequestHeader`의 타입 변환과 같은 예외를 던져 응답도 그대로다. C를 물리친 `WebMvcConfigurer`는 `adapter.webapi`의 `WebMvcConfig`다. 아래 "요청자에는 코드 이름이 없다"도 바뀌었다. 애노테이션이 `RequesterId`라 CONTEXT.md 요청자가 영어 이름 Requester를 얻고 `requester`가 _Avoid_에서 빠졌다. 요청자는 여전히 사용자 식별자(`userId`)로 나타난다.
 
 - 문제: 좋아요 누르기·취소는 `X-USER-ID` 헤더의 사용자 식별자로 요청자를 식별한다(1장 요청자와 관리자 경계). "헤더가 없다"와 "그 사용자가 없다"는 둘 다 401인데, 앞의 것은 HTTP만 아는 사실이고 뒤의 것은 저장소를 봐야 하는 사실이라 한 곳에서 둘 다 볼 수 없다.
 - 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 adapter.webapi의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 좋아요 조각의 Service가 `UserFinder.checkExists`로 본다(`UserRepository.existsById`).
@@ -569,7 +571,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.30 경로의 사용자와 요청자의 비교
 
-> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 `UserIdHeader.requireSelf`를 지웠다. 비교는 그대로 adapter.webapi(선택 A)에 있고, `UserLikeApi.getLikedProducts`가 `@RequesterId`로 받은 요청자와 경로의 사용자를 견준다. 헤더가 없거나 없는 사용자는 resolver가 컨트롤러 앞에서 401로 거절하므로, 401이 403보다 앞서는 차례는 `require`를 거치는 것이 아니라 인자 해석이 정한다. 아래 대가가 내다본 정리가 이것이다.
+> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 `UserIdHeader.requireSelf`를 지웠다. 비교는 그대로 adapter.webapi(선택 A)에 있고, `UserLikeApi.getLikedProducts`가 `@RequesterId`로 받은 요청자와 경로의 사용자를 견준다. 헤더가 없거나 없는 사용자는 resolver가 컨트롤러 앞에서 401로 거절하므로, 401이 403보다 앞서는 차례는 `require`를 거치는 것이 아니라 인자 해석이 정한다. 아래 대가가 내다본 정리가 이것이다.
 
 - 문제: `GET /api/v1/users/{userId}/likes`는 경로에도 사용자가 있고 헤더에도 요청자가 있다. 다르면 403(`FORBIDDEN`)이다. 이 비교를 어느 층이 하는가.
 - 대안 A: adapter.webapi. `UserIdHeader.requireSelf(userId, pathUserId)`가 요청자를 읽고 경로와 견주어, 다르면 403을 던진다. application은 요청자 하나만 받는다.

@@ -6,6 +6,6 @@ package com.loopers.application.point.provided
  * [userId]는 요청자, 곧 `X-USER-ID` 헤더가 실어 준 사용자 식별자다. 웹 경계가 이미 받아들인 요청자라 다시 확인하지 않는다(ADR 0015).
  */
 interface PointAccountFinder {
-    /** 요청자의 현재 잔액. 사용자는 있는데 계정이 없으면 `POINT_ACCOUNT_MISSING`을 던진다(설계 5.9, 6 끝). */
+    /** 요청자의 현재 잔액. 계정이 없으면 `POINT_ACCOUNT_MISSING`을 던진다. 받아들인 요청자라면 데이터 불일치다(설계 5.9, 6 끝). */
     fun findBalance(userId: Long): PointAccountInfo
 }

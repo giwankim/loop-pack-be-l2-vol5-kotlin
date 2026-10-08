@@ -10,7 +10,7 @@ import jakarta.validation.Valid
 interface PointCharger {
     /**
      * 충전하고 충전 직후의 잔액을 돌려준다. 요청마다 새 충전이다. 같은 충전액을 다시 보내면 다시 충전된다(ADR 0005).
-     * 사용자는 있는데 계정이 없으면 `POINT_ACCOUNT_MISSING`을 던진다(설계 5.9, 6 끝).
+     * 계정이 없으면 `POINT_ACCOUNT_MISSING`을 던진다. 받아들인 요청자라면 데이터 불일치다(설계 5.9, 6 끝).
      */
     fun charge(userId: Long, @Valid request: PointChargeRequest): PointAccountInfo
 }

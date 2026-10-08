@@ -100,6 +100,19 @@ class UserLikeApiTest : BaseWebApiAdapterTest() {
         body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
     }
 
+    /**
+     * 없는 사용자가 남의 경로를 보아도 401과 403이 둘 다 답할 수 있다. 401이 먼저인 것은 웹 경계가 컨트롤러 앞에서 요청자를
+     * 거절하기 때문이다. 인증이 인가보다 앞선다(ADR 0015). 헤더 없는 경우와 같은 까닭으로 남의 경로로 확인한다.
+     */
+    @Test
+    fun `reading another user's like list as a user that does not exist returns 401 rather than 403`() {
+        val other = prepareUser()
+        entityManager.flushAndClear()
+
+        val body = assertThat(requestGetLikes(userId = 999L, pathUserId = other.id)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+    }
+
     @Test
     fun `reading the like list of a user that does not exist returns 401`() {
         val body = assertThat(requestGetLikes(userId = 999L, pathUserId = 999L)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
