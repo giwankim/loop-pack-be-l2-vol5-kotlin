@@ -374,6 +374,8 @@ classDiagram
 ### 8.1 기본 구조
 
 > 2026-09-28 `point_history` 행, 그 두 FK, append-only 규칙을 18절에서 철회했다.
+>
+> 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 논리 삭제를 모든 애그리거트 루트의 기본으로 넓혔다. 주문·계정을 지우는 유스케이스는 여전히 없지만 `PointAccount`와 `Order`도 `@SQLRestriction`으로 삭제된 행을 숨긴다. 아래 "카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다"는 철회했다.
 
 아래는 실행 가능한 migration이 아니라 모델과 필요한 제약의 초안이다. BaseEntity의 ID·시간 필드를 재사용하되 주문·계정·이력을 삭제하는 유스케이스는 이번 범위에 없다. 카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다.
 
@@ -543,6 +545,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 > 2026-09-28 `PointHistory.account`와 `fk_point_history_point_account`는 18절에서 지웠다.
 >
 > 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `PointAccount.user` 연관을 스칼라 `userId` 열로 바꿨다. 다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 두는데, 계정을 읽는 쪽은 사용자를 건너 읽지 않는다. 아래 첫 근거("연관뿐이다")는 8.2의 2026-10-08 메모가 뒤집었다. 스크립트의 외래 키는 반복 `create`에서도 표를 지우는 차례에 함께 사라지고, `point_account`는 `users`보다 먼저 지워진다. 그래서 `FK_POINT_ACCOUNT_USER`는 같은 이름으로 `scalar-foreign-keys.sql`에 있고, `UK_POINT_ACCOUNT_USER_ID`는 `@Table`의 유일 제약 그대로다. `findByUserId`는 이제 이름 규칙으로 만들어지고 JPQL은 없다. 사용자를 읽지 않는다는 `Hibernate.isInitialized` 테스트는 읽을 연관이 없어 지웠다. 외래 키와 `information_schema`의 저장소 테스트는 그대로다.
+>
+> 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에 `@SQLRestriction`이 붙었다. 아래 다시 볼 조건의 앞 절반이 일어났지만, 계정은 위 메모대로 이미 스칼라 `userId`라 사용자의 필터가 계정 조회에 닿지 않는다. 둘째 근거의 "`User`에는 삭제 상태가 없어"도 이제 사실이 아니다.
 
 **선택: `PointAccount.user`는 `@OneToOne(fetch = LAZY)` 연관이고 `userId`는 그 프록시의 식별자를 읽는 파생 프로퍼티다.** `PointHistory.account`도 `@ManyToOne(fetch = LAZY)` 연관이다.
 
@@ -642,6 +646,10 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 > 2026-10-03 같은 상품의 합산을 철회했다(#55, 5.2). 둘째 항목의 생성 재생은 17절에서 이미 철회했고, 재생을 가르던 합산·정렬된 상품별 수량도 이제 없다.
 >
 > 2026-10-03 주문 전용 역직렬화기를 5.10과 함께 철회했다(#55).
+>
+> 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `Order`와 `OrderLineItem`도 `BaseEntity`를 상속한다. 아래 첫 항목의 "카탈로그의 삭제 행위를 물려받지 않도록 `BaseEntity`를 상속하지 않는다"는 철회했다. `Order`는 루트라 `@SQLRestriction`이 붙고, 품목은 필터 없이 주문을 따른다.
+>
+> 2026-10-08 "생성 시각은 UTC `Instant`를" 항목의 마이크로초 `Instant`는 ADR 0016으로 `BaseEntity`의 규칙이 되었다. `createdAt`은 이제 생성자가 아니라 `@PrePersist`가 찍는다. 식별자가 `IDENTITY`라 `save`가 곧 INSERT이므로 생성 응답에 그대로 실린다. 확정은 `@PreUpdate`로 `updated_at`도 옮긴다. "`updatedAt`에 의존하지 않는다"는 그대로다.
 
 [Issue #13](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/13)은 `POST /api/v1/orders`와 `GET /api/v1/orders/{orderId}`를 구현한다. 포인트 계정을 조회하거나 만들지 않으며, 주문 확정 행위와 목록·관리자 조회는 후속 티켓에 남긴다.
 

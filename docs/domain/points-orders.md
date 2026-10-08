@@ -16,7 +16,7 @@
 | `userId` | `Long` | 계정의 사용자. 연관이 아닌 스칼라 열이다. 계정을 읽는 쪽이 사용자를 건너 읽지 않는다(설계 12.1, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)) |
 | `balance` | `Money` | 잔액. 처음 0원 |
 
-테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). 연관이 없으므로 외래 키는 `scalar-foreign-keys.sql`이 만든다. `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
+테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). 연관이 없으므로 외래 키는 `scalar-foreign-keys.sql`이 만든다. 계정을 지우는 유스케이스는 없지만 애그리거트 루트라 논리 삭제가 기본이다. `@SQLRestriction`이 삭제된 계정을 가리므로 삭제된 계정은 없는 계정이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 규칙
 
@@ -43,20 +43,20 @@
 
 ## 주문 (Order)
 
-애그리거트 루트. `BaseEntity`를 상속하지 않는다. 카탈로그의 논리 삭제 행위를 물려받으면 주문을 지울 수 있게 되는데, 주문을 지우는 유스케이스가 없다(설계 13).
+애그리거트 루트. `BaseEntity`를 상속한다. 주문을 지우는 유스케이스는 없지만 루트라 논리 삭제가 기본이다. `@SQLRestriction`이 삭제된 주문을 가리므로 삭제된 주문은 없는 주문이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 속성
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
-| `id` | `Long` | 식별자 |
+| `id` | `Long` | 식별자. `BaseEntity` |
 | `userId` | `Long` | 주문한 사용자. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(설계 13) |
 | `items` | `List<OrderLineItem>` | 주문 품목. `productId` 오름차순이며 상품별로 하나씩이다 |
 | `totalAmount` | `Money` | 품목 금액의 합. 생성 후 바뀌지 않는다 |
 | `status` | `OrderStatus` | `DRAFT` 또는 `CONFIRMED` |
 | `paidAmount` | `Money?` | 확정으로 결제한 금액. `DRAFT`에는 없다 |
 | `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
-| `createdAt` | `Instant` | 생성 시각. 마이크로초로 잘라 저장한다 |
+| `createdAt` | `Instant` | 생성 시각. `BaseEntity`가 저장할 때 마이크로초로 잘라 찍는다 |
 
 테이블 `orders`. `users`로 외래 키(`FK_ORDERS_USER`), 조회용 인덱스 `idx_orders_user_created`·`idx_orders_created`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
 
@@ -94,13 +94,13 @@
 
 ## 주문 품목 (OrderLineItem)
 
-주문이 소유한다. `BaseEntity`를 상속하지 않고 생성자가 `internal`이라 `Order`만 만든다.
+주문이 소유한다. `BaseEntity`를 상속하고 생성자가 `internal`이라 `Order`만 만든다. 주문을 거쳐서만 읽고 `delete()`를 부르지 않는다. 삭제 필터도 두지 않는다. 주문이 품목을 조인으로 읽을 때 품목의 필터도 붙어, 걸러진 품목이 총액이 세는 주문에서 빠지기 때문이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 속성
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
-| `id` | `Long` | 식별자 |
+| `id` | `Long` | 식별자. `BaseEntity` |
 | `order` | `Order` | 속한 주문. `@ManyToOne(fetch = LAZY)`. DB 외래 키의 자리 |
 | `productId` | `Long` | 대상 상품. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(Q14, Q21) |
 | `productName` | `String` | 생성 당시의 상품 이름 |

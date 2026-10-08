@@ -134,17 +134,17 @@ TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Pro
 
 ## 좋아요 (Like)
 
-사용자–상품 관계. `BaseEntity`를 상속하되 `delete()`를 쓰지 않고 행을 지운다(ADR 0001).
+사용자–상품 관계. `BaseEntity`를 상속하되 `delete()`를 쓰지 않고 행을 지운다(ADR 0001). 논리 삭제가 기본인 애그리거트 루트 가운데 하나뿐인 예외다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 속성
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
-| `userId` | `Long` | 누른 사용자 |
-| `productId` | `Long` | 대상 상품 |
+| `userId` | `Long` | 누른 사용자. 자연 식별자 |
+| `productId` | `Long` | 대상 상품. 자연 식별자 |
 
-DB 유일 제약: `(user_id, product_id)`.
+좋아요의 정체는 사용자–상품 쌍이다. `userId`·`productId`는 Hibernate의 `@NaturalId`로 표시하며 바뀌지 않는다. 저장 약속은 자연 식별자로 읽지 않고 파생 조회를 쓴다. DB 유일 제약은 `UK_LIKES_USER_ID_PRODUCT_ID` `(user_id, product_id)` 하나다.
 
 ### 규칙
 
@@ -189,7 +189,7 @@ DB 유일 제약: `(user_id, product_id)`.
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
 
-테이블 `users`. 식별자 말고 속성이 없고 삭제 상태도 두지 않는다(설계 5.27). 신원 서비스의 사용자를 이 서비스가 들고 있는 사본이다. 외래 키가 가리키고, 요청자를 받아들일 때 "이 사용자가 있는가"에 답한다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 저장 약속 `UserRepository`는 `save`와 `existsById`뿐이다.
+테이블 `users`. 식별자 말고 속성이 없다(설계 5.27). 사용자를 지우는 API는 없지만 애그리거트 루트라 논리 삭제가 기본이다. `@SQLRestriction`이 삭제된 사용자를 가리므로 삭제된 사용자는 없는 사용자다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)). 신원 서비스의 사용자를 이 서비스가 들고 있는 사본이다. 외래 키가 가리키고, 요청자를 받아들일 때 "이 사용자가 있는가"에 답한다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 저장 약속 `UserRepository`는 `save`와 `existsById`뿐이다.
 
 ### 규칙
 

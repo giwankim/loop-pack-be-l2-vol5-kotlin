@@ -530,6 +530,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.27 요청자 식별의 자리
 
 > 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 대안 C로 옮겼다([#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). 식별이 필요한 엔드포인트가 아홉이 되어 아래의 다시 볼 조건이 걸렸다. `@RequesterId` 파라미터를 `adapter.webapi`의 `RequesterIdArgumentResolver`가 채우며, 헤더가 없으면 401, 숫자가 아니면 400, 그 사용자가 없으면 401이다. 사용자의 존재는 `UserFinder.exists`로 묻는다. 그래서 선택 A의 "사용자의 존재는 application이 본다"는 더 이상 사실이 아니다. 웹 경계가 로컬에서 API 게이트웨이를 대신하고, application은 받은 `userId`를 믿는다. 5.25의 "층은 서로를 거치지 않고도 불릴 수 있다"를 요청자 확인에 한해 접은 것이며 그 대가는 ADR에 있다. `UserIdHeader`에는 헤더 이름만 남았다. 숫자가 아닌 값의 400은 resolver가 `@RequestHeader`의 타입 변환과 같은 예외를 던져 응답도 그대로다. C를 물리친 `WebMvcConfigurer`는 `adapter.webapi`의 `WebMvcConfig`다. 아래 "요청자에는 코드 이름이 없다"도 바뀌었다. 애노테이션이 `RequesterId`라 CONTEXT.md 요청자가 영어 이름 Requester를 얻고 `requester`가 _Avoid_에서 빠졌다. 요청자는 여전히 사용자 식별자(`userId`)로 나타난다.
+>
+> 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에도 `@SQLRestriction`이 붙었다. 사용자를 지우는 API는 여전히 없지만 애그리거트 루트라 논리 삭제가 기본이다. 아래 사용자 테이블 항목의 "삭제 상태는 두지 않는다"와 "`@SQLRestriction`도 붙이지 않는다"는 철회했다. 좋아요와 같은 모양이라는 비교도 이제 맞지 않는다. 좋아요는 필터 없이 행을 지우는 하나뿐인 예외다.
 
 - 문제: 좋아요 누르기·취소는 `X-USER-ID` 헤더의 사용자 식별자로 요청자를 식별한다(1장 요청자와 관리자 경계). "헤더가 없다"와 "그 사용자가 없다"는 둘 다 401인데, 앞의 것은 HTTP만 아는 사실이고 뒤의 것은 저장소를 봐야 하는 사실이라 한 곳에서 둘 다 볼 수 없다.
 - 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 adapter.webapi의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 좋아요 조각의 Service가 `UserFinder.checkExists`로 본다(`UserRepository.existsById`).
