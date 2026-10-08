@@ -8,13 +8,14 @@ import com.loopers.application.brand.required.BrandRepository
 import com.loopers.domain.brand.Brand
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
-import com.loopers.support.stereotype.ApplicationService
+import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
  * [BrandValidator]의 구현. 이름 중복은 자기 저장소에, 남은 상품은 브랜드가 선언한 [ActiveProductChecker]로 상품 조각에 묻는다
- * (설계 5.8, ADR 0014). 읽기만 하므로 `readOnly`로 열고, 브랜드 쓰기의 트랜잭션 안에서는 거기에 참여한다.
+ * (설계 5.8, ADR 0014). Request를 받으므로 검증하는 Service다. 읽기만 하므로 `readOnly`로 열고,
+ * 브랜드 쓰기의 트랜잭션 안에서는 거기에 참여한다.
  */
-@ApplicationService(readOnly = true)
+@ValidatedApplicationService(readOnly = true)
 class BrandValidationService(
     private val brandRepository: BrandRepository,
     private val activeProductChecker: ActiveProductChecker,

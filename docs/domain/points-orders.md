@@ -6,18 +6,17 @@
 
 ## 포인트 계정 (PointAccount)
 
-애그리거트 루트. `BaseEntity`를 상속한다. 사용자를 객체로 참조하지만 사용자의 상태를 바꾸지 않는다.
+애그리거트 루트. `BaseEntity`를 상속한다. 사용자를 식별자로만 가리키고 사용자의 상태를 바꾸지 않는다.
 
 ### 속성
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
 | `id` | `Long` | 식별자 |
-| `user` | `User` | 계정의 사용자. `@OneToOne(fetch = LAZY)`, 읽기용. DB 외래 키의 자리(설계 12.1) |
-| `userId` | `Long` | `user`의 식별자. 프록시가 들고 있어 사용자를 읽지 않는다 |
+| `userId` | `Long` | 계정의 사용자. 연관이 아닌 스칼라 열이다. 계정을 읽는 쪽이 사용자를 건너 읽지 않는다(설계 12.1, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)) |
 | `balance` | `Money` | 잔액. 처음 0원 |
 
-테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`, `scalar-foreign-keys.sql`). 사용자는 연관이 아니라 스칼라 `userId`로 가리킨다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
+테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). 연관이 없으므로 외래 키는 `scalar-foreign-keys.sql`이 만든다. `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
 
 ### 규칙
 
