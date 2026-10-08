@@ -541,6 +541,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 ### 12.1 사용자 참조와 물리 FK의 자리
 
 > 2026-09-28 `PointHistory.account`와 `fk_point_history_point_account`는 18절에서 지웠다.
+>
+> 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `PointAccount.user` 연관을 스칼라 `userId` 열로 바꿨다. 다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 두는데, 계정을 읽는 쪽은 사용자를 건너 읽지 않는다. 아래 첫 근거("연관뿐이다")는 8.2의 2026-10-08 메모가 뒤집었다. 스크립트의 외래 키는 반복 `create`에서도 표를 지우는 차례에 함께 사라지고, `point_account`는 `users`보다 먼저 지워진다. 그래서 `FK_POINT_ACCOUNT_USER`는 같은 이름으로 `scalar-foreign-keys.sql`에 있고, `UK_POINT_ACCOUNT_USER_ID`는 `@Table`의 유일 제약 그대로다. `findByUserId`는 이제 이름 규칙으로 만들어지고 JPQL은 없다. 사용자를 읽지 않는다는 `Hibernate.isInitialized` 테스트는 읽을 연관이 없어 지웠다. 외래 키와 `information_schema`의 저장소 테스트는 그대로다.
 
 **선택: `PointAccount.user`는 `@OneToOne(fetch = LAZY)` 연관이고 `userId`는 그 프록시의 식별자를 읽는 파생 프로퍼티다.** `PointHistory.account`도 `@ManyToOne(fetch = LAZY)` 연관이다.
 

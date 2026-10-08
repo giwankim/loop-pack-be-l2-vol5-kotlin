@@ -3,7 +3,6 @@ package com.loopers.domain.point
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
-import com.loopers.domain.user.User
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -11,7 +10,7 @@ import org.junit.jupiter.api.assertThrows
 class PointAccountTest {
     @Test
     fun `paying the entire balance leaves a zero balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
         account.charge(Money(3_000))
 
         account.pay(Money(3_000))
@@ -21,7 +20,7 @@ class PointAccountTest {
 
     @Test
     fun `paying zero is rejected without changing the balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
         account.charge(Money(3_000))
 
         assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO) }
@@ -31,7 +30,7 @@ class PointAccountTest {
 
     @Test
     fun `paying 4000 from a 3000 balance rejects insufficient points and preserves the balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
         account.charge(Money(3_000))
 
         assertThrows<InsufficientPointsException> { account.pay(Money(4_000)) }
@@ -41,14 +40,14 @@ class PointAccountTest {
 
     @Test
     fun `a new account starts with a zero balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
 
         assertThat(account.balance).isEqualTo(Money.ZERO)
     }
 
     @Test
     fun `charging adds the amount to the balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
 
         account.charge(Money(10_000))
         account.charge(Money(500))
@@ -58,7 +57,7 @@ class PointAccountTest {
 
     @Test
     fun `charging zero throws InvalidChargeAmountException and keeps the balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
         account.charge(Money(1_000))
 
         val exception = assertThrows<InvalidChargeAmountException> { account.charge(Money.ZERO) }
@@ -70,7 +69,7 @@ class PointAccountTest {
     /** 충전 후 잔액도 `Long` 범위 안이어야 한다. 넘치면 거절하고 잔액은 그대로다(설계 5.7). */
     @Test
     fun `charging past Long MAX_VALUE throws InvalidMoneyException and keeps the balance`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
         account.charge(Money(Long.MAX_VALUE))
 
         assertThrows<InvalidMoneyException> { account.charge(Money(1)) }
@@ -81,7 +80,7 @@ class PointAccountTest {
     /** 상품 가격의 10억 원 상한은 상품만의 규칙이다. 포인트 잔액은 `Long` 범위만 지킨다(설계 5.7). */
     @Test
     fun `the balance may exceed the product price cap`() {
-        val account = PointAccount(User())
+        val account = PointAccount(userId = 1L)
 
         account.charge(Product.MAX_PRICE + Money(1))
 

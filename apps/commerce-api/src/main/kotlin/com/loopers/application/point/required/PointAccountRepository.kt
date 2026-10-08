@@ -1,7 +1,6 @@
 package com.loopers.application.point.required
 
 import com.loopers.domain.point.PointAccount
-import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.Repository
 
 /**
@@ -11,7 +10,5 @@ import org.springframework.data.repository.Repository
 interface PointAccountRepository : Repository<PointAccount, Long> {
     fun save(account: PointAccount): PointAccount
 
-    /** `userId`는 엔티티의 파생 프로퍼티라 이름 규칙이 닿지 않으므로 연관을 건너는 조건을 직접 적는다. */
-    @Query("select a from PointAccount a where a.user.id = :userId")
     fun findByUserId(userId: Long): PointAccount?
 }

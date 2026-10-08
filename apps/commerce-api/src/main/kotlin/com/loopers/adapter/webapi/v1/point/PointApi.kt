@@ -36,7 +36,7 @@ class PointApi(
     override fun getBalance(
         @RequesterId userId: Long,
     ): ApiResponse<PointAccountResponse> {
-        return pointAccountFinder.findBalance(userId)
+        return pointAccountFinder.findByUser(userId)
             .let { PointAccountResponse.from(it) }
             .let { ApiResponse.success(it) }
     }

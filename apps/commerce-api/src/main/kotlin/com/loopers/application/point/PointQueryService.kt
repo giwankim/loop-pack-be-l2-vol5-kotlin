@@ -1,8 +1,8 @@
 package com.loopers.application.point
 
 import com.loopers.application.point.provided.PointAccountFinder
-import com.loopers.application.point.provided.PointAccountInfo
 import com.loopers.application.point.required.PointAccountRepository
+import com.loopers.domain.point.PointAccount
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ApplicationService
@@ -17,9 +17,6 @@ import com.loopers.support.stereotype.ApplicationService
 class PointQueryService(
     private val pointAccountRepository: PointAccountRepository,
 ) : PointAccountFinder {
-    override fun findBalance(userId: Long): PointAccountInfo {
-        val account =
-            pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
-        return PointAccountInfo.from(account)
-    }
+    override fun findByUser(userId: Long): PointAccount =
+        pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
 }

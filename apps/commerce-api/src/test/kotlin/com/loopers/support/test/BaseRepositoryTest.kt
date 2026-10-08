@@ -96,7 +96,7 @@ abstract class BaseRepositoryTest {
     /** 처음 잔액이 0원인 포인트 계정도 함께 저장한다. 이름이 같은 [BaseApplicationServiceTest.prepareUser]와 같은 상태다. */
     protected fun prepareUser(): User =
         userRepository.save(User()).also {
-            pointAccount = pointAccountRepository.save(PointAccount(it))
+            pointAccount = pointAccountRepository.save(PointAccount(it.id))
             user = it
         }
 

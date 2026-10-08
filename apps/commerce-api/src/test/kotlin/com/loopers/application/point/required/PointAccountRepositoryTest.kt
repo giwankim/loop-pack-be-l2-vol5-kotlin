@@ -2,11 +2,9 @@ package com.loopers.application.point.required
 
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.shared.Money
-import com.loopers.domain.user.User
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
-import org.hibernate.Hibernate
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.dao.DataIntegrityViolationException
@@ -36,19 +34,6 @@ class PointAccountRepositoryTest(
         assertThat(found?.createdAt).isNotNull()
     }
 
-    /** 사용자는 식별자뿐이라 계정을 읽을 때 사용자 행까지 읽을 까닭이 없다. 식별자는 프록시가 들고 있다. */
-    @Test
-    fun `findByUserId gives the user id without loading the user`() {
-        prepareUser()
-        entityManager.flushAndClear()
-
-        val found = pointAccountRepository.findByUserId(user.id)!!
-
-        assertThat(Hibernate.isInitialized(found.user)).isFalse()
-        assertThat(found.userId).isEqualTo(user.id)
-        assertThat(Hibernate.isInitialized(found.user)).isFalse()
-    }
-
     @Test
     fun `findByUserId is null for a user without an account and for an unknown user`() {
         val userWithoutAccount = prepareUserWithoutAccount()
@@ -64,15 +49,13 @@ class PointAccountRepositoryTest(
     fun `saving a second account for the same user violates the unique constraint`() {
         prepareUser()
 
-        assertThrows<DataIntegrityViolationException> { pointAccountRepository.save(PointAccount(user)) }
+        assertThrows<DataIntegrityViolationException> { pointAccountRepository.save(PointAccount(user.id)) }
     }
 
-    /** 사용자 행이 없는 계정은 DB가 거절한다. 프록시로 식별자만 실어 INSERT까지 보낸다. */
+    /** 사용자 행이 없는 계정은 DB가 거절한다. 외래 키는 연관이 아니라 `scalar-foreign-keys.sql`이 만든다(ADR 0014). */
     @Test
     fun `saving an account for a user that does not exist violates the foreign key`() {
-        val missingUser = entityManager.getReference(User::class.java, 999L)
-
-        assertThrows<DataIntegrityViolationException> { pointAccountRepository.save(PointAccount(missingUser)) }
+        assertThrows<DataIntegrityViolationException> { pointAccountRepository.save(PointAccount(userId = 999L)) }
     }
 
     @Test

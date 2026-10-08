@@ -10,7 +10,7 @@ date: 2026-10-08
 **이 로컬 구성에서는 웹 경계가 게이트웨이를 대신한다.** 컨트롤러가 돌기 전에 `adapter.webapi`의 `RequesterIdArgumentResolver`가 `@RequesterId` 파라미터를 채운다. `X-USER-ID`가 없으면 401, 숫자가 아니면 400, 그 사용자가 없으면 401이다. 사용자가 있는지는 사용자 조각의 `UserFinder.exists(userId): Boolean`에 묻고, 그것을 부르는 곳은 이 resolver 하나다. application은 받은 `userId`를 믿고 다시 확인하지 않는다. `users` 테이블은 신원 서비스의 사용자를 이 서비스가 들고 있는 사본으로 남는다. 외래 키가 가리키는 곳이고, "이 사용자가 있는가"에 답하는 곳이다.
 
 - 경로의 사용자와 요청자를 견주는 403([카탈로그 설계 5.30](../design/catalog.md))은 그대로 `UserLikeApi`에 있고, 받아들인 요청자와 견준다. 없는 사용자는 경로와 무관하게 401이다. 인증이 인가보다 앞선다.
-- application이 요청자를 믿으므로 사용자를 가리키지 않는 행은 DB가 막는다. 스칼라 참조의 외래 키를 만드는 `scalar-foreign-keys.sql`(옛 `order-foreign-keys.sql`)에 `FK_LIKES_USER`와 `FK_LIKES_PRODUCT`를 더했다. 주문에는 이미 `FK_ORDERS_USER`가 있고, 포인트 계정의 `FK_POINT_ACCOUNT_USER`는 연관에서 Hibernate가 만든다.
+- application이 요청자를 믿으므로 사용자를 가리키지 않는 행은 DB가 막는다. 스칼라 참조의 외래 키를 만드는 `scalar-foreign-keys.sql`(옛 `order-foreign-keys.sql`)에 `FK_LIKES_USER`와 `FK_LIKES_PRODUCT`를 더했다. 주문에는 이미 `FK_ORDERS_USER`가 있고, 포인트 계정의 `FK_POINT_ACCOUNT_USER`는 연관에서 Hibernate가 만든다. (2026-10-08, [ADR 0014](./0014-finders-load-whole-aggregates.md): 계정의 연관이 스칼라 `userId`가 되어, 그 외래 키도 같은 이름으로 이 스크립트에 있다.)
 
 ## 고르지 않은 것
 

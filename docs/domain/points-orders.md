@@ -17,7 +17,7 @@
 | `userId` | `Long` | `user`의 식별자. 프록시가 들고 있어 사용자를 읽지 않는다 |
 | `balance` | `Money` | 잔액. 처음 0원 |
 
-테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
+테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`, `scalar-foreign-keys.sql`). 사용자는 연관이 아니라 스칼라 `userId`로 가리킨다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `deletedAt`은 상속하지만 쓰지 않는다. 계정을 지우는 유스케이스가 없다.
 
 ### 규칙
 
@@ -29,7 +29,7 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `PointAccount(user)` | 그 사용자의 0원 계정을 만든다 | 없음 |
+| `PointAccount(userId)` | 그 사용자의 0원 계정을 만든다 | 없음 |
 | `charge(amount)` | 잔액에 `amount`를 더한다 | `InvalidChargeAmountException`, `InvalidMoneyException` |
 | `pay(amount)` | 양의 결제액을 차감한다. 어느 주문의 결제인지는 모른다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
 
@@ -39,8 +39,8 @@
 
 ### 협력
 
-- 충전: `PointCharger.charge` → 요청자 존재 확인 → 계정 조회 → `account.charge(amount)`. `point_account` 한 행만 바뀐다(설계 18.3). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
-- 잔액 조회: `PointAccountFinder.findBalance` → 요청자 존재 확인 → 계정 조회 → 현재 잔액.
+- 충전: `PointCharger.charge` → `PointAccountFinder.findByUser`로 계정 조회 → `account.charge(amount)`. `point_account` 한 행만 바뀐다(설계 18.3). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
+- 잔액 조회: `PointAccountFinder.findByUser` → 계정 조회 → 계정을 돌려주고 응답이 현재 잔액을 고른다.
 
 ## 주문 (Order)
 

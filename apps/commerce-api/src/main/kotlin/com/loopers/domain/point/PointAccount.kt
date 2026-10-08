@@ -2,15 +2,10 @@ package com.loopers.domain.point
 
 import com.loopers.domain.BaseEntity
 import com.loopers.domain.shared.Money
-import com.loopers.domain.user.User
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
-import jakarta.persistence.FetchType
-import jakarta.persistence.ForeignKey
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.OneToOne
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
@@ -18,8 +13,8 @@ import jakarta.persistence.UniqueConstraint
  * 한 사용자의 포인트 잔액을 보유하는 계정. 사용자마다 하나이며 처음 잔액은 0원이다(CONTEXT.md 포인트 계정).
  * 사용자 fixture를 준비할 때 함께 만들고, 조회나 충전이 없는 계정을 만들어 주지 않는다(설계 5.9).
  *
- * [user]는 읽기용 참조다. 사용자를 객체로 가리키는 까닭은 `ddl-auto=create`가 연관에서만 DB 외래 키를 만들기
- * 때문이다(설계 12.1). 사용자에게는 삭제 상태가 없어 상품–브랜드의 삭제 필터 문제가 없다.
+ * 사용자를 식별자로만 가리킨다. 계정을 읽는 쪽이 사용자를 건너 읽지 않으므로 연관을 두지 않고, 외래 키
+ * `FK_POINT_ACCOUNT_USER`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014, 설계 12.1).
  *
  * 잔액은 0 이상인 [Money]이며 상품 가격의 상한을 따르지 않는다. `Long` 범위만 지킨다(설계 5.7).
  */
@@ -28,20 +23,16 @@ import jakarta.persistence.UniqueConstraint
     uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_USER_ID", columnNames = ["user_id"])],
 )
 class PointAccount(
-    user: User,
+    userId: Long,
 ) : BaseEntity() {
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(nullable = false, updatable = false, foreignKey = ForeignKey(name = "FK_POINT_ACCOUNT_USER"))
-    val user: User = user
+    /** 계정을 가진 사용자. */
+    @Column(nullable = false, updatable = false)
+    val userId: Long = userId
 
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "balance", nullable = false))
     var balance: Money = Money.ZERO
         protected set
-
-    /** 계정을 가진 사용자의 식별자. 프록시가 들고 있는 값이라 사용자를 읽지 않는다. */
-    val userId: Long
-        get() = user.id
 
     /**
      * 양의 충전액만큼 잔액을 늘린다(CONTEXT.md 충전하다).

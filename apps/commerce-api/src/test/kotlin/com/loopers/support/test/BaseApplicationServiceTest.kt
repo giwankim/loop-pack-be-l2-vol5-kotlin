@@ -116,7 +116,7 @@ abstract class BaseApplicationServiceTest {
     /** 사용자를 만드는 포트가 없어 저장소로 만든다. 처음 잔액이 0원인 포인트 계정도 함께 저장한다(설계 5.9). */
     protected fun prepareUser(): User =
         userRepository.save(User()).also {
-            pointAccount = pointAccountRepository.save(PointAccount(it))
+            pointAccount = pointAccountRepository.save(PointAccount(it.id))
             user = it
         }
 

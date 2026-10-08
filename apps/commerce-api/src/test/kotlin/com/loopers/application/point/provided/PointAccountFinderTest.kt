@@ -1,5 +1,6 @@
 package com.loopers.application.point.provided
 
+import com.loopers.domain.shared.Money
 import com.loopers.support.countPointAccounts
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -16,18 +17,22 @@ import org.junit.jupiter.api.assertThrows
 class PointAccountFinderTest(
     private val pointAccountFinder: PointAccountFinder,
 ) : BaseApplicationServiceTest() {
+    /**
+     * 처음 읽은 잔액은 값으로 받아 둔다. 같은 영속성 컨텍스트에서 충전이 같은 계정 인스턴스를 바꾸므로,
+     * 계정을 받아 두면 충전 뒤의 잔액을 보게 된다.
+     */
     @Test
-    fun `findBalance is zero for a fresh account and the current balance after charges`() {
+    fun `findByUser gives a fresh account at zero and the current balance after charges`() {
         prepareUser()
         entityManager.flushAndClear()
-        val fresh = pointAccountFinder.findBalance(user.id)
+        val freshBalance = pointAccountFinder.findByUser(user.id).balance
 
         charge(amount = 10_000)
         charge(amount = 500)
         entityManager.flushAndClear()
 
-        assertThat(fresh.balance).isZero()
-        assertThat(pointAccountFinder.findBalance(user.id).balance).isEqualTo(10_500L)
+        assertThat(freshBalance).isEqualTo(Money.ZERO)
+        assertThat(pointAccountFinder.findByUser(user.id).balance).isEqualTo(Money(10_500))
     }
 
     /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */
@@ -36,7 +41,7 @@ class PointAccountFinderTest(
         prepareUserWithoutAccount()
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { pointAccountFinder.findBalance(user.id) }
+        val exception = assertThrows<CoreException> { pointAccountFinder.findByUser(user.id) }
         entityManager.flushAndClear()
 
         assertThat(exception.errorType).isEqualTo(ErrorType.POINT_ACCOUNT_MISSING)

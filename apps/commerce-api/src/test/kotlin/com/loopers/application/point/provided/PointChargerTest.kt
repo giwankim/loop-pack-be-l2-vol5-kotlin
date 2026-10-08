@@ -2,6 +2,7 @@ package com.loopers.application.point.provided
 
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.shared.InvalidMoneyException
+import com.loopers.domain.shared.Money
 import com.loopers.support.balanceOf
 import com.loopers.support.countPointAccounts
 import com.loopers.support.error.CoreException
@@ -29,10 +30,10 @@ class PointChargerTest(
         prepareUser()
         entityManager.flushAndClear()
 
-        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
+        val account = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
 
-        assertThat(info.balance).isEqualTo(10_000L)
+        assertThat(account.balance).isEqualTo(Money(10_000))
         assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(10_000L)
     }
 
@@ -43,10 +44,10 @@ class PointChargerTest(
         charge(amount = 10_000)
         entityManager.flushAndClear()
 
-        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
+        val account = pointCharger.charge(user.id, createPointChargeRequest(amount = 10_000))
         entityManager.flushAndClear()
 
-        assertThat(info.balance).isEqualTo(20_000L)
+        assertThat(account.balance).isEqualTo(Money(20_000))
         assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(20_000L)
     }
 
@@ -56,11 +57,11 @@ class PointChargerTest(
         prepareUser()
         entityManager.flushAndClear()
 
-        val info = pointCharger.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
+        val account = pointCharger.charge(user.id, createPointChargeRequest(amount = 1_000_000_001))
         entityManager.flushAndClear()
 
-        assertThat(info.balance).isEqualTo(1_000_000_001L)
-        assertThat(pointAccountFinder.findBalance(user.id).balance).isEqualTo(1_000_000_001L)
+        assertThat(account.balance).isEqualTo(Money(1_000_000_001))
+        assertThat(pointAccountFinder.findByUser(user.id).balance).isEqualTo(Money(1_000_000_001))
     }
 
     @Test
