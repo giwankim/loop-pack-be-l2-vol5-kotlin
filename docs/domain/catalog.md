@@ -189,12 +189,12 @@ DB 유일 제약: `(user_id, product_id)`.
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
 
-테이블 `users`. 식별자 말고 속성이 없고 삭제 상태도 두지 않는다(설계 5.27). 저장 약속 `UserRepository`는 `save`와 `existsById`뿐이다.
+테이블 `users`. 식별자 말고 속성이 없고 삭제 상태도 두지 않는다(설계 5.27). 신원 서비스의 사용자를 이 서비스가 들고 있는 사본이다. 외래 키가 가리키고, 요청자를 받아들일 때 "이 사용자가 있는가"에 답한다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 저장 약속 `UserRepository`는 `save`와 `existsById`뿐이다.
 
 ### 규칙
 
-- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 헤더의 존재는 adapter.webapi(`UserIdHeader`)가, 사용자의 존재는 application(`UserFinder`)이 본다(설계 5.27).
-- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 adapter.webapi(`UserIdHeader.requireSelf`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없으면 견줄 요청자가 없으므로 401이 먼저다.
+- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 둘 다 웹 경계(`@RequesterId`)가 컨트롤러 앞에서 보고, 사용자의 존재는 `UserFinder.exists`에 묻는다. application은 받은 사용자 식별자를 믿는다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)).
+- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 adapter.webapi(`UserLikeApi`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없거나 없는 사용자면 견줄 요청자가 없으므로 401이 먼저다.
 - 브랜드·상품 조회는 요청자가 없어도 된다.
 
 ## 상품 목록 정렬 (ProductSort)

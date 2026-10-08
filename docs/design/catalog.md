@@ -527,6 +527,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.27 요청자 식별의 자리
 
+> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 대안 C로 옮겼다([#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). 식별이 필요한 엔드포인트가 아홉이 되어 아래의 다시 볼 조건이 걸렸다. `@RequesterId` 파라미터를 `adapter.webapi`의 `RequesterIdArgumentResolver`가 채우며, 헤더가 없으면 401, 숫자가 아니면 400, 그 사용자가 없으면 401이다. 사용자의 존재는 `UserFinder.exists`로 묻는다. 그래서 선택 A의 "사용자의 존재는 application이 본다"는 더 이상 사실이 아니다. 웹 경계가 로컬에서 API 게이트웨이를 대신하고, application은 받은 `userId`를 믿는다. 5.25의 "층은 서로를 거치지 않고도 불릴 수 있다"를 요청자 확인에 한해 접은 것이며 그 대가는 ADR에 있다. `UserIdHeader`에는 헤더 이름만 남았다. 숫자가 아닌 값의 400은 resolver가 `@RequestHeader`의 타입 변환과 같은 예외를 던져 응답도 그대로다. C를 물리친 `WebMvcConfigurer`는 `adapter.webapi`의 `WebMvcConfig`다.
+
 - 문제: 좋아요 누르기·취소는 `X-USER-ID` 헤더의 사용자 식별자로 요청자를 식별한다(1장 요청자와 관리자 경계). "헤더가 없다"와 "그 사용자가 없다"는 둘 다 401인데, 앞의 것은 HTTP만 아는 사실이고 뒤의 것은 저장소를 봐야 하는 사실이라 한 곳에서 둘 다 볼 수 없다.
 - 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 adapter.webapi의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 좋아요 조각의 Service가 `UserFinder.checkExists`로 본다(`UserRepository.existsById`).
 - 대안 B: 헤더를 필수로 받고 Spring의 `MissingRequestHeaderException`을 `ApiControllerAdvice`가 401로 옮긴다. 컨트롤러가 가장 짧다. 그러나 그 예외는 어느 헤더가 빠졌든 같은 타입이라, advice가 헤더 이름을 보고 401과 400을 가르게 된다.
@@ -553,6 +555,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.29 좋아요 목록 조회의 자리
 
+> 2026-10-08 요청자 확인이 웹 경계로 옮겨 갔다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 아래 "한 조각에 조회 셋"의 요청자 확인은 이제 `LikeFinder` 밖에서 나가므로, `LikeFinderTest`가 세는 조회는 상품과 브랜드를 함께 읽는 조각 하나와 좋아요 수 집계 하나, 둘이다.
+
 - 문제: 내 좋아요 목록은 좋아요를 누른 시각으로 줄을 세우고, 삭제된 상품을 뺀 상품 항목을 돌려준다. 차례는 `likes`의 값이고 삭제 필터는 `product`의 것이라 한 조회가 두 테이블을 함께 본다. 5.28은 좋아요 수를 세는 일을 `LikeRepository`에 두어 저장소가 각자 자기 애그리거트만 알게 했는데, 이 조회는 어디에 두어도 한쪽이 남의 테이블을 알게 된다.
 - 대안 A: `LikeRepository`가 요청자의 좋아요를 한 조각 돌려주고, application이 그 상품 식별자로 상품을 읽어 삭제된 것을 버린다. 저장소는 각자 자기 애그리거트만 안다. 그러나 조각을 나눈 뒤에 거르므로 20개 중 삭제된 상품이 섞이면 응답이 20개보다 적고, 한 조각이 모두 삭제된 상품이면 `hasNext`가 true인 빈 조각이 된다. 클라이언트가 조각의 크기를 믿을 수 없다.
 - 대안 B: `LikeRepository`가 `product`를 join해 상품을 돌려준다. 조회 한 번에 거르기까지 끝나지만 좋아요 저장소의 반환 타입이 남의 애그리거트 엔티티가 된다.
@@ -564,6 +568,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: 좋아요 많은순 정렬(#9)이 상품 목록 쿼리에 같은 join을 들일 때. 그때 두 조회를 하나로 합칠지, 조건과 차례만 다른 둘로 둘지 정한다.
 
 ### 5.30 경로의 사용자와 요청자의 비교
+
+> 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 `UserIdHeader.requireSelf`를 지웠다. 비교는 그대로 adapter.webapi(선택 A)에 있고, `UserLikeApi.getLikedProducts`가 `@RequesterId`로 받은 요청자와 경로의 사용자를 견준다. 헤더가 없거나 없는 사용자는 resolver가 컨트롤러 앞에서 401로 거절하므로, 401이 403보다 앞서는 차례는 `require`를 거치는 것이 아니라 인자 해석이 정한다. 아래 대가가 내다본 정리가 이것이다.
 
 - 문제: `GET /api/v1/users/{userId}/likes`는 경로에도 사용자가 있고 헤더에도 요청자가 있다. 다르면 403(`FORBIDDEN`)이다. 이 비교를 어느 층이 하는가.
 - 대안 A: adapter.webapi. `UserIdHeader.requireSelf(userId, pathUserId)`가 요청자를 읽고 경로와 견주어, 다르면 403을 던진다. application은 요청자 하나만 받는다.
@@ -633,7 +639,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ## 7. 남은 것
 
-- 내 좋아요 목록을 `GET /api/v1/likes`로 줄이는 것은 확인 후 결정한다. 줄이면 403 경우와 `FORBIDDEN`이 이 조각에서 사라진다. #10은 경로를 그대로 두었고, 비교는 `UserIdHeader.requireSelf` 한 곳에 있으므로 줄일 때 지울 자리도 한 곳이다(5.30).
+- 내 좋아요 목록을 `GET /api/v1/likes`로 줄이는 것은 확인 후 결정한다. 줄이면 403 경우와 `FORBIDDEN`이 이 조각에서 사라진다. #10은 경로를 그대로 두었고, 비교는 `UserLikeApi.getLikedProducts` 한 곳에 있으므로 줄일 때 지울 자리도 한 곳이다(5.30).
 - 내 좋아요 목록(#10)이 상품 조회가 `likes`를 join하는 첫 자리다. #9의 좋아요 많은순도 같은 join을 쓰게 되므로 두 쿼리의 관계는 5.29의 다시 볼 조건에서 정한다.
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.

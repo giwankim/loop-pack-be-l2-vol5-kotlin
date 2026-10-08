@@ -47,7 +47,7 @@
 - 카탈로그 설계 5.1의 단일 애그리거트 변경 원칙은 Q7과 ADR 0003에 따라 카탈로그 변경 범위로 한정했다. 주문 확정에서는 application이 여러 애그리거트를 하나의 트랜잭션으로 조율한다. `domainSlicesOnlyReadEachOther`는 domain 사이의 호출을 검사하며 application의 트랜잭션 범위를 직접 강제하지 않는다.
 - 카탈로그 설계 5.3은 재고를 `Product` 안의 값 객체로 두었고, 독립된 재고 잠금이 필요할 때 별도 엔티티를 다시 검토하도록 했다.
 - ADR 0001과 엔티티의 `@SQLRestriction`은 삭제된 상품·브랜드를 조회에서 숨긴다. Q2·Q10·Q14에 따라 OrderLineItem은 `productId`를 가지고 생성 당시 이름·단가·수량 등은 스냅샷에서 읽는다.
-- 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/UserIdHeader.kt)가 누락을 401로 처리하고, `LikeService`가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 `UserIdHeader`는 `adapter/webapi`로 옮겼고, 사용자의 존재는 사용자 기능의 [UserFinder](../../apps/commerce-api/src/main/kotlin/com/loopers/application/user/provided/UserFinder.kt)가 확인한다. 좋아요·포인트·주문이 이 포트를 부른다.)
+- 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/UserIdHeader.kt)가 누락을 401로 처리하고, `LikeService`가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 `UserIdHeader`는 `adapter/webapi`로 옮겼고, 사용자의 존재는 사용자 기능의 [UserFinder](../../apps/commerce-api/src/main/kotlin/com/loopers/application/user/provided/UserFinder.kt)가 확인한다. 좋아요·포인트·주문이 이 포트를 부른다.) (2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 사용자의 존재도 웹 경계가 확인한다. `adapter.webapi`의 `RequesterIdArgumentResolver`가 컨트롤러 앞에서 `UserFinder.exists`를 부르고, 좋아요·포인트·주문은 받은 `userId`를 믿는다. `UserIdHeader`에는 헤더 이름만 남았다.)
 - 기존 `Stock.quantity`는 0 이상의 `Int`다. 상품 가격의 10억 원 상한은 Product만의 규칙이므로 포인트 잔액이나 주문 합계에 자동 적용하지 않는다.
 - 현재 [JacksonConfig](../../supports/jackson/src/main/kotlin/com/loopers/config/jackson/JacksonConfig.kt)는 `ACCEPT_SINGLE_VALUE_AS_ARRAY`를 켜고, 숫자 소수부·문자열의 정수 변환을 막는 명시적 설정은 두지 않았다. Q20에 따라 새 API의 요청 경계에서 엄격히 검사하고 전역 설정은 바꾸지 않는다. `Long`·`Int`와 최솟값 제약만으로 충분하다고 간주하지 않는다. (2026-10-03(#55)에 Q20을 철회했다. 새 API도 이 설정 그대로 읽는다(5.10).)
 - 기존 목록 계약은 `items/page/size/hasNext`, 0부터 시작하는 page, 기본 size 20·최대 100, 최신순의 `createdAt DESC, id DESC`다. Q19에서 주문에도 재사용하기로 했다.
@@ -188,7 +188,7 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 ### 5.9 초기 계정·오류·조회 — Q17, Q18, Q19
 
 - 사용자 fixture를 준비할 때 잔액 0인 PointAccount를 함께 만든다. 기존 User를 재사용하며 사용자 생성 API는 추가하지 않는다. 잔액 조회·주문 생성이 계정을 뒤늦게 만들지 않는다.
-- 기존 `UserIdHeader`의 누락 401과 application의 사용자 존재 검사를 재사용한다. 없는 주문과 타인의 주문은 같은 404로 응답한다.
+- 기존 `UserIdHeader`의 누락 401과 application의 사용자 존재 검사를 재사용한다. 없는 주문과 타인의 주문은 같은 404로 응답한다. (2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)으로 두 401 모두 웹 경계의 `@RequesterId`가 낸다. application은 사용자를 확인하지 않는다.)
 - 재고·잔액 부족, 같은 키의 다른 의도는 409다. 입력 오류는 400이다. 새로운 포인트·주문 업무 오류에 구분 가능한 `meta.errorCode`를 주되 기존 카탈로그 코드 문자열은 바꾸지 않는다.
 - 생성 성공은 201, 확정·조회는 200이다. 목록은 기존 Slice 응답과 최신순을 사용한다. 고객은 자기 주문만 조회하고, 관리자는 전체 또는 `userId`로 필터한다.
 - 목록·상세 모두 스냅샷 품목을 포함한다. DRAFT에는 `paidAmount`와 `confirmedAt`이 없고 CONFIRMED에는 저장된 값이 있다.
@@ -402,6 +402,8 @@ Q21에 따라 적용할 FK:
 
 ### 8.2 Q21 — 식별자 참조와 물리 FK
 
+> 2026-10-08 아래 끝 문단의 걱정을 실제 DB에서 확인했다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md), [#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). `scalar-foreign-keys.sql`(옛 `order-foreign-keys.sql`)에 `FK_LIKES_USER`, `FK_LIKES_PRODUCT`를 더한 뒤 local 프로필로 compose MySQL에 두 번 연달아 띄웠다. 첫 시작은 빈 스키마라 Hibernate가 아직 없는 표의 자기 외래 키 셋을 지우려다 경고 셋을 남겼다. 사용자·계정·브랜드·상품·좋아요 행을 넣은 뒤의 두 번째 시작은 DDL 경고 없이 떴고, 일곱 외래 키가 모두 다시 생기고 행은 비었다. 이 문단이 확인한 대로 Hibernate는 매핑에 없는 외래 키를 먼저 지우지 않는다. 그런데도 되는 까닭은 표를 지우는 차례다. 자기 외래 키 셋을 지운 뒤 `brand`, `likes`, `order_line_item`, `orders`, `point_account`, `product`, `users`의 이름 차례로 표를 지우는데, 스크립트의 외래 키를 가진 표(`likes`, `order_line_item`, `orders`)가 모두 가리키는 표(`product`, `users`)보다 앞선다. 자식 표가 먼저 사라지면 그 외래 키도 함께 사라진다. 그러니 이름이 가리키는 표보다 뒤에 오는 표에 스칼라 외래 키를 더하면(`review → product` 같은 것) 두 번째 시작에서 MySQL이 부모 표의 drop을 거절한다(오류 3730). 그때는 스크립트 앞에 그 외래 키를 지우는 문장을 둘지, migration 도구를 들일지(Q23) 다시 본다. `OrderApiTest`의 스키마 재생성 테스트가 같은 차례를 테스트 DB에서 붙들어 둔다.
+
 **확정: 스칼라 식별자 참조와 물리 FK를 함께 사용한다.** OrderLineItem이 Product 객체를 가지지 않아도 명시적 스키마에 FK를 둘 수 있다. Q21에서 사용자는 FK 제약 적용을 선택했다.
 
 - 선택하지 않은 대안은 기존 Hibernate `create`를 유지하고 스칼라 참조의 존재를 application에서만 검사하는 방식이다. 구현 범위는 작지만 직접 SQL이나 다른 쓰기 경로의 잘못된 참조를 DB에서 거절하지 못한다.
@@ -561,6 +563,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ### 12.3 엄격한 JSON 입력의 자리
 
+> 2026-10-08 아래 메모와 "검사 순서의 한 귀퉁이" 항목이 적은 차례가 다시 바뀌었다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 요청자는 이제 핸들러 안이 아니라 `@RequesterId`의 인자 해석에서 확인하고, 그 파라미터가 본문보다 앞에 있다. 그래서 `X-USER-ID`가 없거나 없는 사용자인 요청은 본문이 잘못되어도 400이 아니라 401이다. 그 항목이 말한 "본문을 직접 읽는 인자 해석기"까지 갈 것 없이 요청자를 읽는 인자 해석기로 충분했다. 숫자가 아닌 헤더의 400도 같은 자리에서 나가므로 본문보다 앞선다.
+
 > 2026-10-03 이 절의 선택을 5.10과 함께 철회했다(#55). `PointChargeRequestBody`와 `StrictLongDeserializer`를 지웠고, `PointController`는 `PointChargeRequest`를 `@Valid @RequestBody`로 바로 받는다. 누락과 `null`은 Kotlin 모듈이, 숫자가 아닌 값과 `Long` 범위 밖은 Jackson이 거절하며 범용 `Bad Request`다. 검사 순서의 귀퉁이는 넓어졌다. 이제 `@Valid`도 핸들러 앞에서 돌므로, 충전액 0이나 `null`을 `X-USER-ID` 없이 보내면 401이 아니라 400이다. 카탈로그와 주문 생성은 이미 그랬다. 두 잘못을 함께 보내는 요청의 status를 정하는 요구는 여전히 없다.
 
 **선택: interfaces의 `PointChargeRequestBody`가 본문을 받고, 필드의 `@JsonDeserialize(using = StrictLongDeserializer::class)`가 토큰의 종류를 가린 뒤 `toRequest(chargeKey)`로 application의 `PointChargeRequest`를 만든다.** 카탈로그처럼 application Request를 본문으로 바로 받지 않는 첫 자리다.
@@ -642,12 +646,12 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - application의 `OrderCreateRequest`로 직접 바인딩한다(카탈로그 설계 5.17). 본문은 카탈로그처럼 Jackson 기본대로 읽는다(5.10). (처음에는 interfaces의 타입 전용 역직렬화기가 JSON 배열·정수 토큰만 받았다. 2026-10-03(#55)에 지웠다.) 받은 품목의 개수·양수 값은 Request의 Bean Validation 제약을 Controller와 Service에서 검사한다(5.18). 같은 상품이 두 번 있으면 `Order` 생성자가 거절한다(5.2). (처음에는 합산 넘침도 정규화 과정에서 거절했다. 2026-10-03(#55)에 합산을 지웠다.) 본문·검증·금액 오류의 code는 13.2에서 공용 advice의 계약으로 모았다.
 - `OrderService`는 사용자와 입력을 확인한 다음 성공 주문부터 찾는다. 키의 형식은 Controller가 먼저 보고 Service 입구가 한 번 더 본다(13.1). 합산·정렬된 상품별 수량이 같으면 최초 생성 정보로 201을 재생하고, 다르면 409다. 저장 상태가 CONFIRMED여도 생성 재생에는 DRAFT와 불변 생성 정보만 실린다.
 - 생성 시각은 UTC `Instant`를 MySQL `datetime(6)`의 마이크로초 정밀도로 맞춘다. 첫 응답과 새 영속성 컨텍스트에서 읽은 응답의 시각이 같으며 `updatedAt`에 의존하지 않는다.
-- `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다. local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
+- `orders.creation_key`는 충전 키와 같은 `IdempotencyKey.COLUMN_DEFINITION`(`utf8mb4_bin`)을 쓰고 사용자·키 유일 제약을 둔다(13.1). 품목에는 주문·상품 유일 제약을 둔다. `OrderLineItem → Order`는 JPA 연관으로 FK를 생성하고, 스칼라 참조인 `Order → User`, `OrderLineItem → Product`는 `order-foreign-keys.sql`이 FK를 만든다(2026-10-08 좋아요의 두 FK를 더하며 `scalar-foreign-keys.sql`로 이름을 바꿨다, [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). local/test의 Hibernate 테이블 생성 뒤에만 실행하는 최소 초기화이며, 기본 `ddl-auto=none`이나 migration 체계를 바꾸지 않는다.
 - `OrderApiTest`는 테스트 전체를 트랜잭션으로 감싸지 않는다. 요청마다 서비스 트랜잭션이 종료되고 다음 요청은 새 영속성 컨텍스트에서 읽는다. FK 메타데이터·잘못된 참조·물리 삭제 제한·유일 제약을 실제 MySQL에서 검사한다. 두 번째 품목 저장을 거절하는 임시 CHECK를 넣어 앞서 저장한 주문·첫 품목·키까지 롤백되는지 확인하고, 제약을 없앤 뒤 같은 키로 성공하는지 검증한다. CONFIRMED 응답 검사는 DB fixture로 상태 형태를 준비하며 실제 확정 흐름 검증은 후속 티켓의 책임이다.
 
 동시 요청의 중복 삽입 복구·잠금·버전 관리와 기존 DB의 스키마 전환은 이 구현에 포함하지 않는다.
 
-검증에서는 기존 주문이 있는 스키마에 Hibernate의 drop/export를 실행해 관련 테이블이 모두 삭제되고 세 FK가 다시 생성되며 새 주문 생성도 성공함을 확인했다. 현재 테이블 구성에 대한 회귀 테스트이며, 이후 스칼라 FK를 추가하면 삭제 순서도 다시 검증한다.
+검증에서는 기존 주문이 있는 스키마에 Hibernate의 drop/export를 실행해 관련 테이블이 모두 삭제되고 세 FK가 다시 생성되며 새 주문 생성도 성공함을 확인했다. 현재 테이블 구성에 대한 회귀 테스트이며, 이후 스칼라 FK를 추가하면 삭제 순서도 다시 검증한다. (2026-10-08 좋아요의 두 FK를 더한 뒤 이 테스트와 실제 두 번째 시작으로 다시 검증했다. 결과와 그것이 기대는 차례는 8.2에 있다.)
 
 ### 13.1 #12와 공유하는 자리
 
