@@ -1,17 +1,18 @@
 package com.loopers.application.like
 
+import com.loopers.application.like.provided.LikeRequest
 import com.loopers.application.like.provided.LikeValidator
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.domain.like.Like
-import com.loopers.support.stereotype.ApplicationService
+import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
- * [Liker]의 구현. 관계 자체에는 규칙이 없고 유스케이스가 순서를 정한다(도메인 문서 좋아요).
+ * [Liker]의 구현. 누르기가 Request를 받으므로 검증하는 Service다. 관계 자체에는 규칙이 없고 유스케이스가 순서를 정한다(도메인 문서 좋아요).
  * 다른 조각에 물어야 하는 사전 조건은 [LikeValidator]가 보고, 여기에는 단계의 차례만 있다(ADR 0014).
  * 요청자는 웹 경계가 이미 받아들였으므로 받은 `userId`를 그대로 믿는다(ADR 0015).
  */
-@ApplicationService
+@ValidatedApplicationService
 class LikeModifyService(
     private val likeRepository: LikeRepository,
     private val likeValidator: LikeValidator,
@@ -20,13 +21,13 @@ class LikeModifyService(
      * 삭제되지 않은 상품에 요청자의 관계를 만든다. 이미 있으면 그대로 두고 성공으로 답한다(설계 5.6).
      * 상품이 없거나 삭제됐으면 [LikeValidator.validateForLike]가 `PRODUCT_NOT_FOUND`로 거절한다.
      */
-    override fun like(userId: Long, productId: Long) {
-        likeValidator.validateForLike(productId)
-        if (likeRepository.existsByUserIdAndProductId(userId, productId)) {
+    override fun like(userId: Long, request: LikeRequest) {
+        likeValidator.validateForLike(request.productId)
+        if (likeRepository.existsByUserIdAndProductId(userId, request.productId)) {
             return
         }
 
-        likeRepository.save(Like(userId = userId, productId = productId))
+        likeRepository.save(Like(userId = userId, productId = request.productId))
     }
 
     /**

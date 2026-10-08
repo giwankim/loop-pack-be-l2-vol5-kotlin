@@ -2,6 +2,7 @@ package com.loopers.support.test
 
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.like.provided.LikeRequest
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderCreator
@@ -132,7 +133,7 @@ abstract class BaseApplicationServiceTest {
         user: User = prepareUser(),
         product: Product = prepareProduct(),
     ): Like {
-        liker.like(userId = user.id, productId = product.id)
+        liker.like(userId = user.id, request = LikeRequest(productId = product.id))
         return likeRepository.findByUserIdAndProductId(userId = user.id, productId = product.id)!!.also { like = it }
     }
 

@@ -20,8 +20,7 @@ import org.springframework.web.method.support.ModelAndViewContainer
  *   [MethodArgumentTypeMismatchException]을 그대로 던져 응답도 그때와 같다.
  * - 그 식별자의 사용자가 없으면 401이다. 사용자가 있는지는 사용자 조각의 [UserFinder]에 묻는다.
  *
- * 경로가 가리키는 사용자와 요청자를 견주는 일(403)은 하지 않는다. 경로를 품는 컨트롤러가 받아들인 요청자로 한다(설계 5.30).
- * 인증이 인가보다 앞서므로 없는 사용자는 경로와 무관하게 401이다.
+ * 경로가 사용자를 품는 API는 없다. 요청자의 자원은 최상위 경로에 두므로 경로와 요청자를 견줄 일도 없다(설계 5.36).
  */
 @Component
 class RequesterIdArgumentResolver(

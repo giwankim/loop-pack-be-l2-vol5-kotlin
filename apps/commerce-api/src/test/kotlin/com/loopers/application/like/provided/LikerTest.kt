@@ -6,6 +6,7 @@ import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
+import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -25,7 +26,7 @@ class LikerTest(
         prepareProduct()
         entityManager.flushAndClear()
 
-        liker.like(userId = user.id, productId = product.id)
+        liker.like(userId = user.id, request = LikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(user.id, product.id)).isOne()
@@ -42,7 +43,7 @@ class LikerTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            liker.like(userId = user.id, productId = product.id)
+            liker.like(userId = user.id, request = LikeRequest(productId = product.id))
 
             assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
@@ -53,7 +54,7 @@ class LikerTest(
         prepareLike()
         entityManager.flushAndClear()
 
-        liker.like(userId = user.id, productId = product.id)
+        liker.like(userId = user.id, request = LikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(user.id, product.id)).isOne()
@@ -67,7 +68,7 @@ class LikerTest(
         prepareLike(me, product)
         entityManager.flushAndClear()
 
-        liker.like(userId = other.id, productId = product.id)
+        liker.like(userId = other.id, request = LikeRequest(productId = product.id))
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(me.id, product.id)).isOne()
@@ -120,7 +121,9 @@ class LikerTest(
         deleteProduct()
         entityManager.flushAndClear()
 
-        val exception = assertThrows<CoreException> { liker.like(userId = user.id, productId = product.id) }
+        val exception = assertThrows<CoreException> {
+            liker.like(userId = user.id, request = LikeRequest(productId = product.id))
+        }
         entityManager.flushAndClear()
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
@@ -131,9 +134,27 @@ class LikerTest(
     fun `liking an unknown product throws PRODUCT_NOT_FOUND`() {
         prepareUser()
 
-        val exception = assertThrows<CoreException> { liker.like(userId = user.id, productId = 999L) }
+        val exception = assertThrows<CoreException> { liker.like(userId = user.id, request = LikeRequest(productId = 999L)) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+    }
+
+    /**
+     * 컨트롤러를 거치지 않는 호출도 같은 입력 규칙을 받는다(설계 5.25). 1 미만의 상품 ID는 상품을 찾기 전에
+     * Request 제약이 거르므로 `PRODUCT_NOT_FOUND`가 아니라 검증 예외다.
+     */
+    @Test
+    fun `liking with a product id below one is rejected by request validation`() {
+        prepareUser()
+        entityManager.flushAndClear()
+
+        listOf(0L, -1L).forEach { productId ->
+            val exception = assertThrows<ConstraintViolationException> {
+                liker.like(userId = user.id, request = LikeRequest(productId = productId))
+            }
+
+            assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 ID는 1 이상이어야 합니다.")
+        }
     }
 
     /** 삭제된 상품에 남은 좋아요는 그대로 두되 취소는 허용한다. 취소는 상품의 존재를 보지 않는다. */
