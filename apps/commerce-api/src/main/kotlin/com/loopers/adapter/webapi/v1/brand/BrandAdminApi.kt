@@ -32,6 +32,7 @@ class BrandAdminApi(
         @RequestBody @Valid request: BrandAdminRegisterRequest,
     ): ApiResponse<BrandAdminResponse> {
         val brand = brandRegister.register(request)
+
         return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 
@@ -41,6 +42,7 @@ class BrandAdminApi(
         @ModelAttribute @Valid request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
         val brands = brandFinder.findAll(request)
+
         return ApiResponse.success(PageResponse.from(brands.map(BrandAdminResponse::from)))
     }
 
@@ -49,6 +51,7 @@ class BrandAdminApi(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandAdminResponse> {
         val brand = brandFinder.find(brandId)
+
         return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 
@@ -58,6 +61,7 @@ class BrandAdminApi(
         @RequestBody @Valid request: BrandAdminUpdateRequest,
     ): ApiResponse<BrandAdminResponse> {
         val brand = brandRegister.update(brandId, request)
+
         return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 

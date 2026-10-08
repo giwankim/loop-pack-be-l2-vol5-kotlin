@@ -17,6 +17,7 @@ class BrandApi(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandResponse> {
         val brand = brandFinder.find(brandId)
+
         return ApiResponse.success(BrandResponse.from(brand))
     }
 }

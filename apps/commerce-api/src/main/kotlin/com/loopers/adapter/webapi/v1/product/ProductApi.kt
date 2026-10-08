@@ -21,6 +21,7 @@ class ProductApi(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductResponse> {
         val product = productFinder.findInfo(productId)
+
         return ApiResponse.success(ProductResponse.from(product))
     }
 
@@ -30,6 +31,7 @@ class ProductApi(
         @ModelAttribute @Valid request: ProductListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
         val products = productFinder.findAll(request)
+
         return ApiResponse.success(PageResponse.from(products.map(ProductResponse::from)))
     }
 }

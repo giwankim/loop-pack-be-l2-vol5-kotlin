@@ -33,6 +33,7 @@ class ProductAdminApi(
         @RequestBody @Valid request: ProductAdminRegisterRequest,
     ): ApiResponse<ProductAdminResponse> {
         val product = productRegister.register(request)
+
         return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
@@ -42,6 +43,7 @@ class ProductAdminApi(
         @ModelAttribute @Valid request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>> {
         val products = productFinder.findAll(request)
+
         return ApiResponse.success(PageResponse.from(products.map(ProductAdminResponse::from)))
     }
 
@@ -50,6 +52,7 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductAdminResponse> {
         val product = productFinder.findInfo(productId)
+
         return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
@@ -59,6 +62,7 @@ class ProductAdminApi(
         @RequestBody @Valid request: ProductAdminUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
         val product = productRegister.update(productId, request)
+
         return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
@@ -68,6 +72,7 @@ class ProductAdminApi(
         @RequestBody @Valid request: ProductAdminStockUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
         val product = productRegister.updateStock(productId, request)
+
         return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
@@ -76,6 +81,7 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
         productRegister.delete(productId)
+
         return ApiResponse.success()
     }
 }

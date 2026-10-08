@@ -23,6 +23,7 @@ class OrderAdminApi(private val orderFinder: OrderFinder) : OrderAdminApiSpec {
         @ModelAttribute @Valid request: OrderAdminListRequest,
     ): ApiResponse<PageResponse<OrderAdminResponse>> {
         val orders = orderFinder.findAll(request)
+
         return ApiResponse.success(PageResponse.from(orders.map(OrderAdminResponse::from)))
     }
 
@@ -31,6 +32,7 @@ class OrderAdminApi(private val orderFinder: OrderFinder) : OrderAdminApiSpec {
         @PathVariable("orderId") orderId: Long,
     ): ApiResponse<OrderAdminResponse> {
         val order = orderFinder.findForAdmin(orderId)
+
         return ApiResponse.success(OrderAdminResponse.from(order))
     }
 }

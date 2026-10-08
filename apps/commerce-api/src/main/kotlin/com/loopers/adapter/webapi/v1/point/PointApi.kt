@@ -28,6 +28,7 @@ class PointApi(
         @RequestBody @Valid request: PointChargeRequest,
     ): ApiResponse<PointAccountResponse> {
         val pointAccount = pointCharger.charge(userId, request)
+
         return ApiResponse.success(PointAccountResponse.from(pointAccount))
     }
 
@@ -36,6 +37,7 @@ class PointApi(
         @RequesterId userId: Long,
     ): ApiResponse<PointAccountResponse> {
         val pointAccount = pointAccountFinder.findByUser(userId)
+
         return ApiResponse.success(PointAccountResponse.from(pointAccount))
     }
 }

@@ -34,6 +34,7 @@ class OrderApi(
         @RequestBody @Valid request: OrderCreateRequest,
     ): ApiResponse<OrderResponse> {
         val order = orderCreator.create(userId, request)
+
         return ApiResponse.success(OrderResponse.from(order))
     }
 
@@ -44,6 +45,7 @@ class OrderApi(
         @ModelAttribute @Valid request: OrderListRequest,
     ): ApiResponse<PageResponse<OrderResponse>> {
         val orders = orderFinder.findAll(userId, request)
+
         return ApiResponse.success(PageResponse.from(orders.map(OrderResponse::from)))
     }
 
@@ -53,6 +55,7 @@ class OrderApi(
         @PathVariable orderId: Long,
     ): ApiResponse<OrderResponse> {
         val order = orderFinder.find(userId, orderId)
+
         return ApiResponse.success(OrderResponse.from(order))
     }
 
@@ -62,6 +65,7 @@ class OrderApi(
         @PathVariable orderId: Long,
     ): ApiResponse<OrderResponse> {
         val order = orderConfirmer.confirm(userId, orderId)
+
         return ApiResponse.success(OrderResponse.from(order))
     }
 }

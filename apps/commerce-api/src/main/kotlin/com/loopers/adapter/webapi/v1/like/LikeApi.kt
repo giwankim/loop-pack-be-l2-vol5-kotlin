@@ -24,6 +24,7 @@ class LikeApi(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
         liker.like(userId = userId, productId = productId)
+
         return ApiResponse.success()
     }
 
@@ -33,6 +34,7 @@ class LikeApi(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<Any> {
         liker.unlike(userId = userId, productId = productId)
+
         return ApiResponse.success()
     }
 }
