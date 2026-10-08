@@ -5,6 +5,7 @@ import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.errorTypeOf
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseApplicationServiceTest
 import jakarta.validation.ConstraintViolationException
@@ -202,10 +203,6 @@ class ProductRegisterTest(
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
         assertThat(productFinder.find(product.id).stock).isEqualTo(7)
     }
-
-    /** 거절에 실린 [ErrorType]. 세 가지 쓰기가 모두 같은 규칙을 쓰므로 한 자리에 모은다. */
-    private fun errorTypeOf(call: () -> Unit): ErrorType =
-        assertThrows<CoreException> { call() }.errorType
 
     /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */
     private fun deletedAtOf(id: Long): Any? =

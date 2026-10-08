@@ -2,6 +2,7 @@ package com.loopers.application.product.provided
 
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.errorTypeOf
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.support.withStatistics
@@ -254,8 +255,4 @@ class ProductFinderTest(
                 .constraintViolations.map { it.message },
         ).containsExactly("size는 100 이하여야 합니다.")
     }
-
-    /** 거절에 실린 [ErrorType]. 모르는 철자 셋이 모두 같은 거절을 받으므로 한 자리에 모은다. */
-    private fun errorTypeOf(call: () -> Unit): ErrorType =
-        assertThrows<CoreException> { call() }.errorType
 }
