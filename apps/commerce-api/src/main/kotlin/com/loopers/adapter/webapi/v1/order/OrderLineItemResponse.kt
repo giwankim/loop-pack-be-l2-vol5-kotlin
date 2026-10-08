@@ -1,6 +1,6 @@
 package com.loopers.adapter.webapi.v1.order
 
-import com.loopers.application.order.provided.OrderInfo
+import com.loopers.domain.order.OrderLineItem
 
 /**
  * 주문 품목 하나. 고객 응답과 관리자 응답이 함께 쓴다.
@@ -17,12 +17,12 @@ data class OrderLineItemResponse(
     val lineAmount: Long,
 ) {
     companion object {
-        fun from(item: OrderInfo.Item): OrderLineItemResponse = OrderLineItemResponse(
+        fun from(item: OrderLineItem): OrderLineItemResponse = OrderLineItemResponse(
             productId = item.productId,
             productName = item.productName,
-            unitPrice = item.unitPrice,
+            unitPrice = item.unitPrice.amount,
             quantity = item.quantity,
-            lineAmount = item.lineAmount,
+            lineAmount = item.lineAmount.amount,
         )
     }
 }

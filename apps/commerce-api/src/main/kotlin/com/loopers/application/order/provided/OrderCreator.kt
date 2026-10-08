@@ -1,5 +1,6 @@
 package com.loopers.application.order.provided
 
+import com.loopers.domain.order.Order
 import jakarta.validation.Valid
 
 /**
@@ -13,5 +14,5 @@ interface OrderCreator {
      * 같은 품목을 다시 보내면 주문이 하나 더 생긴다(ADR 0005).
      * 없거나 삭제된 상품, 삭제된 브랜드의 상품이 담기면 `ORDER_PRODUCT_NOT_AVAILABLE`을 던진다.
      */
-    fun create(userId: Long, @Valid request: OrderCreateRequest): OrderInfo
+    fun create(userId: Long, @Valid request: OrderCreateRequest): Order
 }

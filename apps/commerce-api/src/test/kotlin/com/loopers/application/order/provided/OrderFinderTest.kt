@@ -1,6 +1,7 @@
 package com.loopers.application.order.provided
 
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.shared.Money
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
@@ -15,8 +16,8 @@ import org.junit.jupiter.api.assertThrows
  * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 조각의 [OrderCreator]로 만든다.
  * 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
- * 상세는 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 목록과
- * 관리자 조회를 본다. 조각의 차례와 `hasNext`는 [com.loopers.application.order.required.OrderRepositoryTest]가 SQL로 고정한다.
+ * 상세의 값은 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 상세의 조회 횟수와
+ * 목록, 관리자 조회를 본다. 조각의 차례와 `hasNext`는 [com.loopers.application.order.required.OrderRepositoryTest]가 SQL로 고정한다.
  *
  * 내 목록(#15)과 관리자 조회(#16)가 한 저장소 조회를 쓰므로 둘을 한 클래스에서 본다. 갈리는 것은 거를 사용자의 유무다(설계 16.2).
  * 요청자 확인은 웹 경계로 옮겨 갔으므로(ADR 0015) 둘의 조회 횟수도 같다.
@@ -26,7 +27,7 @@ class OrderFinderTest(
 ) : BaseApplicationServiceTest() {
     /**
      * 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 품목이 항목에 실리는지를 본다.
-     * `open-in-view`가 꺼져 있으므로 품목을 옮기는 일은 이 읽기 트랜잭션 안에서 끝나야 한다(설계 9 조회).
+     * `open-in-view`가 꺼져 있으므로 품목은 이 읽기 트랜잭션 안에서 읽혀 있어야 한다(설계 9 조회).
      */
     @Test
     fun `the order list carries the default page and size into the slice and fills the stored items`() {
@@ -44,15 +45,34 @@ class OrderFinderTest(
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
         assertThat(slice.hasNext()).isFalse()
         assertThat(listed.status).isEqualTo(OrderStatus.DRAFT)
-        assertThat(listed.totalAmount).isEqualTo(4_000L)
+        assertThat(listed.totalAmount).isEqualTo(Money(4_000))
         assertThat(listed.paidAmount).isNull()
         assertThat(listed.confirmedAt).isNull()
         assertThat(listed.createdAt).isNotNull()
         assertThat(listed.items.map { it.productId }).containsExactly(shirt.id, socks.id)
         assertThat(listed.items.map { it.productName }).containsExactly("티셔츠", "양말")
-        assertThat(listed.items.map { it.unitPrice }).containsExactly(1_000L, 2_000L)
+        assertThat(listed.items.map { it.unitPrice }).containsExactly(Money(1_000), Money(2_000))
         assertThat(listed.items.map { it.quantity }).containsExactly(2, 1)
-        assertThat(listed.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L)
+        assertThat(listed.items.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
+    }
+
+    /**
+     * 상세는 주문과 품목을 한 문장으로 읽는다. 품목은 같은 애그리거트 안이라 조회가 엔티티 그래프로 함께 읽는다(ADR 0014).
+     * 지연 로딩에 맡기면 품목을 건널 때 조회가 하나 더 나가고, 트랜잭션 밖에서는 건널 수조차 없다.
+     */
+    @Test
+    fun `the detail reads the order and its items in one statement`() {
+        prepareBrand()
+        val products = List(2) { prepareProduct(brand) }
+        prepareOrder(products = products)
+        entityManager.flushAndClear()
+
+        entityManager.withStatistics { statistics ->
+            val found = orderFinder.find(user.id, order.id)
+
+            assertThat(found.items.map { it.productId }).containsExactlyElementsOf(products.map { it.id })
+            assertThat(statistics.prepareStatementCount).isEqualTo(1L)
+        }
     }
 
     @Test
@@ -103,7 +123,7 @@ class OrderFinderTest(
 
         val slice = orderFinder.findAll(OrderAdminListRequest())
 
-        assertThat(slice.content.map { it.orderId }).containsExactly(second, first)
+        assertThat(slice.content.map { it.id }).containsExactly(second, first)
         assertThat(slice.content.map { it.userId }).containsExactly(theirs.id, mine.id)
         assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
@@ -152,16 +172,16 @@ class OrderFinderTest(
         prepareOrder(pants to 1, shirt to 2)
         entityManager.flushAndClear()
 
-        val info = orderFinder.findForAdmin(order.id)
+        val found = orderFinder.findForAdmin(order.id)
 
-        assertThat(info.orderId).isEqualTo(order.id)
-        assertThat(info.userId).isEqualTo(user.id)
-        assertThat(info.status).isEqualTo(OrderStatus.DRAFT)
-        assertThat(info.totalAmount).isEqualTo(4_000L)
-        assertThat(info.items.map { it.productId }).containsExactly(shirt.id, pants.id)
-        assertThat(info.items.map { it.lineAmount }).containsExactly(2_000L, 2_000L)
-        assertThat(info.paidAmount).isNull()
-        assertThat(info.confirmedAt).isNull()
+        assertThat(found.id).isEqualTo(order.id)
+        assertThat(found.userId).isEqualTo(user.id)
+        assertThat(found.status).isEqualTo(OrderStatus.DRAFT)
+        assertThat(found.totalAmount).isEqualTo(Money(4_000))
+        assertThat(found.items.map { it.productId }).containsExactly(shirt.id, pants.id)
+        assertThat(found.items.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
+        assertThat(found.paidAmount).isNull()
+        assertThat(found.confirmedAt).isNull()
     }
 
     /** 관리자 상세는 요청자를 받지 않으므로, 없는 주문만이 거절 사유다. */

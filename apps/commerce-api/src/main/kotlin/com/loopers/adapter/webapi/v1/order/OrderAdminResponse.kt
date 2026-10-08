@@ -1,13 +1,13 @@
 package com.loopers.adapter.webapi.v1.order
 
-import com.loopers.application.order.provided.OrderInfo
+import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import java.time.Instant
 
 /**
  * 관리자가 보는 주문. 고객이 보는 [OrderResponse]에 주문한 사용자의 식별자를 더한 모양이다.
  *
- * 역할별 DTO가 같은 [OrderInfo]를 읽어 각자 내보낼 필드를 고른다(카탈로그 설계 5.7). 두 응답이 갈리는 것은
+ * 역할별 DTO가 같은 [Order]를 읽어 각자 내보낼 필드를 고른다(카탈로그 설계 5.7, ADR 0014). 두 응답이 갈리는 것은
  * [userId] 하나이고, 품목은 역할에 따라 갈리지 않으므로 [OrderLineItemResponse]를 함께 쓴다.
  * 현재 User는 식별자만 가진 실습 데이터이므로 주문한 사용자의 이름·연락처를 새로 만들지 않는다(설계 6).
  *
@@ -24,15 +24,15 @@ data class OrderAdminResponse(
     val confirmedAt: Instant?,
 ) {
     companion object {
-        fun from(info: OrderInfo): OrderAdminResponse = OrderAdminResponse(
-            orderId = info.orderId,
-            userId = info.userId,
-            status = info.status,
-            items = info.items.map(OrderLineItemResponse::from),
-            totalAmount = info.totalAmount,
-            createdAt = info.createdAt,
-            paidAmount = info.paidAmount,
-            confirmedAt = info.confirmedAt,
+        fun from(order: Order): OrderAdminResponse = OrderAdminResponse(
+            orderId = order.id,
+            userId = order.userId,
+            status = order.status,
+            items = order.items.map(OrderLineItemResponse::from),
+            totalAmount = order.totalAmount.amount,
+            createdAt = order.createdAt,
+            paidAmount = order.paidAmount?.amount,
+            confirmedAt = order.confirmedAt,
         )
     }
 }

@@ -5,8 +5,6 @@ import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderCreator
-import com.loopers.application.order.provided.OrderInfo
-import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -38,8 +36,9 @@ import org.springframework.transaction.annotation.Transactional
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`와 트랜잭션에서 빠지는 표시뿐이다(ADR 0012).
  *
  * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 조각의 provided 포트로 만든다.
- * 포트가 `Info`를 돌려주면 엔티티를 ID로 다시 읽는다. 포트가 없는 데이터(사용자, 포인트 계정)와 포트가 막는 상태는
- * 저장소에 엔티티를 저장해 만들고, 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.
+ * 포트가 엔티티를 돌려주면 그대로 쓰고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다(ADR 0014).
+ * 포트가 없는 데이터(사용자, 포인트 계정)와 포트가 막는 상태는 저장소에 엔티티를 저장해 만들고,
+ * 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.
  * 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾼다.
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
  */
@@ -79,9 +78,6 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var orderCreator: OrderCreator
-
-    @Autowired
-    private lateinit var orderRepository: OrderRepository
 
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
@@ -138,14 +134,14 @@ abstract class BaseApplicationServiceTest {
 
     /**
      * 넘긴 상품마다 품목 하나를 담아 주문을 생성한다. 수량이 `null`이면 품목마다 fixture가 뽑는다.
-     * 포트가 [OrderInfo]를 돌려주므로 엔티티는 ID로 다시 읽는다.
+     * 포트가 품목까지 담은 주문을 돌려주므로 다시 읽지 않는다.
      */
     protected fun prepareOrder(
         user: User = prepareUser(),
         products: List<Product> = listOf(prepareProduct()),
         quantity: Int? = null,
     ): Order =
-        readBack(orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity)))
+        orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity))
             .also { order = it }
 
     /**
@@ -155,10 +151,8 @@ abstract class BaseApplicationServiceTest {
      */
     protected fun prepareOrder(vararg items: Pair<Product, Int?>, user: User = prepareUser()): Order {
         val request = createOrderCreateRequest(*items.map { (product, quantity) -> product.id to quantity }.toTypedArray())
-        return readBack(orderCreator.create(user.id, request)).also { order = it }
+        return orderCreator.create(user.id, request).also { order = it }
     }
-
-    private fun readBack(info: OrderInfo): Order = orderRepository.findById(info.orderId)!!
 
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)

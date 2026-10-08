@@ -80,17 +80,17 @@
 
 ### 저장 약속
 
-`OrderRepository`: `save`, `findById`, `findByIdAndUserId`. 단건 조회는 없으면 null이다. 목록은 `OrderListRepository`의 `findAll(userId, pageable)`이다. 주문을 지우는 약속은 없다.
+`OrderRepository`: `save`, `findWithLineItemsById`, `findWithLineItemsByIdAndUserId`. 단건 조회는 품목을 함께 읽고, 없으면 null이다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). 목록은 `OrderListRepository`의 `findAll(userId, pageable)`이다. 주문을 지우는 약속은 없다.
 
-`findById`는 소유자를 묻지 않으므로 관리자 조회만 쓴다. `findAll`은 한 조각을 최신순으로 주며 만든 시각이 같으면 나중에 받은 식별자가 앞선다. `userId`가 있으면 그 사용자의 주문만, 없으면 모든 사용자의 주문을 본다. 내 목록과 관리자 목록이 이 하나를 쓴다(설계 16.1). 조각에 오른 주문의 품목은 조회가 함께 읽어 주므로 읽기 트랜잭션을 벗어난 뒤에도 품목이 실려 있다.
+`findWithLineItemsById`는 소유자를 묻지 않으므로 관리자 조회만 쓴다. `findAll`은 한 조각을 최신순으로 주며 만든 시각이 같으면 나중에 받은 식별자가 앞선다. `userId`가 있으면 그 사용자의 주문만, 없으면 모든 사용자의 주문을 본다. 내 목록과 관리자 목록이 이 하나를 쓴다(설계 16.1). 조각에 오른 주문의 품목은 조회가 함께 읽어 주므로 읽기 트랜잭션을 벗어난 뒤에도 품목이 실려 있다.
 
 ### 협력
 
-- 생성: `OrderCreator.create` → 요청자 존재 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽는다 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둔 뒤 저장. 주문과 품목은 한 트랜잭션이다. 판매할 수 없는 상품이 중복으로 오면 상품 확인의 `ORDER_PRODUCT_NOT_AVAILABLE`(404)이 중복의 400보다 먼저다(설계 15). 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
-- 상세 조회: `OrderFinder.find` → 요청자 존재 확인 → `findByIdAndUserId` → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
-- 목록 조회: `OrderFinder.findAll(userId, OrderListRequest)` → 요청자 존재 확인 → `findAll(userId, …)` → 조각의 항목을 읽기 트랜잭션 안에서 `OrderInfo`로 옮긴다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
-- 확정: `OrderConfirmer.confirm` → 요청자·소유권 확인 → `Order.validateConfirmable`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 모든 품목의 상품·브랜드 확인 → 상품별 `StockDeductor.deduct`(→ `Product.deductStock`) → `PointDeductor.deduct`(→ `PointAccount.pay(총액)`) → `Order.confirm`. 두 차감 포트는 상품·포인트 쪽의 것이고 확정의 트랜잭션에 참여한다. 재고·잔액·주문의 변경은 커밋에서 함께 나가는 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이며, 같은 주문의 동시 확정도 막지 않는다(ADR 0002·0003, 설계 18.2).
-- 관리자 상세 조회: `OrderFinder.findForAdmin` → `findById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
+- 생성: `OrderCreator.create` → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽는다 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둔 뒤 저장. 주문과 품목은 한 트랜잭션이다. 판매할 수 없는 상품이 중복으로 오면 상품 확인의 `ORDER_PRODUCT_NOT_AVAILABLE`(404)이 중복의 400보다 먼저다(설계 15). 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
+- 상세 조회: `OrderFinder.find` → `findWithLineItemsByIdAndUserId`로 주문과 품목을 한 번에 읽는다 → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다.
+- 목록 조회: `OrderFinder.findAll(userId, OrderListRequest)` → `findAll(userId, …)` → 조각의 주문과 품목을 읽기 트랜잭션 안에서 읽어 `Order`로 돌려준다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
+- 확정: `OrderConfirmer.confirm` → `OrderFinder.find`로 요청자의 주문을 읽는다(소유권 확인) → `Order.validateConfirmable`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 모든 품목의 상품·브랜드 확인 → 상품별 `StockDeductor.deduct`(→ `Product.deductStock`) → `PointDeductor.deduct`(→ `PointAccount.pay(총액)`) → `Order.confirm`. 두 차감 포트는 상품·포인트 쪽의 것이고 확정의 트랜잭션에 참여한다. 재고·잔액·주문의 변경은 커밋에서 함께 나가는 하나의 트랜잭션이며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다. 동시 요청의 경합 처리는 범위 밖이며, 같은 주문의 동시 확정도 막지 않는다(ADR 0002·0003, 설계 18.2).
+- 관리자 상세 조회: `OrderFinder.findForAdmin` → `findWithLineItemsById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
 - 관리자 목록 조회: `OrderFinder.findAll(OrderAdminListRequest)` → 페이지 범위 확인 → 같은 `findAll(userId, …)`에 거를 사용자를 넣거나 비운다. 주문한 사용자의 식별자를 응답에 싣고, 카탈로그가 바뀌거나 상품이 삭제되어도 저장된 이름·단가를 그대로 준다(설계 16).
 
 ## 주문 품목 (OrderLineItem)
@@ -120,4 +120,4 @@
 
 ## 사용자 (User)와 요청자
 
-카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·확정·상세·목록 조회 모두 요청자가 있어야 하며, 헤더와 사용자의 존재는 웹 경계(`@RequesterId`)가 본다. application은 받은 사용자 식별자를 믿는다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findByIdAndUserId`와 요청자를 넣은 `findAll(userId, …)`로 요청자의 것만 읽는다. 목록 조회는 관리자와 하나를 쓰지만 고객 경로가 넣는 사용자 식별자는 요청자뿐이다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).
+카탈로그 도메인의 규칙이 그대로다. 포인트 충전·잔액 조회와 주문 생성·확정·상세·목록 조회 모두 요청자가 있어야 하며, 헤더와 사용자의 존재는 웹 경계(`@RequesterId`)가 본다. application은 받은 사용자 식별자를 믿는다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)). 요청자는 자기 잔액과 자기 주문만 다룬다. 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 남의 잔액을 부를 길이 없고, 주문 조회는 `findWithLineItemsByIdAndUserId`와 요청자를 넣은 `findAll(userId, …)`로 요청자의 것만 읽는다. 목록 조회는 관리자와 하나를 쓰지만 고객 경로가 넣는 사용자 식별자는 요청자뿐이다. 남의 주문과 없는 주문은 같은 404다(설계 5.9).
