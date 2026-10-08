@@ -142,7 +142,7 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 | 유스케이스 | 흐름 |
 | --- | --- |
-| `Liker.like(userId, productId)` | `LikeValidator.validateForLike`가 `ProductFinder.find`로 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
+| `Liker.like(userId, request)` | 1 미만의 상품 ID는 `LikeRequest`의 제약이 거른다 → `LikeValidator.validateForLike`가 `ProductFinder.find`로 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
 | `Liker.unlike(userId, productId)` | 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
 | `LikeFinder.findLikedProducts(userId, request)` | 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
 

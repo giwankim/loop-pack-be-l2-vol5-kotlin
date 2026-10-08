@@ -680,9 +680,9 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
   - 요청자가 가진 자원은 `/api/v1/orders`·`/api/v1/points`처럼 최상위에 두고, 요청자는 세 엔드포인트 모두 헤더에서 받는다(`@RequesterId`, ADR 0015). `/users/...` 엔드포인트가 없으므로 `users/me`는 아무도 쓰지 않는 접두사다.
   - 누르기는 컬렉션에 더하는 것이라 `POST`이고 상품을 본문으로 받는다. RFC 9110 §9.3.3이 꼽는 POST의 쓰임에 *"Creating a new resource that has yet to be identified by the origin server"*가 있다. DELETE와 경로를 맞춘 `POST /api/v1/likes/{productId}`는 이름만 POST인 PUT이다.
-  - 취소는 상품을 경로로 받는다. 위 E의 까닭이다. X의 좋아요 API도 같은 모양이다(`POST /2/users/:id/likes`에 본문, `DELETE /2/users/:id/likes/:tweet_id`).
+  - 취소는 상품을 경로로 받는다. 위 E의 까닭이다. X의 좋아요 API도 누르기는 본문으로, 취소는 경로로 대상을 받는다(`POST /2/users/:id/likes`에 본문, `DELETE /2/users/:id/likes/:tweet_id`). 경로의 `users/:id` 접두사는 따르지 않는다(위 C).
   - 누르기는 관계를 처음 만들 때도 201이 아니라 200이고 data가 없다. RFC 9110 §9.3.3의 *SHOULD send 201*을 알고서 따르지 않는다. 두 요청 모두 최종 상태를 말하므로(5.6) 클라이언트는 어느 결과든 같게 다룬다. `Liker.like`는 그대로 아무것도 돌려주지 않고, adapter.webapi에 `ResponseEntity`가 들어오지 않는다.
-  - 본문은 `application/like/provided`의 `LikeRequest(@Positive productId)`로 `@RequestBody @Valid` 바로 받는다(5.17). 애그리거트 `Like`와 동사 `like`가 겹쳐 이름이 `LikeRequest`로 줄었다. CONTEXT.md의 _Avoid_(register, add)가 `LikeCreateRequest`를 막는다. 메시지는 주문 품목의 `productId`와 같은 "상품 ID는 1 이상이어야 합니다."다.
+  - 본문은 `application/like/provided`의 `LikeRequest(@Positive productId)`로 `@RequestBody @Valid` 바로 받는다(5.17). 애그리거트 `Like`와 동사 `like`가 겹쳐 이름이 `LikeRequest`로 줄었다. 용어집의 행위가 좋아요 누르다(like)라 동사는 `like`다. `create`는 주문의 행위이고, 좋아요 누르다의 _Avoid_(register, add)가 `LikeRegisterRequest`·`LikeAddRequest`를 막는다. 메시지는 주문 품목의 `productId`와 같은 "상품 ID는 1 이상이어야 합니다."다.
   - 포트의 파라미터는 입력이 오는 길을 따른다. 본문은 Request가 되고(`Liker.like(userId, LikeRequest)`), 경로의 값은 값으로 남는다(`Liker.unlike(userId, productId)`, `OrderApi.find(orderId)`와 같다). Request를 받게 된 `LikeModifyService`는 `@ValidatedApplicationService`이고, 컨트롤러를 거치지 않는 호출도 1 미만의 상품 ID를 거절한다(5.25).
   - 목록은 그대로 좋아요가 아니라 상품 항목을 돌려준다. 고객 상품 목록과 같은 항목이라 두 목록이 어긋날 수 없다. 한 컨트롤러 `LikeApi`가 세 엔드포인트를 맡는다.
   - 좋아요 하나를 읽는 `GET /api/v1/likes/{productId}`는 두지 않는다. 부르는 곳이 없고, 나중에 더해도 깨지는 것이 없다.

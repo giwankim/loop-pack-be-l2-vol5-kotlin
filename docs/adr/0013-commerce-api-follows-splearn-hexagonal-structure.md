@@ -19,7 +19,7 @@ commerce-api는 `interfaces` → `application` → `domain` ← `infrastructure`
   - product의 `LikeCounter`(좋아요 수)를 `LikeFinder`가 구현한다.
   - 의존은 도메인처럼 product → brand, like → product 한 방향이다.
 - 주문 확정은 `OrderConfirmer`를 구현한 `OrderModifyService.confirm`이 맡는다. 자기 주문을 읽고, 품목마다 `StockDeductor`로 재고를, 주문 금액만큼 `PointDeductor`로 포인트를 차감한 뒤 주문을 확정한다. 두 포트는 트랜잭션을 새로 열지 않고 확정의 트랜잭션에 참여한다. 그래서 [ADR 0003](./0003-confirm-order-in-one-transaction.md)의 결정은 그대로다. 재고·잔액·주문의 변경은 함께 커밋되고 함께 되돌아간다.
-- `@Valid`는 provided 포트 인터페이스의 Request 파라미터에 둔다(13곳). 구현 메서드에는 제약도 `@Valid`도 두지 않는다. Jakarta Validation 3.1 §5.6.5가 재정의 메서드에 파라미터 제약을 더하는 것을 금지하고, Hibernate Validator가 그런 Service를 HV000151로 거절한다. 검증하는 포트를 구현한 Service는 `@ValidatedApplicationService`를 단다. 컨트롤러의 `@Valid`는 그대로다. (2026-10-08: 지금은 16곳이다. `ProductFinder.findAllLikedBy`의 `ProductLikedListRequest`와, [ADR 0014](./0014-finders-load-whole-aggregates.md)의 `BrandValidator` 두 메서드가 더해졌다.)
+- `@Valid`는 provided 포트 인터페이스의 Request 파라미터에 둔다(13곳). 구현 메서드에는 제약도 `@Valid`도 두지 않는다. Jakarta Validation 3.1 §5.6.5가 재정의 메서드에 파라미터 제약을 더하는 것을 금지하고, Hibernate Validator가 그런 Service를 HV000151로 거절한다. 검증하는 포트를 구현한 Service는 `@ValidatedApplicationService`를 단다. 컨트롤러의 `@Valid`는 그대로다. (2026-10-08: 지금은 17곳이다. `ProductFinder.findAllLikedBy`의 `ProductLikedListRequest`와, [ADR 0014](./0014-finders-load-whole-aggregates.md)의 `BrandValidator` 두 메서드가 더해졌고, [카탈로그 설계 5.36](../design/catalog.md)으로 `Liker.like`의 `LikeRequest`가 더해졌다.)
 - `HexagonalArchitectureTest`(옛 `LayeredArchitectureTest`)가 다섯 계층(`domain`, `application`, `adapter.webapi`, `adapter.persistence`, `support`)의 의존 방향을 검사한다. 두 어댑터는 서로를 쓰지 못한다. 계층마다 조각 사이 순환을 막고, 도메인 조각은 서로 읽기만 한다.
 
 ## 근거
