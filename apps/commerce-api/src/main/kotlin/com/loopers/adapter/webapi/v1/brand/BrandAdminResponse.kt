@@ -1,13 +1,13 @@
 package com.loopers.adapter.webapi.v1.brand
 
 import com.loopers.domain.brand.Brand
-import java.time.ZonedDateTime
+import java.time.Instant
 
 data class BrandAdminResponse(
     val id: Long,
     val name: String,
-    val createdAt: ZonedDateTime,
-    val updatedAt: ZonedDateTime,
+    val createdAt: Instant,
+    val updatedAt: Instant,
 ) {
     companion object {
         fun from(brand: Brand): BrandAdminResponse {

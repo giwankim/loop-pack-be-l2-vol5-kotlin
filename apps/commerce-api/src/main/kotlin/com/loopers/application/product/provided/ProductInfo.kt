@@ -1,7 +1,7 @@
 package com.loopers.application.product.provided
 
 import com.loopers.domain.product.Product
-import java.time.ZonedDateTime
+import java.time.Instant
 
 /**
  * 상품 응답 모델. 상품은 브랜드를 연관으로 건너 읽고 좋아요 수는 다른 저장소에서 세어 오므로, 트랜잭션 안에서 값으로 옮겨 돌려준다.
@@ -18,8 +18,8 @@ data class ProductInfo(
     val stock: Int,
     val soldOut: Boolean,
     val likeCount: Long,
-    val createdAt: ZonedDateTime,
-    val updatedAt: ZonedDateTime,
+    val createdAt: Instant,
+    val updatedAt: Instant,
 ) {
     companion object {
         fun from(product: Product, likeCount: Long): ProductInfo =

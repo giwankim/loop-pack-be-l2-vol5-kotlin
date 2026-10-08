@@ -1,7 +1,7 @@
 package com.loopers.adapter.webapi.v1.product
 
 import com.loopers.application.product.provided.ProductInfo
-import java.time.ZonedDateTime
+import java.time.Instant
 
 data class ProductAdminResponse(
     val id: Long,
@@ -9,8 +9,8 @@ data class ProductAdminResponse(
     val name: String,
     val price: Long,
     val stock: Int,
-    val createdAt: ZonedDateTime,
-    val updatedAt: ZonedDateTime,
+    val createdAt: Instant,
+    val updatedAt: Instant,
 ) {
     companion object {
         fun from(info: ProductInfo): ProductAdminResponse {

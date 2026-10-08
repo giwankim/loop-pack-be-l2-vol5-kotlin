@@ -7,8 +7,8 @@ import com.loopers.support.withStatistics
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.data.domain.PageRequest
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /**
  * Spring Data가 만든 [BrandRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 패키지 위치의 이유는
@@ -25,7 +25,7 @@ class BrandRepositoryTest(
     private val brandRepository: BrandRepository,
 ) : BaseRepositoryTest() {
     companion object {
-        private val FIRST_REGISTERED_AT: ZonedDateTime = ZonedDateTime.of(2026, 9, 18, 10, 0, 0, 0, ZoneOffset.UTC)
+        private val FIRST_REGISTERED_AT: Instant = Instant.parse("2026-09-18T10:00:00Z")
     }
 
     @Test
@@ -116,8 +116,8 @@ class BrandRepositoryTest(
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc returns active brands with the newest registration first`() {
         prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT, name = "첫째")
-        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(1), name = "둘째")
-        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(2), name = "셋째")
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plus(1, ChronoUnit.MINUTES), name = "둘째")
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plus(2, ChronoUnit.MINUTES), name = "셋째")
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
@@ -174,7 +174,9 @@ class BrandRepositoryTest(
     /** 1분 간격으로 등록한다. 목록은 최신순이므로 가장 먼저 등록한 브랜드만 둘째 조각에 남는다. */
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc skips the brands the earlier pages already read`() {
-        val brands = List(3) { prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
+        val brands = List(3) {
+            prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plus(it.toLong(), ChronoUnit.MINUTES))
+        }
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(1, 2))
 
@@ -205,7 +207,7 @@ class BrandRepositoryTest(
      * 등록 시각을 정해 브랜드를 준비한다. [com.loopers.domain.BaseEntity]가 `@PrePersist`에서 지금 시각을 찍으므로,
      * 정렬과 동률을 흔들림 없이 확인하려면 [prepareBrand]로 저장한 뒤 벌크 수정으로 시각을 옮겨야 한다.
      */
-    private fun prepareBrandRegisteredAt(registeredAt: ZonedDateTime, name: String? = null): Brand {
+    private fun prepareBrandRegisteredAt(registeredAt: Instant, name: String? = null): Brand {
         val prepared = prepareBrand(name = name)
         entityManager.flush()
         entityManager.createQuery("update Brand b set b.createdAt = :registeredAt where b.id = :id")

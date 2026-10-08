@@ -74,7 +74,7 @@ classDiagram
     class Brand {
         +Long id
         +String name
-        +ZonedDateTime? deletedAt
+        +Instant? deletedAt
         +update(name)
         +delete()
     }
@@ -85,7 +85,7 @@ classDiagram
         +String name
         +Money price
         +Stock stock
-        +ZonedDateTime? deletedAt
+        +Instant? deletedAt
         +update(name, price)
         +updateStock(quantity)
         +delete()

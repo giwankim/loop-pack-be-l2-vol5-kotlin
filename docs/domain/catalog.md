@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
 | `name` | `String` | 받은 그대로의 이름 |
-| `deletedAt` | `ZonedDateTime?` | 삭제 시각. `BaseEntity` |
+| `deletedAt` | `Instant?` | 삭제 시각. `BaseEntity` |
 
 ### 규칙
 
@@ -53,7 +53,7 @@
 | `name` | `String` | 받은 그대로의 이름 |
 | `price` | `Money` | 가격 |
 | `stock` | `Stock` | 재고. `@Embedded` |
-| `deletedAt` | `ZonedDateTime?` | 삭제 시각 |
+| `deletedAt` | `Instant?` | 삭제 시각 |
 
 ### 규칙
 
