@@ -8,8 +8,9 @@ import jakarta.validation.constraints.Min
  * [ProductFinder.findAllLikedBy]의 파라미터다.
  *
  * 좋아요 조각이 자기 [com.loopers.application.like.provided.LikeListRequest]를 이것으로 옮겨 부른다. 상품은 좋아요를
- * 모르므로 좋아요의 Request를 받지 않는다. 같은 범위를 여기에도 적는 것은 이 포트를 좋아요 조각을 거치지 않고 부르는 쪽도
- * 같은 검사를 받게 하려는 것이다. 제약이 붙는 자리와 까닭은 [ProductListRequest]와 같다(설계 5.18, 5.22).
+ * 모르므로 좋아요의 Request를 받지 않는다. 범위는 상품의 목록이라 [ProductListRequest]의 상수를 읽는다. 좋아요 쪽의 상한이
+ * 이보다 넓어지면 넘는 크기는 여기서 거절되므로, 두 상한은 함께 본다. 제약이 붙는 자리와 까닭은 [ProductListRequest]와
+ * 같다(설계 5.18, 5.22).
  */
 data class ProductLikedListRequest(
     @Min(0, message = "page는 0 이상이어야 합니다.")

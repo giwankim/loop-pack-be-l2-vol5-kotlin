@@ -578,7 +578,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.31 상품 조각을 ProductInfo로 옮기는 자리
 
-> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 조각의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`는 그때의 이름이다.
+> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 조각의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`와 domain의 `LikeRepository.countByProductIds`는 그때의 이름과 자리다. 지금은 `application/like/required`의 `LikeRepository`가 그룹 집계 `findProductLikeCounts`만 갖고, 0을 채우는 일은 `LikeCounter`의 구현이 한다(5.28).
 
 - 문제: 상품 목록(`ProductService.findAll`)과 내 좋아요 목록(`LikeService.findLikedProducts`)이 같은 두 줄을 각자 적고 있었다. 조각의 식별자로 좋아요 수를 한 번에 세고(5.28) 항목을 `ProductInfo`로 옮기는 일이다. 고르는 상품만 다르고 옮기는 규칙은 하나다.
 - 대안 A: 그대로 둔다. 두 줄이고 5.29가 유스케이스의 자리를 이미 정했다. 그러나 "조각 하나에 조회 셋"이라는 불변식이 두 곳에 적혀 두 테스트가 따로 지킨다.

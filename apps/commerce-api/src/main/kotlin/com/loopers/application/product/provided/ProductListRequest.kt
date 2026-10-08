@@ -10,7 +10,8 @@ import jakarta.validation.constraints.Min
  * [ProductAdminRegisterRequest]와 같다(설계 5.18).
  *
  * 고객 쪽이 기본이라 수식어가 없고 관리자 쪽만 [ProductAdminListRequest]로 갈린다(CONTEXT.md 고객).
- * 페이지 값의 범위는 역할에 따라 달라지지 않으므로 두 입력이 이 companion의 상수를 함께 쓴다.
+ * 페이지 값의 범위는 역할에 따라 달라지지 않으므로 상품의 목록 입력(이것, [ProductAdminListRequest], [ProductLikedListRequest])이
+ * 이 companion의 상수를 함께 쓴다.
  *
  * [sort]에는 제약 애노테이션이 없다. `page`·`size`는 숫자의 범위라 Bean Validation이 그대로 말할 수 있지만
  * 정렬 기준은 [ProductSort]가 아는 낱말이라, 제약으로 옮기려면 철자를 정규식에 한 벌 더 적거나
