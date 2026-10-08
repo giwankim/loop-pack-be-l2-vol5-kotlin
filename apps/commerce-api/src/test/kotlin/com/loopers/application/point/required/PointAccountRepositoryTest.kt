@@ -44,6 +44,15 @@ class PointAccountRepositoryTest(
         assertThat(pointAccountRepository.findByUserId(999L)).isNull()
     }
 
+    @Test
+    fun `findByUserId is null for a deleted account`() {
+        prepareUser()
+        deletePointAccount()
+        entityManager.flushAndClear()
+
+        assertThat(pointAccountRepository.findByUserId(user.id)).isNull()
+    }
+
     /** 식별자가 IDENTITY라 저장이 곧 INSERT이므로 두 번째 계정은 flush를 기다리지 않고 바로 거절된다. */
     @Test
     fun `saving a second account for the same user violates the unique constraint`() {

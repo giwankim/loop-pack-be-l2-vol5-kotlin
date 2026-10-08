@@ -23,8 +23,18 @@ import org.springframework.data.domain.PageRequest
  */
 @Import(QueryDslConfig::class, QuerydslOrderListRepository::class)
 class OrderRepositoryTest(
+    private val orderRepository: OrderRepository,
     private val orderListRepository: OrderListRepository,
 ) : BaseRepositoryTest() {
+    @Test
+    fun `findWithLineItemsById returns null for a deleted order`() {
+        prepareOrder()
+        deleteOrder()
+        entityManager.flushAndClear()
+
+        assertThat(orderRepository.findWithLineItemsById(order.id)).isNull()
+    }
+
     /**
      * 만든 시각은 [Order]가 스스로 정하므로 동률을 요청으로 만들 수 없다. 저장한 뒤 SQL로 시각을 겹쳐 놓고
      * 남은 차례를 식별자가 가르는지 본다. 남의 주문에는 가장 늦은 시각을 주어, 걸러 내는 일이 차례보다 먼저임을 본다.

@@ -8,6 +8,7 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import org.hibernate.annotations.SQLRestriction
 
 /**
  * 한 사용자의 포인트 잔액을 보유하는 계정. 사용자마다 하나이며 처음 잔액은 0원이다(CONTEXT.md 포인트 계정).
@@ -17,11 +18,14 @@ import jakarta.persistence.UniqueConstraint
  * `FK_POINT_ACCOUNT_USER`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014, 설계 12.1).
  *
  * 잔액은 0 이상인 [Money]이며 상품 가격의 상한을 따르지 않는다. `Long` 범위만 지킨다(설계 5.7).
+ *
+ * 계정을 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 계정은 없는 계정이다(ADR 0016).
  */
 @Entity
 @Table(
     uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_USER_ID", columnNames = ["user_id"])],
 )
+@SQLRestriction("deleted_at is null")
 class PointAccount(
     userId: Long,
 ) : BaseEntity() {

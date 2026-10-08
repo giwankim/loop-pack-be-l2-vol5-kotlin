@@ -27,4 +27,13 @@ class UserRepositoryTest(
     fun `existsById is false for an unknown id`() {
         assertThat(userRepository.existsById(999L)).isFalse()
     }
+
+    @Test
+    fun `existsById is false for a deleted user`() {
+        prepareUser()
+        deleteUser()
+        entityManager.flushAndClear()
+
+        assertThat(userRepository.existsById(user.id)).isFalse()
+    }
 }

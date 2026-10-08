@@ -14,12 +14,16 @@ import jakarta.persistence.Index
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
+import org.hibernate.annotations.SQLRestriction
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
  * 생성 정보는 불변이다. 다른 엔티티처럼 [BaseEntity]를 상속해 식별자와 생성·수정 시각을 물려받는다(ADR 0016).
  * 생성 시각은 저장할 때 찍히고, 확정 시각은 [confirm]이 스스로 찍는다.
+ *
+ * 주문을 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 주문은 없는 주문이다.
+ * 품목은 필터를 두지 않고 주문을 따른다([OrderLineItem]).
  */
 @Entity
 @Table(
@@ -36,6 +40,7 @@ import java.time.temporal.ChronoUnit
         ),
     ],
 )
+@SQLRestriction("deleted_at is null")
 class Order(
     @Column(nullable = false, updatable = false)
     val userId: Long,

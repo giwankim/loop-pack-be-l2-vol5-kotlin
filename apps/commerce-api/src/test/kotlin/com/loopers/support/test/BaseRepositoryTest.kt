@@ -134,6 +134,24 @@ abstract class BaseRepositoryTest {
         productRepository.save(product.apply { delete() })
     }
 
+    /**
+     * 삭제 시각을 찍어 명시적으로 저장한다. 사용자·포인트 계정·주문을 삭제하는 기능은 없다. 셋은 애그리거트 루트라
+     * 삭제 필터를 기본으로 가지므로(ADR 0016), 이 상태는 그 필터를 확인하는 테스트만 만든다.
+     */
+    protected fun deleteUser(user: User = this.user) {
+        userRepository.save(user.apply { delete() })
+    }
+
+    /** [deleteUser]와 같다. */
+    protected fun deletePointAccount(account: PointAccount = this.pointAccount) {
+        pointAccountRepository.save(account.apply { delete() })
+    }
+
+    /** [deleteUser]와 같다. */
+    protected fun deleteOrder(order: Order = this.order) {
+        orderRepository.save(order.apply { delete() })
+    }
+
     /** 좋아요 행을 지운다. 취소는 논리 삭제를 쓰지 않는다(ADR 0001). */
     protected fun unlike(like: Like = this.like) {
         likeRepository.delete(like)
