@@ -29,8 +29,8 @@ import java.time.temporal.ChronoUnit
 @Table(
     name = "orders",
     indexes = [
-        Index(name = "idx_orders_user_created", columnList = "user_id, created_at DESC, id DESC"),
-        Index(name = "idx_orders_created", columnList = "created_at DESC, id DESC"),
+        Index(name = "IDX_ORDERS_USER_CREATED", columnList = "user_id, created_at DESC, id DESC"),
+        Index(name = "IDX_ORDERS_CREATED", columnList = "created_at DESC, id DESC"),
     ],
     check = [
         CheckConstraint(
