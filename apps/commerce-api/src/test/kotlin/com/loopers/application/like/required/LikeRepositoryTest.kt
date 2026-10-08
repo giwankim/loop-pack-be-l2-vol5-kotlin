@@ -14,8 +14,9 @@ import org.springframework.dao.DataIntegrityViolationException
  * Spring Data가 만든 [LikeRepository]가 실제 MySQL에서 계약을 지키는지 확인한다. 패키지 위치의 이유는
  * [com.loopers.application.user.required.UserRepositoryTest]와 같다.
  *
- * 여러 상품의 좋아요 수 [LikeRepository.countByProductIds]는 본문을 가진 인터페이스 메서드다. 그 테스트는 Spring Data가
- * 본문을 쿼리로 만들지 않고 실행해 좋아요가 없는 상품을 0으로 채운다는 것도 함께 고정한다.
+ * 여러 상품의 그룹 집계 [LikeRepository.findProductLikeCounts]는 좋아요가 있는 상품만 행으로 준다. 요청한 상품마다 0을
+ * 채우는 것은 [com.loopers.application.product.required.LikeCounter]의 약속이라
+ * [com.loopers.application.like.provided.LikeFinderTest]가 본다.
  *
  * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001).
  */
@@ -133,7 +134,7 @@ class LikeRepositoryTest(
     }
 
     @Test
-    fun `countByProductIds counts several products at once and reports zero for a product without likes`() {
+    fun `findProductLikeCounts gives one row per liked product among the ids and none for a product without likes`() {
         val firstUser = prepareUser()
         val secondUser = prepareUser()
         val likedTwice = prepareProduct()
@@ -146,16 +147,8 @@ class LikeRepositoryTest(
         prepareLike(firstUser, notAsked)
         entityManager.flushAndClear()
 
-        val counts = likeRepository.countByProductIds(listOf(likedTwice.id, likedOnce.id, unliked.id))
+        val rows = likeRepository.findProductLikeCounts(listOf(likedTwice.id, likedOnce.id, unliked.id))
 
-        assertThat(counts).containsExactlyInAnyOrderEntriesOf(mapOf(likedTwice.id to 2L, likedOnce.id to 1L, unliked.id to 0L))
-    }
-
-    @Test
-    fun `countByProductIds with no ids is empty`() {
-        prepareLike()
-        entityManager.flushAndClear()
-
-        assertThat(likeRepository.countByProductIds(emptyList())).isEmpty()
+        assertThat(rows.map { it.productId to it.likeCount }).containsExactlyInAnyOrder(likedTwice.id to 2L, likedOnce.id to 1L)
     }
 }

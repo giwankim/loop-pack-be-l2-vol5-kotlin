@@ -31,6 +31,14 @@ class LikeQueryService(
 
     override fun countLikes(productId: Long): Long = likeRepository.countByProductId(productId)
 
-    override fun countLikes(productIds: Collection<Long>): Map<Long, Long> =
-        likeRepository.countByProductIds(productIds)
+    /**
+     * 그룹 집계는 좋아요가 있는 상품만 돌려주므로 요청한 식별자마다 0을 기본으로 채운다. 요청한 상품마다 값이 있다는 것은
+     * 저장소가 아니라 상품이 선언한 [com.loopers.application.product.required.LikeCounter]의 약속이다.
+     * 빈 목록은 SQL을 보내지 않는다. Hibernate가 빈 `in`을 `1=0`으로 바꿔 보내 답은 같지만, 빈 조각마다 헛된 왕복이 한 번 나간다.
+     */
+    override fun countLikes(productIds: Collection<Long>): Map<Long, Long> {
+        if (productIds.isEmpty()) return emptyMap()
+        val counted = likeRepository.findProductLikeCounts(productIds).associate { it.productId to it.likeCount }
+        return productIds.associateWith { counted[it] ?: 0L }
+    }
 }

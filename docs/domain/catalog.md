@@ -169,14 +169,14 @@ DB 유일 제약: `(user_id, product_id)`.
 
 ### 저장 약속
 
-`LikeRepository`: `save`, `existsByUserIdAndProductId`, `findByUserIdAndProductId`, `delete`(행 삭제), `countByProductId`, `countByProductIds`(식별자마다 개수, 없는 상품은 0).
+`LikeRepository`: `save`, `existsByUserIdAndProductId`, `findByUserIdAndProductId`, `delete`(행 삭제), `countByProductId`, `findProductLikeCounts`(식별자 목록의 그룹 집계. 좋아요가 없는 상품은 행이 없다).
 
 좋아요 목록은 `LikeRepository`가 아니라 상품의 `ProductRepository.findAllLikedBy(userId, pageable)`가 돌려주고, `LikeFinder`는 그것을 `ProductFinder.findAllLikedBy`로 받는다. 돌려주는 것이 상품이고, 삭제된 상품을 조회가 걸러야 조각의 크기와 `hasNext`가 남은 상품만 세기 때문이다(설계 5.29).
 
 ### 협력
 
 - 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. `LikeFinder`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
-- 상품 목록: 조각의 상품 식별자 목록에 대해 `countByProductIds` 한 번으로 센다. 항목마다 세지 않는다(설계 5.28).
+- 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeFinder`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28).
 - 내 좋아요 목록: `LikeFinder`가 `ProductFinder.findAllLikedBy`로 상품 조각을 받는다. `ProductFinder`가 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자

@@ -21,23 +21,12 @@ interface LikeRepository : Repository<Like, Long> {
     fun countByProductId(productId: Long): Long
 
     /**
-     * [productIds]마다의 좋아요 수. 좋아요가 없는 상품도 0으로 들어 있어 부르는 쪽이 빠진 키를 다루지 않는다.
+     * [productIds] 상품들의 좋아요 수를 한 번에 센다. 좋아요가 있는 상품마다 한 행이고, 좋아요가 없는 상품은 행이 없다.
      * 목록이 항목마다 세지 않고 한 번에 세게 하려는 것이다(설계 5.28).
      *
-     * 그룹 집계는 좋아요가 있는 상품만 돌려주므로 요청한 식별자마다 0을 기본으로 채운다.
-     * 빈 목록은 SQL을 보내지 않는다. `in ()`은 MySQL이 거절한다.
-     *
-     * 본문이 있는 메서드는 JVM default method가 되고, Spring Data는 그것을 쿼리로 만들지 않고 본문을 실행한다.
-     */
-    fun countByProductIds(productIds: Collection<Long>): Map<Long, Long> {
-        if (productIds.isEmpty()) return emptyMap()
-        val counted = findProductLikeCounts(productIds).associate { it.productId to it.likeCount }
-        return productIds.associateWith { counted[it] ?: 0L }
-    }
-
-    /**
-     * [countByProductIds]가 맡기는 집계. 상품마다 한 행이고 좋아요가 없는 상품은 행이 없다.
-     * 포트가 빠진 키를 내주지 않도록 바깥에서는 [countByProductIds]를 부른다.
+     * 요청한 상품마다 값이 있다는 약속은 [com.loopers.application.product.required.LikeCounter]의 것이라,
+     * 빠진 상품을 0으로 채우고 빈 목록을 거르는 일은 그 구현이 한다. 빈 목록으로 불러도 Hibernate가 조건을 `1=0`으로 바꿔
+     * 빈 결과를 주지만, 조회는 한 번 나간다.
      */
     @Query(
         "select l.productId as productId, count(l) as likeCount " +

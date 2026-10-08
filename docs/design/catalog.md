@@ -538,6 +538,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.28 좋아요 수의 집계
 
+> 2026-10-08 0으로 채우는 자리가 저장소에서 `LikeCounter`의 구현으로 옮겨졌다([#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)). `LikeRepository`에는 그룹 집계 `findProductLikeCounts`만 남고, 빈 목록을 거르는 일과 좋아요가 없는 상품을 0으로 채우는 일은 `LikeQueryService.countLikes(productIds)`가 한다. 요청한 식별자마다 값이 있다는 것은 저장소가 아니라 상품이 선언한 `LikeCounter`의 약속이기 때문이다. 빈 목록은 여전히 SQL을 보내지 않는다. 다만 Hibernate 7은 빈 `in`을 `1=0`으로 바꿔 보내므로 MySQL이 거절할 일은 없고, 거르는 까닭은 헛된 왕복을 줄이는 것이다. 아래의 `countByProductIds`는 그때의 이름이다.
+
 - 문제: 상품 상세와 목록 항목의 `likeCount`. CONTEXT.md는 관계에서 세어 구하고 따로 저장하지 않는다고 정했다. 남는 것은 어디서 어떻게 세는가다.
 - 대안 A: `Product`에 `likeCount` 컬럼을 두고 누르기·취소가 증감한다. 읽기가 가장 싸다. 그러나 CONTEXT.md와 어긋나고, 상품 행에 쓰기 경합이 생기며, 관계와 수가 어긋날 수 있다.
 - 대안 B: 상품 조회 쿼리가 `likes`를 join해 함께 센다. 조회 한 번이다. 그러나 `ProductRepository`가 좋아요를 알게 되고, 상품 저장소의 반환 타입이 엔티티가 아닌 튜플이 된다.
