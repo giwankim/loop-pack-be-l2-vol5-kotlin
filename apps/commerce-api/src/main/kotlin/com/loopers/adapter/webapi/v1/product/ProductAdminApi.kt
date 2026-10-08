@@ -51,7 +51,7 @@ class ProductAdminApi(
     override fun getProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductAdminResponse> {
-        return productFinder.find(productId)
+        return productFinder.findInfo(productId)
             .let { ProductAdminResponse.from(it) }
             .let { ApiResponse.success(it) }
     }

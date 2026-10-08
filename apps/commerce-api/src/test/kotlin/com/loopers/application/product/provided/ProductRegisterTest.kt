@@ -29,7 +29,7 @@ class ProductRegisterTest(
             createProductAdminRegisterRequest(brandId = brand.id, name = " 티셔츠 ", price = 12_000, stock = 7),
         )
         entityManager.flushAndClear()
-        val found = productFinder.find(registered.id)
+        val found = productFinder.findInfo(registered.id)
 
         assertThat(registered.brandId).isEqualTo(brand.id)
         assertThat(registered.name).isEqualTo(" 티셔츠 ")
@@ -117,7 +117,7 @@ class ProductRegisterTest(
 
         productRegister.update(product.id, createProductAdminUpdateRequest(name = " 후드티 ", price = 25_000))
         entityManager.flushAndClear()
-        val found = productFinder.find(product.id)
+        val found = productFinder.findInfo(product.id)
 
         assertThat(found.name).isEqualTo(" 후드티 ")
         assertThat(found.price).isEqualTo(25_000L)
@@ -131,7 +131,7 @@ class ProductRegisterTest(
 
         productRegister.updateStock(product.id, createProductAdminStockUpdateRequest(quantity = 0))
         entityManager.flushAndClear()
-        val found = productFinder.find(product.id)
+        val found = productFinder.findInfo(product.id)
 
         assertThat(found.stock).isZero()
         assertThat(found.soldOut).isTrue()
@@ -183,7 +183,7 @@ class ProductRegisterTest(
             productRegister.update(product.id, createProductAdminUpdateRequest(price = 0))
         }
         entityManager.flushAndClear()
-        val found = productFinder.find(product.id)
+        val found = productFinder.findInfo(product.id)
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("상품 가격은 1원 이상이어야 합니다.")
         assertThat(found.name).isEqualTo("티셔츠")
@@ -201,7 +201,7 @@ class ProductRegisterTest(
         entityManager.flushAndClear()
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
-        assertThat(productFinder.find(product.id).stock).isEqualTo(7)
+        assertThat(productFinder.findInfo(product.id).stock).isEqualTo(7)
     }
 
     /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */

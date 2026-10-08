@@ -19,7 +19,7 @@ class ProductFinderTest(
 ) : BaseApplicationServiceTest() {
     /** 좋아요 수는 관계에서 센다. */
     @Test
-    fun `finding a product counts the likes on it`() {
+    fun `the product detail counts the likes on it`() {
         prepareBrand()
         val registered = prepareProduct(brand)
         val other = prepareProduct(brand)
@@ -30,7 +30,7 @@ class ProductFinderTest(
         prepareLike(firstUser, other)
         entityManager.flushAndClear()
 
-        val found = productFinder.find(registered.id)
+        val found = productFinder.findInfo(registered.id)
 
         assertThat(found.likeCount).isEqualTo(2L)
     }
@@ -71,11 +71,11 @@ class ProductFinderTest(
     }
 
     @Test
-    fun `finding a product with zero stock reports it as sold out`() {
+    fun `the product detail reports a product with zero stock as sold out`() {
         prepareProduct(stock = 0)
         entityManager.flushAndClear()
 
-        val found = productFinder.find(product.id)
+        val found = productFinder.findInfo(product.id)
 
         assertThat(found.stock).isZero()
         assertThat(found.soldOut).isTrue()
@@ -93,7 +93,7 @@ class ProductFinderTest(
         prepareProduct(name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
-        val found = productFinder.findOrderable(product.id)
+        val found = productFinder.findOrderableOrNull(product.id)
 
         assertThat(found?.id).isEqualTo(product.id)
         assertThat(found?.name).isEqualTo("티셔츠")
@@ -113,9 +113,9 @@ class ProductFinderTest(
         deleteBrandKeepingProducts(closedBrand)
         entityManager.flushAndClear()
 
-        assertThat(productFinder.findOrderable(Long.MAX_VALUE)).isNull()
-        assertThat(productFinder.findOrderable(deleted.id)).isNull()
-        assertThat(productFinder.findOrderable(ofClosedBrand.id)).isNull()
+        assertThat(productFinder.findOrderableOrNull(Long.MAX_VALUE)).isNull()
+        assertThat(productFinder.findOrderableOrNull(deleted.id)).isNull()
+        assertThat(productFinder.findOrderableOrNull(ofClosedBrand.id)).isNull()
     }
 
     /**

@@ -78,8 +78,8 @@
 
 ### 협력
 
-- 관리자 재고 변경: `ProductRegister.updateStock` → 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
-- 고객 상세: `ProductFinder.find` → 삭제되지 않은 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo`. `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
+- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.find`로 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
+- 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 ## 재고 (Stock)
 
@@ -163,9 +163,9 @@ DB 유일 제약: `(user_id, product_id)`.
 
 | 유스케이스 | 흐름 |
 | --- | --- |
-| `Liker.like(userId, productId)` | 요청자(사용자) 존재 확인 → 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
-| `Liker.unlike(userId, productId)` | 요청자 존재 확인 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
-| `LikeFinder.findLikedProducts(userId, request)` | 요청자 존재 확인 → 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
+| `Liker.like(userId, productId)` | `LikeValidator.validateForLike`가 `ProductFinder.find`로 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
+| `Liker.unlike(userId, productId)` | 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
+| `LikeFinder.findLikedProducts(userId, request)` | 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
 
 ### 저장 약속
 

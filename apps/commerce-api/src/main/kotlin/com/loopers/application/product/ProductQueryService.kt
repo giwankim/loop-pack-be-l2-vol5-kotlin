@@ -25,13 +25,14 @@ class ProductQueryService(
     private val productListRepository: ProductListRepository,
     private val productInfoAssembler: ProductInfoAssembler,
 ) : ProductFinder {
-    /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. */
-    override fun find(id: Long): ProductInfo {
-        val product = productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
-        return productInfoAssembler.toInfo(product)
-    }
+    /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. 브랜드는 읽지 않는다. */
+    override fun find(id: Long): Product =
+        productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
 
-    override fun findOrderable(id: Long): Product? = productRepository.findByIdWithActiveBrand(id)
+    /** 브랜드 이름을 연관에서 건너 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다. */
+    override fun findInfo(id: Long): ProductInfo = productInfoAssembler.toInfo(find(id))
+
+    override fun findOrderableOrNull(id: Long): Product? = productRepository.findByIdWithActiveBrand(id)
 
     override fun findAll(request: ProductAdminListRequest): Slice<ProductInfo> =
         findAll(

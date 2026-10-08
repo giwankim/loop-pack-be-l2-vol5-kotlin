@@ -5,6 +5,7 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseApplicationServiceTest
+import com.loopers.support.withStatistics
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -28,6 +29,23 @@ class LikerTest(
         entityManager.flushAndClear()
 
         assertThat(entityManager.countLikes(user.id, product.id)).isOne()
+    }
+
+    /**
+     * 누르기는 상품이 있는지만 본다. 상품 하나를 읽고, 관계가 있는지 묻고, 저장한다. 존재 확인이 브랜드도 좋아요 수도 읽지 않는다(ADR 0014).
+     * 식별자가 IDENTITY라 저장이 곧 INSERT이므로 flush 없이도 셋째 문장까지 센다.
+     */
+    @Test
+    fun `liking reads the product checks the pair and saves the like in three statements`() {
+        prepareUser()
+        prepareProduct()
+        entityManager.flushAndClear()
+
+        entityManager.withStatistics { statistics ->
+            liker.like(userId = user.id, productId = product.id)
+
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
+        }
     }
 
     @Test
