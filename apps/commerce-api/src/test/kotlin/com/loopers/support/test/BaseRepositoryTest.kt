@@ -126,7 +126,7 @@ abstract class BaseRepositoryTest {
      * 이름에 우회를 드러낸다. 이 상태는 어긋난 데이터를 막는 테스트만 만든다.
      */
     protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
-        brandRepository.save(brand.apply { delete() })
+        deleteBrand(brand)
     }
 
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
@@ -139,7 +139,10 @@ abstract class BaseRepositoryTest {
         likeRepository.delete(like)
     }
 
-    /** 충전한 계정을 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    /**
+     * 충전한 계정을 명시적으로 저장한다. 변경 감지에 기대지 않는다. 사용자로 계정을 찾는 `findByUserId`가 저장소 테스트의
+     * 대상이라 [BaseApplicationServiceTest.charge]와 달리 사용자가 아니라 계정을 받는다.
+     */
     protected fun charge(amount: Money, account: PointAccount = this.pointAccount) {
         account.charge(amount)
         pointAccountRepository.save(account)

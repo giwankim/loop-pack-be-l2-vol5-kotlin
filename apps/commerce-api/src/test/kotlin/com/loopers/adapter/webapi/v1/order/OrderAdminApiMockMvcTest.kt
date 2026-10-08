@@ -184,8 +184,8 @@ class OrderAdminApiMockMvcTest(
     }
 
     /**
-     * 확정된 주문의 저장 형태를 DB fixture로 준비한다. 확정 동작 자체는 이 티켓의 책임이 아니며,
-     * 관리자 조회가 저장된 결제 결과를 그대로 싣는지만 본다(설계 13의 같은 판단).
+     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제 결과를 그대로 싣는지만 본다. 정해 둔 확정 시각은 포트가 만들 수 없으므로
+     * 준비한 초안 위에 SQL로 덮어쓴다(설계 13의 같은 판단).
      */
     @Test
     fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {

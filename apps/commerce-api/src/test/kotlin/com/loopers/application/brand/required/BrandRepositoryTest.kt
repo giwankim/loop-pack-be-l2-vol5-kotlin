@@ -1,7 +1,6 @@
 package com.loopers.application.brand.required
 
 import com.loopers.domain.brand.Brand
-import com.loopers.domain.brand.createBrand
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseRepositoryTest
 import com.loopers.support.withStatistics
@@ -116,9 +115,9 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc returns active brands with the newest registration first`() {
-        saveRegisteredAt(createBrand(name = "첫째"), registeredAt = FIRST_REGISTERED_AT)
-        saveRegisteredAt(createBrand(name = "둘째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(1))
-        saveRegisteredAt(createBrand(name = "셋째"), registeredAt = FIRST_REGISTERED_AT.plusMinutes(2))
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT, name = "첫째")
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(1), name = "둘째")
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(2), name = "셋째")
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
@@ -127,8 +126,8 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc breaks a tie on registration time with the higher id first`() {
-        val first = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
-        val second = saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT)
+        val first = prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT)
+        val second = prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT)
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(0, 20))
 
@@ -137,7 +136,7 @@ class BrandRepositoryTest(
 
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc leaves out deleted brands`() {
-        saveRegisteredAt(createBrand(name = "루퍼스"), registeredAt = FIRST_REGISTERED_AT)
+        prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT, name = "루퍼스")
         deleteBrand(prepareBrand())
         entityManager.flushAndClear()
 
@@ -175,7 +174,7 @@ class BrandRepositoryTest(
     /** 1분 간격으로 등록한다. 목록은 최신순이므로 가장 먼저 등록한 브랜드만 둘째 조각에 남는다. */
     @Test
     fun `findAllByOrderByCreatedAtDescIdDesc skips the brands the earlier pages already read`() {
-        val brands = List(3) { saveRegisteredAt(createBrand(), registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
+        val brands = List(3) { prepareBrandRegisteredAt(registeredAt = FIRST_REGISTERED_AT.plusMinutes(it.toLong())) }
 
         val slice = brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(1, 2))
 
@@ -203,17 +202,17 @@ class BrandRepositoryTest(
     }
 
     /**
-     * 등록 시각을 정해 저장한다. [com.loopers.domain.BaseEntity]가 `@PrePersist`에서 지금 시각을 찍으므로,
-     * 정렬과 동률을 흔들림 없이 확인하려면 저장한 뒤 벌크 수정으로 시각을 옮겨야 한다.
+     * 등록 시각을 정해 브랜드를 준비한다. [com.loopers.domain.BaseEntity]가 `@PrePersist`에서 지금 시각을 찍으므로,
+     * 정렬과 동률을 흔들림 없이 확인하려면 [prepareBrand]로 저장한 뒤 벌크 수정으로 시각을 옮겨야 한다.
      */
-    private fun saveRegisteredAt(brand: Brand, registeredAt: ZonedDateTime): Brand {
-        val saved = brandRepository.save(brand)
+    private fun prepareBrandRegisteredAt(registeredAt: ZonedDateTime, name: String? = null): Brand {
+        val prepared = prepareBrand(name = name)
         entityManager.flush()
         entityManager.createQuery("update Brand b set b.createdAt = :registeredAt where b.id = :id")
             .setParameter("registeredAt", registeredAt)
-            .setParameter("id", saved.id)
+            .setParameter("id", prepared.id)
             .executeUpdate()
         entityManager.flushAndClear()
-        return saved
+        return prepared
     }
 }

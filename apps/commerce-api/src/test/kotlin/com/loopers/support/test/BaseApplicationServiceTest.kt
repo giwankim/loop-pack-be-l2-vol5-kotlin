@@ -144,7 +144,9 @@ abstract class BaseApplicationServiceTest {
         user: User = prepareUser(),
         products: List<Product> = listOf(prepareProduct()),
         quantity: Int? = null,
-    ): Order = readBack(orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity)))
+    ): Order =
+        readBack(orderCreator.create(user.id, createOrderCreateRequest(products.map { it.id }, quantity = quantity)))
+            .also { order = it }
 
     /**
      * 품목마다 수량이 다른 주문. 상품과 수량의 짝마다 품목 하나를 담고, 수량이 `null`인 품목은 fixture가 뽑는다.
@@ -153,10 +155,10 @@ abstract class BaseApplicationServiceTest {
      */
     protected fun prepareOrder(vararg items: Pair<Product, Int?>, user: User = prepareUser()): Order {
         val request = createOrderCreateRequest(*items.map { (product, quantity) -> product.id to quantity }.toTypedArray())
-        return readBack(orderCreator.create(user.id, request))
+        return readBack(orderCreator.create(user.id, request)).also { order = it }
     }
 
-    private fun readBack(info: OrderInfo): Order = orderRepository.findById(info.orderId)!!.also { order = it }
+    private fun readBack(info: OrderInfo): Order = orderRepository.findById(info.orderId)!!
 
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)

@@ -440,7 +440,7 @@ class OrderApiMockMvcTest(
         assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
     }
 
-    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정 동작은 후속 티켓의 책임이라 상태를 DB fixture로 만든다(설계 13). */
+    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 정해 둔 확정 시각은 포트가 만들 수 없으므로 준비한 초안 위에 SQL로 덮어쓴다(설계 13). */
     @Test
     fun `the order list shows draft and confirmed entries with their stored payment fields`() {
         prepareProduct(price = 1_000)

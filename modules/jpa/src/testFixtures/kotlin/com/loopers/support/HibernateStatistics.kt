@@ -10,9 +10,11 @@ import org.hibernate.stat.Statistics
  * 조회가 몇 번 나갔는지를 세어야 지켜지는 약속이 있다. 목록이 총 개수를 세지 않는다, 좋아요 수를 항목마다가 아니라
  * 한 번에 센다 같은 것이다. 반환 타입이나 호출 모양만 보면 그 약속이 깨져도 아무 테스트가 말하지 않는다.
  *
- * 통계는 꺼져 있고, 세는 테스트는 [withStatistics]로 켠다.
+ * 통계는 꺼져 있고, 세는 테스트는 [withStatistics]로 켠다. `@PublishedApi internal`이라 모듈 밖의 테스트는
+ * [withStatistics]를 거쳐서만 통계에 닿고, 손으로 켜고 끄지 못한다.
  */
-val EntityManager.statistics: Statistics
+@PublishedApi
+internal val EntityManager.statistics: Statistics
     get() = entityManagerFactory.unwrap(SessionFactory::class.java).statistics
 
 /**
