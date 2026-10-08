@@ -469,6 +469,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 5.17이 개념마다 Request를 따로 둔 까닭이 "한쪽의 범위가 바뀌어도 다른 쪽이 따라가지 않게"였고, 5.21은 그 공용 타입(`application/shared/PageQuery`)을 이미 한 번 철회했다. 되풀이를 없애려고 그 결합을 되살릴 만큼 되풀이가 크지 않다.
   - 그때가 오는 조건을 좁힌다: 목록마다 다른 `size` 상한이 필요해지거나(5.21의 다시 볼 조건) 제약이 둘을 넘어 자랄 때 인터페이스로 묶는다. 목록 입력이 다섯째가 되는 것만으로는 다시 보지 않는다.
 - 여기서 A를 물리친 것은 "두 번 검사하는 것"이 아니라 "같은 규칙을 두 가지 방식으로 적는 것"이다. 이 둘은 다른 축이다(5.25).
+- 좋아요 목록이 부르는 `ProductFinder.findAllLikedBy`는 Request 없이 `page`·`size`를 받는 유일한 포트였다. HTTP에서는 `LikeListRequest`가 먼저 걸렀지만, 포트를 바로 부르면 잘못된 페이지가 `PageRequest.of`에서 `IllegalArgumentException`(500)이 됐다. 이제 상품의 `ProductLikedListRequest(page, size)`를 `@Valid`로 받고, 좋아요 조각이 자기 Request를 그것으로 옮겨 부른다. 상품은 좋아요의 Request를 모른다. 상수는 `ProductListRequest`의 것을 읽어 사본이 늘지 않는다. 포트의 `Int` 파라미터에 제약을 바로 다는 대안은 고르지 않았다. Bean Validation이 Request 밖에 앉는 둘째 자리가 생기기 때문이다(5.18) (2026-10-08, [#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)).
 - 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
 
 ### 5.23 이름 수정의 순서

@@ -35,7 +35,8 @@ interface ProductFinder : ActiveProductChecker {
      * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고 삭제된 상품은 빠진다.
      * 좋아요 조각의 내 좋아요 목록이 부른다. 항목이 고객 목록의 항목과 같은 [ProductInfo]라 옮기는 일은 상품 안에 남는다(설계 5.31).
      *
-     * 페이지 값은 부르는 쪽이 이미 검증한 것을 받는다. 좋아요 목록의 입력은 좋아요의 Request이고, 상품은 좋아요를 모른다.
+     * 좋아요 목록의 입력은 좋아요의 Request이고 상품은 좋아요를 모르므로, 페이지 값은 상품의 [ProductLikedListRequest]로
+     * 받아 다른 목록과 같은 길로 다시 검증한다.
      */
-    fun findAllLikedBy(userId: Long, page: Int, size: Int): Slice<ProductInfo>
+    fun findAllLikedBy(userId: Long, @Valid request: ProductLikedListRequest): Slice<ProductInfo>
 }

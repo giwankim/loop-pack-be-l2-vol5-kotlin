@@ -255,4 +255,30 @@ class ProductFinderTest(
                 .constraintViolations.map { it.message },
         ).containsExactly("size는 100 이하여야 합니다.")
     }
+
+    /**
+     * HTTP로 오는 좋아요 목록은 좋아요의 [com.loopers.application.like.provided.LikeListRequest]가 먼저 거른다.
+     * 이 포트를 바로 부르는 쪽도 같은 범위로 거절되어야 `PageRequest.of`의 `IllegalArgumentException`(500)에 닿지 않는다.
+     */
+    @Test
+    fun `listing liked products outside the page and size bounds is rejected by request validation`() {
+        prepareUser()
+        entityManager.flushAndClear()
+
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                productFinder.findAllLikedBy(user.id, ProductLikedListRequest(page = -1))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("page는 0 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                productFinder.findAllLikedBy(user.id, ProductLikedListRequest(size = 0))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("size는 1 이상이어야 합니다.")
+        assertThat(
+            assertThrows<ConstraintViolationException> {
+                productFinder.findAllLikedBy(user.id, ProductLikedListRequest(size = 101))
+            }.constraintViolations.map { it.message },
+        ).containsExactly("size는 100 이하여야 합니다.")
+    }
 }

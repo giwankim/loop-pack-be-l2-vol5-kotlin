@@ -3,6 +3,7 @@ package com.loopers.application.product
 import com.loopers.application.product.provided.ProductAdminListRequest
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
+import com.loopers.application.product.provided.ProductLikedListRequest
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRepository
 import com.loopers.application.product.required.ProductRepository
@@ -15,7 +16,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Slice
 
 /**
- * [ProductFinder]의 구현. 두 목록이 Request를 받으므로 검증하는 Service다. 상품 하나는 Spring Data의 [ProductRepository]가,
+ * [ProductFinder]의 구현. 목록이 Request를 받으므로 검증하는 Service다. 상품 하나는 Spring Data의 [ProductRepository]가,
  * 상품 목록은 QueryDSL을 쓰는 [ProductListRepository]가 읽는다.
  */
 @ValidatedApplicationService(readOnly = true)
@@ -54,8 +55,10 @@ class ProductQueryService(
         )
 
     /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
-    override fun findAllLikedBy(userId: Long, page: Int, size: Int): Slice<ProductInfo> =
-        productInfoAssembler.toInfos(productRepository.findAllLikedBy(userId = userId, pageable = PageRequest.of(page, size)))
+    override fun findAllLikedBy(userId: Long, request: ProductLikedListRequest): Slice<ProductInfo> =
+        productInfoAssembler.toInfos(
+            productRepository.findAllLikedBy(userId = userId, pageable = PageRequest.of(request.page, request.size)),
+        )
 
     /** 삭제된 상품은 [com.loopers.domain.product.Product]의 `@SQLRestriction`이 걸러 주므로 남은 상품이 있는지만 묻는다. */
     override fun hasActiveProducts(brandId: Long): Boolean = productRepository.existsByBrandId(brandId)
