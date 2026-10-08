@@ -46,6 +46,7 @@ class PointAccount(
         if (amount <= Money.ZERO) {
             throw InvalidChargeAmountException("충전액은 1원 이상이어야 합니다.")
         }
+
         balance = balance + amount
     }
 
@@ -57,9 +58,11 @@ class PointAccount(
         if (amount <= Money.ZERO) {
             throw InvalidPaymentAmountException()
         }
+
         if (amount > balance) {
             throw InsufficientPointsException()
         }
+
         balance = balance - amount
     }
 }

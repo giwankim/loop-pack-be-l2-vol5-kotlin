@@ -37,6 +37,7 @@ class LikeQueryService(
         if (productIds.isEmpty()) {
             return emptyMap()
         }
+
         val counted = likeRepository.findProductLikeCounts(productIds).associate { it.productId to it.likeCount }
         return productIds.associateWith { counted[it] ?: 0L }
     }

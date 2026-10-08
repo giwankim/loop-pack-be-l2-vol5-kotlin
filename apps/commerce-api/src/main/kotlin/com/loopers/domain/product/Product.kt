@@ -91,9 +91,11 @@ class Product(
             if (name.isBlank()) {
                 throw InvalidNameException("상품 이름은 공백일 수 없습니다.")
             }
+
             if (name.length > NAME_MAX_LENGTH) {
                 throw InvalidNameException("상품 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
             }
+
             return name
         }
     }

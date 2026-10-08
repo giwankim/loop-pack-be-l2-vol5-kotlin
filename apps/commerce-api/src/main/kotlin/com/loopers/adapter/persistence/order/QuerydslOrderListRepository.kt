@@ -57,6 +57,7 @@ class QuerydslOrderListRepository(
         if (orders.isEmpty()) {
             return
         }
+
         queryFactory
             .selectFrom(order)
             .leftJoin(order.lineItems).fetchJoin()

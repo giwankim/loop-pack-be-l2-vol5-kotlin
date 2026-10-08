@@ -23,6 +23,7 @@ data class Money(
         if (other.amount > amount) {
             throw InvalidMoneyException("가진 금액보다 큰 금액을 뺄 수 없습니다.")
         }
+
         return Money(amount - other.amount)
     }
 

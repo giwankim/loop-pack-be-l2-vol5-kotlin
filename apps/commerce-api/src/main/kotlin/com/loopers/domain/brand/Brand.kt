@@ -32,9 +32,11 @@ class Brand(
             if (name.isBlank()) {
                 throw InvalidNameException("브랜드 이름은 공백일 수 없습니다.")
             }
+
             if (name.length > NAME_MAX_LENGTH) {
                 throw InvalidNameException("브랜드 이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.")
             }
+
             return name
         }
     }

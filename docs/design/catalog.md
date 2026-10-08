@@ -619,9 +619,10 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.33 웹 어댑터 메서드의 꼴
 
 - 문제: 템플릿에서 온 Controller는 유스케이스의 반환을 `.let { BrandAdminResponse.from(it) }.let { ApiResponse.success(it) }`처럼 흘려보냈다. 주문 Controller와 몇몇 응답 DTO의 `from`은 식 본문(`= ...`)이었다. 가드 절은 중괄호를 쓴 것과 한 줄 `if (...) throw`가 섞여 있었다.
-- 선택 (2026-10-08): adapter.webapi의 Controller 메서드와 응답 DTO의 `from`은 블록 본문으로 쓴다. Controller는 유스케이스가 돌려준 값을 그 정체를 말하는 지역 변수(`brand`, `brands`, `order`, `pointAccount`, `likedProducts`)에 담고, `return ApiResponse.success(BrandAdminResponse.from(brand))`로 한 번에 감싼다. 목록은 `ApiResponse.success(PageResponse.from(brands, BrandAdminResponse::from))`이다. 가드 절은 한 줄이어도 중괄호를 쓴다. 가드는 층을 가리지 않으므로 이 규칙은 domain, application, adapter.persistence에도 적용한다.
+- 선택 (2026-10-08): adapter.webapi의 Controller 메서드와 응답 DTO의 `from`은 블록 본문으로 쓴다. Controller는 유스케이스가 돌려준 값을 그 정체를 말하는 지역 변수(`brand`, `brands`, `order`, `pointAccount`, `likedProducts`)에 담고, `return ApiResponse.success(BrandAdminResponse.from(brand))`로 한 번에 감싼다. 목록은 `ApiResponse.success(PageResponse.from(brands, BrandAdminResponse::from))`이다. 가드 절은 한 줄이어도 중괄호를 쓰고, 닫는 중괄호 뒤에 빈 줄을 하나 두어 검사와 그 뒤의 일을 가른다. 가드가 이어지면 가드 사이에도 둔다. 가드는 층을 가리지 않으므로 이 규칙은 domain, application, adapter.persistence에도 적용한다.
   - `it`은 받은 것이 무엇인지 지운다. 이름이 있으면 Finder가 엔티티를 돌려주는지 `ProductInfo`를 돌려주는지(ADR 0014)가 Controller에서 보이고, 중단점도 그 줄에 걸 수 있다. splearn의 Controller도 같은 꼴이다(ADR 0013).
   - 가드의 중괄호는 이미 `Money`, `Brand`, `Product`, `Order`와 `Stock`의 생성 검사가 쓰던 꼴이다. 한 줄짜리 여섯 곳이 예외였다.
+  - 빈 줄은 메서드를 검사와 일의 덩어리로 나눠 읽게 한다. `?: throw`가 함수 본문 전체인 Finder처럼 뒤따르는 일이 없으면 둘 자리도 없다.
 - 그대로 두는 것: `?.let`은 값이 null이면 건너뛰는 관용구라 값을 흘려보내는 `.let`과 다르다. QueryDSL `where`의 `userId?.let { order.userId.eq(it) }`와 `LikeModifyService.unlike`는 그대로다. 템플릿의 `ApiResponse` 팩토리와 `RequesterIdArgumentResolver.supportsParameter`처럼 한 줄 식으로 끝나는 함수도 식 본문으로 둔다.
 - 지키는 것: 리뷰다. ktlint의 `multiline-if-else`는 여러 줄 `if`에만 중괄호를 요구하므로 한 줄 가드는 빌드가 잡지 못한다.
 - 다시 볼 조건: detekt 같은 정적 분석 도구를 들일 때 가드의 중괄호를 그 도구의 규칙으로 옮긴다.
