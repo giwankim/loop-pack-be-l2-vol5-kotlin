@@ -30,6 +30,6 @@ class ProductApi(
         @ModelAttribute @Valid request: ProductListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
         val products = productFinder.findAll(request)
-        return ApiResponse.success(PageResponse.from(products, ProductResponse::from))
+        return ApiResponse.success(PageResponse.from(products.map(ProductResponse::from)))
     }
 }

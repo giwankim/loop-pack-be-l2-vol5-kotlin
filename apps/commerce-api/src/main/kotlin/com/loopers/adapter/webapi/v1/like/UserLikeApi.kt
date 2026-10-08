@@ -45,6 +45,6 @@ class UserLikeApi(
         }
 
         val likedProducts = likeFinder.findLikedProducts(userId = userId, request = request)
-        return ApiResponse.success(PageResponse.from(likedProducts, ProductResponse::from))
+        return ApiResponse.success(PageResponse.from(likedProducts.map(ProductResponse::from)))
     }
 }

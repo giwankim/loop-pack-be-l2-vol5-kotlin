@@ -41,7 +41,7 @@ class BrandAdminApi(
         @ModelAttribute @Valid request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
         val brands = brandFinder.findAll(request)
-        return ApiResponse.success(PageResponse.from(brands, BrandAdminResponse::from))
+        return ApiResponse.success(PageResponse.from(brands.map(BrandAdminResponse::from)))
     }
 
     @GetMapping("/{brandId}")

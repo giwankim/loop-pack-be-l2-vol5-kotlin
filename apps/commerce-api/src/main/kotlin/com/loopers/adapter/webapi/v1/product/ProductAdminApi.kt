@@ -42,7 +42,7 @@ class ProductAdminApi(
         @ModelAttribute @Valid request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>> {
         val products = productFinder.findAll(request)
-        return ApiResponse.success(PageResponse.from(products, ProductAdminResponse::from))
+        return ApiResponse.success(PageResponse.from(products.map(ProductAdminResponse::from)))
     }
 
     @GetMapping("/{productId}")

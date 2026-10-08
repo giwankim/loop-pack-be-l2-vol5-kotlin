@@ -15,10 +15,13 @@ data class PageResponse<T>(
     val hasNext: Boolean,
 ) {
     companion object {
-        /** 조각의 위치·크기·다음 조각의 존재를 그대로 옮기고 항목만 [transform]으로 응답 DTO로 바꾼다. */
-        fun <T : Any, R> from(slice: Slice<T>, transform: (T) -> R): PageResponse<R> {
+        /**
+         * 조각의 항목·위치·크기·다음 조각의 존재를 그대로 옮긴다.
+         * 항목을 응답 DTO로 바꾸는 일은 부르는 쪽이 [Slice.map]으로 먼저 한다. 그 결과도 위치·크기·다음 조각의 존재를 지닌 조각이다.
+         */
+        fun <T : Any> from(slice: Slice<T>): PageResponse<T> {
             return PageResponse(
-                items = slice.content.map(transform),
+                items = slice.content,
                 page = slice.number,
                 size = slice.size,
                 hasNext = slice.hasNext(),

@@ -23,7 +23,7 @@ class OrderAdminApi(private val orderFinder: OrderFinder) : OrderAdminApiSpec {
         @ModelAttribute @Valid request: OrderAdminListRequest,
     ): ApiResponse<PageResponse<OrderAdminResponse>> {
         val orders = orderFinder.findAll(request)
-        return ApiResponse.success(PageResponse.from(orders, OrderAdminResponse::from))
+        return ApiResponse.success(PageResponse.from(orders.map(OrderAdminResponse::from)))
     }
 
     @GetMapping("/{orderId}")

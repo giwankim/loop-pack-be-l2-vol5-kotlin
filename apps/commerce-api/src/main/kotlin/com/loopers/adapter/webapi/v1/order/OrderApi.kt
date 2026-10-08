@@ -44,7 +44,7 @@ class OrderApi(
         @ModelAttribute @Valid request: OrderListRequest,
     ): ApiResponse<PageResponse<OrderResponse>> {
         val orders = orderFinder.findAll(userId, request)
-        return ApiResponse.success(PageResponse.from(orders, OrderResponse::from))
+        return ApiResponse.success(PageResponse.from(orders.map(OrderResponse::from)))
     }
 
     @GetMapping("/{orderId}")
