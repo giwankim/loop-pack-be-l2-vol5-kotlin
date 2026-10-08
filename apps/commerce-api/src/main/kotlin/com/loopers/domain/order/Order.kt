@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.domain.BaseEntity
 import com.loopers.domain.shared.Money
 import jakarta.persistence.AttributeOverride
 import jakarta.persistence.CascadeType
@@ -9,9 +10,6 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
-import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
@@ -19,7 +17,10 @@ import jakarta.persistence.Table
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-/** 생성 정보는 불변이다. 카탈로그의 삭제 행위를 물려받지 않는다. */
+/**
+ * 생성 정보는 불변이다. 다른 엔티티처럼 [BaseEntity]를 상속해 식별자와 생성·수정 시각을 물려받는다(ADR 0016).
+ * 생성 시각은 저장할 때 찍히고, 확정 시각은 [confirm]이 스스로 찍는다.
+ */
 @Entity
 @Table(
     name = "orders",
@@ -39,16 +40,12 @@ class Order(
     @Column(nullable = false, updatable = false)
     val userId: Long,
     products: List<OrderProduct>,
-) {
+) : BaseEntity() {
     init {
         if (products.isEmpty() || products.map { it.productId }.distinct().size != products.size) {
             throw InvalidOrderException("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")
         }
     }
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0
 
     @OneToMany(mappedBy = "order", cascade = [CascadeType.PERSIST])
     @OrderBy("productId ASC")
@@ -74,10 +71,6 @@ class Order(
 
     var confirmedAt: Instant? = null
         protected set
-
-    /** MySQL datetime(6)와 정밀도를 맞춰 저장 전의 첫 응답과 저장 후 조회가 같다. */
-    @Column(nullable = false, updatable = false)
-    val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS)
 
     /**
      * 확정할 수 있는 주문인지 본다. 확정 전 주문만 확정할 수 있다. application이 상품·재고·포인트를 보기 전에 불러,

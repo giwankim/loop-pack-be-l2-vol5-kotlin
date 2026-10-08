@@ -318,11 +318,13 @@ class OrderApiTest(
             "order_line_item.product_id->product",
         )
         assertConstraint(
-            "insert into orders (user_id, status, total_amount, created_at) values (?, 'DRAFT', 1000, now(6))",
+            "insert into orders (user_id, status, total_amount, created_at, updated_at) " +
+                "values (?, 'DRAFT', 1000, now(6), now(6))",
             Long.MAX_VALUE,
         )
-        val insertItem = "insert into order_line_item (order_id, product_id, product_name, unit_price, quantity, line_amount) " +
-            "values (?, ?, '상품', 1000, 1, 1000)"
+        val insertItem = "insert into order_line_item " +
+            "(order_id, product_id, product_name, unit_price, quantity, line_amount, created_at, updated_at) " +
+            "values (?, ?, '상품', 1000, 1, 1000, now(6), now(6))"
         assertConstraint(insertItem, Long.MAX_VALUE, id)
         assertConstraint(insertItem, orderId, Long.MAX_VALUE)
         assertConstraint(insertItem, orderId, id)
