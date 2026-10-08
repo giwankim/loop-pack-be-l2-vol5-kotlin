@@ -11,7 +11,7 @@ date: 2026-09-18
 
 애그리거트를 합치면 사용자 잔액과 여러 주문이 공유하는 상품 재고까지 Order의 변경 경계로 묶인다. 별도 트랜잭션으로 나누면 일부 차감만 성공한 중간 상태를 다루는 보상·복구 흐름이 필요하다. 이번 설계는 독립된 도메인 책임과 확정의 원자성을 함께 유지하기 위해 여러 애그리거트에 걸친 로컬 트랜잭션을 선택한다.
 
-대가는 application의 확정 유스케이스가 여러 애그리거트와 저장소를 조율한다는 점이다. Order가 Product나 PointAccount의 상태 변경 메서드를 직접 호출하지 않으며, 각 도메인은 자기 상태와 규칙을 책임진다. 기존 `domainSlicesOnlyReadEachOther` 규칙을 완화할 필요는 없다.
+대가는 application의 확정 유스케이스가 여러 애그리거트와 저장소를 조율한다는 점이다. Order가 Product나 PointAccount의 상태 변경 메서드를 직접 호출하지 않으며, 각 도메인은 자기 상태와 규칙을 책임진다. 기존 `domainSlicesOnlyReadEachOther` 규칙을 완화할 필요는 없다. 2026-10-08 [ADR 0013](./0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 조율은 각 조각의 포트를 거친다. 확정은 자기 주문만 바꾸고, 재고는 상품 조각의 `StockDeductor`가, 잔액은 포인트 조각의 `PointDeductor`가 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 한 트랜잭션으로 묶는 결정은 그대로다.
 
 ## 생성과 확정의 차이
 

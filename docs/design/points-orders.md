@@ -47,12 +47,12 @@
 - 카탈로그 설계 5.1의 단일 애그리거트 변경 원칙은 Q7과 ADR 0003에 따라 카탈로그 변경 범위로 한정했다. 주문 확정에서는 application이 여러 애그리거트를 하나의 트랜잭션으로 조율한다. `domainSlicesOnlyReadEachOther`는 domain 사이의 호출을 검사하며 application의 트랜잭션 범위를 직접 강제하지 않는다.
 - 카탈로그 설계 5.3은 재고를 `Product` 안의 값 객체로 두었고, 독립된 재고 잠금이 필요할 때 별도 엔티티를 다시 검토하도록 했다.
 - ADR 0001과 엔티티의 `@SQLRestriction`은 삭제된 상품·브랜드를 조회에서 숨긴다. Q2·Q10·Q14에 따라 OrderLineItem은 `productId`를 가지고 생성 당시 이름·단가·수량 등은 스냅샷에서 읽는다.
-- 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/interfaces/api/UserIdHeader.kt)가 누락을 401로 처리하고, [LikeService](../../apps/commerce-api/src/main/kotlin/com/loopers/application/like/LikeService.kt)가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다.
+- 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/UserIdHeader.kt)가 누락을 401로 처리하고, `LikeService`가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 `UserIdHeader`는 `adapter/webapi`로 옮겼고, 사용자의 존재는 사용자 기능의 [UserFinder](../../apps/commerce-api/src/main/kotlin/com/loopers/application/user/provided/UserFinder.kt)가 확인한다. 좋아요·포인트·주문이 이 포트를 부른다.)
 - 기존 `Stock.quantity`는 0 이상의 `Int`다. 상품 가격의 10억 원 상한은 Product만의 규칙이므로 포인트 잔액이나 주문 합계에 자동 적용하지 않는다.
 - 현재 [JacksonConfig](../../supports/jackson/src/main/kotlin/com/loopers/config/jackson/JacksonConfig.kt)는 `ACCEPT_SINGLE_VALUE_AS_ARRAY`를 켜고, 숫자 소수부·문자열의 정수 변환을 막는 명시적 설정은 두지 않았다. Q20에 따라 새 API의 요청 경계에서 엄격히 검사하고 전역 설정은 바꾸지 않는다. `Long`·`Int`와 최솟값 제약만으로 충분하다고 간주하지 않는다. (2026-10-03(#55)에 Q20을 철회했다. 새 API도 이 설정 그대로 읽는다(5.10).)
 - 기존 목록 계약은 `items/page/size/hasNext`, 0부터 시작하는 page, 기본 size 20·최대 100, 최신순의 `createdAt DESC, id DESC`다. Q19에서 주문에도 재사용하기로 했다.
 - [jpa.yml](../../modules/jpa/src/main/resources/jpa.yml)은 기본 `ddl-auto=none`, local/test는 `create`다. Q23에서 DB migration 검토를 보류했으므로 도구 도입이나 기존 DB 전환을 이번 설계의 선행 조건으로 두지 않는다. 새 FK의 실제 생성·검증에 필요한 최소 초기화는 구현 시 다룬다.
-- [ErrorType](../../apps/commerce-api/src/main/kotlin/com/loopers/support/error/ErrorType.kt)은 HTTP status와 문자열 code를 이미 분리한다. 새 업무 코드를 추가하되 기존 항목의 code는 보존한다. 실제 응답 필드 이름은 [ApiResponse](../../apps/commerce-api/src/main/kotlin/com/loopers/interfaces/api/ApiResponse.kt)의 `meta.errorCode`다.
+- [ErrorType](../../apps/commerce-api/src/main/kotlin/com/loopers/support/error/ErrorType.kt)은 HTTP status와 문자열 code를 이미 분리한다. 새 업무 코드를 추가하되 기존 항목의 code는 보존한다. 실제 응답 필드 이름은 [ApiResponse](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/ApiResponse.kt)의 `meta.errorCode`다.
 
 ## 4. 결정 트리
 
@@ -153,7 +153,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 | 주문 확정 | 요청자·소유권, 주문 상태, 상품 유효성, 재고·잔액 | Order, PointAccount, 해당 품목의 각 Product | 성공한 포인트 결제 이력 |
 | 포인트 충전 | 사용자, 충전 입력, 기존 잔액 | PointAccount | 성공한 충전 이력, 멱등성 성공 결과 |
 
-application이 각각의 저장소와 애그리거트 행동을 조율한다. Order에서 Product나 PointAccount를 직접 변경하지 않는다. 기록을 저장하는 테이블이 있다고 해서 모두 독립된 도메인 애그리거트로 분류하지 않는다. 상세 모델 초안은 7절이며 원자적 변경에 대한 결정은 ADR 0003이다.
+application이 각각의 저장소와 애그리거트 행동을 조율한다. Order에서 Product나 PointAccount를 직접 변경하지 않는다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 조율은 각 기능의 포트를 거친다. 7절 참고.) 기록을 저장하는 테이블이 있다고 해서 모두 독립된 도메인 애그리거트로 분류하지 않는다. 상세 모델 초안은 7절이며 원자적 변경에 대한 결정은 ADR 0003이다.
 
 ### 5.6 OrderLineItem의 스냅샷 — Q10
 
@@ -299,13 +299,15 @@ Content-Type: application/json
 {"meta":{"result":"FAIL","errorCode":"INSUFFICIENT_POINTS","message":"포인트가 부족합니다."}}
 ```
 
-domain의 부족 예외를 interfaces에서 구체적으로 매핑한다. 기존 `RuleViolationException`의 범용 400 매핑은 유지한다. 새 키 헤더의 누락도 의도적으로 400으로 변환해 프레임워크 예외가 범용 500으로 빠지지 않도록 한다. 사용자와 계정을 함께 준비하기로 했는데 계정만 없는 경우는 입력 오류가 아니라 내부 데이터 불일치로 처리한다.
+domain의 부족 예외를 웹 어댑터의 `ApiControllerAdvice`에서 구체적으로 매핑한다. 기존 `RuleViolationException`의 범용 400 매핑은 유지한다. 새 키 헤더의 누락도 의도적으로 400으로 변환해 프레임워크 예외가 범용 500으로 빠지지 않도록 한다. 사용자와 계정을 함께 준비하기로 했는데 계정만 없는 경우는 입력 오류가 아니라 내부 데이터 불일치로 처리한다.
 
 ## 7. 클래스와 책임 초안
 
 > 2026-09-28 `PointHistory` 행과, PointService·상태 불변식의 이력 항목을 18절에서 철회했다. 결제 결과는 Order의 확정 상태·결제액·시각만으로 나타낸다.
 >
 > 2026-10-03 HTTP 입력 DTO를 5.10과 함께 철회했다(#55). 포인트·주문 Controller도 application Request를 본문으로 바로 받는다(카탈로그 설계 5.17).
+>
+> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 절의 패키지와 확정의 조율 방식을 바꿨다. layer-first 패키지 대신 splearn의 헥사고날 구조(`adapter.webapi`, `adapter.persistence`, `application/{기능}/provided`·`required`)를 쓴다. `PointService`와 `OrderService`는 기능마다 Query Service와 Modify Service(`PointQueryService`·`PointModifyService`, `OrderQueryService`·`OrderModifyService`)로 나뉘었고, 컨트롤러와 다른 기능은 provided 포트를 부른다. 확정은 더 이상 각 domain 저장소와 행동을 직접 조율하지 않는다. `OrderModifyService.confirm`이 자기 주문만 읽고 바꾸며, 재고는 상품 기능의 `StockDeductor`로, 잔액은 포인트 기능의 `PointDeductor`로 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 별도로 커밋하지 않는다는 것은 그대로다(ADR 0003). 저장소 포트는 `required`의 Spring Data 인터페이스이고, 주문 목록만 순수 포트 `OrderListRepository`와 `adapter.persistence`의 구현으로 나뉜다. 응답 DTO는 `adapter.webapi`에 있다.
 
 기존 layer-first 패키지를 유지한다. `domain/{기능}`, `application/{기능}`, `infrastructure/{기능}`, `interfaces/api/v1/{기능}`을 사용한다. 새로운 domain Service나 전체 패키지 재배치는 필요하지 않다.
 
@@ -540,7 +542,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 - Q21의 물리 FK와 Q23의 migration 보류를 함께 만족하는 길은 연관뿐이다. `ddl-auto=create`는 연관에서만 외래 키를 만들고, 스칼라 열에 FK를 덧붙일 JPA 애노테이션은 없다. 8.2에서 본 대로 `import.sql`의 `alter table`은 반복 `create`에서 drop 순서를 깨뜨린다.
 - 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
-- `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountJpaRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
+- `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
 - 만들어진 제약은 `FK_POINT_ACCOUNT_USER`, `UK_POINT_ACCOUNT_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다.)
 - 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
 
@@ -587,7 +589,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 | 충전액 0·음수 | 400 | 범용 `Bad Request` + "충전액은 1원 이상이어야 합니다." | `PointChargeRequest`의 `@Min(1)`, Controller의 `@Valid`와 Service의 `@Validated`. domain의 `InvalidChargeAmountException`은 그 뒤에 있어 HTTP로 닿지 않는다 |
 | 충전 후 잔액 넘침 | 400 | 범용 `Bad Request` + `InvalidMoneyException`의 메시지 | `PointAccount.charge` → `Money.plus`. `RuleViolationException`의 기존 400 매핑 |
 | 같은 성공 키에 다른 충전액 | 409 | `IDEMPOTENCY_KEY_CONFLICT` | `PointService.charge` |
-| 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointService`. fixture와 데이터의 불일치(5.9, 6절 끝) |
+| 사용자는 있는데 계정이 없음 | 500 | 범용 `Internal Server Error` + "사용자의 포인트 계정이 없습니다." | `PointQueryService`·`PointModifyService`. fixture와 데이터의 불일치(5.9, 6절 끝) |
 
 6절 초안은 "금액 범위 오류"도 `INVALID_POINT_ORDER_REQUEST`로 적었다. 구현은 그 행을 둘로 나눴다. 토큰의 종류와 `Long` 범위는 HTTP가 새 code로 거절하고, 1원 이상이라는 업무 규칙은 카탈로그의 가격·재고와 같은 길(Request 제약 → 범용 400 + 규칙 메시지, 카탈로그 설계 5.18)로 거절한다. 규칙을 HTTP DTO에 한 번 더 적어 code를 맞추는 것보다 규칙이 적히는 자리를 늘리지 않는 쪽을 택했다. 9절의 흐름("HTTP에서 토큰·필수 필드·키 형식, application에서 양수·범위")과도 같다. 클라이언트가 두 400을 구별해야 하는 요구가 생기면 다시 본다.
 
@@ -599,7 +601,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 > 2026-10-08 이 선택을 거뒀다([ADR 0012](../adr/0012-tests-inherit-setup-from-abstract-base-classes.md), #84). `UserFixture`는 없어지고 테스트 기반 클래스의 `prepareUser()`·`prepareUserWithoutAccount()`가 사용자와 0원 계정을 저장한다.
 
-- `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiTest`가 `count(*)`로 확인).
+- 포인트 기능의 두 포트(`PointAccountFinder`, `PointCharger`)는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointAccountFinderTest`, `PointChargerTest`, `PointApiTest`가 `count(*)`로 확인).
 - 좋아요 테스트는 계정 없이 `userRepository.save(User())`로 사용자를 만든다. 포인트를 쓰지 않는 자리라 그대로 두었다. 주문 확정(#14)이 좋아요와 포인트를 함께 쓰는 테스트를 만들면 그때 `UserFixture`로 모은다.
 
 ### 12.6 이력의 범위
@@ -709,7 +711,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 목록의 항목은 상세와 같은 `OrderResponse`다. 봉투는 다른 목록과 같은 `PageResponse`이고 총 개수는 주지 않는다(카탈로그 설계 5.5). 입력은 `OrderListRequest`로 바로 받으며 `page`·`size`의 범위와 메시지는 `LikeListRequest`와 같다(5.17, 5.18, 5.22). 정렬 기준은 받지 않는다. 주문 목록의 차례는 하나뿐이다(설계 6).
 - 차례는 `createdAt` 내림차순, 같으면 `id` 내림차순이다. 필터가 사용자 하나고 차례가 주문의 컬럼 둘이라 QueryDSL이 아니라 메서드 이름으로 짠 파생 쿼리다. 상품 목록이 QueryDSL을 쓰는 까닭(브랜드 필터와 세 정렬 기준)이 여기에는 없다(카탈로그 설계 5.32). `Order`에 이미 있는 `idx_orders_user_created`가 이 차례 그대로다.
-- `Slice`의 위치·크기·`hasNext`를 `PageSlice`로 옮기는 두 줄이 `ProductRepositoryImpl`에도 똑같이 있었다. 옮기는 규칙이 하나이므로 자리도 하나여야 해서 `infrastructure/shared`의 `Slice<T>.toPageSlice()`로 모았다. domain이 아니라 infrastructure인 까닭은 `Slice`가 Spring Data의 타입이고 domain은 그것을 모르기 때문이다. `PageRequest`에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리 이름의 것을 덮는다.
+- `Slice`의 위치·크기·`hasNext`를 `PageSlice`로 옮기는 두 줄이 `ProductRepositoryImpl`에도 똑같이 있었다. 옮기는 규칙이 하나이므로 자리도 하나여야 해서 `infrastructure/shared`의 `Slice<T>.toPageSlice()`로 모았다. domain이 아니라 infrastructure인 까닭은 `Slice`가 Spring Data의 타입이고 domain은 그것을 모르기 때문이다. `PageRequest`에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리 이름의 것을 덮는다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): `PageSlice`와 `toPageSlice`는 #81에서 없어졌고 `infrastructure/shared`는 `adapter/persistence/shared`가 되었다. 거기 남은 `fetchSlice`(16.1)가 Spring Data의 `Slice`를 돌려준다.)
 
 ### 14.1 조각은 주문만 센다
 
@@ -719,9 +721,9 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 품목은 읽기 트랜잭션 안에서 뒤따라 읽는다. 주문마다 조회가 붙지 않는 것은 `jpa.yml`의 `default_batch_fetch_size: 100`이 아직 읽지 않은 컬렉션을 `in` 하나로 모아 읽어 주기 때문이고, 그 값이 `MAX_SIZE`와 같아 어떤 조각이든 품목 조회는 한 번이다. 저장소가 스스로 두 번째 쿼리를 적는 길도 있지만, 이미 모든 애그리거트에 걸린 설정이 하는 일을 한 곳에서만 다시 적는 셈이 된다.
 
-전역 설정에 기대는 약속이므로 조회 횟수로 붙들어 둔다. `OrderServiceTest`의 `a slice filled to the maximum size still reads its items in one query`가 `MAX_SIZE`만큼 채운 조각에서 요청자 확인 하나, 주문 루트 하나, 품목 하나를 센다. 크기를 상한까지 올리는 까닭은 품목 조회가 하나로 끝나는 근거가 `default_batch_fetch_size`와 `MAX_SIZE`가 같다는 것이기 때문이다. 두 값은 Gradle 모듈이 다르고 한쪽은 YAML이라 서로를 모르므로, 기본 크기로만 확인하면 그 경계를 넘겨보지 않은 채 약속만 적어 두는 셈이 된다. 어느 쪽이 바뀌어도 이 테스트가 먼저 말한다. 좋아요 목록이 조회 셋을 세는 것과 같은 자리다(카탈로그 설계 5.28, 5.29).
+전역 설정에 기대는 약속이므로 조회 횟수로 붙들어 둔다. `OrderFinderTest`의 `a slice filled to the maximum size still reads its items in one query`가 `MAX_SIZE`만큼 채운 조각에서 요청자 확인 하나, 주문 루트 하나, 품목 하나를 센다. 크기를 상한까지 올리는 까닭은 품목 조회가 하나로 끝나는 근거가 `default_batch_fetch_size`와 `MAX_SIZE`가 같다는 것이기 때문이다. 두 값은 Gradle 모듈이 다르고 한쪽은 YAML이라 서로를 모르므로, 기본 크기로만 확인하면 그 경계를 넘겨보지 않은 채 약속만 적어 두는 셈이 된다. 어느 쪽이 바뀌어도 이 테스트가 먼저 말한다. 좋아요 목록이 조회 셋을 세는 것과 같은 자리다(카탈로그 설계 5.28, 5.29).
 
-`open-in-view`가 꺼져 있으므로 옮기는 일은 `OrderService.findAll`의 읽기 트랜잭션 안에서 끝나야 한다. `PageSlice.map`이 그 일을 맡는 까닭이 이것이고, 상품 목록이 `ProductInfoAssembler`에 맡기는 것과 같은 이유다.
+`open-in-view`가 꺼져 있으므로 옮기는 일은 `OrderQueryService.findAll`의 읽기 트랜잭션 안에서 끝나야 한다. `Slice.map`이 그 일을 맡는 까닭이 이것이고, 상품 목록이 `ProductInfoAssembler`에 맡기는 것과 같은 이유다.
 
 > 품목을 읽는 방법은 #16에서 바뀌었다. 지연 로딩과 `default_batch_fetch_size`에 기대는 대신 저장소가 품목을 fetch join하는 두 번째 쿼리를 직접 적는다. 조각의 상한과 배치 크기가 어긋날 수 있다는 결합을 없애기 위해서다. 이 절의 나머지(조각은 주문만 센다, `limit`을 fetch join에 걸 수 없다, 조회 횟수로 붙들어 둔다)는 그대로다. 16.1에 옮긴 까닭을 적었다.
 
@@ -730,7 +732,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | 자리 | 확인하는 것 |
 | --- | --- |
 | `OrderRepositoryTest` (새 파일, `@DataJpaTest`) | 요청자의 주문만 오르는지, 최신순과 `id` 동률 깨기, 품목이 여럿인 주문으로 쪽을 넘겨도 주문이 겹치거나 빠지지 않고 품목이 잘리지 않는지, 빈 쪽 |
-| `OrderServiceTest` (새 파일) | 기본 `page`·`size`가 조각까지 닿는지, 저장된 품목이 항목에 실리는지, 없는 사용자 401, 범위 밖 입력의 제약 메시지, 상한까지 채운 조각의 조회 세 번 |
+| `OrderFinderTest` (새 파일) | 기본 `page`·`size`가 조각까지 닿는지, 저장된 품목이 항목에 실리는지, 없는 사용자 401, 범위 밖 입력의 제약 메시지, 상한까지 채운 조각의 조회 세 번 |
 | `OrderApiTest` | 공개 계약. 목록 항목이 상세 응답과 글자까지 같은지, 타인의 주문이 빠지는지, `DRAFT`·`CONFIRMED`의 결제 필드, 봉투의 기본값, 쿼리 문자열이 조각에 닿는지, 범위 밖 400, 요청자 없음 401, 빈 목록 |
 
 - 품목의 차례를 보는 곳에서는 품목을 상품 ID의 거꾸로 넣는다. 넣은 차례가 이미 상품 ID 차례이면 응답이 그대로여도 차례를 확인한 것이 아니다.
@@ -745,6 +747,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 > 2026-09-28 확정·생성·충전의 성공 재생을 17절에서 철회했다. 재확정은 `Order.validateConfirmable`이 먼저 거절한다(17.2).
 >
 > 2026-09-28 PAYMENT 이력, `uk_point_history_order_id`, 이력 저장 경계에 넣던 늦은 실패를 18절에서 철회했다. 늦은 실패는 커밋의 마지막 UPDATE에 넣는다(18.2).
+>
+> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 확정이 다른 애그리거트를 바꾸는 길이 바뀌었다. `OrderService.confirm`이 `Product.deductStock`과 `PointAccount.pay`를 직접 부르던 것을, 이제 `OrderModifyService.confirm`이 상품 기능의 `StockDeductor`와 포인트 기능의 `PointDeductor`로 부른다. `PointService`를 호출하지 않는다는 부분은 뒤집혔다. 다만 `PointDeductor`는 트랜잭션을 새로 열지 않고 확정의 트랜잭션에 참여하므로, 다른 트랜잭션에서 결제하지 않는다는 것과 실패가 주문·재고·잔액을 모두 되돌린다는 것은 그대로다(ADR 0003). 판매 가능 확인을 차감보다 먼저 한 번에 끝내는 차례도 그대로다. 아래의 `OrderService.create`는 지금의 `OrderModifyService.create`(`OrderCreator`)다.
 
 
 `POST /api/v1/orders/{orderId}/confirm`은 요청자·소유권을 확인하고 저장된 CONFIRMED 결과를 200으로 반환한다. 별도 키나 본문이 필요하지 않다. 이미 확정된 주문이면 현재 상품·브랜드·재고·잔액을 읽기 전에 결과를 재생한다.
@@ -776,10 +780,10 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 | 합친 것 | #15 | 지금 |
 | --- | --- | --- |
-| 저장소 조회 | `findAllByUserId(userId, page, size)` 파생 쿼리 | `findAll(userId?, page, size)` QueryDSL 하나 |
+| 저장소 조회 | `findAllByUserId(userId, page, size)` 파생 쿼리 | `OrderListRepository.findAll(userId?, pageable)` QueryDSL 하나 |
 | 차례가 적히는 자리 | `…OrderByCreatedAtDescIdDesc` 메서드 이름 | `orderBy(createdAt.desc(), id.desc())` |
 | 품목을 읽는 방법 | 지연 로딩 + `default_batch_fetch_size` | 품목을 fetch join하는 두 번째 쿼리 |
-| 조각을 만드는 세 줄 | `ProductRepositoryImpl`과 각자 | `infrastructure/shared`의 `fetchSlice` 하나 |
+| 조각을 만드는 세 줄 | `ProductRepositoryImpl`과 각자 | `adapter/persistence/shared`의 `fetchSlice` 하나 |
 
 품목을 명시적으로 읽는 쪽으로 바꾼 까닭은 14.1이 스스로 적어 둔 약점이다. 품목 조회가 하나로 끝나는 근거가 `jpa.yml`의 `default_batch_fetch_size: 100`과 `MAX_SIZE`가 같다는 것이었고, 두 값은 Gradle 모듈이 다르고 한쪽은 YAML이라 서로를 모른다. 그래서 경계를 넘겨보는 테스트가 필요했다. 명시적인 쿼리는 그 결합을 없앤다. 조각의 크기가 무엇이든, 전역 설정이 무엇이든 품목 조회는 하나다. 14.1이 "이미 모든 애그리거트에 걸린 설정이 하는 일을 다시 적는 셈"이라고 본 대가는 여전히 치르지만, 조각의 상한과 배치 크기가 어긋날 수 있다는 위험보다 작다고 보았다. 상한까지 채운 조각을 세는 #15의 테스트는 그대로 두었다. 이제는 근거가 바뀌어 경계에서도 하나임을 확인하는 테스트다.
 
@@ -787,11 +791,13 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 두 번째 조회의 반환은 버린다. 쓰는 것은 컬렉션이 채워지는 일뿐이다. 그래서 `distinct`를 걸지 않는다. fetch join은 품목 열까지 select에 실어 행이 품목 수만큼 늘고 주문이 여러 번 실려 오지만, 목록을 버리므로 루트의 중복이 문제가 되지 않는다. 컬렉션 안의 품목은 Hibernate가 행을 처리하며 채우므로 중복되지 않으며, 품목 셋인 주문의 품목 수를 세는 테스트가 그것을 붙들어 둔다.
 
-조각을 만드는 세 줄(`offset(page * size)`, `limit(size + 1)`, `hasNext = rows.size > size`)은 `ProductRepositoryImpl.findAll`과 글자까지 같았다. `size + 1`을 읽어 다음 조각의 존재를 정한다는 규칙은 `PageSlice`의 KDoc 한 자리에 적혀 있는데 구현은 두 자리에 있었던 것이다. #15가 `Slice`를 옮기는 두 줄을 `infrastructure/shared`로 모았으므로, QueryDSL 쪽도 같은 파일의 `JPAQuery<T>.fetchSlice(page, size)`로 모았다. 상품 목록과 주문 목록이 그 하나를 쓴다.
+조각을 만드는 세 줄(`offset(page * size)`, `limit(size + 1)`, `hasNext = rows.size > size`)은 `ProductRepositoryImpl.findAll`과 글자까지 같았다. `size + 1`을 읽어 다음 조각의 존재를 정한다는 규칙은 `PageSlice`의 KDoc 한 자리에 적혀 있는데 구현은 두 자리에 있었던 것이다. #15가 `Slice`를 옮기는 두 줄을 `infrastructure/shared`로 모았으므로, QueryDSL 쪽도 같은 파일의 `JPAQuery<T>.fetchSlice(page, size)`로 모았다. 상품 목록과 주문 목록이 그 하나를 쓴다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 그 파일은 `adapter/persistence/shared/Slices.kt`이고, #81 뒤로는 `fetchSlice(pageable)`이 Spring Data의 `Slice`를 돌려준다.)
 
 `QOrder.lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order.lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
 
 ### 16.2 저장소와 application의 자리
+
+> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 아래 표의 자리가 바뀌었다. 목록 `findAll(userId, pageable)`은 Spring Data 포트 `OrderRepository`가 아니라 순수 포트 `OrderListRepository`(`application/order/required`)에 있고, `adapter.persistence`의 `QuerydslOrderListRepository`가 구현한다. `findAll(OrderAdminListRequest)`와 `findForAdmin(orderId)`는 `OrderService`가 아니라 provided 포트 `OrderFinder`에 있고 `OrderQueryService`가 구현한다. `OrderInfo`는 `application/order/provided`에 있다. 끝 문단이 적은 "`application/order`가 `application/product`를 참조하지 않는 것"은 더는 사실이 아니다. 주문 기능은 생성과 확정에서 상품 기능의 `ProductFinder`와 `StockDeductor`를 부른다. 페이지 상수를 주문 기능 안에서만 나눠 갖는 선택은 그대로다.
 
 | 더한 것 | 자리 | 까닭 |
 | --- | --- | --- |
@@ -816,12 +822,12 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | 자리 | 붙들어 두는 것 |
 | --- | --- |
 | `OrderRepositoryTest` | 최신순과 id 동률, 사용자 필터, `offset`·`hasNext`, 빈 조각, 끝을 넘긴 쪽. 품목이 많은 주문이 조각을 밀어내지 않는 것. 거를 사용자가 없는 조각 |
-| `OrderServiceTest` | 내 목록의 조회 셋과 관리자 목록의 조회 둘, 품목 누락 없음, 상한까지 채운 조각, 컨트롤러를 거치지 않는 호출의 페이지 범위 거절, 없는 사용자 401과 없는 주문 `ORDER_NOT_FOUND` |
+| `OrderFinderTest` | 내 목록의 조회 셋과 관리자 목록의 조회 둘, 품목 누락 없음, 상한까지 채운 조각, 컨트롤러를 거치지 않는 호출의 페이지 범위 거절, 없는 사용자 401과 없는 주문 `ORDER_NOT_FOUND` |
 | `OrderAdminApiTest` | 관리자 경계의 403, 응답 봉투와 필드, userId 필터와 거른 조각의 쪽 넘김, 목록 항목과 상세의 동일성, DRAFT의 생략과 CONFIRMED의 저장 값, 카탈로그 수정·삭제 후의 스냅샷 |
 
 조회 횟수가 둘과 셋으로 갈리는 것이 두 목록의 차이를 그대로 보여 준다. 내 목록은 요청자가 있는지 먼저 묻고(없으면 401) 관리자 목록은 묻지 않는다. 자격은 관리자 경계가 이미 보았고 거를 사용자는 선택 입력이다.
 
-품목이 조각에 실려 오는지는 쿼리 수가 아니라 `entityManager.clear()` 뒤에 품목을 읽어 확인한다. `default_batch_fetch_size`가 지연 로딩을 모아 주므로 쿼리 수만 세면 fetch join이 없어도 통과한다. 반대로 `OrderServiceTest`의 쿼리 수 둘은 총 개수를 세는 쿼리가 끼어드는 회귀를 붙들어 둔다(카탈로그 설계 5.5).
+품목이 조각에 실려 오는지는 쿼리 수가 아니라 `entityManager.clear()` 뒤에 품목을 읽어 확인한다. `default_batch_fetch_size`가 지연 로딩을 모아 주므로 쿼리 수만 세면 fetch join이 없어도 통과한다. 반대로 `OrderFinderTest`의 쿼리 수 둘은 총 개수를 세는 쿼리가 끼어드는 회귀를 붙들어 둔다(카탈로그 설계 5.5).
 
 차례를 보는 테스트는 둘이 필요하다. 준비가 주문을 차례로 만들면 id 차례와 생성 시각 차례가 늘 같아, 시각이 첫 기준이라는 것이 아무 테스트에도 걸리지 않는다. `orderBy`에서 시각을 지워도 통과하는 상태였다. 그래서 나중에 받은 식별자의 시각을 앞으로 돌려 두 차례가 어긋나게 하는 경우를 더했고, 시각을 지운 구현으로 실제로 실패하는 것을 확인했다. 시각이 같을 때 id가 동률을 깨는 것은 모든 행의 시각을 맞춘 다른 경우가 본다. `size` 상한도 거절하는 쪽만 보면 `@Max`를 좁혀도 통과하므로, 상한이 포함이라는 것을 받아들이는 쪽에서 함께 본다.
 

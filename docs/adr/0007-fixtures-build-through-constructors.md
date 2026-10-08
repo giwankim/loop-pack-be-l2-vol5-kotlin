@@ -34,6 +34,7 @@ date: 2026-09-30
 
 - `Instancio.gen()`은 6.1.0에서도 `@ExperimentalApi`다. API가 바뀌면 fixture 파일의 생성기만 고친다. 테스트는 Instancio를 직접 부르지 않는다.
 - domain 테스트 패키지의 fixture 파일이 application의 Request를 import한다. `LayeredArchitectureTest`는 `ImportOption.DoNotIncludeTests`로 테스트를 보지 않으므로 규칙 위반이 되지 않는다. 테스트 코드를 ArchUnit 검사에 넣으려면 이 결정부터 다시 본다.
+  - 2026-10-08 [ADR 0013](./0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 테스트는 `HexagonalArchitectureTest`가 되었다. 테스트 코드를 보지 않는 설정은 그대로다.
 - 실패한 seed는 Gradle 콘솔에 나오지 않는다. 명령줄에서 돌렸다면 HTML 보고서에서 찾는다. 실패한 테스트 페이지의 data 탭에 seed가, 첫 페이지의 표준 출력 탭에 `@Seed(…)` 요약이 있다.
 - 기본값이 경계를 피하므로 무작위 값이 드러내는 것은 단언하는 값을 넘기지 않은 테스트다. 경계에서만 드러나는 결함은 경계를 직접 넘기는 테스트가 지킨다.
 

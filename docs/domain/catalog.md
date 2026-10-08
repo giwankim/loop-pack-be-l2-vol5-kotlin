@@ -2,9 +2,9 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 이 문서는 각 개념이 무엇을 가지고, 무엇을 지키고, 무엇을 할 수 있는지를 적는다. 구조와 API는 [`docs/design/catalog.md`](../design/catalog.md)에 있다.
 
-표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 인터페이스 계층이 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
+표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
-이름 규칙: application 계층의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`, `ProductService`, `LikeService`). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockDeductor`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ## 브랜드 (Brand)
 
@@ -35,10 +35,10 @@
 
 ### 협력
 
-- 등록: `BrandService.register` → `Brand(name)`(공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
-- 수정: `BrandService.update` → 삭제되지 않은 브랜드 조회 → 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
-- 목록: `BrandService.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
-- 삭제: `BrandService.delete` → 삭제되지 않은 브랜드 조회 → `ProductRepository.existsByBrandId`로 남은 상품이 있는지 조회 → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
+- 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `brand.name`으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
+- 수정: `BrandRegister.update` → 삭제되지 않은 브랜드 조회 → 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
+- 목록: `BrandFinder.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
+- 삭제: `BrandRegister.delete` → 삭제되지 않은 브랜드 조회 → `ActiveProductChecker.hasActiveProducts`로 남은 상품이 있는지 조회(상품의 `ProductFinder`가 `ProductRepository.existsByBrandId`로 답한다) → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
 
 ## 상품 (Product)
 
@@ -74,12 +74,12 @@
 | `isSoldOut()` | 재고가 0이면 참. `stock.isEmpty()`에 맡긴다 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 `OrderService.confirm`이 `deductStock`을 다른 재고·포인트·주문 변경과 같은 트랜잭션에서 부른다(ADR 0003).
+주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003).
 
 ### 협력
 
-- 관리자 재고 변경: `ProductService.updateStock` → 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
-- 고객 상세: `ProductService.find` → 삭제되지 않은 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo`. `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
+- 관리자 재고 변경: `ProductRegister.updateStock` → 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
+- 고객 상세: `ProductFinder.find` → 삭제되지 않은 상품 조회(브랜드 포함) → 좋아요 수 조회 → `ProductInfo`. `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 ## 재고 (Stock)
 
@@ -163,21 +163,21 @@ DB 유일 제약: `(user_id, product_id)`.
 
 | 유스케이스 | 흐름 |
 | --- | --- |
-| `LikeService.like(userId, productId)` | 요청자(사용자) 존재 확인 → 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
-| `LikeService.unlike(userId, productId)` | 요청자 존재 확인 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
-| `LikeService.findLikedProducts(userId, request)` | 요청자 존재 확인 → 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
+| `Liker.like(userId, productId)` | 요청자(사용자) 존재 확인 → 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
+| `Liker.unlike(userId, productId)` | 요청자 존재 확인 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
+| `LikeFinder.findLikedProducts(userId, request)` | 요청자 존재 확인 → 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
 
 ### 저장 약속
 
 `LikeRepository`: `save`, `existsByUserIdAndProductId`, `findByUserIdAndProductId`, `delete`(행 삭제), `countByProductId`, `countByProductIds`(식별자마다 개수, 없는 상품은 0).
 
-좋아요 목록은 `LikeRepository`가 아니라 `ProductRepository.findAllLikedBy(userId, page, size)`가 돌려준다. 돌려주는 것이 상품이고, 삭제된 상품을 조회가 걸러야 조각의 크기와 `hasNext`가 남은 상품만 세기 때문이다(설계 5.29).
+좋아요 목록은 `LikeRepository`가 아니라 상품의 `ProductRepository.findAllLikedBy(userId, pageable)`가 돌려주고, `LikeFinder`는 그것을 `ProductFinder.findAllLikedBy`로 받는다. 돌려주는 것이 상품이고, 삭제된 상품을 조회가 걸러야 조각의 크기와 `hasNext`가 남은 상품만 세기 때문이다(설계 5.29).
 
 ### 협력
 
-- 상품 상세·수정·재고 변경: `ProductService`가 상품을 읽은 뒤 `countByProductId`로 좋아요 수를 세어 `ProductInfo`에 싣는다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
+- 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. `LikeFinder`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
 - 상품 목록: 조각의 상품 식별자 목록에 대해 `countByProductIds` 한 번으로 센다. 항목마다 세지 않는다(설계 5.28).
-- 내 좋아요 목록: `LikeService`가 `ProductRepository.findAllLikedBy`로 상품 조각을 받고, 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
+- 내 좋아요 목록: `LikeFinder`가 `ProductFinder.findAllLikedBy`로 상품 조각을 받는다. `ProductFinder`가 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자
 
@@ -193,8 +193,8 @@ DB 유일 제약: `(user_id, product_id)`.
 
 ### 규칙
 
-- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 헤더의 존재는 interfaces(`UserIdHeader`)가, 사용자의 존재는 application(`LikeService`)이 본다(설계 5.27).
-- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 interfaces(`UserIdHeader.requireSelf`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없으면 견줄 요청자가 없으므로 401이 먼저다.
+- 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 헤더의 존재는 adapter.webapi(`UserIdHeader`)가, 사용자의 존재는 application(`UserFinder`)이 본다(설계 5.27).
+- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 adapter.webapi(`UserIdHeader.requireSelf`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없으면 견줄 요청자가 없으므로 401이 먼저다.
 - 브랜드·상품 조회는 요청자가 없어도 된다.
 
 ## 상품 목록 정렬 (ProductSort)
