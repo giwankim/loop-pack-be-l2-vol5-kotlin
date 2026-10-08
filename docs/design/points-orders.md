@@ -597,6 +597,8 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 **선택: 테스트 컴포넌트 `com.loopers.domain.user.UserFixture`(src/test, `UserFixtures.kt`)가 `registerUser()`로 사용자와 0원 계정을 함께 만든다.** 운영 코드에는 사용자를 만드는 API도 계정을 만드는 자리도 없다(Q17).
 
+> 2026-10-08 이 선택을 거뒀다([ADR 0012](../adr/0012-tests-inherit-setup-from-abstract-base-classes.md), #84). `UserFixture`는 없어지고 테스트 기반 클래스의 `prepareUser()`·`prepareUserWithoutAccount()`가 사용자와 0원 계정을 저장한다.
+
 - `PointService`는 계정이 없으면 `POINT_ACCOUNT_MISSING`(500)이다. 조회·충전 어느 쪽도 계정을 만들지 않는다(`PointServiceTest`, `PointApiMockMvcTest`가 `count(*)`로 확인).
 - 좋아요 테스트는 계정 없이 `userRepository.save(User())`로 사용자를 만든다. 포인트를 쓰지 않는 자리라 그대로 두었다. 주문 확정(#14)이 좋아요와 포인트를 함께 쓰는 테스트를 만들면 그때 `UserFixture`로 모은다.
 
@@ -896,7 +898,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q35 | 같은 주문의 동시 확정 | 새 보호를 두지 않는다. 유일 제약이 뒤진 확정을 커밋에서 500으로 되돌리던 것이 사라지고, 3주차 잠금 과제가 주문의 상태 검사와 확정을 직접 보호한다(18.2). `Order`의 `@Version`이나 조건부 갱신은 3주차의 선택을 앞당기므로 지금 들이지 않는다. 유일 제약만을 위한 최소 결제 기록은 이력의 다른 이름이라 고르지 않았다. |
 | Q36 | 기록 방식 | 17절과 같다. 이 절을 덧붙이고 철회한 행과 절에 한 줄 표시를 단다. 도메인 문서와 CONTEXT.md는 지금 모습으로 고치고 ADR 0003에는 범위 메모를 단다. [카탈로그 설계](./catalog.md)에서 저장소 구현 수를 세던 결정에도 한 줄 표시를 단다. |
 | Q37 | 기술 글 | `docs/blog`의 글은 이번에 고치지 않는다. 이력을 예로 든 두 논지(루트 중심 저장소의 예외, 같은 트랜잭션 안의 도메인 이벤트)를 다시 쓰는 일은 17절로 낡은 곳과 함께 따로 한다. |
-| Q38 | 늦은 실패 테스트의 자리 | 충전의 늦은 실패 테스트는 지운다. 충전은 `point_account` 한 행만 바꿔 함께 되돌릴 쓰기가 없다. 커밋되는지만 보는 테스트는 남긴다. 확정의 늦은 실패는 커밋의 마지막 UPDATE를 임시 CHECK로 거절한다(18.2). `@SpykBean`과 커밋 전 콜백은 스위트에 없는 장치라 대안으로만 두고, 테스트를 위해 main에 `save` 호출을 더하지 않는다. |
+| Q38 | 늦은 실패 테스트의 자리 | 충전의 늦은 실패 테스트는 지운다. 충전은 `point_account` 한 행만 바꿔 함께 되돌릴 쓰기가 없다. 커밋되는지만 보는 테스트는 남긴다. 확정의 늦은 실패는 커밋의 마지막 UPDATE를 임시 CHECK로 거절한다(18.2). `@SpykBean`과 커밋 전 콜백은 스위트에 없는 장치라 대안으로만 두고, 테스트를 위해 main에 `save` 호출을 더하지 않는다. **커밋만 보는 테스트는 ADR 0012에서 지웠다(#84).** |
 | Q39 | `PointAccount`의 모양 | `charge(amount)`와 `pay(amount)`는 아무것도 돌려주지 않고 `pay`는 주문을 받지 않는다. `domain.point`가 `domain.order`를 들여오지 않게 된다. 결제액과 주문을 잇는 것은 `Order`의 CHECK(`paid_amount = total_amount`)다. |
 | Q40 | ADR과 다시 들이는 조건 | ADR 0006. 고객의 충전·사용 내역 조회, 관리자 감사, 환불·취소처럼 원장이 필요한 흐름이 생기면 다시 연다. 그때는 잔액과 이력을 함께 둘지, 이력을 잔액의 원천으로 삼을지부터 고른다. ADR 0003은 대체하지 않고 범위 메모만 단다. |
 | Q41 | 충전의 흔적 | 받아들인다. 충전은 잔액 말고 흔적을 남기지 않는다. 결제는 확정된 주문으로 답할 수 있지만 누가 언제 얼마를 충전했는지는 답할 수 없고, 이력을 다시 들여도 그 사이의 충전은 되살아나지 않는다. 운영 데이터는 없다. local/test가 `ddl-auto=create`이고 migration 도구가 없어 지금 지우는 비용이 없다(Q23, Q27). |
