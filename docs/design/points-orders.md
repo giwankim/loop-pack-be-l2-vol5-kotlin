@@ -308,6 +308,8 @@ domain의 부족 예외를 웹 어댑터의 `ApiControllerAdvice`에서 구체�
 > 2026-10-03 HTTP 입력 DTO를 5.10과 함께 철회했다(#55). 포인트·주문 Controller도 application Request를 본문으로 바로 받는다(카탈로그 설계 5.17).
 >
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 절의 패키지와 확정의 조율 방식을 바꿨다. layer-first 패키지 대신 splearn의 헥사고날 구조(`adapter.webapi`, `adapter.persistence`, `application/{기능}/provided`·`required`)를 쓴다. `PointService`와 `OrderService`는 기능마다 Query Service와 Modify Service(`PointQueryService`·`PointModifyService`, `OrderQueryService`·`OrderModifyService`)로 나뉘었고, 컨트롤러와 다른 기능은 provided 포트를 부른다. 확정은 더 이상 각 domain 저장소와 행동을 직접 조율하지 않는다. `OrderModifyService.confirm`이 자기 주문만 읽고 바꾸며, 재고는 상품 기능의 `StockDeductor`로, 잔액은 포인트 기능의 `PointDeductor`로 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 별도로 커밋하지 않는다는 것은 그대로다(ADR 0003). 저장소 포트는 `required`의 Spring Data 인터페이스이고, 주문 목록만 순수 포트 `OrderListRepository`와 `adapter.persistence`의 구현으로 나뉜다. 응답 DTO는 `adapter.webapi`에 있다.
+>
+> 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 아래 표의 "조회 application" 줄이 바뀌었다. 조회는 엔티티를 HTTP까지 내준다. 주문의 Finder와 쓰기 포트는 품목을 엔티티 그래프로 함께 읽은 `Order`를, 포인트의 Finder와 충전은 `PointAccount`를 돌려주고, 응답 DTO가 엔티티에서 옮긴다. `OrderInfo`와 `PointAccountInfo`는 없다. 트랜잭션 밖에서 지연 로딩할 것이 남지 않는다는 것은 그대로다. 애그리거트 안의 연관을 조회가 함께 읽기 때문이다.
 
 기존 layer-first 패키지를 유지한다. `domain/{기능}`, `application/{기능}`, `infrastructure/{기능}`, `interfaces/api/v1/{기능}`을 사용한다. 새로운 domain Service나 전체 패키지 재배치는 필요하지 않다.
 
@@ -802,6 +804,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 ### 16.2 저장소와 application의 자리
 
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 아래 표의 자리가 바뀌었다. 목록 `findAll(userId, pageable)`은 Spring Data 포트 `OrderRepository`가 아니라 순수 포트 `OrderListRepository`(`application/order/required`)에 있고, `adapter.persistence`의 `QuerydslOrderListRepository`가 구현한다. `findAll(OrderAdminListRequest)`와 `findForAdmin(orderId)`는 `OrderService`가 아니라 provided 포트 `OrderFinder`에 있고 `OrderQueryService`가 구현한다. `OrderInfo`는 `application/order/provided`에 있다. 끝 문단이 적은 "`application/order`가 `application/product`를 참조하지 않는 것"은 더는 사실이 아니다. 주문 기능은 생성과 확정에서 상품 기능의 `ProductFinder`와 `StockDeductor`를 부른다. 페이지 상수를 주문 기능 안에서만 나눠 갖는 선택은 그대로다.
+>
+> 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `OrderInfo`가 없어졌다. 두 응답은 같은 `Order` 엔티티를 읽어 각자 내보낼 필드를 고르고, `userId`는 `Order.userId`에서 온다. 단건 조회는 품목을 엔티티 그래프로 함께 읽는 `findWithLineItemsById`, `findWithLineItemsByIdAndUserId`로 이름이 바뀌었다. 소유자를 묻는 쪽과 묻지 않는 쪽이 이름에 남는다는 까닭은 그대로다.
 
 | 더한 것 | 자리 | 까닭 |
 | --- | --- | --- |
