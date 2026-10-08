@@ -20,9 +20,8 @@ class ProductApi(
     override fun getProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductResponse> {
-        return productFinder.findInfo(productId)
-            .let { ProductResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val product = productFinder.findInfo(productId)
+        return ApiResponse.success(ProductResponse.from(product))
     }
 
     /** 쿼리 문자열을 [ProductListRequest]로 바로 받는다. 까닭은 관리자 목록과 같다(설계 5.17). */
@@ -30,8 +29,7 @@ class ProductApi(
     override fun getProducts(
         @ModelAttribute @Valid request: ProductListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
-        return productFinder.findAll(request)
-            .let { PageResponse.from(it, ProductResponse::from) }
-            .let { ApiResponse.success(it) }
+        val products = productFinder.findAll(request)
+        return ApiResponse.success(PageResponse.from(products, ProductResponse::from))
     }
 }

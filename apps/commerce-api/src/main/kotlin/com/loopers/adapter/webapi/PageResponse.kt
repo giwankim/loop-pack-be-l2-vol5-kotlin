@@ -16,12 +16,13 @@ data class PageResponse<T>(
 ) {
     companion object {
         /** 조각의 위치·크기·다음 조각의 존재를 그대로 옮기고 항목만 [transform]으로 응답 DTO로 바꾼다. */
-        fun <T : Any, R> from(slice: Slice<T>, transform: (T) -> R): PageResponse<R> =
-            PageResponse(
+        fun <T : Any, R> from(slice: Slice<T>, transform: (T) -> R): PageResponse<R> {
+            return PageResponse(
                 items = slice.content.map(transform),
                 page = slice.number,
                 size = slice.size,
                 hasNext = slice.hasNext(),
             )
+        }
     }
 }

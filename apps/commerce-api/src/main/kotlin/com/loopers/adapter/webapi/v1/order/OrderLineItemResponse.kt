@@ -17,12 +17,14 @@ data class OrderLineItemResponse(
     val lineAmount: Long,
 ) {
     companion object {
-        fun from(item: OrderLineItem): OrderLineItemResponse = OrderLineItemResponse(
-            productId = item.productId,
-            productName = item.productName,
-            unitPrice = item.unitPrice.amount,
-            quantity = item.quantity,
-            lineAmount = item.lineAmount.amount,
-        )
+        fun from(item: OrderLineItem): OrderLineItemResponse {
+            return OrderLineItemResponse(
+                productId = item.productId,
+                productName = item.productName,
+                unitPrice = item.unitPrice.amount,
+                quantity = item.quantity,
+                lineAmount = item.lineAmount.amount,
+            )
+        }
     }
 }

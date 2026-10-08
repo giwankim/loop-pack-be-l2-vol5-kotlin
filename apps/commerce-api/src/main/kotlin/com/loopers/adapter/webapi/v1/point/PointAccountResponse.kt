@@ -10,6 +10,8 @@ data class PointAccountResponse(
     val balance: Long,
 ) {
     companion object {
-        fun from(account: PointAccount): PointAccountResponse = PointAccountResponse(balance = account.balance.amount)
+        fun from(account: PointAccount): PointAccountResponse {
+            return PointAccountResponse(balance = account.balance.amount)
+        }
     }
 }

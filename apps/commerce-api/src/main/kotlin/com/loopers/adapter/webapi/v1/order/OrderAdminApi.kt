@@ -21,12 +21,16 @@ class OrderAdminApi(private val orderFinder: OrderFinder) : OrderAdminApiSpec {
     @GetMapping
     override fun getOrders(
         @ModelAttribute @Valid request: OrderAdminListRequest,
-    ): ApiResponse<PageResponse<OrderAdminResponse>> = orderFinder.findAll(request)
-        .let { ApiResponse.success(PageResponse.from(it, OrderAdminResponse::from)) }
+    ): ApiResponse<PageResponse<OrderAdminResponse>> {
+        val orders = orderFinder.findAll(request)
+        return ApiResponse.success(PageResponse.from(orders, OrderAdminResponse::from))
+    }
 
     @GetMapping("/{orderId}")
     override fun getOrder(
         @PathVariable("orderId") orderId: Long,
-    ): ApiResponse<OrderAdminResponse> = orderFinder.findForAdmin(orderId)
-        .let { ApiResponse.success(OrderAdminResponse.from(it)) }
+    ): ApiResponse<OrderAdminResponse> {
+        val order = orderFinder.findForAdmin(orderId)
+        return ApiResponse.success(OrderAdminResponse.from(order))
+    }
 }

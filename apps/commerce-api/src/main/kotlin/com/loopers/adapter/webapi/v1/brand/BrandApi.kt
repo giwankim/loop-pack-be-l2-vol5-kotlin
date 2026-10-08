@@ -16,8 +16,7 @@ class BrandApi(
     override fun getBrand(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandResponse> {
-        return brandFinder.find(brandId)
-            .let { BrandResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val brand = brandFinder.find(brandId)
+        return ApiResponse.success(BrandResponse.from(brand))
     }
 }

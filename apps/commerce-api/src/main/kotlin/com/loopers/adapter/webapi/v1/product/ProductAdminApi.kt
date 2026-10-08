@@ -32,9 +32,8 @@ class ProductAdminApi(
     override fun register(
         @RequestBody @Valid request: ProductAdminRegisterRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productRegister.register(request)
-            .let { ProductAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val product = productRegister.register(request)
+        return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
     /** 쿼리 문자열을 [ProductAdminListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
@@ -42,18 +41,16 @@ class ProductAdminApi(
     override fun getProducts(
         @ModelAttribute @Valid request: ProductAdminListRequest,
     ): ApiResponse<PageResponse<ProductAdminResponse>> {
-        return productFinder.findAll(request)
-            .let { PageResponse.from(it, ProductAdminResponse::from) }
-            .let { ApiResponse.success(it) }
+        val products = productFinder.findAll(request)
+        return ApiResponse.success(PageResponse.from(products, ProductAdminResponse::from))
     }
 
     @GetMapping("/{productId}")
     override fun getProduct(
         @PathVariable("productId") productId: Long,
     ): ApiResponse<ProductAdminResponse> {
-        return productFinder.findInfo(productId)
-            .let { ProductAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val product = productFinder.findInfo(productId)
+        return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
     @PutMapping("/{productId}")
@@ -61,9 +58,8 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
         @RequestBody @Valid request: ProductAdminUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productRegister.update(productId, request)
-            .let { ProductAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val product = productRegister.update(productId, request)
+        return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
     @PutMapping("/{productId}/stock")
@@ -71,9 +67,8 @@ class ProductAdminApi(
         @PathVariable("productId") productId: Long,
         @RequestBody @Valid request: ProductAdminStockUpdateRequest,
     ): ApiResponse<ProductAdminResponse> {
-        return productRegister.updateStock(productId, request)
-            .let { ProductAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val product = productRegister.updateStock(productId, request)
+        return ApiResponse.success(ProductAdminResponse.from(product))
     }
 
     @DeleteMapping("/{productId}")

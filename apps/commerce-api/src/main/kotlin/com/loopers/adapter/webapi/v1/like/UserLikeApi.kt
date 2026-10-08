@@ -41,9 +41,7 @@ class UserLikeApi(
         @ModelAttribute @Valid request: LikeListRequest,
     ): ApiResponse<PageResponse<ProductResponse>> {
         if (userId != pathUserId) throw CoreException(ErrorType.FORBIDDEN)
-        return likeFinder
-            .findLikedProducts(userId = userId, request = request)
-            .let { PageResponse.from(it, ProductResponse::from) }
-            .let { ApiResponse.success(it) }
+        val likedProducts = likeFinder.findLikedProducts(userId = userId, request = request)
+        return ApiResponse.success(PageResponse.from(likedProducts, ProductResponse::from))
     }
 }

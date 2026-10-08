@@ -24,15 +24,17 @@ data class OrderAdminResponse(
     val confirmedAt: Instant?,
 ) {
     companion object {
-        fun from(order: Order): OrderAdminResponse = OrderAdminResponse(
-            orderId = order.id,
-            userId = order.userId,
-            status = order.status,
-            items = order.items.map(OrderLineItemResponse::from),
-            totalAmount = order.totalAmount.amount,
-            createdAt = order.createdAt,
-            paidAmount = order.paidAmount?.amount,
-            confirmedAt = order.confirmedAt,
-        )
+        fun from(order: Order): OrderAdminResponse {
+            return OrderAdminResponse(
+                orderId = order.id,
+                userId = order.userId,
+                status = order.status,
+                items = order.items.map(OrderLineItemResponse::from),
+                totalAmount = order.totalAmount.amount,
+                createdAt = order.createdAt,
+                paidAmount = order.paidAmount?.amount,
+                confirmedAt = order.confirmedAt,
+            )
+        }
     }
 }

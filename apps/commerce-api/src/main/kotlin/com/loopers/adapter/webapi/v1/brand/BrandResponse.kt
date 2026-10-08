@@ -8,10 +8,11 @@ data class BrandResponse(
     val name: String,
 ) {
     companion object {
-        fun from(brand: Brand): BrandResponse =
-            BrandResponse(
+        fun from(brand: Brand): BrandResponse {
+            return BrandResponse(
                 id = brand.id,
                 name = brand.name,
             )
+        }
     }
 }

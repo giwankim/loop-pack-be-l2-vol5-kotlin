@@ -31,9 +31,8 @@ class BrandAdminApi(
     override fun register(
         @RequestBody @Valid request: BrandAdminRegisterRequest,
     ): ApiResponse<BrandAdminResponse> {
-        return brandRegister.register(request)
-            .let { BrandAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val brand = brandRegister.register(request)
+        return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 
     /** 쿼리 문자열을 [BrandAdminListRequest]로 바로 받는다. 본문이 없는 요청의 `@RequestBody` 자리다(설계 5.17). */
@@ -41,18 +40,16 @@ class BrandAdminApi(
     override fun getBrands(
         @ModelAttribute @Valid request: BrandAdminListRequest,
     ): ApiResponse<PageResponse<BrandAdminResponse>> {
-        return brandFinder.findAll(request)
-            .let { PageResponse.from(it, BrandAdminResponse::from) }
-            .let { ApiResponse.success(it) }
+        val brands = brandFinder.findAll(request)
+        return ApiResponse.success(PageResponse.from(brands, BrandAdminResponse::from))
     }
 
     @GetMapping("/{brandId}")
     override fun getBrand(
         @PathVariable("brandId") brandId: Long,
     ): ApiResponse<BrandAdminResponse> {
-        return brandFinder.find(brandId)
-            .let { BrandAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val brand = brandFinder.find(brandId)
+        return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 
     @PutMapping("/{brandId}")
@@ -60,9 +57,8 @@ class BrandAdminApi(
         @PathVariable("brandId") brandId: Long,
         @RequestBody @Valid request: BrandAdminUpdateRequest,
     ): ApiResponse<BrandAdminResponse> {
-        return brandRegister.update(brandId, request)
-            .let { BrandAdminResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val brand = brandRegister.update(brandId, request)
+        return ApiResponse.success(BrandAdminResponse.from(brand))
     }
 
     @DeleteMapping("/{brandId}")

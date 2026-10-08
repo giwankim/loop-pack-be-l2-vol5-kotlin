@@ -32,30 +32,36 @@ class OrderApi(
     override fun create(
         @RequesterId userId: Long,
         @RequestBody @Valid request: OrderCreateRequest,
-    ): ApiResponse<OrderResponse> = orderCreator
-        .create(userId, request)
-        .let { ApiResponse.success(OrderResponse.from(it)) }
+    ): ApiResponse<OrderResponse> {
+        val order = orderCreator.create(userId, request)
+        return ApiResponse.success(OrderResponse.from(order))
+    }
 
     /** 쿼리 문자열을 [OrderListRequest]로 바로 받는다. 까닭은 다른 목록과 같다(카탈로그 설계 5.17, 5.22). */
     @GetMapping
     override fun findAll(
         @RequesterId userId: Long,
         @ModelAttribute @Valid request: OrderListRequest,
-    ): ApiResponse<PageResponse<OrderResponse>> = orderFinder.findAll(userId, request)
-        .let { PageResponse.from(it, OrderResponse::from) }
-        .let { ApiResponse.success(it) }
+    ): ApiResponse<PageResponse<OrderResponse>> {
+        val orders = orderFinder.findAll(userId, request)
+        return ApiResponse.success(PageResponse.from(orders, OrderResponse::from))
+    }
 
     @GetMapping("/{orderId}")
     override fun find(
         @RequesterId userId: Long,
         @PathVariable orderId: Long,
-    ): ApiResponse<OrderResponse> = orderFinder.find(userId, orderId)
-        .let { ApiResponse.success(OrderResponse.from(it)) }
+    ): ApiResponse<OrderResponse> {
+        val order = orderFinder.find(userId, orderId)
+        return ApiResponse.success(OrderResponse.from(order))
+    }
 
     @PostMapping("/{orderId}/confirm")
     override fun confirm(
         @RequesterId userId: Long,
         @PathVariable orderId: Long,
-    ): ApiResponse<OrderResponse> = orderConfirmer.confirm(userId, orderId)
-        .let { ApiResponse.success(OrderResponse.from(it)) }
+    ): ApiResponse<OrderResponse> {
+        val order = orderConfirmer.confirm(userId, orderId)
+        return ApiResponse.success(OrderResponse.from(order))
+    }
 }

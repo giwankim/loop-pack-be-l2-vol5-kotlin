@@ -27,17 +27,15 @@ class PointApi(
         @RequesterId userId: Long,
         @RequestBody @Valid request: PointChargeRequest,
     ): ApiResponse<PointAccountResponse> {
-        return pointCharger.charge(userId, request)
-            .let { PointAccountResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val pointAccount = pointCharger.charge(userId, request)
+        return ApiResponse.success(PointAccountResponse.from(pointAccount))
     }
 
     @GetMapping
     override fun getBalance(
         @RequesterId userId: Long,
     ): ApiResponse<PointAccountResponse> {
-        return pointAccountFinder.findByUser(userId)
-            .let { PointAccountResponse.from(it) }
-            .let { ApiResponse.success(it) }
+        val pointAccount = pointAccountFinder.findByUser(userId)
+        return ApiResponse.success(PointAccountResponse.from(pointAccount))
     }
 }
