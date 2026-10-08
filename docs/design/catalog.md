@@ -131,7 +131,7 @@ classDiagram
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
-- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `apiValue`와 `from`은 #7에서 생겼다(5.24).
+- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `apiValue`와 `from`은 #7에서 생겼다(5.24). (2026-10-08, 5.24: `ProductSort`는 domain을 떠나 `application/product/provided`에 있다. 쓰는 곳이 application과 그 포트를 구현한 저장소뿐이기 때문이다. 그림은 그대로 둔다.)
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -483,6 +483,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: 이름 말고도 바꿀 것이 생겨 `update`가 여러 값을 받게 될 때. 그때는 값마다 다듬기 함수를 공개하는 대신 수정 입력을 도메인이 읽는 타입으로 올린다.
 
 ### 5.24 정렬 기준의 자리와 모르는 값의 거절
+
+> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `apiValue` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
 
 - 문제: 고객 목록은 `sort=latest|price_asc`를 받고 모르는 값을 거절해야 한다. 5.22가 `page`·`size`를 Request 제약에 맡겼으니 `sort`도 같은 자리인지, 아니면 `INVALID_SORT`를 두는지 정해야 한다(5.22가 #7로 미뤄 둔 것).
 - `sort`가 `page`·`size`와 다른 점: 숫자의 범위가 아니라 낱말이다. Bean Validation은 범위를 그대로 말할 수 있지만 "이 열거가 아는 낱말"은 말할 수 없다.
