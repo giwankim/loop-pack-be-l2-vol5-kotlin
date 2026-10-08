@@ -18,7 +18,9 @@ import org.springframework.dao.DataIntegrityViolationException
  * 채우는 것은 [com.loopers.application.product.required.LikeCounter]의 약속이라
  * [com.loopers.application.like.provided.LikeFinderTest]가 본다.
  *
- * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001).
+ * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001). 사용자와 상품을 향한 외래 키도 그렇다. 좋아요는 둘을
+ * 식별자로만 가리켜 JPA가 제약을 만들지 않으므로 `scalar-foreign-keys.sql`이 만들고, 만들어졌는지는 `information_schema`에서도
+ * 확인한다(ADR 0015).
  */
 class LikeRepositoryTest(
     private val likeRepository: LikeRepository,
@@ -114,6 +116,39 @@ class LikeRepositoryTest(
         assertThat(second.id).isNotEqualTo(first.id)
         assertThat(likeRepository.findByUserIdAndProductId(userId = user.id, productId = product.id)?.id).isEqualTo(second.id)
         assertThat(entityManager.countLikes()).isOne()
+    }
+
+    /** 사용자 행이 없는 좋아요는 DB가 거절한다. application은 요청자를 믿으므로 이 외래 키가 지킨다(ADR 0015). */
+    @Test
+    fun `saving a like for a user that does not exist violates the foreign key`() {
+        prepareProduct()
+
+        assertThrows<DataIntegrityViolationException> {
+            likeRepository.save(Like(userId = 999L, productId = product.id))
+        }
+    }
+
+    @Test
+    fun `saving a like for a product that does not exist violates the foreign key`() {
+        prepareUser()
+
+        assertThrows<DataIntegrityViolationException> {
+            likeRepository.save(Like(userId = user.id, productId = 999L))
+        }
+    }
+
+    @Test
+    fun `the user and product foreign keys exist in the database`() {
+        val foreignKeys = entityManager
+            .createNativeQuery(
+                "select constraint_name, referenced_table_name, referenced_column_name " +
+                    "from information_schema.key_column_usage " +
+                    "where table_schema = database() and table_name = 'likes' and referenced_table_name is not null",
+            )
+            .resultList
+            .map { (it as Array<*>).joinToString(":") }
+
+        assertThat(foreignKeys).containsExactlyInAnyOrder("FK_LIKES_USER:users:id", "FK_LIKES_PRODUCT:product:id")
     }
 
     @Test

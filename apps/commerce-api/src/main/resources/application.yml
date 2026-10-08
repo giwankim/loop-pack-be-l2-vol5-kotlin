@@ -37,7 +37,7 @@ spring:
   jpa:
     properties:
       hibernate:
-        hbm2ddl.import_files: order-foreign-keys.sql
+        hbm2ddl.import_files: scalar-foreign-keys.sql
 
 ---
 spring:
