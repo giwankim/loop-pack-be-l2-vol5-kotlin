@@ -52,13 +52,14 @@
 | `brand` | `Brand` | 속한 브랜드. `@ManyToOne(fetch = LAZY)`, 읽기용 |
 | `name` | `String` | 받은 그대로의 이름 |
 | `price` | `Money` | 가격 |
-| `stock` | `Stock` | 재고. `@Embedded` |
+| `stock` | `Int` | 재고. 팔 수 있는 남은 수량 |
 | `deletedAt` | `Instant?` | 삭제 시각 |
 
 ### 규칙
 
 - 이름은 공백뿐일 수 없고, 앞뒤 공백을 포함해 100자(`Product.NAME_MAX_LENGTH`) 이하다. 받은 그대로 저장한다. 브랜드와 상한이 같은 것은 우연이라 따로 바뀔 수 있다. 어기면 `InvalidNameException`.
 - 가격은 1원 이상 1,000,000,000원 이하다. `Money`가 음수를 막고(`InvalidMoneyException`) `Product`가 1원 이상과 상한을 막는다(`InvalidPriceException`).
+- 재고는 0 이상이다. 만들 때와 재고 변경이 음수를 막는다. 어기면 `InvalidStockException`. 차감은 0 이하의 수량을 `InvalidStockException`으로, 남은 재고보다 큰 수량을 `InsufficientStockException`으로 막는다. 거절하면 기존 재고를 유지한다.
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
 - 삭제된 상품은 고객·관리자 조회, 수정, 재고 변경, 새 좋아요의 대상이 아니다. 남은 좋아요는 그대로 두고 취소만 허용한다.
@@ -67,11 +68,11 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Product(brand, name, price, stock)` | 이름의 공백·길이 상한과 가격 범위를 검사하고 이름은 받은 그대로 담아 만든다. 재고는 값 객체가 이미 검사했다 | `InvalidNameException`, `InvalidPriceException` |
+| `Product(brand, name, price, stock)` | 이름의 공백·길이 상한, 가격 범위, 재고 하한을 검사하고 이름은 받은 그대로 담아 만든다 | `InvalidNameException`, `InvalidPriceException`, `InvalidStockException` |
 | `update(name, price)` | 이름과 가격을 바꾼다. 하나라도 어기면 둘 다 그대로다 | `InvalidNameException`, `InvalidPriceException` |
-| `updateStock(quantity)` | 재고를 최종 수량 `Stock(quantity)`로 바꾼다 | `InvalidStockException` |
-| `deductStock(quantity)` | 양수 구매 수량을 차감한다. 거절하면 기존 재고를 유지한다 | `InvalidStockException`, `InsufficientStockException` |
-| `isSoldOut()` | 재고가 0이면 참. `stock.isEmpty()`에 맡긴다 | 없음 |
+| `updateStock(quantity)` | 재고를 최종 수량으로 바꾼다. 음수면 기존 재고를 유지한다 | `InvalidStockException` |
+| `deductStock(quantity)` | 양수 구매 수량을 차감한다. 거절하면 기존 재고를 유지한다 | 0 이하이면 `InvalidStockException`, 부족하면 `InsufficientStockException` |
+| `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
 주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003).
@@ -81,29 +82,7 @@
 - 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.find`로 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
 - 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
-## 재고 (Stock)
-
-값 객체. `@Embeddable`, 불변. 상품의 일부이며 식별자가 없다.
-
-### 속성
-
-| 이름 | 타입 | 뜻 |
-| --- | --- | --- |
-| `quantity` | `Int` | 남은 수량 |
-
-### 규칙
-
-- 0 이상이다. 음수로 만들 수 없다. 어기면 `InvalidStockException`.
-
-### 행위
-
-| 메서드 | 하는 일 | 거절 |
-| --- | --- | --- |
-| `Stock(quantity)` | 수량을 검사하고 만든다 | `InvalidStockException` |
-| `isEmpty()` | 수량이 0이면 참 | 없음 |
-| `deduct(quantity)` | 양수 수량을 차감한 새 `Stock`을 반환한다 | 0 이하이면 `InvalidStockException`, 부족하면 `InsufficientStockException` |
-
-TDD 대표 사례: `Stock(-1)`은 거절되고, `Stock(0)`은 허용되며, `Product.updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다.
+TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되며, `updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다. 재고는 값 객체가 아니라 `Product`의 `Int`다(설계 5.35).
 
 ## 금액 (Money)
 

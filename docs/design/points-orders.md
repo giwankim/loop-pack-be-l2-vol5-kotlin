@@ -43,12 +43,12 @@
 
 - 현재 제품 코드에는 브랜드·상품·사용자·좋아요가 구현되어 있다. 초기 조사 이후 사용자·좋아요가 추가된 것을 다시 확인했다. 포인트·주문 구현은 아직 없다.
 - `Money`는 0 이상인 `Long` 금액이며 덧셈·곱셈의 넘침과 음수가 되는 뺄셈을 거절한다. Q13에서 포인트·주문에도 이 표현 범위를 사용하기로 했다.
-- `Product`는 상품 가격과 `Stock`을 소유한다. 현재 재고 변경은 최종 수량 설정이고 주문을 위한 차감 행위는 아직 없다.
+- `Product`는 상품 가격과 `Stock`을 소유한다. 현재 재고 변경은 최종 수량 설정이고 주문을 위한 차감 행위는 아직 없다. (2026-10-08 카탈로그 설계 5.35로 `Stock`을 지웠다. `Product`가 재고를 `Int`로 가진다.)
 - 카탈로그 설계 5.1의 단일 애그리거트 변경 원칙은 Q7과 ADR 0003에 따라 카탈로그 변경 범위로 한정했다. 주문 확정에서는 application이 여러 애그리거트를 하나의 트랜잭션으로 조율한다. `domainSlicesOnlyReadEachOther`는 domain 사이의 호출을 검사하며 application의 트랜잭션 범위를 직접 강제하지 않는다.
-- 카탈로그 설계 5.3은 재고를 `Product` 안의 값 객체로 두었고, 독립된 재고 잠금이 필요할 때 별도 엔티티를 다시 검토하도록 했다.
+- 카탈로그 설계 5.3은 재고를 `Product` 안의 값 객체로 두었고, 독립된 재고 잠금이 필요할 때 별도 엔티티를 다시 검토하도록 했다. (2026-10-08 5.3을 C로 바꿨다(5.35). 별도 엔티티를 다시 볼 조건은 그대로다.)
 - ADR 0001과 엔티티의 `@SQLRestriction`은 삭제된 상품·브랜드를 조회에서 숨긴다. Q2·Q10·Q14에 따라 OrderLineItem은 `productId`를 가지고 생성 당시 이름·단가·수량 등은 스냅샷에서 읽는다.
 - 기존 사용자 식별 계약은 `X-USER-ID`다. [UserIdHeader](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/UserIdHeader.kt)가 누락을 401로 처리하고, `LikeService`가 `UserRepository.existsById`로 존재를 확인한다. 이 경계를 재사용한다. 관리자 경계는 카탈로그 설계의 테스트 지원 설정을 따른다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 `UserIdHeader`는 `adapter/webapi`로 옮겼고, 사용자의 존재는 사용자 기능의 [UserFinder](../../apps/commerce-api/src/main/kotlin/com/loopers/application/user/provided/UserFinder.kt)가 확인한다. 좋아요·포인트·주문이 이 포트를 부른다.) (2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 사용자의 존재도 웹 경계가 확인한다. `adapter.webapi`의 `RequesterIdArgumentResolver`가 컨트롤러 앞에서 `UserFinder.exists`를 부르고, 좋아요·포인트·주문은 받은 `userId`를 믿는다. `UserIdHeader`에는 헤더 이름만 남았다.)
-- 기존 `Stock.quantity`는 0 이상의 `Int`다. 상품 가격의 10억 원 상한은 Product만의 규칙이므로 포인트 잔액이나 주문 합계에 자동 적용하지 않는다.
+- 기존 `Stock.quantity`는 0 이상의 `Int`다(2026-10-08 카탈로그 설계 5.35로 `Product.stock`이 되었다). 상품 가격의 10억 원 상한은 Product만의 규칙이므로 포인트 잔액이나 주문 합계에 자동 적용하지 않는다.
 - 현재 [JacksonConfig](../../supports/jackson/src/main/kotlin/com/loopers/config/jackson/JacksonConfig.kt)는 `ACCEPT_SINGLE_VALUE_AS_ARRAY`를 켜고, 숫자 소수부·문자열의 정수 변환을 막는 명시적 설정은 두지 않았다. Q20에 따라 새 API의 요청 경계에서 엄격히 검사하고 전역 설정은 바꾸지 않는다. `Long`·`Int`와 최솟값 제약만으로 충분하다고 간주하지 않는다. (2026-10-03(#55)에 Q20을 철회했다. 새 API도 이 설정 그대로 읽는다(5.10).)
 - 기존 목록 계약은 `items/page/size/hasNext`, 0부터 시작하는 page, 기본 size 20·최대 100, 최신순의 `createdAt DESC, id DESC`다. Q19에서 주문에도 재사용하기로 했다.
 - [jpa.yml](../../modules/jpa/src/main/resources/jpa.yml)은 기본 `ddl-auto=none`, local/test는 `create`다. Q23에서 DB migration 검토를 보류했으므로 도구 도입이나 기존 DB 전환을 이번 설계의 선행 조건으로 두지 않는다. 새 FK의 실제 생성·검증에 필요한 최소 초기화는 구현 시 다룬다.

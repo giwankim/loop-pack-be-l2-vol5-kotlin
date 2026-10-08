@@ -58,7 +58,7 @@ C4Component
 | domain | 상태와 규칙, 저장 약속(repository 인터페이스) | 없음 | interfaces, application, infrastructure |
 | infrastructure | repository 약속의 JPA 구현 | domain | interfaces, application |
 
-패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductAdminRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체(`Stock`)는 그 개념 패키지에 둔다(5.14). 이름은 값 객체가 아니라 `String`이며 엔티티가 검사한다(5.19). infrastructure는 개념마다 Spring Data 인터페이스 `<개념>JpaRepository`와 domain의 저장 약속을 구현하는 `@Component` `<개념>RepositoryImpl` 둘을 둔다(5.20).
+패키지는 계층 아래 개념별로 둔다: `domain/brand`, `domain/product`, `domain/like`와 같은 이름을 application, infrastructure, `interfaces/api` 아래에도 둔다. API 버전은 클래스 이름이 아니라 `interfaces/api` 바로 아래 패키지에 붙인다(`interfaces/api/v1/brand/BrandController`, `BrandAdminController`). URL `/api/v1/...`과 패키지가 같은 모양이고, 학습용 저장소라 v1에서 끝나므로 버전 우선 배치가 개념 우선(`brand/v1`)보다 단순하다. 개념 사이 순환은 계층마다 따로 검사한다(5.16). interfaces의 슬라이스 규칙은 `api.v*` 세그먼트를 건너뛰고 그다음 세그먼트를 개념으로 잡는다. application의 유스케이스 컴포넌트는 `Service` 접미사를 쓰고 `Facade`는 쓰지 않는다(`BrandService`). 유스케이스 입력은 application에 `<개념><동사>Request`로 둔다(`ProductAdminRegisterRequest`, 5.17). domain 계층에는 `Service`를 붙인 클래스를 두지 않는다. 여러 개념이 함께 쓰는 값 객체(`Money`)는 `domain/shared`에 두고, 한 개념만 쓰는 값 객체는 그 개념 패키지에 둔다(5.14). 지금은 그런 값 객체가 없다(5.35). 이름은 값 객체가 아니라 `String`이며 엔티티가 검사한다(5.19). infrastructure는 개념마다 Spring Data 인터페이스 `<개념>JpaRepository`와 domain의 저장 약속을 구현하는 `@Component` `<개념>RepositoryImpl` 둘을 둔다(5.20).
 
 ### 요청자와 관리자 경계
 
@@ -84,18 +84,12 @@ classDiagram
         +Brand brand
         +String name
         +Money price
-        +Stock stock
+        +Int stock
         +Instant? deletedAt
         +update(name, price)
         +updateStock(quantity)
         +delete()
         +isSoldOut() Boolean
-    }
-
-    class Stock {
-        <<value object>>
-        +Int quantity
-        +isEmpty() Boolean
     }
 
     class Money {
@@ -128,7 +122,6 @@ classDiagram
     }
 
     Product "*" --> "1" Brand : brand (읽기용 참조)
-    Product *-- Stock : stock
     Product *-- Money : price
     Like "*" ..> "1" Product : productId
     Like "*" ..> "1" User : userId
@@ -162,7 +155,7 @@ sequenceDiagram
     PM->>PR: findById(id)
     PR-->>PM: Product (deletedAt == null)
     PM->>P: updateStock(0)
-    Note over P: Stock(0) 생성. 음수면 거절하고 기존 값 유지
+    Note over P: 재고를 0으로 맞춘다. 음수면 거절하고 기존 값 유지
     Note over PM,PR: @Transactional 안의 관리 상태 엔티티이므로 더티 체킹이 flush한다. save는 register에만 있다
     PM-->>AC: ProductInfo (stock 0, soldOut true)
     Note over AC: ProductAdminResponse가 stock과 시각을 고르고 soldOut은 버린다
@@ -245,7 +238,7 @@ sequenceDiagram
   - 카탈로그 변경의 각 트랜잭션은 애그리거트 하나만 바꾼다. 주문 확정은 별도 예외로 application이 Order·PointAccount·Product를 하나의 트랜잭션에서 변경한다([ADR 0003](../adr/0003-confirm-order-in-one-transaction.md)). 상품 자체는 `brand`를 읽기만 한다. 영속성 컨텍스트가 관리하는 `Brand`는 cascade가 없어도 dirty checking으로 저장되므로, `product.brand`에서 상태를 바꾸는 메서드를 부르면 브랜드도 함께 바뀐다.
   - 연관은 상품에서 브랜드로 가는 한 방향이다. `Brand`는 상품 컬렉션을 갖지 않는다. cascade가 없고 `updatable = false`다.
   - 브랜드 삭제 거절(삭제되지 않은 상품이 남으면 409)이 "삭제되지 않은 상품의 브랜드는 삭제되지 않았다"를 보장한다(한 트랜잭션 안에서. 동시 등록은 7에 적었다). 그래서 `@SQLRestriction`으로 삭제된 행을 숨기는 `Brand`를 삭제되지 않은 상품에서 언제나 읽을 수 있다. 삭제 조건을 풀거나 연쇄 삭제로 바꾸면 이 연관을 다시 본다.
-- 아키텍처 테스트: `HexagonalArchitectureTest.domainSlicesOnlyReadEachOther`. `domain` 아래 한 조각(`brand`, `product`, `shared` …)의 클래스가 다른 조각 클래스에서 부를 수 있는 메서드는 셋뿐이다. getter(`get`·`is`로 시작하고 인자가 없으며 값을 돌려준다), enum의 메서드, record의 메서드다. Kotlin에는 record가 없으므로 프로퍼티가 모두 `val`인 data class(`Money`, `Stock`)를 record로 본다. 생성자 호출은 메서드 호출이 아니므로 다른 조각의 값 객체와 예외는 만들 수 있다.
+- 아키텍처 테스트: `HexagonalArchitectureTest.domainSlicesOnlyReadEachOther`. `domain` 아래 한 조각(`brand`, `product`, `shared` …)의 클래스가 다른 조각 클래스에서 부를 수 있는 메서드는 셋뿐이다. getter(`get`·`is`로 시작하고 인자가 없으며 값을 돌려준다), enum의 메서드, record의 메서드다. Kotlin에는 record가 없으므로 프로퍼티가 모두 `val`인 data class(`Money`)를 record로 본다. 생성자 호출은 메서드 호출이 아니므로 다른 조각의 값 객체와 예외는 만들 수 있다.
   - 이 테스트는 domain 계층만 본다. application의 Service는 다른 조각의 포트를 불러야 하므로 테스트 밖이고, 그곳에서 `product.brand`의 상태를 바꾸지 않는 것은 리뷰로 지킨다.
   - 이름이 getter처럼 생긴 변경 메서드(`getAndIncrement` 같은 것)는 잡지 못한다. 그런 이름을 쓰지 않는다.
 - 다시 볼 조건: 브랜드 단위로 상품을 한꺼번에 바꾸는 요구가 생기면 A를 다시 본다. 브랜드와 상품을 다른 모듈이나 서비스로 나누거나, 브랜드를 바꾸는 흐름이 상품을 읽은 트랜잭션 안에 들어와야 하면 C로 옮긴다.
@@ -262,6 +255,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 선택: A. "0 아래로 내려가지 않는다"가 작은 타입 하나에 모이고 Spring 없이 테스트된다. 관리자 재고 변경은 `Product.updateStock`이 새 `Stock`으로 바꾼다.
 - 주문 설계에서도 이 형태를 유지한다(2026-09-18, 포인트·주문 인터뷰 Q7). 주문 확정의 application 서비스가 Product의 차감 행위를 호출하며, 동시성 처리는 Q8에서 후속 과제로 미뤘다.
 - 다시 볼 조건: 주문 확정의 재고 차감이 들어오고 상품 행 전체가 아니라 재고 행만 잠가야 할 때 B로 뺀다.
+- 수정 (2026-10-08, #97): C로 바꿨다. `Stock`은 `Product`만 쓰는 얕은 타입이었다(5.35). B로 빼는 다시 볼 조건은 그대로다.
 
 ### 5.4 금액의 타입
 
@@ -379,7 +373,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 A: 원시값 파라미터를 그대로 둔다. interfaces의 `RegisterRequest`가 HTTP 본문을 받고 Controller가 필드를 풀어 Service에 넘긴다.
 - 대안 B: application에 `ProductAdminRegisterRequest`를 두고 Controller가 HTTP 본문을 이 타입으로 바로 바인딩해 Service에 넘긴다. interfaces에는 응답 DTO만 남는다. splearn의 `MemberRegisterRequest`·`CourseCreateRequest`와 같은 자리·이름이다.
 - 대안 C: application에 `ProductCommand.Register`를 두고 interfaces의 `RegisterRequest`가 이를 만들어 넘긴다. 두 계층에 같은 필드의 타입이 하나씩 생긴다.
-- 선택: B (2026-09-17). 이름은 `<개념><동사>Request`, 자리는 Service와 같은 패키지. 원시값만 들고 값 객체 변환(`Money`, `Stock`)은 Service가 한다. 규칙 검사는 값 객체와 엔티티에 그대로 있다. HTTP 본문의 모양은 바뀌지 않는다.
+- 선택: B (2026-09-17). 이름은 `<개념><동사>Request`, 자리는 Service와 같은 패키지. 원시값만 들고 값 객체 변환(`Money`, `Stock`)은 Service가 한다(2026-10-08, 5.35: `Stock`은 지웠다. 재고는 `Int` 그대로 엔티티에 간다). 규칙 검사는 값 객체와 엔티티에 그대로 있다. HTTP 본문의 모양은 바뀌지 않는다.
   - C의 `RegisterRequest`는 `Command`를 필드 그대로 베끼는 타입이다. 5.7이 `Info`에 두지 않기로 한 것과 같은 이유로 두지 않는다.
   - interfaces가 application의 입력 타입에 의존하는 것은 허용 방향(interfaces → application)이다. 반대 방향이 아니므로 `LayeredArchitectureTest`는 그대로다.
 - 대가: HTTP 본문의 모양이 application의 입력과 하나로 묶인다. 본문만 바꾸고 유스케이스 입력은 두어야 할 때 그때 interfaces에 요청 DTO를 다시 두고 변환한다.
@@ -407,7 +401,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 B: `Name`을 지우고 `Brand`·`Product`가 `String`을 받아 각자 공백·길이 상한을 검사한다. 5.14의 A와 C 사이다. (처음에는 trim도 각자 했다. 2026-10-03(#55)에 지웠다.)
 - 대안 C: `Name`에 대소문자 무시 동일성과 정규화를 넣어 깊이를 만든다. 도메인이 요구하지 않은 행위를 지어내는 것이다.
 - 선택: B (2026-09-17). 검사 두 줄이 두 엔티티에 겹치는 대신 `@Embeddable`·`@AttributeOverride`·손으로 쓴 `equals`·`NameTest`가 사라진다. 메시지가 개념 이름을 말한다("브랜드 이름은 공백일 수 없습니다."). 두 엔티티는 같은 모양의 private `validatedName`으로 검사한다. (처음에는 `existsByName(String)`이 뗀 이름을 받는다는 보장을 타입 대신 순서가 지켰다. `BrandService.register`가 `Brand`를 먼저 만들고 `brand.name`으로 중복을 조회했다. 2026-10-03(#55)에 이름을 받은 그대로 저장하면서 지킬 보장이 없어졌다.)
-- 원시값을 감싸는 기준: 용어집이 개념으로 부르거나, 생성 밖의 행위가 있거나(도메인 문서가 맡긴 것 포함), 동일성이 원시값과 다르고 타입이 그것을 맞게 구현하거나, 다시 만들 수 없는 보장을 seam 너머로 넘길 때. `Money`는 앞의 셋, `Stock`은 앞의 둘(5.3, `decrease`가 예정)을 만족한다. `Name`은 넷째만 만족했고 순서로 대신할 수 있었다.
+- 원시값을 감싸는 기준: 용어집이 개념으로 부르거나, 생성 밖의 행위가 있거나(도메인 문서가 맡긴 것 포함), 동일성이 원시값과 다르고 타입이 그것을 맞게 구현하거나, 다시 만들 수 없는 보장을 seam 너머로 넘길 때. `Money`는 앞의 셋, `Stock`은 앞의 둘(5.3, `decrease`가 예정)을 만족한다. `Name`은 넷째만 만족했고 순서로 대신할 수 있었다. (2026-10-08, 5.35가 이 기준을 바꿨다. 용어집 항목과 생성 밖의 행위만으로는 타입을 두지 않는다.)
 - 대가: 이름을 정하는 곳마다(생성자, #3·#5의 `update`) 공백·길이 검사를 되풀이한다. 개념이 셋 이상 이름을 가지면 공유 함수(5.14의 A)를 고려한다.
 - 다시 볼 조건: 이름에 도메인 행위가 생길 때(정규화, 허용 문자, 표시용 변환). 그때는 개념별 타입(`BrandName`)으로 간다.
 
@@ -641,11 +635,31 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 지키는 것: 리뷰다. ktlint의 `function-expression-body`는 반대 방향(블록 본문 → 식 본문)으로 고치는 규칙이라 `.editorconfig`에서 꺼져 있고, 식 본문을 막는 ktlint 규칙은 없다.
 - 다시 볼 조건: 5.33과 같다. 식 본문을 막는 규칙을 가진 정적 분석 도구를 들일 때 그 규칙으로 옮긴다.
 
+### 5.35 재고 값 객체의 철회
+
+- 문제: `Stock`은 `Product`만 쓴다. `Product`가 `deduct`·`isEmpty`를 `deductStock`·`isSoldOut`으로 다시 내보내고, `updateStock`·`deductStock`은 처음부터 `Int`를 받는다. 타입이 지키는 자리는 생성자뿐인데, 부르는 쪽은 `Stock(request.stock)`으로 감싸기만 하고 `ProductInfo`는 `.quantity`로 다시 푼다. 인터페이스(생성자, `quantity`, `isEmpty`, `deduct`)가 구현(`if` 셋)과 같은 크기다. 같은 엔티티의 다른 속성 규칙은 이미 `Product` 안에 있다. 이름은 `validatedName`이, 가격 범위는 `validatePrice`가 지킨다. 가격은 용어집의 개념이지만 `Price` 타입은 없고, `Money`에 `Product`의 범위 검사를 더해 쓴다. 테스트도 `Product`를 인터페이스로 본다. `deduct`의 거절은 `StockTest`가 아니라 `ProductTest`가 본다.
+- 대안 A: 그대로 둔다.
+- 대안 B: `Stock`을 지우고 `Product`가 재고를 `Int`로 가진다. 5.3의 C다.
+- 대안 C: 재고 규칙을 Validator(`ProductValidator`)로 옮긴다. ADR 0014의 Validator는 저장소나 다른 조각이 있어야 답할 수 있는 사전 조건의 자리이고, 엔티티의 필드만으로 답하는 불변식은 엔티티에 남는다. 엔티티의 검사를 지우면 음수 재고의 `Product`를 만들 수 있고, 남기면 같은 규칙이 두 꼴로 적혀 따로 바뀐다.
+- 선택: B (2026-10-08, #97). `Product.stock`은 `Int`이고 기본 이름의 `stock` 컬럼에 담긴다. 전에는 `@AttributeOverride`로 `stock_quantity`였다. 생성과 `updateStock`은 `validatePrice`와 같은 꼴의 private `validateStock`으로 음수를 거절하고, `deductStock`은 0 이하의 수량과 부족을 거절한 뒤에야 값을 바꾼다. `isSoldOut`은 `stock == 0`이다. 예외와 메시지는 그대로다. 생성자의 음수 거절을 이제 `ProductTest`가 직접 본다. 전에는 `Stock(-1)`이 먼저 던져서 볼 자리가 없었다.
+  - 이름은 `stock`이다. 용어집이 재고를 정식 용어로 두고 재고량·재고 수를 피하며, Request·`ProductInfo`·응답 JSON이 이미 `stock`이다. 다른 코드베이스는 [재고 수량 필드의 이름](../research/stock-field-naming.md)에 있다. `stockQuantity`는 `stock_*` 상태·플래그나 둘째 수량이 같은 엔티티에 있을 때 쓰이고, 수 하나만 가진 상품에는 `stock`이 쓰인다(Shopware).
+  - 3주차에 비관적 잠금을 쓰면 잠근 엔티티 위에서 메모리로 차감하므로 이 선택과 부딪치지 않는다. 조건부 UPDATE를 고르면 불변식이 SQL로 옮겨 가므로 그때 다시 본다.
+- 원시값을 감싸는 기준 (5.19의 기준을 바꾼다): 다음 가운데 하나라도 맞으면 감싼다.
+  - 같은 개념의 규칙을 둘 이상의 주인이 되풀이하게 될 때(지렛대).
+  - 틀리기 쉬운 논리를 타입이 숨길 때(깊이).
+  - 동일성이 원시값과 다르고 타입이 그것을 맞게 구현할 때.
+  - 다시 만들 수 없는 보장을 seam 너머로 넘길 때.
+
+  용어집에 항목이 있다는 것만으로는 타입을 두지 않는다. 용어집은 말을 정하고 코드의 모양은 정하지 않는다. `Money`는 지렛대(상품 가격, 주문 품목, 주문 총액, 포인트 잔액)와 깊이(넘침을 막는 `addExact`·`multiplyExact`)로 남는다. `Stock`은 주인이 하나이고 `if` 셋이라 어느 것도 맞지 않는다. `Name`의 철회(5.19)도 그대로다. 브랜드 이름과 상품 이름은 검사가 닮았을 뿐 다른 개념이라 지렛대가 아니다.
+- 이 기준이 처음 가리키는 것: 구매 수량. "1개 이상"이 네 곳에 다른 꼴로 적혀 있다. `OrderCreateRequest.items[].quantity`의 `@Positive`, `OrderProduct.init`, `order_line_item`의 SQL 검사, `Product.deductStock`이다. 차감 수량이 구매 수량과 같은 개념인지가 열린 질문이다. `StockDeductor`는 그것을 "줄일 수량"이라 부른다. 재고를 폐기하는 기능이 생기면 그것도 차감이지만 구매 수량은 아니다. 따로 정한다.
+- 대가: `StockTest`가 사라지고 그 경우는 `ProductTest`로 왔다. 컬럼 이름이 `stock_quantity`에서 `stock`으로 바뀐다. local·test 프로필은 `ddl-auto: create`이고, 저장소의 어떤 마이그레이션도 이 컬럼을 부르지 않는다.
+- 다시 볼 조건: 재고가 자기 행위를 갖게 될 때(확정 전 주문의 예약, 안전 재고, 창고별 수량) 또는 `Product` 말고 둘째 주인이 생길 때. 예약이 들어와 수량이 둘(팔 수 있는 수량, 예약된 수량)이 되면 그 사이의 셈이 타입에 다시 깊이를 준다. 그때는 수량마다 이름을 붙이거나 별도 재고 엔티티로 뺀다.
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
 | --- | --- | --- |
-| `Stock`: 음수 거절과 기존 값 유지, 0 허용, 양수 저장 | domain 단위 테스트, TDD 대표 사례 | Spring·DB 없음 |
+| `Product` 재고: 음수 거절과 기존 값 유지, 0 허용, 0 이하 차감 수량·부족 거절 | domain 단위 테스트, TDD 대표 사례 | Spring·DB 없음 |
 | `Money`: 음수 거절, 넘침 거절 | domain 단위 테스트 | |
 | `Brand`·`Product`: 이름을 받은 그대로 저장, 공백 거절, 받은 그대로 센 길이 상한 | domain 단위 테스트. 생성자 규칙은 생성자를 직접 불러 확인한다 | Instancio fixture는 생성자를 건너뛴다(ADR 0010) |
 | `Product`: 이름 길이 상한·가격 범위, 브랜드 불변 | domain 단위 테스트 | |
