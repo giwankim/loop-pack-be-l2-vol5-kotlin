@@ -42,7 +42,7 @@ commerce-api는 `interfaces` → `application` → `domain` ← `infrastructure`
 ## 대가
 
 - `LikeQueryService`가 받는 `ProductFinder`에 `@Lazy`가 붙는다. 타입은 like → product 한 방향이지만 빈은 순환한다. `ProductQueryService`는 `ProductInfoAssembler`를 거쳐 `LikeCounter`, 곧 `LikeQueryService`를 받고, `LikeQueryService`는 `ProductFinder`, 곧 `ProductQueryService`를 받는다.
-- 같은 not-found 조회가 product, point, order의 Query Service와 Modify Service에 한 벌씩 있다. Finder가 `Info`를 돌려주므로 Modify 쪽이 엔티티를 얻으려면 직접 읽어야 하기 때문이다. 좋아요 누르기는 상품이 있는지만 보려고 `ProductFinder.find`를 불러 브랜드와 좋아요 수까지 읽으므로 쿼리가 둘 더 나간다. 둘 다 [#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)이 맡는다.
+- 같은 not-found 조회가 product, point, order의 Query Service와 Modify Service에 한 벌씩 있다. Finder가 `Info`를 돌려주므로 Modify 쪽이 엔티티를 얻으려면 직접 읽어야 하기 때문이다. 좋아요 누르기는 상품이 있는지만 보려고 `ProductFinder.find`를 불러 브랜드와 좋아요 수까지 읽으므로 쿼리가 둘 더 나간다. 둘 다 [#94](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/94)가 맡는다. 처음에는 [#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)의 일이었으나, Finder가 애그리거트를 통째로 돌려주면 둘 다 사라지므로 2026-10-08에 옮겼다.
 - `springdoc.use-fqn: true`라 `GET /v3/api-docs`의 스키마 이름이 옮겨진 패키지를 따른다. 응답은 `com.loopers.interfaces.api…`에서 `com.loopers.adapter.webapi…`로, Request는 `com.loopers.application.<개념>…`에서 `com.loopers.application.<개념>.provided…`로 바뀌었다. HTTP 계약에서 바뀐 것은 이것 하나이고, 생성된 문서를 단언하는 테스트는 없다.
 - JPA 쿼리 애노테이션(`@Query`, `@EntityGraph`)이 `application/*/required`의 포트에 있다. 3주차의 잠금(`@Lock`, `@Modifying`)도 그 포트에 붙는다. `application`이 Spring Data와 JPA를 알게 된 것이다. `domain`은 여전히 Spring을 들이지 않는다.
 - `provided`/`required` 쓰임을 막는 ArchUnit 규칙은 없다. 다른 조각의 `required` 저장소나 구현 클래스를 쓰지 않는다는 것은 splearn처럼 리뷰가 지킨다.
