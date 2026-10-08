@@ -77,7 +77,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   - 저장소(required 포트) 테스트: `BaseRepositoryTest`
   - domain 테스트와 컨텍스트 적재 테스트(`CommerceApiContextTest`)는 상속하지 않는다. 다만 저장한 엔티티가 있어야 하는 fixture 계약 테스트(`OrderFixturesTest`)는 domain 패키지에 있어도 `@DataJpaTest`이므로 `BaseRepositoryTest`를 상속한다.
 - 테스트 설정 애노테이션(`@SpringBootTest`, `@DataJpaTest`, `@AutoConfigureMockMvc`, `@AutoConfigureTestDatabase`, `@Transactional`, 공통 `@Import`)은 기반 클래스만 진다. 하위 클래스가 더하는 애노테이션은 추가 `@Import`(QueryDSL 설정과 그 어댑터)와 트랜잭션에서 빠지는 표시뿐이다. 하위 클래스의 `@Import`는 기반의 것과 합쳐진다.
-- `entityManager`와 `mvc`는 기반 클래스의 `protected` 필드로 쓴다. 준비만을 위해 포트나 저장소를 주입받지 않는다. 생성자로 받는 것은 검증하는 포트와 단언·정리에 쓰는 의존이다.
+- `entityManager`와 `mvc`는 기반 클래스의 `protected` 필드로 쓴다. 준비만을 위해 포트나 저장소를 주입받지 않는다. 생성자로 받는 것은 검증하는 포트와 단언·정리에 쓰는 의존이다. 포트로도 저장소로도 만들 수 없는 상태(정해 둔 시각, 표현 범위를 넘는 가격 등)를 준비한 데이터 위에 SQL로 덮어쓰는 클래스는 `JdbcTemplate`도 받는다.
 - 기반 클래스는 테스트마다 롤백되는 테스트 트랜잭션을 건다. 요청마다 커밋된 결과를 다음 요청이 읽어야 하는 클래스는 클래스에 `@Transactional(propagation = Propagation.NOT_SUPPORTED)`를 달아 빠지고, 그 까닭을 클래스 KDoc에 적는다. 메서드마다 빠지지 않는다. 빠진 클래스는 `DatabaseCleanUp`으로 정리한다. 다시 읽은 엔티티가 분리되어 있으므로 지연 연관(`Product.brand` 등)을 건드리지 않는다.
 
 ### Fixture
