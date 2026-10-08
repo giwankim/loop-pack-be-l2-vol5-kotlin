@@ -39,7 +39,7 @@ C4Component
 
     ContainerDb(db, "MySQL", "brand, product, likes, users 테이블")
 
-    Rel(user, interfaces, "GET /api/v1/…, POST·DELETE …/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
+    Rel(user, interfaces, "GET /api/v1/…, POST·DELETE /api/v1/likes", "HTTPS, 좋아요는 X-USER-ID 헤더")
     Rel(admin, interfaces, "GET·POST·PUT·DELETE /api-admin/v1/…", "HTTPS, ADMIN 역할")
     Rel(interfaces, application, "호출")
     Rel(application, domain, "행동 호출, 저장 약속 사용")
@@ -185,9 +185,9 @@ sequenceDiagram
 | 브랜드 상세 | `GET /brands/{brandId}` | path brandId | 200 `{id, name}` | 없거나 삭제됨 → 404 NOT_FOUND | 삭제된 브랜드는 없는 브랜드다 |
 | 상품 목록 | `GET /products` | query `brandId?`, `page=0`, `size=20`, `sort=latest` | 200 `{items:[{id, name, price, soldOut, brand:{id,name}, likeCount}], page, size, hasNext}` | 모르는 sort → 400 INVALID_SORT. page<0, size∉1..100 → 400 BAD_REQUEST | 삭제된 상품 제외. 없는·삭제된 brandId 필터는 빈 목록. 정렬 동률은 id 내림차순 |
 | 상품 상세 | `GET /products/{productId}` | path productId | 200 상품 목록의 항목과 같음 | 없거나 삭제됨 → 404 | 좋아요 수는 관계에서 센다 |
-| 좋아요 누르기 | `POST /products/{productId}/likes` | 헤더 `X-USER-ID` | 200, data 없음 | 헤더 없음·없는 사용자 → 401 UNAUTHORIZED. 없거나 삭제된 상품 → 404 | 이미 있으면 그대로 두고 200. 관계는 사용자–상품 쌍마다 하나 |
-| 좋아요 취소 | `DELETE /products/{productId}/likes` | 헤더 `X-USER-ID` | 200, data 없음 | 401 | 관계가 없어도 200. 삭제된 상품의 남은 좋아요도 취소된다 |
-| 내 좋아요 목록 | `GET /users/{userId}/likes` | 헤더 `X-USER-ID`, path userId, `page=0`, `size=20` | 200 `{items:[상품 항목], page, size, hasNext}` | 401. path userId ≠ 요청자 → 403 FORBIDDEN. page<0, size∉1..100 → 400 BAD_REQUEST | 삭제된 상품은 목록에서 뺀다. 최신 좋아요가 앞이고 동률은 좋아요 id 내림차순. 거르는 일을 조회가 하므로 조각 크기와 `hasNext`는 남은 상품만 센다(5.29) |
+| 좋아요 누르기 | `POST /likes` | 헤더 `X-USER-ID`, `{productId}` | 200, data 없음 | 헤더 없음·없는 사용자 → 401 UNAUTHORIZED. 본문 없음, productId 없음·1 미만 → 400 BAD_REQUEST. 없거나 삭제된 상품 → 404 | 이미 있으면 그대로 두고 200. 처음 만들 때도 201이 아니라 200이다(5.36). 관계는 사용자–상품 쌍마다 하나 |
+| 좋아요 취소 | `DELETE /likes/{productId}` | 헤더 `X-USER-ID`, path productId | 200, data 없음 | 401. 숫자가 아닌 productId → 400 | 관계가 없어도 200. 삭제된 상품의 남은 좋아요도 취소된다 |
+| 내 좋아요 목록 | `GET /likes` | 헤더 `X-USER-ID`, `page=0`, `size=20` | 200 `{items:[상품 항목], page, size, hasNext}` | 401. page<0, size∉1..100 → 400 BAD_REQUEST | 삭제된 상품은 목록에서 뺀다. 최신 좋아요가 앞이고 동률은 좋아요 id 내림차순. 거르는 일을 조회가 하므로 조각 크기와 `hasNext`는 남은 상품만 센다(5.29) |
 
 ### 관리자 `/api-admin/v1`
 
@@ -209,12 +209,12 @@ sequenceDiagram
 
 ### 오류 코드
 
-`ErrorType`에 행을 더한다. 1주차 방식대로 같은 HTTP status와 code 문자열을 공유하고 message만 다르다. 새 status가 필요한 둘은 code도 새로 갖는다.
+`ErrorType`에 행을 더한다. 1주차 방식대로 같은 HTTP status와 code 문자열을 공유하고 message만 다르다. 새 status가 필요한 `UNAUTHORIZED`는 code도 새로 갖는다.
 
 | 상수 | status | 쓰는 곳 |
 | --- | --- | --- |
 | `UNAUTHORIZED` (신규 status) | 401 | 헤더 없음, 없는 사용자 |
-| `FORBIDDEN` (신규 status) | 403 | path userId가 요청자와 다름 |
+| ~~`FORBIDDEN`~~ | — | 지웠다. 경로가 사용자를 품지 않아 요청자와 견줄 것이 없다(5.36) |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
 | `BRAND_NAME_DUPLICATED`, `BRAND_HAS_PRODUCTS` | 409, code는 CONFLICT와 같음 | 이름 중복, 삭제 조건 |
 | `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 모르는 정렬 값(5.24) |
@@ -568,6 +568,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.30 경로의 사용자와 요청자의 비교
 
 > 2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 `UserIdHeader.requireSelf`를 지웠다. 비교는 그대로 adapter.webapi(선택 A)에 있고, `UserLikeApi.getLikedProducts`가 `@RequesterId`로 받은 요청자와 경로의 사용자를 견준다. 헤더가 없거나 없는 사용자는 resolver가 컨트롤러 앞에서 401로 거절하므로, 401이 403보다 앞서는 차례는 `require`를 거치는 것이 아니라 인자 해석이 정한다. 아래 대가가 내다본 정리가 이것이다.
+>
+> 2026-10-08 5.36으로 이 비교가 없어졌다. 내 좋아요 목록이 `GET /api/v1/likes`가 되어 경로가 사용자를 품지 않으므로 견줄 것이 없고 403도 없다. `UserLikeApi`와 `ErrorType.FORBIDDEN`도 함께 지웠다. 선택 A의 근거 중 "`findLikedProducts`는 받은 식별자의 목록만 돌려주므로 남의 목록을 볼 길이 애초에 없다"는 그대로이고, 이제 HTTP에서도 남의 목록을 가리킬 길이 없다. 아래 다시 볼 조건은 5.36이 이어받는다.
 
 - 문제: `GET /api/v1/users/{userId}/likes`는 경로에도 사용자가 있고 헤더에도 요청자가 있다. 다르면 403(`FORBIDDEN`)이다. 이 비교를 어느 층이 하는가.
 - 대안 A: adapter.webapi. `UserIdHeader.requireSelf(userId, pathUserId)`가 요청자를 읽고 경로와 견주어, 다르면 403을 던진다. application은 요청자 하나만 받는다.
@@ -655,6 +657,38 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대가: `StockTest`가 사라지고 그 경우는 `ProductTest`로 왔다. 컬럼 이름이 `stock_quantity`에서 `stock`으로 바뀐다. local·test 프로필은 `ddl-auto: create`이고, 저장소의 어떤 마이그레이션도 이 컬럼을 부르지 않는다.
 - 다시 볼 조건: 재고가 자기 행위를 갖게 될 때(확정 전 주문의 예약, 안전 재고, 창고별 수량) 또는 `Product` 말고 둘째 주인이 생길 때. 예약이 들어와 수량이 둘(팔 수 있는 수량, 예약된 수량)이 되면 그 사이의 셈이 타입에 다시 깊이를 준다. 그때는 수량마다 이름을 붙이거나 별도 재고 엔티티로 뺀다.
 
+### 5.36 좋아요 API의 자원 모양
+
+- 문제: 좋아요 경로는 2주차 과제의 표를 따랐다. 누르기·취소는 `POST·DELETE /api/v1/products/{productId}/likes`, 내 목록은 `GET /api/v1/users/{userId}/likes`였다. 결함이 다섯이고 앞의 넷은 원인이 하나다. 요청자의 좋아요에 자기 URI가 없다.
+  - (a) `POST`가 "내 좋아요가 있게 하라"는 뜻을 진다. CONTEXT.md 좋아요 누르다: 이미 있으면 그대로 둔다.
+  - (b) `DELETE /products/{productId}/likes`는 상품의 좋아요 컬렉션 전체를 가리킨다. 어느 좋아요를 지울지는 URI가 아니라 `X-USER-ID` 헤더가 고른다.
+  - (c) 좋아요 하나를 가리키는 URI가 없다.
+  - (d) 한 관계에 root가 둘이다. 쓰기는 상품 아래, 읽기는 사용자 아래에 있다. 그래서 컨트롤러가 둘(`LikeApi`, `UserLikeApi`)이었고 둘의 이름이 흐렸다.
+  - (e) 목록 경로의 `{userId}`는 군더더기다. 허용되는 값이 요청자 하나뿐이라, 403 갈래와 `ErrorType.FORBIDDEN`은 경로가 남을 가리킬 수 있어서만 있었다(5.30, 7의 `GET /api/v1/likes` 항목).
+- 대안 A: 그대로 둔다. 과제의 표와 같다.
+- 대안 B: `PUT /api/v1/likes/{productId}`로 누르고 같은 경로로 `DELETE`한다. 최종 상태를 말하는 멱등 요청이 PUT의 뜻과 맞는다. 그러나 RFC 9110 §9.3.4는 PUT이 자원을 새로 만들면 201을 보내는 것을 **MUST**로 둔다. `Liker.like`가 만들었는지를 `Boolean`으로 돌려주고 adapter.webapi에 첫 `ResponseEntity`가 들어오거나, MUST를 알고서 어기게 된다.
+- 대안 C: `/api/v1/users/me/likes`, 또는 Zalando 지침의 `/users/self/likes/{product-id}`. 소유자를 헤더로 정하는 것은 최상위 root와 같고 `users/` 접두사만 더한다. Zalando 지침 전체도 함께 보고 들이지 않았다.
+- 대안 D: 취소를 `DELETE /api/v1/likes?productId=`로 받는다. 파라미터에 이름이 붙지만 좋아요 하나의 URI와 짝이 맞지 않는다.
+- 대안 E: 취소할 상품을 DELETE의 본문으로 받는다. RFC 9110 §9.3.5는 DELETE의 본문이 *"has no generally defined semantics, cannot alter the meaning or target of the request"*라 하고, 서비스 앞에는 API 게이트웨이가 있다.
+- 선택 (2026-10-08, #98): 최상위 root 하나. 옛 경로는 부르는 곳이 없어 남기지 않고 지웠다.
+
+  ```
+  POST   /api/v1/likes              본문 { "productId": 42 }   누르기          → 200, data 없음
+  DELETE /api/v1/likes/{productId}                               취소            → 200, data 없음
+  GET    /api/v1/likes?page=&size=                               내 좋아요 목록  → 200 { items, page, size, hasNext }
+  ```
+
+  - 요청자가 가진 자원은 `/api/v1/orders`·`/api/v1/points`처럼 최상위에 두고, 요청자는 세 엔드포인트 모두 헤더에서 받는다(`@RequesterId`, ADR 0015). `/users/...` 엔드포인트가 없으므로 `users/me`는 아무도 쓰지 않는 접두사다.
+  - 누르기는 컬렉션에 더하는 것이라 `POST`이고 상품을 본문으로 받는다. RFC 9110 §9.3.3이 꼽는 POST의 쓰임에 *"Creating a new resource that has yet to be identified by the origin server"*가 있다. DELETE와 경로를 맞춘 `POST /api/v1/likes/{productId}`는 이름만 POST인 PUT이다.
+  - 취소는 상품을 경로로 받는다. 위 E의 까닭이다. X의 좋아요 API도 같은 모양이다(`POST /2/users/:id/likes`에 본문, `DELETE /2/users/:id/likes/:tweet_id`).
+  - 누르기는 관계를 처음 만들 때도 201이 아니라 200이고 data가 없다. RFC 9110 §9.3.3의 *SHOULD send 201*을 알고서 따르지 않는다. 두 요청 모두 최종 상태를 말하므로(5.6) 클라이언트는 어느 결과든 같게 다룬다. `Liker.like`는 그대로 아무것도 돌려주지 않고, adapter.webapi에 `ResponseEntity`가 들어오지 않는다.
+  - 본문은 `application/like/provided`의 `LikeRequest(@Positive productId)`로 `@RequestBody @Valid` 바로 받는다(5.17). 애그리거트 `Like`와 동사 `like`가 겹쳐 이름이 `LikeRequest`로 줄었다. CONTEXT.md의 _Avoid_(register, add)가 `LikeCreateRequest`를 막는다. 메시지는 주문 품목의 `productId`와 같은 "상품 ID는 1 이상이어야 합니다."다.
+  - 포트의 파라미터는 입력이 오는 길을 따른다. 본문은 Request가 되고(`Liker.like(userId, LikeRequest)`), 경로의 값은 값으로 남는다(`Liker.unlike(userId, productId)`, `OrderApi.find(orderId)`와 같다). Request를 받게 된 `LikeModifyService`는 `@ValidatedApplicationService`이고, 컨트롤러를 거치지 않는 호출도 1 미만의 상품 ID를 거절한다(5.25).
+  - 목록은 그대로 좋아요가 아니라 상품 항목을 돌려준다. 고객 상품 목록과 같은 항목이라 두 목록이 어긋날 수 없다. 한 컨트롤러 `LikeApi`가 세 엔드포인트를 맡는다.
+  - 좋아요 하나를 읽는 `GET /api/v1/likes/{productId}`는 두지 않는다. 부르는 곳이 없고, 나중에 더해도 깨지는 것이 없다.
+- 대가: 과제의 경로와 다르고, 누르기의 200이 RFC 9110의 SHOULD를 벗어난다. ADR은 두지 않았다. 부르는 클라이언트가 없어 되돌리기 싸다.
+- 다시 볼 조건: 클라이언트가 좋아요를 새로 만들었는지 알아야 할 때(201과 `Location`). 또는 요청자가 남의 좋아요를 볼 수 있는 역할을 갖게 될 때(5.30의 다시 볼 조건). 그때는 경로가 다른 사용자를 품게 된다.
+
 ## 6. 테스트 경계
 
 | 확인할 것 | 테스트 | 비고 |
@@ -674,17 +708,17 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | 좋아요 많은순에서 차례와 `likeCount`가 서로 맞는지 | application 통합 테스트(`ProductFinderTest`) | 이 기준만 차례를 내는 쿼리와 수를 세는 쿼리가 다르다(5.32). 저장소 테스트가 차례를 이미 지키지만 둘이 어긋나면 차례는 맞는데 수가 남의 것이 되므로, 이 자리는 위의 "이어짐만 본다"의 예외다 |
 | 좋아요 멱등(두 번 누르기, 없는 관계 취소), 삭제 상품 거절·취소 허용, 요청자 없음 | application 통합 테스트(`LikerTest`). 관계는 `likes` 테이블을 native SQL로 센다 | 저장 약속을 거치지 않고 세는 까닭은 "행이 하나다", "행이 지워졌다"가 테이블의 사실이기 때문이다(ADR 0001) |
 | 좋아요 유일 제약, 행 삭제 뒤 재조회 없음, 삭제 뒤 다시 누르기, 상품 여러 개의 집계와 0 채움 | repository·DB 통합 테스트(`LikeRepositoryTest`) | 유일 제약 위반은 IDENTITY라 저장 즉시 난다. 사용자·상품 행 없이 식별자만으로 만든다 |
-| 헤더 → 요청자, 401·404, 누르기 → 상세 `likeCount` 1 → 취소 → 0 | HTTP 테스트(`LikeApiTest`). 헤더 없음과 없는 사용자를 따로 본다 | 두 401은 서로 다른 층이 거절한다(5.27). 한쪽만 테스트하면 다른 쪽이 빠져도 모른다 |
+| 헤더 → 요청자, 본문 → `LikeRequest`, 400·401·404, 누르기 → 상세 `likeCount` 1 → 취소 → 0 | HTTP 테스트(`LikeApiTest`). 헤더 없음과 없는 사용자를 따로 본다 | 두 401은 resolver의 서로 다른 갈래가 거절한다(5.27, ADR 0015). 한쪽만 테스트하면 다른 쪽이 빠져도 모른다. 400은 본문 없음, `productId` 없음·1 미만, 숫자가 아닌 경로의 `productId`다(5.36) |
 | 좋아요 목록의 차례와 삭제 필터, `hasNext` | repository·DB 통합 테스트(`ProductRepositoryTest`) | 등록 차례와 누른 차례를 달리 두어 어느 시각으로 줄을 세우는지 드러낸다. 같은 차례로 두면 상품의 `createdAt`으로 세워도 지나간다. 누른 시각의 동률은 상품 목록과 같이 native 쿼리로 만든다 |
 | 좋아요 목록의 요청자 구분, 삭제 상품 제외, 입력이 조각까지 이어짐 | application 통합 테스트(`LikeFinderTest`) | 서비스가 받는 사용자 식별자는 요청자 하나뿐이라 "남의 목록"을 부를 수 없다(5.30). 둘이 각자 누른 뒤 자기 것만 오르는지 본다. `brandName`과 `likeCount`가 트랜잭션 안에서 채워지는지도 여기서 본다 |
-| 경로·헤더 → 요청자, 403·401, 항목의 모양 | HTTP 테스트(`UserLikeApiTest`) | 403은 다른 사용자의 경로, 401은 헤더 없음과 없는 사용자. 항목이 상품 목록과 같은 DTO에서 오는지(`stock`·시각이 빠지는지)와 `page`·`size`가 조각에 닿는지를 본다 |
+| 내 좋아요 목록의 헤더 → 요청자, 401, 항목의 모양 | HTTP 테스트(`LikeApiTest`) | 401은 헤더 없음과 없는 사용자. 경로가 사용자를 품지 않아 403 경우가 없다(5.36). 항목이 상품 목록과 같은 DTO에서 오는지(`stock`·시각이 빠지는지)와 `page`·`size`가 조각에 닿는지를 본다 |
 | 관리자 변경이 고객 조회에 보이는지 | HTTP 테스트. 한 클래스에서 관리자 `PUT` 뒤 고객 `GET` | 두 요청 사이에 flush/clear를 넣는다. 같은 트랜잭션이라 비우지 않으면 고객 조회가 1차 캐시의 그 객체를 받아 수정이 DB에 닿았는지와 무관하게 통과한다. 고객 API 테스트도 `AdminSecurityConfig`를 `@Import`한다. 체인이 하나도 없으면 Boot 기본 체인이 모든 경로에 인증을 요구하고, 이 빈이 있으면 고객 경로는 어느 체인에도 걸리지 않아 그대로 지나간다(5.10) |
 
 ## 7. 남은 것
 
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에 `@SQLRestriction`이 붙었다. 아래 "`User`에는 삭제 상태가 없다" 항목은 철회했다. 사용자를 지우는 API는 여전히 없지만, 삭제된 사용자는 `existsById`가 없는 사용자로 답하므로 요청자 검사는 그를 401로 거절한다. 사용자 관리가 생기면 이 답이 맞는지 그때 다시 본다(ADR 0016의 다시 볼 조건).
 
-- 내 좋아요 목록을 `GET /api/v1/likes`로 줄이는 것은 확인 후 결정한다. 줄이면 403 경우와 `FORBIDDEN`이 이 조각에서 사라진다. #10은 경로를 그대로 두었고, 비교는 `UserLikeApi.getLikedProducts` 한 곳에 있으므로 줄일 때 지울 자리도 한 곳이다(5.30).
+- 내 좋아요 목록은 2026-10-08 `GET /api/v1/likes`로 줄였다(5.36, #98). 403 경우와 `FORBIDDEN`이 이 조각에서 사라졌다. 비교가 `UserLikeApi.getLikedProducts` 한 곳에 있었으므로 지운 자리도 한 곳이었다(5.30).
 - 내 좋아요 목록(#10)이 상품 조회가 `likes`를 join하는 첫 자리다. #9의 좋아요 많은순도 같은 join을 쓰게 되므로 두 쿼리의 관계는 5.29의 다시 볼 조건에서 정한다.
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
 - 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.

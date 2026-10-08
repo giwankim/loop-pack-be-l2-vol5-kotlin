@@ -173,7 +173,7 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 ### 규칙
 
 - 좋아요 누르기·취소·내 목록은 요청자가 있어야 한다. 헤더가 없거나 그 사용자가 없으면 `UNAUTHORIZED`. 둘 다 웹 경계(`@RequesterId`)가 컨트롤러 앞에서 보고, 사용자의 존재는 `UserFinder.exists`에 묻는다. application은 받은 사용자 식별자를 믿는다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)).
-- 내 좋아요 목록의 path `userId`는 요청자와 같아야 한다. 다르면 `FORBIDDEN`. 경로와 헤더는 둘 다 HTTP가 실은 값이라 비교도 adapter.webapi(`UserLikeApi`)가 하고, application에는 요청자만 넘어간다(설계 5.30). 헤더가 없거나 없는 사용자면 견줄 요청자가 없으므로 401이 먼저다.
+- 요청자는 자기 좋아요만 다룬다. 좋아요의 경로(`/api/v1/likes`)는 사용자를 품지 않고 요청자만 헤더에서 오므로, 남의 좋아요를 가리킬 길도 그것을 거절할 `FORBIDDEN`도 없다(설계 5.36). application에는 요청자만 넘어간다(설계 5.30).
 - 브랜드·상품 조회는 요청자가 없어도 된다.
 
 ## 상품 목록 정렬 (ProductSort)
