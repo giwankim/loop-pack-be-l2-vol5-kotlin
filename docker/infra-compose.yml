@@ -1,7 +1,7 @@
 version: '3'
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.4
     ports:
       - "3306:3306"
     environment:
@@ -15,7 +15,7 @@ services:
       - mysql-8-data:/var/lib/mysql
 
   redis-master:
-    image: redis:7.0
+    image: redis:8.10
     container_name: redis-master
     ports:
       - "6379:6379"
@@ -35,7 +35,7 @@ services:
       retries: 10
 
   redis-readonly:
-    image: redis:7.0
+    image: redis:8.10
     container_name: redis-readonly
     depends_on:
       redis-master:
@@ -60,7 +60,7 @@ services:
       retries: 10
 
   kafka:
-    image: bitnamilegacy/kafka:3.5.1
+    image: bitnamilegacy/kafka:3.5
     container_name: kafka
     ports:
       - "9092:9092" # 카프카 브로커 PORT
@@ -89,7 +89,7 @@ services:
       retries: 10
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: kafbat/kafka-ui:v1.5.0
     container_name: kafka-ui
     depends_on:
       kafka:

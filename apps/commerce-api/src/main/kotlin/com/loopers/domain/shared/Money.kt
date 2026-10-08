@@ -17,28 +17,36 @@ data class Money(
         }
     }
 
-    operator fun plus(other: Money): Money = Money(exact { Math.addExact(amount, other.amount) })
+    operator fun plus(other: Money): Money {
+        return Money(exact { Math.addExact(amount, other.amount) })
+    }
 
     operator fun minus(other: Money): Money {
         if (other.amount > amount) {
             throw InvalidMoneyException("가진 금액보다 큰 금액을 뺄 수 없습니다.")
         }
+
         return Money(amount - other.amount)
     }
 
-    operator fun times(count: Int): Money = Money(exact { Math.multiplyExact(amount, count.toLong()) })
+    operator fun times(count: Int): Money {
+        return Money(exact { Math.multiplyExact(amount, count.toLong()) })
+    }
 
-    override fun compareTo(other: Money): Int = amount.compareTo(other.amount)
+    override fun compareTo(other: Money): Int {
+        return amount.compareTo(other.amount)
+    }
 
     companion object {
         /** 0원. 포인트 계정의 처음 잔액이고, 양수 검사의 기준이다. */
         val ZERO = Money(0)
     }
 
-    private inline fun exact(calculate: () -> Long): Long =
-        try {
+    private inline fun exact(calculate: () -> Long): Long {
+        return try {
             calculate()
         } catch (e: ArithmeticException) {
             throw InvalidMoneyException("금액 계산 결과가 표현 범위를 넘습니다.")
         }
+    }
 }

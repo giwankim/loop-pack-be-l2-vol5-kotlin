@@ -1,5 +1,6 @@
 plugins {
-    id("org.jetbrains.kotlin.plugin.jpa")
+    alias(conventions.plugins.loopers.spring.boot.application)
+    alias(conventions.plugins.loopers.jpa)
 }
 
 dependencies {
@@ -12,11 +13,8 @@ dependencies {
     implementation(project(":supports:monitoring"))
 
     // web
-    implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
-
-    // querydsl
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    implementation(libs.springBootStarterWebmvc)
+    implementation(libs.springBootStarterActuator)
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

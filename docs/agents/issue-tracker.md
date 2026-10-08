@@ -23,6 +23,15 @@ This clone has two GitHub remotes. Issues live on the **fork**, not upstream.
 If a command fails with "no default remote repository has been set", re-run that. Pass
 `--repo giwankim/loop-pack-be-l2-vol5-kotlin` explicitly when running outside the clone.
 
+### No `#<number>` in commit messages
+
+Commits made here end up in upstream through a PR, and GitHub resolves a bare `#13` against the
+repo displaying the commit. Upstream's #13 is another student's PR, so the reference links to it
+and posts a mention on its timeline. Keep `#<number>` out of commit subjects and bodies, including
+the `(#13)` suffix that older commits in `git log` carry. To name a ticket, write `issue 13`, or
+`giwankim/loop-pack-be-l2-vol5-kotlin#13` when a working link is wanted. Issue bodies, comments
+and PR descriptions on the fork are unaffected.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

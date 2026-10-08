@@ -15,39 +15,39 @@ class BrandTest {
     }
 
     @Test
-    fun `name is stored without surrounding whitespace`() {
+    fun `name is stored as sent, surrounding whitespace included`() {
         val brand = Brand("  루퍼스\t")
 
-        assertThat(brand.name).isEqualTo("루퍼스")
+        assertThat(brand.name).isEqualTo("  루퍼스\t")
     }
 
     @Test
-    fun `name of 101 chars after trimming throws InvalidNameException`() {
-        assertThrows<InvalidNameException> { Brand(" " + "가".repeat(101) + " ") }
+    fun `name of 101 chars counting surrounding spaces throws InvalidNameException`() {
+        assertThrows<InvalidNameException> { Brand(" " + "가".repeat(99) + " ") }
     }
 
     @Test
-    fun `name of 100 chars after trimming is kept`() {
-        val name = "가".repeat(100)
+    fun `name of 100 chars counting surrounding spaces is kept as sent`() {
+        val name = " " + "가".repeat(98) + " "
 
-        val brand = Brand("  $name\t")
+        val brand = Brand(name)
 
         assertThat(brand.name).isEqualTo(name)
     }
 
     @Test
-    fun `update replaces the name with the new one without surrounding whitespace`() {
-        val brand = Brand("루퍼스")
+    fun `update replaces the name with the new one as sent`() {
+        val brand = createBrand()
 
         brand.update("  무신사\t")
 
-        assertThat(brand.name).isEqualTo("무신사")
+        assertThat(brand.name).isEqualTo("  무신사\t")
     }
 
     @ParameterizedTest
     @ValueSource(strings = ["", "   ", "\t\n"])
     fun `update to a blank name throws InvalidNameException and keeps the old name`(name: String) {
-        val brand = Brand("루퍼스")
+        val brand = createBrand(name = "루퍼스")
 
         assertThrows<InvalidNameException> { brand.update(name) }
 
@@ -55,28 +55,11 @@ class BrandTest {
     }
 
     @Test
-    fun `update to a name of 101 chars after trimming throws InvalidNameException and keeps the old name`() {
-        val brand = Brand("루퍼스")
+    fun `update to a name of 101 chars counting surrounding spaces throws InvalidNameException and keeps the old name`() {
+        val brand = createBrand(name = "루퍼스")
 
-        assertThrows<InvalidNameException> { brand.update(" " + "가".repeat(101) + " ") }
+        assertThrows<InvalidNameException> { brand.update(" " + "가".repeat(99) + " ") }
 
         assertThat(brand.name).isEqualTo("루퍼스")
-    }
-
-    @Test
-    fun `normalizeName trims the name the entity would store`() {
-        assertThat(Brand.normalizeName("  루퍼스\t")).isEqualTo("루퍼스")
-    }
-
-    @Test
-    fun `normalizeName leaves an already normalized name alone`() {
-        val once = Brand.normalizeName("  루퍼스\t")
-
-        assertThat(Brand.normalizeName(once)).isEqualTo(once)
-    }
-
-    @Test
-    fun `normalizeName rejects a name the entity would reject`() {
-        assertThrows<InvalidNameException> { Brand.normalizeName("   ") }
     }
 }
