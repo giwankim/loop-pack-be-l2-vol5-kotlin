@@ -5,7 +5,6 @@ import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSort
-import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.support.flushAndClear
@@ -32,7 +31,7 @@ class ProductRepositoryTest(
     @Test
     fun `findById reads a saved product back with its brand, price, and stock after flush and clear`() {
         prepareBrand(name = "루퍼스")
-        prepareProduct(brand, name = "티셔츠", price = Money(12_000), stock = Stock(7))
+        prepareProduct(brand, name = "티셔츠", price = Money(12_000), stock = 7)
         entityManager.flushAndClear()
 
         val found = productRepository.findById(product.id)
@@ -43,7 +42,7 @@ class ProductRepositoryTest(
         assertThat(found?.brand?.name).isEqualTo("루퍼스")
         assertThat(found?.name).isEqualTo("티셔츠")
         assertThat(found?.price).isEqualTo(Money(12_000))
-        assertThat(found?.stock).isEqualTo(Stock(7))
+        assertThat(found?.stock).isEqualTo(7)
         assertThat(found?.createdAt).isNotNull()
         assertThat(found?.updatedAt).isNotNull()
         assertThat(found?.deletedAt).isNull()
@@ -69,13 +68,13 @@ class ProductRepositoryTest(
     }
 
     @Test
-    fun `save stores price and stock in the price and stock_quantity columns`() {
+    fun `save stores price and stock in the price and stock columns`() {
         prepareBrand()
-        val saved = productRepository.save(createProduct(brand, price = Money(12_000), stock = Stock(7)))
+        val saved = productRepository.save(createProduct(brand, price = Money(12_000), stock = 7))
         entityManager.flushAndClear()
 
         val row = entityManager
-            .createNativeQuery("select brand_id, price, stock_quantity from product where id = :id")
+            .createNativeQuery("select brand_id, price, stock from product where id = :id")
             .setParameter("id", saved.id)
             .singleResult as Array<*>
 

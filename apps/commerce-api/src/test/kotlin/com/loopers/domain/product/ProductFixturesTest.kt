@@ -36,7 +36,7 @@ class ProductFixturesTest {
             assertThat(product.id).isZero()
             assertThat(product.deletedAt).isNull()
             assertThat(product.name).hasSizeBetween(2, 100)
-            assertThat(product.stock.quantity).isBetween(100, 1_000)
+            assertThat(product.stock).isBetween(100, 1_000)
         }
     }
 
@@ -55,12 +55,12 @@ class ProductFixturesTest {
     fun `createProduct uses every argument it is given`() {
         val brand = createBrand()
 
-        val product = createProduct(brand, name = "운동화", price = Money(39_000), stock = Stock(0))
+        val product = createProduct(brand, name = "운동화", price = Money(39_000), stock = 0)
 
         assertThat(product.brand).isSameAs(brand)
         assertThat(product.name).isEqualTo("운동화")
         assertThat(product.price).isEqualTo(Money(39_000))
-        assertThat(product.stock).isEqualTo(Stock(0))
+        assertThat(product.stock).isZero()
     }
 
     @Test

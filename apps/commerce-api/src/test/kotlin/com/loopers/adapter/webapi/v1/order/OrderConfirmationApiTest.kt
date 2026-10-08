@@ -297,7 +297,7 @@ class OrderConfirmationApiTest(
     }
 
     private fun assertStock(product: Product, expected: Int) {
-        assertThat(jdbc.queryForObject("select stock_quantity from product where id = ?", Int::class.java, product.id)!!)
+        assertThat(jdbc.queryForObject("select stock from product where id = ?", Int::class.java, product.id)!!)
             .isEqualTo(expected)
     }
 

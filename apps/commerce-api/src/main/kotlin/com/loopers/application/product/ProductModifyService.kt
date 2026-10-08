@@ -10,7 +10,6 @@ import com.loopers.application.product.provided.ProductRegister
 import com.loopers.application.product.provided.StockDeductor
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.support.stereotype.ValidatedApplicationService
 
@@ -34,7 +33,7 @@ class ProductModifyService(
             brand = brand,
             name = request.name,
             price = Money(request.price),
-            stock = Stock(request.stock),
+            stock = request.stock,
         )
         return ProductInfo.from(productRepository.save(product), likeCount = 0)
     }

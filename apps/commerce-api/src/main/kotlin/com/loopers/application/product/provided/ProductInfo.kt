@@ -29,7 +29,7 @@ data class ProductInfo(
                 brandName = product.brand.name,
                 name = product.name,
                 price = product.price.amount,
-                stock = product.stock.quantity,
+                stock = product.stock,
                 soldOut = product.isSoldOut(),
                 likeCount = likeCount,
                 createdAt = product.createdAt,

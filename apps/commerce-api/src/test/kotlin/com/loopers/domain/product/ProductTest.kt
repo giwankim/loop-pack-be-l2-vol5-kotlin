@@ -64,14 +64,32 @@ class ProductTest {
     }
 
     @Test
+    fun `negative stock throws InvalidStockException`() {
+        val valid = createProduct(createBrand())
+
+        assertThrows<InvalidStockException> {
+            Product(brand = valid.brand, name = valid.name, price = valid.price, stock = -1)
+        }
+    }
+
+    @Test
+    fun `zero stock is kept`() {
+        val valid = createProduct(createBrand())
+
+        val product = Product(brand = valid.brand, name = valid.name, price = valid.price, stock = 0)
+
+        assertThat(product.stock).isZero()
+    }
+
+    @Test
     fun `registering keeps the brand, the name as sent, and the stock it was given`() {
         val valid = createProduct(createBrand())
 
-        val product = Product(brand = valid.brand, name = " 티셔츠 ", price = valid.price, stock = Stock(3))
+        val product = Product(brand = valid.brand, name = " 티셔츠 ", price = valid.price, stock = 3)
 
         assertThat(product.brand).isSameAs(valid.brand)
         assertThat(product.name).isEqualTo(" 티셔츠 ")
-        assertThat(product.stock).isEqualTo(Stock(3))
+        assertThat(product.stock).isEqualTo(3)
     }
 
     @Test
@@ -112,11 +130,11 @@ class ProductTest {
 
     @Test
     fun `updateStock with a negative quantity throws InvalidStockException and keeps the stock`() {
-        val product = createProduct(createBrand(), stock = Stock(5))
+        val product = createProduct(createBrand(), stock = 5)
 
         assertThrows<InvalidStockException> { product.updateStock(-1) }
 
-        assertThat(product.stock).isEqualTo(Stock(5))
+        assertThat(product.stock).isEqualTo(5)
     }
 
     @Test
@@ -125,19 +143,19 @@ class ProductTest {
 
         product.updateStock(0)
 
-        assertThat(product.stock).isEqualTo(Stock(0))
+        assertThat(product.stock).isZero()
     }
 
     @Test
     fun `isSoldOut is true when the stock is zero`() {
-        val product = createProduct(createBrand(), stock = Stock(0))
+        val product = createProduct(createBrand(), stock = 0)
 
         assertThat(product.isSoldOut()).isTrue()
     }
 
     @Test
     fun `isSoldOut is false when any stock remains`() {
-        val product = createProduct(createBrand(), stock = Stock(1))
+        val product = createProduct(createBrand(), stock = 1)
 
         assertThat(product.isSoldOut()).isFalse()
     }
@@ -145,26 +163,26 @@ class ProductTest {
     @ParameterizedTest
     @ValueSource(ints = [0, -1, Int.MIN_VALUE])
     fun `deductStock rejects nonpositive quantities without changing stock`(quantity: Int) {
-        val product = createProduct(createBrand(), stock = Stock(5))
+        val product = createProduct(createBrand(), stock = 5)
 
         assertThrows<InvalidStockException> { product.deductStock(quantity) }
 
-        assertThat(product.stock).isEqualTo(Stock(5))
+        assertThat(product.stock).isEqualTo(5)
     }
 
     @ParameterizedTest
     @ValueSource(ints = [6, Int.MAX_VALUE])
     fun `deductStock rejects shortages without changing stock`(quantity: Int) {
-        val product = createProduct(createBrand(), stock = Stock(5))
+        val product = createProduct(createBrand(), stock = 5)
 
         assertThrows<InsufficientStockException> { product.deductStock(quantity) }
 
-        assertThat(product.stock).isEqualTo(Stock(5))
+        assertThat(product.stock).isEqualTo(5)
     }
 
     @Test
     fun `deductStock can sell the final unit`() {
-        val product = createProduct(createBrand(), stock = Stock(1))
+        val product = createProduct(createBrand(), stock = 1)
 
         product.deductStock(1)
 

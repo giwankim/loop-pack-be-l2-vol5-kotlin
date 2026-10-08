@@ -15,7 +15,6 @@ import com.loopers.domain.order.createOrder
 import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.Stock
 import com.loopers.domain.product.createProduct
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
@@ -90,7 +89,7 @@ abstract class BaseRepositoryTest {
         brand: Brand = prepareBrand(),
         name: String? = null,
         price: Money? = null,
-        stock: Stock? = null,
+        stock: Int? = null,
     ): Product {
         return productRepository.save(createProduct(brand, name = name, price = price, stock = stock)).also { product = it }
     }

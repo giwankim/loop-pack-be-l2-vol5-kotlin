@@ -11,7 +11,7 @@ import org.instancio.kotlin.KInstancio.gen
 import org.instancio.kotlin.KSelect.field
 
 /**
- * 저장하지 않은 상품. 생성자를 건너뛰므로 이름·가격 규칙은 계약 테스트가 지킨다.
+ * 저장하지 않은 상품. 생성자를 건너뛰므로 이름·가격·재고 규칙은 계약 테스트가 지킨다.
  * 브랜드는 다른 애그리거트라 테스트가 넘긴다. 맡기면 Instancio가 저장되지 않은 브랜드를 지어낸다.
  * 가격은 1..1,000,000,000원 전체, 재고는 100..1,000개라 품절(0)이 나오지 않고 기본 주문 수량보다 크다.
  */
@@ -19,14 +19,14 @@ fun createProduct(
     brand: Brand,
     name: String? = null,
     price: Money? = null,
-    stock: Stock? = null,
+    stock: Int? = null,
 ): Product {
     return KInstancio.of<Product>()
         .unsaved()
         .set(field(Product::brand), brand)
         .set(field(Product::name), name ?: gen().string().minLength(2).maxLength(100).get())
         .set(field(Product::price), price ?: Money(gen().longs().range(1, 1_000_000_000).get()))
-        .set(field(Product::stock), stock ?: Stock(gen().ints().range(100, 1_000).get()))
+        .set(field(Product::stock), stock ?: gen().ints().range(100, 1_000).get())
         .create()
 }
 

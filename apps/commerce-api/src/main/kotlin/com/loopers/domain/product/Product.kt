@@ -23,7 +23,7 @@ class Product(
     brand: Brand,
     name: String,
     price: Money,
-    stock: Stock,
+    stock: Int,
 ) : BaseEntity() {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(nullable = false, updatable = false)
@@ -39,13 +39,14 @@ class Product(
     var price: Money = price
         protected set
 
-    @Embedded
-    @AttributeOverride(name = "quantity", column = Column(name = "stock_quantity", nullable = false))
-    var stock: Stock = stock
+    /** 팔 수 있는 남은 수량. 0 아래로 내려가지 않는다. */
+    @Column(nullable = false)
+    var stock: Int = stock
         protected set
 
     init {
         validatePrice(price)
+        validateStock(stock)
     }
 
     /** 이름과 가격을 바꾼다. 브랜드는 바뀌지 않는다. 하나라도 거절되면 둘 다 기존 값으로 남는다. */
@@ -65,17 +66,33 @@ class Product(
 
     /** 재고를 최종 수량으로 맞춘다. 수량이 음수면 거절하고 기존 재고를 그대로 둔다. */
     fun updateStock(quantity: Int) {
-        stock = Stock(quantity)
+        validateStock(quantity)
+        stock = quantity
+    }
+
+    /** 재고가 지켜야 할 하한. 생성과 재고 변경이 같은 규칙을 쓴다. */
+    private fun validateStock(stock: Int) {
+        if (stock < 0) {
+            throw InvalidStockException("재고는 0 이상이어야 합니다.")
+        }
     }
 
     /** 구매 수량만큼 재고를 차감한다. 수량이 잘못되거나 부족하면 기존 재고를 유지한다. */
     fun deductStock(quantity: Int) {
-        stock = stock.deduct(quantity)
+        if (quantity <= 0) {
+            throw InvalidStockException("차감 수량은 1개 이상이어야 합니다.")
+        }
+
+        if (quantity > stock) {
+            throw InsufficientStockException()
+        }
+
+        stock -= quantity
     }
 
     /** 재고가 0이면 품절이다. */
     fun isSoldOut(): Boolean {
-        return stock.isEmpty()
+        return stock == 0
     }
 
     companion object {

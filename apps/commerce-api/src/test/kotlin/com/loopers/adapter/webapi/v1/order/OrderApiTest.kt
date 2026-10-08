@@ -2,7 +2,6 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.product.Product
-import com.loopers.domain.product.Stock
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.assertCheckConstraintRejects
@@ -105,8 +104,8 @@ class OrderApiTest(
         val ownDetail = requestDetail(body.extractingPath("$.data.orderId").asNumber().actual().toLong())
         assertThat(ownDetail).hasStatusOk()
         assertThat(ownDetail.json()).isEqualTo(created.json())
-        assertThat(entityManager.find(Product::class.java, first).stock).isEqualTo(Stock(0))
-        assertThat(entityManager.find(Product::class.java, second).stock).isEqualTo(Stock(1))
+        assertThat(entityManager.find(Product::class.java, first).stock).isZero()
+        assertThat(entityManager.find(Product::class.java, second).stock).isEqualTo(1)
     }
 
     @Test
