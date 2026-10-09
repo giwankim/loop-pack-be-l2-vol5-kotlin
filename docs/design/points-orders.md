@@ -939,6 +939,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 늦은 실패를 넣는 자리도 바뀌었다. 확정은 이제 차감 뒤 어떤 저장소도 부르지 않고, 모든 쓰기가 커밋의 flush에서 나간다. 테스트의 SQL 로그에서 flush는 엔티티를 읽은 차례로 UPDATE를 보냈다. `orders` → `product`(품목마다) → `point_account`다. 그래서 `point_account`에 `check (balance <> 3000)`을 잠시 걸어 마지막 UPDATE만 거절하면, 앞선 주문·재고의 UPDATE가 실제로 나간 뒤의 실패가 된다. 3주차 과제가 요구하는 "실제 변경 SQL이 나간 뒤 다음 저장 단계의 실패"와 같은 모양이다. 대가는 트랜잭션 안에서 flush된 값을 들여다보던 확인이 빠진 것이다. 테스트는 새 트랜잭션에서 재고·잔액·주문이 모두 그대로임을 보고, 같은 DRAFT를 다시 확정한다.
 
+> 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)이 `hibernate.order_updates`를 켜면서 위의 flush 차례가 바뀌었다. 커밋의 flush는 이제 엔티티 이름 순으로 `orders` → `point_account` → `product`를 보내고, 첫 상품의 재고는 둘째 상품의 잠금 읽기가 부른 자동 flush로 그보다 먼저 나간다. `point_account`의 CHECK는 더는 마지막 UPDATE를 거절하지 않았고, 둘째 상품의 UPDATE가 MySQL에 닿지 않은 채로 테스트가 통과했다. 늦은 실패는 이제 `product`에 `check (stock <> 2)`를 잠시 걸어 마지막인 둘째 상품의 재고 UPDATE를 거절하고, 앞서 나간 재고·주문·잔액의 UPDATE가 모두 되돌아가는지 본다.
+
 ### 18.3 지금의 흐름
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)`. `point_account` 한 행만 바뀐다.

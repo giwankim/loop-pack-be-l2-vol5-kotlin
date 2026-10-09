@@ -301,30 +301,31 @@ class OrderConfirmationApiTest(
     }
 
     /**
-     * 확정은 저장소를 부르지 않고 커밋의 flush로 쓴다. flush는 엔티티를 읽은 차례로 UPDATE를 보내므로 주문, 상품,
-     * 포인트 계정 차례다. 마지막인 `point_account`의 UPDATE를 임시 CHECK로 거절해, 앞서 나간 주문·재고의 UPDATE까지
-     * 함께 되돌아가는지 본다(설계 18.2).
+     * 확정의 UPDATE는 대부분 커밋의 flush에서 나가고, `order_updates`가 그것을 엔티티 이름 순으로 보낸다. 주문, 포인트 계정,
+     * 상품 차례다(ADR 0018). 첫 상품의 재고는 둘째 상품의 잠금 읽기가 부른 자동 flush로 그보다 먼저 나간다. 그래서 커밋의
+     * 마지막 UPDATE는 둘째 상품의 재고다. 그것만 임시 CHECK로 거절해, 앞서 나간 재고·주문·잔액의 UPDATE까지 함께
+     * 되돌아가는지 본다(설계 18.2).
      */
     @Test
-    fun `a failure on the last write at commit rolls back the earlier stock and order writes and permits retry`() {
+    fun `a failure on the last write at commit rolls back the earlier stock, order and balance writes and permits retry`() {
         charge(amount = 10_000, user = owner)
         prepareBrand()
         val first = prepareProduct(brand, price = 1_000, stock = 6)
-        val second = prepareProduct(brand, price = 2_000, stock = 2)
+        val second = prepareProduct(brand, price = 2_000, stock = 3)
         val orderId = prepareOrder(first to 5, second to 1, user = owner).id
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
-        jdbc.execute("alter table point_account add constraint fail_paid_balance check (balance <> 3000)")
+        jdbc.execute("alter table product add constraint fail_second_stock check (stock <> 2)")
         try {
             assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
         } finally {
-            jdbc.execute("alter table point_account drop check fail_paid_balance")
+            jdbc.execute("alter table product drop check fail_second_stock")
         }
 
         // A new transaction, outside the failed HTTP request, proves rollback rather than test cleanup.
         transaction.executeWithoutResult {
             assertStock(first, 6)
-            assertStock(second, 2)
+            assertStock(second, 3)
             assertThat(jdbc.queryForObject("select balance from point_account where user_id = ?", Long::class.java, owner.id)!!)
                 .isEqualTo(10_000L)
             assertThat(jdbc.queryForMap("select status, paid_amount, confirmed_at from orders where id = ?", orderId))
@@ -336,7 +337,7 @@ class OrderConfirmationApiTest(
         assertThat(requestConfirm(orderId)).hasStatusOk()
         balance(3_000)
         assertStock(first, 1)
-        assertStock(second, 1)
+        assertStock(second, 2)
     }
 
     private fun balance(expected: Long) {

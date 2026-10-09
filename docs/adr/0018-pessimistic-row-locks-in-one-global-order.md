@@ -20,7 +20,7 @@ date: 2026-10-09
    - 확정의 품목은 생성 때 `productId` 순으로 정렬되어 있다(`@OrderBy("productId ASC")`).
    - 연쇄는 `brand_id` 인덱스를 따라 잠근다. 그 인덱스의 항목이 `(brand_id, id)`이므로 id 순이다. 잠금은 훑는 인덱스의 순서로 걸리고 `ORDER BY`가 정하지 않는다. `OrderById`는 그 뜻을 적고 결과의 순서를 고정한다.
    - 확정은 브랜드를 잠그지 않는다.
-   - `hibernate.order_updates: true`가 flush 때의 UPDATE도 엔티티 종류와 id 순으로 보낸다.
+   - `hibernate.order_updates: true`는 flush 때의 UPDATE를 엔티티 이름 순으로, 같은 엔티티 안에서는 id 순으로 보낸다. 표 사이의 차례는 위의 잠금 순서와 다르다. 확정의 커밋은 주문 → 포인트 계정 → 상품 차례로 쓴다. 그래도 잠금 순서가 지켜지는 것은 2번 덕분이다. 상품 행은 첫 읽기에서 이미 잠겨 있어 flush의 상품 UPDATE는 새 잠금을 얻지 않고, flush에서 처음 잠기는 행은 상품 뒤의 주문과 포인트 계정뿐이다.
 4. **삭제 여부는 잠금을 얻은 뒤에 본다.** 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽는다. 그래서 `@SQLRestriction("deleted_at is null")`이 그 사이 커밋된 삭제를 걸러 낸다. 이 동작은 첫 테스트가 MySQL에서 확인한다. 브랜드 삭제가 상품을 함께 삭제하고 상품 등록이 브랜드를 잠그므로, 커밋된 모든 상태에서 "삭제된 브랜드의 상품은 삭제됐다"가 성립한다. 확정이 상품 행만 보는 까닭이다. 읽기 쪽의 브랜드 필터(목록의 inner join, 주문 생성의 `findByIdWithActiveBrand`, 좋아요한 상품 목록의 그래프)는 방어로 남긴다.
 5. **저장소 포트는 Spring Data의 파생 이름에 `@Lock`을 단다.** `findForUpdateById`(`PESSIMISTIC_WRITE`), `findForShareById`(`PESSIMISTIC_READ`), `findForUpdateByBrandIdOrderById`(`PESSIMISTIC_WRITE`)가 그렇다. Spring Data는 `find`와 `By` 사이를 설명으로 보므로 `@Query`가 필요 없다. 파생 조회는 상품 표만 읽는다. `brand`가 LAZY라서 잠금이 상품 행에만 걸린다. Finder의 잠금 메서드는 트랜잭션 속성을 따로 달지 않는다. 대신 KDoc에 "호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다."를 적는다. 부르는 곳은 모두 쓰기 트랜잭션에 참여하므로 Query Service의 `readOnly`는 걸리지 않는다.
 6. **`product.brand_id` 인덱스를 엔티티에 적고 테스트로 고정한다.** 지금은 InnoDB가 외래 키를 위해 만든 암묵 인덱스뿐이다. 그 인덱스가 없으면 REPEATABLE READ의 잠금 읽기가 훑은 모든 행을 잠가, 상품 표 전체가 브랜드 삭제의 커밋까지 잠긴다.
