@@ -292,7 +292,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.8 교차 검사의 위치
 
-브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.) (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 브랜드 삭제 조건은 없어졌다. 브랜드 삭제는 상품 조각에 묻지 않고 시킨다. 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품을 함께 삭제하게 하고, `ActiveProductChecker`와 `BrandValidator.validateForDelete`는 지웠다. 남은 교차 검사는 브랜드 이름 중복과 상품 등록 시 브랜드 존재다.)
+브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.) (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 브랜드 삭제 조건은 없어졌다. 브랜드 삭제는 상품 조각에 묻지 않고 시킨다. 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품을 함께 삭제하게 하고, `ActiveProductChecker`와 `BrandValidator.validateForDelete`는 지웠다. 남은 교차 검사는 브랜드 이름 중복과 상품 등록 시 브랜드 존재다.) (2026-10-09, [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md): 상품 등록의 브랜드 존재는 `BrandFinder.findForShare`로 묻는다. 거절은 그대로 `BRAND_NOT_FOUND`이고, 공유 잠금이 커밋까지 가므로 겹친 브랜드 삭제가 그 사이에 끼어들지 못한다(7).)
 
 ### 5.9 카탈로그 조회의 식별
 
@@ -477,6 +477,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.23 이름 수정의 순서
 
 > 2026-10-03 이 절의 선택(C)을 철회했다(#55). 이름을 받은 그대로 저장하므로 다듬은 이름이 따로 없고, `Brand.normalizeName`은 생성자·`update`만 부르는 private `validatedName`이 되었다. 순서는 `find(id)` → `existsByNameAndIdNot(request.name, brand.id)` → `brand.update(request.name)`이다. 거절이 브랜드를 건드리기 전에 끝나야 하는 까닭(대안 A를 물리친 까닭)과 중복 조회에 자기를 빼는 까닭은 그대로다.
+
+> 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)로 첫 단계 `find(id)`는 `findForUpdate(id)`가 되었다. 이름 변경은 행 전체를 쓰므로, 브랜드 행을 잠그지 않으면 겹친 삭제가 커밋한 삭제 시각을 옛 값으로 덮는다(7). 나머지 순서는 그대로다.
 
 - 문제: `PUT /api-admin/v1/brands/{brandId}`는 거절되면(공백, 길이, 중복) 기존 이름이 그대로여야 한다. 중복을 물으려면 저장될 이름, 곧 앞뒤 공백을 뗀 이름이 필요한데(5.11과 같은 이유), 5.19가 `Name`을 지운 뒤로 그 이름을 만드는 곳은 `Brand`뿐이다.
 - 대안 A: `brand.update(name)`으로 먼저 바꾸고 중복이면 예외를 던져 트랜잭션 롤백에 맡긴다. 그러나 예외를 던지기 전에 영속성 컨텍스트의 브랜드는 이미 새 이름을 들고 있다. 조회가 auto-flush를 부르면 거절된 이름이 DB에 닿고, 같은 트랜잭션 안에서 다시 읽는 테스트는 거절된 이름을 본다. "기존 이름이 그대로다"가 객체가 아니라 롤백에 기대게 된다.
@@ -731,6 +733,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ## 7. 남은 것
 
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에 `@SQLRestriction`이 붙었다. 아래 "`User`에는 삭제 상태가 없다" 항목은 철회했다. 사용자를 지우는 API는 여전히 없지만, 삭제된 사용자는 `existsById`가 없는 사용자로 답하므로 요청자 검사는 그를 401로 거절한다. 사용자 관리가 생기면 이 답이 맞는지 그때 다시 본다(ADR 0016의 다시 볼 조건).
+
+> 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금으로 아래 `@ManyToOne(optional = false)` 항목의 동시 등록 경합이 닫혔다. 상품 등록은 브랜드를 `FOR SHARE`로 읽고, 브랜드의 삭제와 이름 변경은 `FOR UPDATE`로 읽는다. 등록과 삭제가 겹치면 둘 중 하나로 끝난다. 등록이 먼저 커밋하면 연쇄가 그 상품까지 삭제하고, 삭제가 먼저 커밋하면 등록이 `BRAND_NOT_FOUND`로 거절된다. 그래서 삭제된 브랜드 아래 삭제되지 않은 상품은 커밋된 어느 상태에도 남지 않는다. 같은 브랜드의 등록끼리는 공유 잠금이라 서로 막지 않는다. 외래 키 검사도 부모 행에 공유 잠금을 걸지만, 논리 삭제는 브랜드 행을 남기므로 삭제가 커밋된 뒤에도 그 검사가 통과한다. `BrandRegisterConcurrencyTest`가 경합마다 두 결과를 확인한다. 브랜드 이름의 동시 중복은 여전히 범위 밖이다. 동시에 들어온 등록이나 이름 변경은 서로 다른 행을 읽으므로 브랜드 행의 잠금으로 막지 못하고, 이름에는 유일 인덱스가 없다(ADR 0001, ADR 0018의 "이번 범위 밖에 남은 빈틈").
 
 - 내 좋아요 목록은 2026-10-08 `GET /api/v1/likes`로 줄였다(5.36, #98). 403 경우와 `FORBIDDEN`이 이 조각에서 사라졌다. 비교가 `UserLikeApi.getLikedProducts` 한 곳에 있었으므로 지운 자리도 한 곳이었다(5.30).
 - 내 좋아요 목록(#10)이 상품 조회가 `likes`를 join하는 첫 자리다. #9의 좋아요 많은순도 같은 join을 쓰게 되므로 두 쿼리의 관계는 5.29의 다시 볼 조건에서 정한다.

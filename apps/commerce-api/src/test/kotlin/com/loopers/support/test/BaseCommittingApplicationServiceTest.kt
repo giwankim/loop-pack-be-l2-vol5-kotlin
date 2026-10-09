@@ -24,7 +24,7 @@ import kotlin.concurrent.thread
  * 롤백으로 정리할 수 없으므로 테스트가 끝날 때마다 모든 표를 비운다.
  *
  * - [inAnotherThread]는 포트를 다른 스레드에서 부르고 곧바로 돌아온다. 돌려준 [Running]으로 그 호출이 끝났는지 묻고 결과를 받는다.
- *   잠금을 기다리는지는 SQL이 아니라 "아직 끝나지 않았는가"로 본다.
+ *   잠금을 기다리는지는 SQL이 아니라 "[LOCK_WAIT_PROBE] 안에 끝나지 않았는가"로 본다. 잠금을 쥔 쪽은 [com.loopers.support.Pause]로 멈춘다.
  * - [runConcurrently]는 모든 호출이 start gate에 닿으면 함께 풀고, 넘긴 차례대로 성공 값이나 던진 예외를 돌려준다.
  * - [inNewTransaction]은 결과를 새 트랜잭션에서 다시 읽는다. 커밋된 것만 보이고, 앞선 트랜잭션의 영속성 컨텍스트가 답하지 않는다.
  *
@@ -35,6 +35,14 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     companion object {
         /** 멈춘 쪽을 풀지 못한 테스트에서도 정리가 끝나도록, 다른 스레드의 호출을 기다리는 한도. */
         private val AWAIT_LIMIT: Duration = Duration.ofSeconds(30)
+
+        /**
+         * 다른 쪽이 잠금을 기다리는지 보려고 기다리는 시간. 잠금이 없으면 이 안에 끝난다.
+         * 잠금 대기가 3초여도(ADR 0018 규칙 7) 기다리는 쪽이 그 전에 풀려나도록 넉넉히 짧다.
+         * 하위 클래스가 읽는 companion의 `protected` 멤버라서 Kotlin이 `@JvmStatic`을 요구한다.
+         */
+        @JvmStatic
+        protected val LOCK_WAIT_PROBE: Duration = Duration.ofSeconds(1)
     }
 
     @Autowired

@@ -29,6 +29,13 @@ interface BrandRepository : Repository<Brand, Long> {
     fun findForUpdateById(id: Long): Brand?
 
     /**
+     * [id] 브랜드를 `FOR SHARE`로 잠가 읽는다. 없거나 삭제됐으면 null이다(ADR 0018). [findForUpdateById]와 같은 파생 조회다.
+     * 공유 잠금끼리는 서로 막지 않고 `FOR UPDATE`와만 엇갈린다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    fun findForShareById(id: Long): Brand?
+
+    /**
      * 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각 읽는다. 차례는 이름이 적으므로
      * [pageable]에는 조각의 위치와 크기만 싣는다.
      *

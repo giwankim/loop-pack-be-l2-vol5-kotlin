@@ -36,7 +36,7 @@
 ### 협력
 
 - 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `BrandValidator.validateForRegister`가 받은 이름으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
-- 수정: `BrandRegister.update` → 삭제되지 않은 브랜드 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
+- 수정: `BrandRegister.update` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
 - 목록: `BrandFinder.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
 - 삭제: `BrandRegister.delete` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회(없으면 `BRAND_NOT_FOUND`) → `ProductDeleter.deleteAllOfBrand`가 그 브랜드의 삭제되지 않은 상품을 지운다. 상품의 `ProductModifyService`가 `ProductRepository.findForUpdateByBrandIdOrderById`로 id 오름차순으로 잠가 읽고 각각 `product.delete()`를 부른다 → `brand.delete()` → 저장. 브랜드와 상품의 변경은 함께 커밋되고 함께 되돌아간다. 잠금은 브랜드 → 상품의 차례다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 
@@ -80,6 +80,7 @@
 
 ### 협력
 
+- 관리자 등록: `ProductRegister.register` → `BrandFinder.findForShare`가 삭제되지 않은 브랜드를 공유 잠금으로 조회(없으면 `BRAND_NOT_FOUND`) → `Product(brand, name, price, stock)` → 저장. 공유 잠금은 커밋까지 가므로 브랜드의 삭제와 이름 변경은 등록이 끝나기를 기다리고, 같은 브랜드의 등록끼리는 서로 막지 않는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 - 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.findForUpdate`로 삭제되지 않은 상품을 잠가 조회 → `product.updateStock(quantity)` → 저장. 수정과 삭제도 같은 잠금 읽기로 상품을 얻는다. 잠금은 상품 행만 걸고 커밋까지 간다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 - 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 

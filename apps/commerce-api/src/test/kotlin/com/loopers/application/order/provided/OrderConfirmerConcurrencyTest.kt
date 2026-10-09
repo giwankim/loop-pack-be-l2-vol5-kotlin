@@ -19,7 +19,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.test.util.AopTestUtils
-import java.time.Duration
 
 /**
  * 같은 재고를 두고 겹치는 확정과, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
@@ -37,14 +36,6 @@ class OrderConfirmerConcurrencyTest(
     private val productFinder: ProductFinder,
     private val pointAccountFinder: PointAccountFinder,
 ) : BaseCommittingApplicationServiceTest() {
-    companion object {
-        /**
-         * 다른 쪽이 잠금을 기다리는지 보려고 기다리는 시간. 잠금이 없으면 이 안에 끝난다.
-         * 잠금 대기가 3초여도(ADR 0018 규칙 7) 기다리는 쪽이 그 전에 풀려나도록 넉넉히 짧다.
-         */
-        private val LOCK_WAIT_PROBE: Duration = Duration.ofSeconds(1)
-    }
-
     @MockkSpyBean
     private lateinit var pointModifyService: PointModifyService
 

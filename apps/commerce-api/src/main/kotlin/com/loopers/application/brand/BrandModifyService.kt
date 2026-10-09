@@ -30,9 +30,12 @@ class BrandModifyService(
         return brandRepository.save(brand)
     }
 
-    /** 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 다른 브랜드가 그 이름을 쓰는지 본다. */
+    /**
+     * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 다른 브랜드가 그 이름을 쓰는지 본다.
+     * 브랜드는 잠가 읽는다. 행 전체를 쓰므로, 잠그지 않으면 겹친 삭제가 커밋한 삭제 시각을 옛 값으로 덮어 브랜드가 되살아난다(ADR 0018).
+     */
     override fun update(id: Long, request: BrandAdminUpdateRequest): Brand {
-        val brand = brandFinder.find(id)
+        val brand = brandFinder.findForUpdate(id)
         brandValidator.validateForUpdate(brand, request)
         brand.update(request.name)
 

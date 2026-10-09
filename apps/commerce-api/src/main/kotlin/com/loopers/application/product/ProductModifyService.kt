@@ -30,9 +30,13 @@ class ProductModifyService(
 ) : ProductRegister,
     StockDeductor,
     ProductDeleter {
-    /** 새 상품에는 좋아요가 없다는 불변식으로 0을 넣는다. 세어 볼 관계가 아직 없다(설계 5.7). */
+    /**
+     * 브랜드를 공유 잠금으로 읽어, 커밋할 때까지 브랜드의 삭제가 끼어들지 못하게 한다. 외래 키 검사의 공유 잠금으로는 모자란다.
+     * 논리 삭제는 브랜드 행을 남기므로 삭제가 커밋된 뒤에도 그 검사가 통과한다(ADR 0018).
+     * 새 상품에는 좋아요가 없다는 불변식으로 0을 넣는다. 세어 볼 관계가 아직 없다(설계 5.7).
+     */
     override fun register(request: ProductAdminRegisterRequest): ProductInfo {
-        val brand = brandFinder.find(request.brandId)
+        val brand = brandFinder.findForShare(request.brandId)
         val product = Product(
             brand = brand,
             name = request.name,

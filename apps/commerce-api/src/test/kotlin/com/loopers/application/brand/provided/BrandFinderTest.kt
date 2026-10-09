@@ -36,6 +36,20 @@ class BrandFinderTest(
         }
     }
 
+    /** 공유 잠금으로 읽어도 같다. 상품 등록이 이 읽기로 삭제된 브랜드를 거절한다. */
+    @Test
+    fun `getting an unknown or a deleted brand for share throws BRAND_NOT_FOUND`() {
+        prepareBrand()
+        deleteBrand()
+        entityManager.flushAndClear()
+
+        listOf(999L, brand.id).forEach { id ->
+            val exception = assertThrows<CoreException> { brandFinder.findForShare(id) }
+
+            assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        }
+    }
+
     @Test
     fun `listing brands returns the active ones newest first as a slice`() {
         prepareBrand()
