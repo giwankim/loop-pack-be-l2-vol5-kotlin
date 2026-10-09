@@ -723,7 +723,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ## 6. 테스트 경계
 
-> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)로 아래 표의 "브랜드 삭제 조건"은 그때의 것이 되었다. 삭제 조건이 없어지고 브랜드 삭제의 연쇄가 그 자리에 들어왔다. 연쇄는 같은 application 통합 테스트(`BrandRegisterTest`)가 본다. 재고 0인 상품도 함께 삭제되는지, 이미 삭제된 상품이 삭제 시각을 지키는지, 다른 브랜드와 그 상품이 그대로인지가 그 대상이다. 삭제된 상품의 삭제 시각은 어느 포트로도 읽히지 않으므로 SQL로 읽는다. 함께 삭제된 상품이 고객 목록·상세, 좋아요, 내 좋아요, 관리자의 상품 쓰기에서 없는 상품인지는 그 포트의 테스트(`ProductFinderTest`, `LikerTest`, `LikeFinderTest`, `ProductRegisterTest`)가 본다. 새 주문과 확정의 거절은 주문 HTTP 테스트가 본다. 읽기 쪽 브랜드 필터는 연쇄 때문에 포트로 닿을 수 없게 된 상태(`deleteBrandKeepingProducts`)로 고정한다.
+> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)로 아래 표의 "브랜드 삭제 조건"은 그때의 것이 되었다. 삭제 조건이 없어지고 브랜드 삭제의 연쇄가 그 자리에 들어왔다. 연쇄는 같은 application 통합 테스트(`BrandRegisterTest`)가 본다. 재고 0인 상품도 함께 삭제되는지, 이미 삭제된 상품이 삭제 시각을 지키는지, 다른 브랜드와 그 상품이 그대로인지가 그 대상이다. 삭제된 상품의 삭제 시각은 어느 포트로도 읽히지 않으므로 SQL로 읽는다. 함께 삭제된 상품이 고객 목록·상세, 좋아요, 내 좋아요, 관리자의 상품 쓰기에서 없는 상품인지는 그 포트의 테스트(`ProductFinderTest`, `LikerTest`, `LikeFinderTest`, `ProductRegisterTest`)가 본다. 새 주문과 확정의 거절은 주문 HTTP 테스트가 본다. 읽기 쪽 브랜드 필터는 연쇄 때문에 포트로 닿을 수 없게 된 상태(`deleteBrandKeepingProducts`)로 고정한다. 3주차 과제 4절의 "브랜드 정상·실패" 행은 과제의 준비 그대로 커밋하는 `BrandRegisterRollbackTest`가 본다. 상품 둘(하나는 재고 0)을 가진 브랜드, 다른 브랜드의 상품, 첫 브랜드 상품의 확정된 과거 주문을 두고, 삭제가 끝나면 브랜드와 두 상품이 삭제되고 중간에 실패하면 모두 그대로인지 새 트랜잭션에서 본다. 어느 쪽이든 다른 브랜드의 상품과 과거 주문의 상세는 그대로다.
 
 | 확인할 것 | 테스트 | 비고 |
 | --- | --- | --- |
