@@ -368,8 +368,9 @@ class ProductRepositoryTest(
 
     /**
      * fetch join이 `@ManyToOne(optional = false)`를 inner join으로 읽고 [Brand]의 `@SQLRestriction`이 그 join에도 붙으므로,
-     * 삭제된 브랜드에 달렸지만 자신은 삭제되지 않은 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제 거절이
-     * 막고 있어 실제로는 닿을 수 없다. 저장소는 그 거절을 모르므로 여기서만 만들 수 있다(설계 7).
+     * 삭제된 브랜드에 달렸지만 자신은 삭제되지 않은 상품은 목록에서 빠진다. 상품 자체는 그대로 있다. 이 조합은 브랜드 삭제의 연쇄와
+     * 브랜드 잠금 때문에 포트로는 닿을 수 없다(ADR 0017, 0018). 저장소는 연쇄를 모르므로 여기서만 만들 수 있고,
+     * 읽기 쪽 브랜드 필터를 고정하려고 둔다(설계 7).
      */
     @Test
     fun `findAll leaves out an active product whose brand was deleted`() {
@@ -381,39 +382,6 @@ class ProductRepositoryTest(
 
         assertThat(productRepository.findById(product.id)).isNotNull()
         assertThat(slice.content).isEmpty()
-    }
-
-    @Test
-    fun `existsByBrandId is true while the brand has a product`() {
-        prepareProduct()
-        entityManager.flushAndClear()
-
-        assertThat(productRepository.existsByBrandId(brand.id)).isTrue()
-    }
-
-    /** 브랜드 삭제 조건이 기대는 사실이다. 삭제된 상품이 남은 상품으로 세어지면 그 브랜드는 영영 삭제할 수 없다. */
-    @Test
-    fun `existsByBrandId does not count deleted products`() {
-        prepareProduct()
-        deleteProduct()
-        entityManager.flushAndClear()
-
-        assertThat(productRepository.existsByBrandId(brand.id)).isFalse()
-    }
-
-    @Test
-    fun `existsByBrandId does not count another brand's products`() {
-        val asked = prepareBrand()
-        val other = prepareBrand()
-        prepareProduct(other)
-        entityManager.flushAndClear()
-
-        assertThat(productRepository.existsByBrandId(asked.id)).isFalse()
-    }
-
-    @Test
-    fun `existsByBrandId is false for an unknown brand`() {
-        assertThat(productRepository.existsByBrandId(999L)).isFalse()
     }
 
     /**

@@ -128,8 +128,9 @@ abstract class BaseRepositoryTest {
     }
 
     /**
-     * 살아 있는 상품을 남긴 채 브랜드를 삭제한다. 운영에서는 브랜드 삭제가 막는 상태라 [deleteBrand]와 같은 일을 하지만
-     * 이름에 우회를 드러낸다. 이 상태는 어긋난 데이터를 막는 테스트만 만든다.
+     * 삭제되지 않은 상품을 남긴 채 브랜드를 삭제한다. 운영에서는 브랜드 삭제의 연쇄와 브랜드 잠금 때문에 포트로 닿을 수 없는 상태다
+     * (ADR 0017, 0018). 저장소에는 연쇄가 없어 [deleteBrand]와 같은 일을 하지만 이름에 우회를 드러낸다.
+     * 읽기 쪽 브랜드 필터를 고정하려고 둔다.
      */
     protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
         deleteBrand(brand)

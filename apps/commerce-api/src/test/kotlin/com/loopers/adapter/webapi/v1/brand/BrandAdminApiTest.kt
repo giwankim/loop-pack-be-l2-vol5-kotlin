@@ -22,6 +22,7 @@ class BrandAdminApiTest(
 ) : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api-admin/v1/brands"
+        private const val PRODUCT_ENDPOINT = "/api-admin/v1/products"
         private val ADMIN = user("admin").roles("ADMIN")
         private val USER = user("user").roles("USER")
     }
@@ -287,14 +288,16 @@ class BrandAdminApiTest(
     }
 
     @Test
-    fun `deleting a brand stamps the row instead of erasing it`() {
-        prepareBrand()
+    fun `deleting a brand stamps its row and its product's row instead of erasing them`() {
+        prepareProduct()
 
         assertThat(requestDeleteBrand(brand.id)).hasStatusOk()
         entityManager.flushAndClear()
 
         assertThat(brandRowExists(brand.id)).isTrue()
         assertThat(countStampedBrands(brand.id)).isOne()
+        assertThat(countProductRows(brand.id)).isOne()
+        assertThat(countStampedProducts(brand.id)).isOne()
     }
 
     @Test
@@ -313,33 +316,48 @@ class BrandAdminApiTest(
     }
 
     @Test
-    fun `deleting as a user returns 403 and keeps the brand`() {
-        prepareBrand()
+    fun `deleting as a user returns 403 and keeps the brand and its product`() {
+        prepareProduct()
 
         assertThat(requestDeleteBrand(brand.id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
+        entityManager.flushAndClear()
 
         assertThat(countBrands()).isOne()
+        assertThat(mvc.get().uri("$PRODUCT_ENDPOINT/${product.id}").with(ADMIN)).hasStatusOk()
     }
 
     @Test
-    fun `deleting a brand that still has an active product returns 409 and leaves the row unstamped`() {
-        prepareBrand(name = "루퍼스")
-        prepareProduct(brand)
+    fun `deleting anonymously returns 403 and keeps the brand and its product`() {
+        prepareProduct()
+
+        assertThat(requestDeleteBrand(brand.id, principal = null)).hasStatus(HttpStatus.FORBIDDEN)
         entityManager.flushAndClear()
 
-        val body = assertThat(requestDeleteBrand(brand.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
-        body.extractingPath("$.meta.result").isEqualTo("FAIL")
-        body.extractingPath("$.meta.errorCode").isEqualTo("Conflict")
-        body.extractingPath("$.meta.message").isEqualTo(ErrorType.BRAND_HAS_PRODUCTS.message)
+        assertThat(countBrands()).isOne()
+        assertThat(mvc.get().uri("$PRODUCT_ENDPOINT/${product.id}").with(ADMIN)).hasStatusOk()
+    }
+
+    /** 삭제되지 않은 상품이 남아도 거절하지 않고 함께 삭제한다. 재고가 0인 상품도 그렇다(ADR 0017). */
+    @Test
+    fun `deleting a brand that still has products returns 200 and deletes them with it`() {
+        prepareBrand()
+        val inStock = prepareProduct(brand)
+        val soldOut = prepareProduct(brand, stock = 0)
         entityManager.flushAndClear()
 
-        val detail = assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.name").isEqualTo("루퍼스")
-        assertThat(countStampedBrands(brand.id)).isZero()
+        val body = assertThat(requestDeleteBrand(brand.id)).hasStatusOk().bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.doesNotHavePath("$.data")
+        entityManager.flushAndClear()
+
+        assertThat(mvc.get().uri("$ENDPOINT/${brand.id}").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND)
+        listOf(inStock, soldOut).forEach { product ->
+            assertThat(mvc.get().uri("$PRODUCT_ENDPOINT/${product.id}").with(ADMIN)).hasStatus(HttpStatus.NOT_FOUND)
+        }
     }
 
     @Test
-    fun `deleting a brand goes through once its last product is deleted`() {
+    fun `deleting a brand whose only product was already deleted returns 200`() {
         prepareProduct()
         deleteProduct()
         entityManager.flushAndClear()
@@ -379,16 +397,26 @@ class BrandAdminApiTest(
 
     /** 삭제 시각과 상관없이 브랜드 행이 남아 있는지. 물리 삭제와 논리 삭제를 가른다. */
     private fun brandRowExists(brandId: Long): Boolean {
-        return countRawBrands("select count(*) from brand where id = :id", brandId) == 1L
+        return countRawRows("select count(*) from brand where id = :id", brandId) == 1L
     }
 
     /** 삭제 시각이 찍힌 브랜드 행 수. */
     private fun countStampedBrands(brandId: Long): Long {
-        return countRawBrands("select count(*) from brand where id = :id and deleted_at is not null", brandId)
+        return countRawRows("select count(*) from brand where id = :id and deleted_at is not null", brandId)
+    }
+
+    /** 삭제 시각과 상관없이 브랜드에 달린 상품 행 수. */
+    private fun countProductRows(brandId: Long): Long {
+        return countRawRows("select count(*) from product where brand_id = :id", brandId)
+    }
+
+    /** 브랜드에 달린 상품 가운데 삭제 시각이 찍힌 행 수. */
+    private fun countStampedProducts(brandId: Long): Long {
+        return countRawRows("select count(*) from product where brand_id = :id and deleted_at is not null", brandId)
     }
 
     /** 엔티티의 SQL 제한이 붙으면 삭제된 행이 보이지 않으므로, 삭제 여부를 직접 묻는 조회는 네이티브여야 한다. */
-    private fun countRawBrands(sql: String, brandId: Long): Long {
+    private fun countRawRows(sql: String, brandId: Long): Long {
         return (
             entityManager
                 .createNativeQuery(sql)

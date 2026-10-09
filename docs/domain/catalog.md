@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 이 문서는 각 개념이 무엇을 가지고, 무엇을 지키고, 무엇을 할 수 있는지를 적는다. 구조와 API는 [`docs/design/catalog.md`](../design/catalog.md)에 있다.
 
-표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음, 삭제 조건)은 application이 `CoreException(ErrorType)`로 나타낸다.
+표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
 이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockDeductor`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
@@ -22,7 +22,7 @@
 
 - 이름은 공백뿐일 수 없고, 앞뒤 공백을 포함해 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 받은 그대로 저장한다. 어기면 `InvalidNameException`.
 - 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 컬럼 collation이 정한다. 대소문자와 뒤 공백은 가리지 않고(`Loopers`, `loopers`, `Loopers `는 같은 이름), 앞 공백은 가린다(` Loopers`는 다른 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 수정은 자기를 뺀 나머지 브랜드와 본다(대소문자만 바꾸는 수정이 자기 이름과 겹치지 않도록). 어기면 `BRAND_NAME_DUPLICATED`.
-- 삭제되지 않은 상품이 하나라도 남아 있으면 삭제할 수 없다. 재고 0인 상품도 남은 상품이다. 이것도 application이 상품 저장소에 물어 확인한다. 어기면 `BRAND_HAS_PRODUCTS`.
+- 삭제하면 그 브랜드의 삭제되지 않은 상품도 같은 트랜잭션에서 함께 삭제된다. 재고 0인 상품도 함께 삭제하고, 이미 삭제된 상품의 삭제 시각은 그대로 둔다. 브랜드는 자기 상품을 모르므로 application이 브랜드가 선언한 `ProductDeleter`로 상품 조각에 시킨다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)).
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
 
 ### 행위
@@ -31,14 +31,14 @@
 | --- | --- | --- |
 | `Brand(name)` | 이름의 공백과 길이 상한을 검사하고 받은 그대로 담아 만든다 | `InvalidNameException` |
 | `update(name)` | 이름을 바꾼다. 거절되면 기존 이름이 그대로 남는다 | `InvalidNameException` |
-| `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 삭제 조건은 호출 전에 application이 본다 |
+| `delete()` | `deletedAt`을 찍는다. `BaseEntity`의 멱등 삭제 | 없음. 그 브랜드의 상품은 호출 전에 application이 함께 삭제한다 |
 
 ### 협력
 
 - 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `BrandValidator.validateForRegister`가 받은 이름으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
-- 수정: `BrandRegister.update` → 삭제되지 않은 브랜드 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
+- 수정: `BrandRegister.update` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
 - 목록: `BrandFinder.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
-- 삭제: `BrandRegister.delete` → 삭제되지 않은 브랜드 조회 → `BrandValidator.validateForDelete`가 `ActiveProductChecker.hasActiveProducts`로 남은 상품이 있는지 조회(상품의 `ProductFinder`가 `ProductRepository.existsByBrandId`로 답한다) → 있으면 `BRAND_HAS_PRODUCTS`로 거절 → `brand.delete()` → 저장. 거절이 `brand.delete()` 앞에 있어야 거절된 브랜드에 삭제 시각이 찍히지 않는다.
+- 삭제: `BrandRegister.delete` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회(없으면 `BRAND_NOT_FOUND`) → `ProductDeleter.deleteAllOfBrand`가 그 브랜드의 삭제되지 않은 상품을 지운다. 상품의 `ProductModifyService`가 `ProductRepository.findForUpdateByBrandIdOrderById`로 id 오름차순으로 잠가 읽고 각각 `product.delete()`를 부른다 → `brand.delete()` → 저장. 브랜드와 상품의 변경은 함께 커밋되고 함께 되돌아간다. 잠금은 브랜드 → 상품의 차례다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 
 ## 상품 (Product)
 
@@ -62,7 +62,7 @@
 - 재고는 0 이상이다. 만들 때와 재고 변경이 음수를 막는다. 어기면 `InvalidStockException`. 차감은 0 이하의 수량을 `InvalidStockException`으로, 남은 재고보다 큰 수량을 `InsufficientStockException`으로 막는다. 거절하면 기존 재고를 유지한다.
 - 브랜드는 만들 때 정해지고 바뀌지 않는다. 수정 메서드에 브랜드 인자가 없다.
 - 등록할 때 브랜드는 존재하고 삭제되지 않은 것이어야 한다. application이 브랜드를 조회해 넘긴다. 없으면 `BRAND_NOT_FOUND`.
-- 삭제된 상품은 고객·관리자 조회, 수정, 재고 변경, 새 좋아요의 대상이 아니다. 남은 좋아요는 그대로 두고 취소만 허용한다.
+- 삭제된 상품은 고객·관리자 조회, 수정, 재고 변경, 새 좋아요의 대상이 아니다. 남은 좋아요는 그대로 두고 취소만 허용한다. 브랜드 삭제로 함께 삭제된 상품도 같다.
 
 ### 행위
 
@@ -75,11 +75,13 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003).
+주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 상품 행은 확정이 처음 읽을 때 `ProductFinder.findForUpdateOrNull`로 잠그고, `deduct`도 `findForUpdate`로 잠가 읽는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
 
-- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.find`로 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
+- 관리자 등록: `ProductRegister.register` → `BrandFinder.findForShare`가 삭제되지 않은 브랜드를 공유 잠금으로 조회(없으면 `BRAND_NOT_FOUND`) → `Product(brand, name, price, stock)` → 저장. 공유 잠금은 커밋까지 가므로 브랜드의 삭제와 이름 변경은 등록이 끝나기를 기다리고, 같은 브랜드의 등록끼리는 서로 막지 않는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.findForUpdate`로 삭제되지 않은 상품을 잠가 조회 → `product.updateStock(quantity)` → 저장. 수정과 삭제도 같은 잠금 읽기로 상품을 얻는다. 잠금은 상품 행만 걸고 커밋까지 간다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 - 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되며, `updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다. 재고는 값 객체가 아니라 `Product`의 `Int`다(설계 5.35).
@@ -154,8 +156,8 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 ### 협력
 
-- 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. `LikeFinder`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
-- 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeFinder`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28).
+- 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. 좋아요 조각의 `LikeQueryService`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
+- 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeQueryService`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28).
 - 내 좋아요 목록: `LikeFinder`가 `ProductFinder.findAllLikedBy`로 상품 조각을 받는다. `ProductFinder`가 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자

@@ -262,10 +262,20 @@ class OrderApiTest(
             body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
-        // The catalog API prevents deleting a brand with active products; seed that legacy state directly.
+        // The brand delete cascade makes this state unreachable; seed it directly to pin the read-side brand filter.
         deleteBrandKeepingProducts()
         val error = assertThat(requestCreate(item(active))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
         error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
+        assertNoOrders()
+    }
+
+    @Test
+    fun `new orders reject a product deleted with its brand`() {
+        prepareProduct()
+        deleteBrand()
+
+        val body = assertThat(requestCreate(item(product.id))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
         assertNoOrders()
     }
 

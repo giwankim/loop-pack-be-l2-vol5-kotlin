@@ -16,7 +16,7 @@ import org.springframework.dao.DataIntegrityViolationException
  *
  * 여러 상품의 그룹 집계 [LikeRepository.findProductLikeCounts]는 좋아요가 있는 상품만 행으로 준다. 요청한 상품마다 0을
  * 채우는 것은 [com.loopers.application.product.required.LikeCounter]의 약속이라
- * [com.loopers.application.like.provided.LikeFinderTest]가 본다.
+ * [com.loopers.application.product.required.LikeCounterTest]가 본다.
  *
  * 유일 제약과 행 삭제는 DB가 지키는 약속이라 여기서 본다(ADR 0001). 사용자와 상품을 향한 외래 키도 그렇다. 좋아요는 둘을
  * 식별자로만 가리켜 JPA가 제약을 만들지 않으므로 `scalar-foreign-keys.sql`이 만들고, 만들어졌는지는 `information_schema`에서도

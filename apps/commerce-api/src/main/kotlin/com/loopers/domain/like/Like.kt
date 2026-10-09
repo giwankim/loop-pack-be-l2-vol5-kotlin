@@ -27,16 +27,11 @@ import org.hibernate.annotations.NaturalId
     ],
 )
 class Like(
-    userId: Long,
-    productId: Long,
-) : BaseEntity() {
     /** 누른 사용자. */
-    @NaturalId
-    @Column(nullable = false, updatable = false)
-    val userId: Long = userId
+    @NaturalId @Column(nullable = false, updatable = false)
+    val userId: Long,
 
     /** 대상 상품. */
-    @NaturalId
-    @Column(nullable = false, updatable = false)
-    val productId: Long = productId
-}
+    @NaturalId @Column(nullable = false, updatable = false)
+    val productId: Long,
+) : BaseEntity()

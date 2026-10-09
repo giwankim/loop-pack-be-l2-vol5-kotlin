@@ -55,5 +55,6 @@ date: 2026-10-01
 - 업스트림 템플릿에는 루트 `build.gradle.kts`가 있지만 이 저장소에는 없다. 이후 주차에 템플릿이 빌드 스크립트를 바꾸면 손으로 옮겨 와야 한다.
 - 라이브러리 모듈의 jar 이름에서 Boot 플러그인이 붙이던 `-plain` 분류자가 빠진다.
 - 정리하기 전까지는 쓰이지 않는 공통 의존성이 테스트가 없는 모듈에도 그대로 실리고, mockito-core는 BOM(5.23.0)보다 낮은 5.14.0에 고정되어 있다.
+  - 2026-10-09 mockito-core 고정을 없앴다. 어느 테스트도 쓰지 않던 `mockito-core`와 `mockito-kotlin`을 기본 컨벤션과 카탈로그에서 지웠다. `mockito-core`는 이제 `spring-boot-starter-test`를 거쳐 BOM 판으로 들어온다. 이 프로젝트의 모킹 라이브러리는 springmockk 5.0.1 하나다. 4.0.2에서 올렸다. 4.x는 Boot 3(Framework 6)용이고 5.x는 Framework 7(Boot 4)용이다. [#99](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/99)의 인터뷰에서 정했다.
 
 조사: [Gradle 버전 카탈로그와 컨벤션 플러그인 조사](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/f685ee017279c69934efb08f310986fc9d739664/docs/research/gradle-version-catalog-and-convention-plugins.md). typesafe-conventions 시험 결과는 그 문서의 6절에 있다.
