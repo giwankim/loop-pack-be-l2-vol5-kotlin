@@ -143,7 +143,7 @@ class OrderConfirmerConcurrencyTest(
         prepareUser()
         charge(amount = initialBalance)
         val products = List(3) { prepareProduct(price = 4_000) }
-        val drafts = products.map { each -> prepareOrder(user = user, products = listOf(each), quantity = 1) }
+        val drafts = products.map { ordered -> prepareOrder(user = user, products = listOf(ordered), quantity = 1) }
 
         val results = runConcurrently(drafts.map { draft -> { orderConfirmer.confirm(draft.userId, draft.id) } })
 
@@ -159,16 +159,16 @@ class OrderConfirmerConcurrencyTest(
             assertThat(finalBalance).isEqualTo(initialBalance - paid)
             assertThat(finalBalance).isEqualTo(2_000L)
             val confirmedItems = confirmed.flatMap { persisted -> persisted.items }
-            products.forEach { each ->
-                val soldQuantity = confirmedItems.filter { item -> item.productId == each.id }.sumOf { item -> item.quantity }
-                assertThat(productFinder.find(each.id).stock).isEqualTo(each.stock - soldQuantity)
+            products.forEach { ordered ->
+                val soldQuantity = confirmedItems.filter { item -> item.productId == ordered.id }.sumOf { item -> item.quantity }
+                assertThat(productFinder.find(ordered.id).stock).isEqualTo(ordered.stock - soldQuantity)
             }
             val rejected = reread.single { persisted -> persisted.id == rejectedDraft.id }
             assertThat(rejected.status).isEqualTo(OrderStatus.DRAFT)
             assertThat(rejected.paidAmount).isNull()
             assertThat(rejected.confirmedAt).isNull()
             assertThat(rejected.updatedAt).isEqualTo(rejectedDraft.updatedAt)
-            val rejectedProduct = products.single { each -> each.id == rejected.items.single().productId }
+            val rejectedProduct = products.single { ordered -> ordered.id == rejected.items.single().productId }
             assertThat(productFinder.find(rejectedProduct.id).stock).isEqualTo(rejectedProduct.stock)
         }
     }
