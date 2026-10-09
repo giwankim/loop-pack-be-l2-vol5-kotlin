@@ -57,8 +57,6 @@ dependencies {
     testImplementation(libs.springBootStarterTest)
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.springmockk)
-    testImplementation(libs.mockito.core)
-    testImplementation(libs.mockito.kotlin)
     testImplementation(libs.instancio.junit)
     testImplementation(libs.instancio.kotlin)
     // Testcontainers

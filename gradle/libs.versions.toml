@@ -7,10 +7,7 @@ ktlintGradle = "14.2.0"
 # ktlint 엔진의 버전이다. 라이브러리나 플러그인 항목이 아니라 ktlint 확장의 version 에 넣는다.
 ktlint = "1.8.0"
 springdoc = "3.1.1"
-springmockk = "4.0.2"
-# Boot BOM 은 5.23.0 을 관리하지만, 여기 적은 5.14.0 이 이긴다.
-mockito = "5.14.0"
-mockitoKotlin = "5.4.0"
+springmockk = "5.0.1"
 instancio = "6.1.0"
 archunit = "1.5.1"
 logbackSlackAppender = "1.6.1"
@@ -22,8 +19,6 @@ springBootDependencies = { module = "org.springframework.boot:spring-boot-depend
 
 springdoc-openapiStarterWebmvcUi = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
 springmockk = { module = "com.ninja-squad:springmockk", version.ref = "springmockk" }
-mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
-mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockitoKotlin" }
 instancio-junit = { module = "org.instancio:instancio-junit", version.ref = "instancio" }
 instancio-kotlin = { module = "org.instancio:instancio-kotlin", version.ref = "instancio" }
 archunit-junit6 = { module = "com.tngtech.archunit:archunit-junit6", version.ref = "archunit" }
