@@ -23,8 +23,8 @@ import com.loopers.support.stereotype.ValidatedApplicationService
  * 자기 주문만 바꾼다. 확정의 재고는 [StockDeductor]로, 포인트는 [PointDeductor]로 그 조각이 차감한다.
  * 두 포트의 Service도 확정의 트랜잭션에 참여하므로(기본 `REQUIRED`) 재고·잔액·확정 상태가 한 번에 커밋되고,
  * 어느 차감이 실패해도 모두 되돌아간다(ADR 0003).
- * [OrderFinder.find]와 [ProductFinder.findForUpdateOrNull]의 `readOnly`도 이 트랜잭션에 참여할 때는 걸리지 않는다. 그래서 읽어 둔
- * 주문을 확정해도, 잠가 읽어 둔 상품을 [StockDeductor]가 같은 영속성 컨텍스트에서 다시 받아 차감해도 변경이 커밋된다.
+ * [OrderFinder.findForUpdate]와 [ProductFinder.findForUpdateOrNull]의 `readOnly`도 이 트랜잭션에 참여할 때는 걸리지 않는다. 그래서 잠가
+ * 읽어 둔 주문을 확정해도, 잠가 읽어 둔 상품을 [StockDeductor]가 같은 영속성 컨텍스트에서 다시 받아 차감해도 변경이 커밋된다.
  *
  * 주문할 수 있는 상품인지는 Validator로 옮기지 않는다. 생성은 그 상품의 이름·단가를 품목에 담으므로, 이 검사가 곧
  * 유스케이스가 쓸 데이터를 만든다(ADR 0014).
@@ -48,11 +48,15 @@ class OrderModifyService(
 
     /**
      * 이미 확정된 본인 주문은 현재 카탈로그·잔액을 읽기 전에 거절한다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005).
-     * 품목의 상품 행은 처음 읽을 때 잠그므로, 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제의 연쇄)와는
-     * 한쪽이 커밋할 때까지 기다려 차례로 지나간다(ADR 0018). 같은 주문의 동시 확정은 아직 막지 않는다(설계 18.2).
+     *
+     * 첫 문장이 주문 행을 잠가 읽으므로 같은 주문의 확정은 그 잠금에서 차례로 지나간다. 기다린 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된
+     * 주문을 읽으므로, 앞선 확정이 커밋했으면 상품과 계정을 읽기 전에 `ORDER_ALREADY_CONFIRMED`로 거절된다(ADR 0019).
+     * 품목의 상품 행도 처음 읽을 때 잠그므로, 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제의 연쇄)와는
+     * 한쪽이 커밋할 때까지 기다려 차례로 지나간다(ADR 0018).
+     * 계정은 [PointDeductor]가 잠가 읽으므로 잠금의 차례는 주문 → 상품(id 오름차순) → 포인트 계정이다.
      */
     override fun confirm(userId: Long, orderId: Long): Order {
-        val order = orderFinder.find(userId, orderId)
+        val order = orderFinder.findForUpdate(userId, orderId)
         order.validateConfirmable()
 
         // 모든 품목의 판매 가능 여부를 먼저 본 뒤 차감한다. 삭제와 재고 부족이 함께면 품목 차례와 무관하게

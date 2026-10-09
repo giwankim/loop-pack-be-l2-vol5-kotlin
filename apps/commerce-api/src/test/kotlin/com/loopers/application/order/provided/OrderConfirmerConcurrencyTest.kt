@@ -6,6 +6,7 @@ import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.product.ProductModifyService
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductRegister
+import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
@@ -22,8 +23,8 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.test.util.AopTestUtils
 
 /**
- * 같은 재고를 두고 겹치는 확정과, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
- * 재고 경합은 start gate로 확정을 함께 풀고, 결과를 성공·업무 거절·기술 오류로 센다. 그다음 새 트랜잭션에서 읽은
+ * 같은 재고를 두고 겹치는 확정, 같은 주문의 겹치는 확정, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018, 0019).
+ * 재고 경합과 같은 주문의 확정은 start gate로 함께 풀고, 결과를 성공·업무 거절·기술 오류로 센다. 그다음 새 트랜잭션에서 읽은
  * 주문·품목·재고·잔액으로 수량과 잔액의 식을 계산해 본다.
  *
  * 한쪽이 잠금을 쥔 채 [Pause]에서 멈추도록 그 Service의 단계를 spy하고, 다른 쪽을 다른 스레드에서 부른다.
@@ -94,6 +95,60 @@ class OrderConfirmerConcurrencyTest(
                     assertThat(persisted.updatedAt).isEqualTo(draft.updatedAt)
                 }
             }
+        }
+    }
+
+    /**
+     * 같은 주문의 확정이 함께 풀려도 주문 행의 잠금을 먼저 얻은 하나만 확정한다(ADR 0019). 나머지는 잠금을 기다린 뒤 확정된 주문을 읽고
+     * 차감 없이 거절된다. 재고와 잔액은 다섯 번 모두 차감할 만큼 준비하므로, 주문을 잠그지 않으면 거절 대신 차감이 거듭되어 드러난다.
+     */
+    @Test
+    fun `five concurrent confirmations of one draft confirm it once and reject the rest as already confirmed`() {
+        val initialStock = 10
+        val initialBalance = 5_000L
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = initialStock)), quantity = 1)
+        charge(amount = initialBalance)
+
+        val results = runConcurrently(List(5) { { orderConfirmer.confirm(user.id, order.id) } })
+
+        val outcomes = tally(results, OrderAlreadyConfirmedException::class)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 1, rejections = 4, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(results.size)
+        val confirmed = results.single { result -> result.isSuccess }.getOrThrow()
+        inNewTransaction {
+            val persisted = orderFinder.find(user.id, order.id)
+            assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(persisted.paidAmount).isEqualTo(order.totalAmount)
+            assertThat(persisted.confirmedAt).isEqualTo(confirmed.confirmedAt)
+            val soldQuantity = persisted.items.sumOf { item -> item.quantity }
+            assertThat(productFinder.find(product.id).stock).isEqualTo(initialStock - soldQuantity)
+            val paid = persisted.paidAmount!!.amount
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(initialBalance - paid)
+        }
+    }
+
+    /**
+     * 멈춘 확정은 주문과 상품을 잠근 채다. 같은 주문의 둘째 확정은 주문 잠금에서 기다리다, 풀린 뒤 확정된 주문을 읽고 거절된다.
+     * 잔액은 두 번 결제할 만큼 충전하므로, 주문을 잠그지 않으면 둘째 확정도 성공해 재고와 잔액이 두 번 줄어든다.
+     */
+    @Test
+    fun `confirming an order held by another confirmation waits, then is rejected as already confirmed and deducts nothing`() {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
+        charge(amount = 6_000)
+        pauseConfirmationAtPointDeduction()
+
+        val first = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
+        pause.awaitHeld()
+        val second = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
+
+        assertThat(second.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
+        pause.release()
+        assertThat(first.await().status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThrows<OrderAlreadyConfirmedException> { second.await() }
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(7)
         }
     }
 

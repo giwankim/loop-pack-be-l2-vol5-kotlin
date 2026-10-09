@@ -1,7 +1,9 @@
 package com.loopers.application.order.required
 
 import com.loopers.domain.order.Order
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.EntityGraph
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.repository.Repository
 
 /**
@@ -22,4 +24,15 @@ interface OrderRepository : Repository<Order, Long> {
 
     @EntityGraph(attributePaths = ["lineItems"])
     fun findWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
+
+    /**
+     * [userId] 사용자의 [id] 주문을 품목과 함께 `FOR UPDATE`로 잠가 읽는다. 없거나 남의 주문이면 null이다(ADR 0019).
+     * `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query` 없이 [findWithLineItemsByIdAndUserId]와 같은 파생 조회다.
+     *
+     * 잠금은 품목을 조인하는 바로 그 문장에 걸리고(`for update of` 주문 별칭) 주문 행만 잠근다. Hibernate가 읽은 뒤 따로 잠그면
+     * 메모리의 주문이 잠금 전 스냅샷으로 남는다. 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽으므로 그 사이의 확정도 본다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = ["lineItems"])
+    fun findForUpdateWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
 }
