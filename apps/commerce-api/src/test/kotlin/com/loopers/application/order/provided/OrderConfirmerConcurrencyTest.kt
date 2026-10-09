@@ -4,8 +4,10 @@ import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.point.PointModifyService
 import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.product.ProductModifyService
+import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -21,7 +23,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * 주문 확정과 상품을 삭제하는 쓰기가 같은 상품 행을 두고 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
+ * 같은 재고를 두고 겹치는 확정과, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
+ * 재고 경합은 start gate로 확정을 함께 풀고, 각 결과와 새 트랜잭션에서 읽은 주문·재고·잔액을 본다.
  *
  * 한쪽이 잠금을 쥔 채 [Pause]에서 멈추도록 그 Service의 단계를 spy하고, 다른 쪽을 다른 스레드에서 부른다.
  * 다른 쪽이 [LOCK_WAIT_PROBE] 뒤에도 끝나지 않았으면 잠금을 기다리는 것이다. 멈춘 쪽을 풀고 나서 두 결과와 새 트랜잭션에서 읽은
@@ -32,6 +35,7 @@ class OrderConfirmerConcurrencyTest(
     private val orderFinder: OrderFinder,
     private val brandRegister: BrandRegister,
     private val productRegister: ProductRegister,
+    private val productFinder: ProductFinder,
     private val pointAccountFinder: PointAccountFinder,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
@@ -52,6 +56,45 @@ class OrderConfirmerConcurrencyTest(
     private lateinit var productModifyService: ProductModifyService
 
     private val pause = Pause()
+
+    @Test
+    fun `eight concurrent confirmations for five units confirm five orders and leave three drafts with unchanged balances`() {
+        prepareProduct(price = 1_000, stock = 5)
+        val orders = List(8) {
+            val owner = prepareUser()
+            charge(amount = 10_000, user = owner)
+            prepareOrder(user = owner, products = listOf(product), quantity = 1)
+        }
+
+        val results = runConcurrently(orders.map { draft -> { orderConfirmer.confirm(draft.userId, draft.id) } })
+
+        assertThat(results.count { it.isSuccess }).isEqualTo(5)
+        val exceptions = results.mapNotNull { it.exceptionOrNull() }
+        assertThat(exceptions).hasSize(3)
+        exceptions.forEach { exception ->
+            assertThat(exception).isInstanceOf(InsufficientStockException::class.java)
+        }
+        inNewTransaction {
+            assertThat(productFinder.find(product.id).stock).isZero()
+            orders.zip(results).forEach { (draft, result) ->
+                val persisted = orderFinder.find(draft.userId, draft.id)
+                val balance = pointAccountFinder.findByUser(draft.userId).balance.amount
+                if (result.isSuccess) {
+                    assertThat(result.getOrThrow().status).isEqualTo(OrderStatus.CONFIRMED)
+                    assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
+                    assertThat(persisted.paidAmount).isEqualTo(draft.totalAmount)
+                    assertThat(persisted.confirmedAt).isNotNull()
+                    assertThat(balance).isEqualTo(9_000L)
+                } else {
+                    assertThat(persisted.status).isEqualTo(OrderStatus.DRAFT)
+                    assertThat(persisted.paidAmount).isNull()
+                    assertThat(persisted.confirmedAt).isNull()
+                    assertThat(persisted.updatedAt).isEqualTo(draft.updatedAt)
+                    assertThat(balance).isEqualTo(10_000L)
+                }
+            }
+        }
+    }
 
     @Test
     fun `deleting a brand while a confirmation holds its product waits, then deletes the product keeping the deduction`() {

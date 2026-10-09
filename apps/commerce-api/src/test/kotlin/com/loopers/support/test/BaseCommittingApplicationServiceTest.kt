@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -23,6 +24,7 @@ import kotlin.concurrent.thread
  *
  * - [inAnotherThread]는 포트를 다른 스레드에서 부르고 곧바로 돌아온다. 돌려준 [Running]으로 그 호출이 끝났는지 묻고 결과를 받는다.
  *   잠금을 기다리는지는 SQL이 아니라 "아직 끝나지 않았는가"로 본다.
+ * - [runConcurrently]는 모든 호출이 start gate에 닿으면 함께 풀고, 넘긴 차례대로 성공 값이나 던진 예외를 돌려준다.
  * - [inNewTransaction]은 결과를 새 트랜잭션에서 다시 읽는다. 커밋된 것만 보이고, 앞선 트랜잭션의 영속성 컨텍스트가 답하지 않는다.
  *
  * `prepare`가 돌려준 엔티티는 그 트랜잭션이 끝나 분리되어 있다. 지연 연관(`Product.brand` 등)을 건드리지 않는다.
@@ -73,6 +75,30 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
             }
         }
         return Running(future).also { started += it }
+    }
+
+    /** 각 호출은 자기 스레드에서 포트를 부르므로 커밋까지 끝난 결과를 받는다. 한 호출이 실패해도 나머지 결과를 모두 받는다. */
+    protected fun <T> runConcurrently(tasks: List<() -> T>): List<Result<T>> {
+        val ready = CountDownLatch(tasks.size)
+        val start = CountDownLatch(1)
+        val running = tasks.map { task ->
+            inAnotherThread {
+                ready.countDown()
+                if (!start.await(AWAIT_LIMIT.toMillis(), TimeUnit.MILLISECONDS)) {
+                    throw AssertionError("동시 호출의 start gate가 ${AWAIT_LIMIT.toSeconds()}초 안에 열리지 않았다.")
+                }
+                runCatching(task)
+            }
+        }
+
+        try {
+            if (!ready.await(AWAIT_LIMIT.toMillis(), TimeUnit.MILLISECONDS)) {
+                throw AssertionError("동시 호출이 ${AWAIT_LIMIT.toSeconds()}초 안에 start gate에 닿지 않았다.")
+            }
+        } finally {
+            start.countDown()
+        }
+        return running.map { it.await() }
     }
 
     /** 다른 스레드에서 도는 호출. */
