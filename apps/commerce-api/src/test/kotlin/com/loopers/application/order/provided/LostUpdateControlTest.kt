@@ -23,8 +23,11 @@ import java.util.concurrent.TimeUnit
  * 실제 서비스의 경쟁은 start gate로 함께 풀어 그대로 겨루게 한다.
  *
  * [TransactionTemplate] 안의 [JdbcTemplate]은 그 트랜잭션의 커넥션을 쓴다. 두 트랜잭션이 정말 다른 커넥션에서 돌았는지는
- * 각자 읽은 `CONNECTION_ID()`로 확인한다. 모든 대기에는 한도가 있다. 한도를 넘긴 대기와 SQL 오류는 재현으로 세지 않고
+ * 각자 읽은 `connection_id()`로 확인한다. 모든 대기에는 한도가 있다. 한도를 넘긴 대기와 SQL 오류는 재현으로 세지 않고
  * 테스트를 실패시킨다.
+ *
+ * 검증하는 포트가 없고 동작 자체를 SQL로 짓는 대조군이라, 생성자로 [JdbcTemplate]과 트랜잭션 관리자를 받는다.
+ * 기반은 커밋한 준비, 다른 스레드의 호출, 그 호출을 기다린 뒤의 정리를 쓰려고 상속한다.
  */
 class LostUpdateControlTest(
     private val jdbc: JdbcTemplate,
@@ -45,9 +48,9 @@ class LostUpdateControlTest(
         val results = runConcurrently(List(2) { { readThenWrite(product.id, bothRead) } })
 
         // 시간 초과나 SQL 오류로 끝난 쪽은 재현으로 세지 않는다. 그 예외를 그대로 던져 테스트를 실패시킨다.
-        val writes = results.map { it.getOrThrow() }
-        assertThat(writes.map { it.stockRead }).containsExactly(5, 5)
-        assertThat(writes[0].connectionId).isNotEqualTo(writes[1].connectionId)
+        val reads = results.map { it.getOrThrow() }
+        assertThat(reads.map { it.stock }).containsExactly(5, 5)
+        assertThat(reads[0].connectionId).isNotEqualTo(reads[1].connectionId)
         val successes = results.count { it.isSuccess }
         val finalStock = stockOf(product.id)
         assertThat(successes).isEqualTo(2)
@@ -59,12 +62,12 @@ class LostUpdateControlTest(
      * 한 트랜잭션에서 재고를 잠그지 않고 읽고, 다른 트랜잭션도 읽을 때까지 [bothRead]에서 기다린 뒤 읽은 값에서 1을 뺀 상수를 쓰고 커밋한다.
      * 읽다가 실패해도 [bothRead]를 세어, 다른 쪽이 한도까지 기다리지 않고 이어 가게 한다.
      */
-    private fun readThenWrite(productId: Long, bothRead: CountDownLatch): Write {
+    private fun readThenWrite(productId: Long, bothRead: CountDownLatch): StockRead {
         return transaction.execute {
             val read = try {
-                Write(
+                StockRead(
                     connectionId = jdbc.queryForObject("select connection_id()", Long::class.java)!!,
-                    stockRead = jdbc.queryForObject("select stock from product where id = ?", Int::class.java, productId)!!,
+                    stock = stockOf(productId),
                 )
             } finally {
                 bothRead.countDown()
@@ -73,19 +76,19 @@ class LostUpdateControlTest(
                 throw AssertionError("두 트랜잭션이 ${BOTH_READ_LIMIT.toSeconds()}초 안에 모두 재고를 읽지 못했다.")
             }
 
-            jdbc.update("update product set stock = ? where id = ?", read.stockRead - 1, productId)
+            jdbc.update("update product set stock = ? where id = ?", read.stock - 1, productId)
             read
         }
     }
 
-    /** 두 트랜잭션이 끝난 뒤 트랜잭션 없이 읽으므로 커밋된 값을 새로 읽는다. */
+    /** 재고를 잠그지 않고 읽는다. 트랜잭션 안에서는 그 트랜잭션의 커넥션으로 읽고, 트랜잭션 밖에서는 커밋된 값을 새로 읽는다. */
     private fun stockOf(productId: Long): Int {
         return jdbc.queryForObject("select stock from product where id = ?", Int::class.java, productId)!!
     }
 
-    /** 한 트랜잭션이 쓴 커넥션과 잠그지 않고 읽은 재고. */
-    private data class Write(
+    /** 한 트랜잭션이 잠그지 않고 읽은 재고와 그 트랜잭션의 커넥션. */
+    private data class StockRead(
         val connectionId: Long,
-        val stockRead: Int,
+        val stock: Int,
     )
 }
