@@ -8,6 +8,8 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
+import com.loopers.support.brandDeletedAt
+import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
@@ -56,9 +58,9 @@ class BrandRegisterRollbackTest(
         brandRegister.delete(brandToDelete.id)
 
         inNewTransaction {
-            assertThat(deletedAtOf("brand", brandToDelete.id)).isNotNull()
-            assertThat(deletedAtOf("product", inStock.id)).isNotNull()
-            assertThat(deletedAtOf("product", soldOut.id)).isNotNull()
+            assertThat(entityManager.brandDeletedAt(brandToDelete.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(inStock.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(soldOut.id)).isNotNull()
             assertThat(productFinder.find(otherBrandProduct.id).state()).isEqualTo(before.otherBrandProduct)
             assertThat(orderFinder.find(user.id, order.id).detail()).isEqualTo(before.pastOrder)
         }
@@ -105,14 +107,6 @@ class BrandRegisterRollbackTest(
             otherBrandProduct = productFinder.find(otherBrandProduct.id).state(),
             pastOrder = orderFinder.find(user.id, order.id).detail(),
         )
-    }
-
-    /** 삭제된 브랜드와 상품은 어느 포트로도 읽히지 않으므로 SQL 제한을 지나는 native 조회로 [table] 행의 삭제 시각을 읽는다. */
-    private fun deletedAtOf(table: String, id: Long): Any? {
-        return entityManager
-            .createNativeQuery("select deleted_at from $table where id = :id")
-            .setParameter("id", id)
-            .singleResult
     }
 
     private data class Snapshot(

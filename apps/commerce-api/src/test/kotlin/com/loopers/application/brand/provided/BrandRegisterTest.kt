@@ -6,19 +6,20 @@ import com.loopers.domain.brand.createBrandAdminUpdateRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.flushAndClear
+import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseApplicationServiceTest
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.jdbc.core.JdbcTemplate
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * [BrandRegister]를 실제 MySQL 위에서 확인한다. 테스트 트랜잭션이 포트의 트랜잭션을 감싸므로 테스트마다 롤백으로 정리한다([BaseApplicationServiceTest]).
  * 같은 트랜잭션 안에서는 영속성 컨텍스트가 조회를 가로채므로, 저장 뒤에 flush/clear를 해서 다음 조회가 SQL을 실제로 보내게 한다.
  * 결과는 같은 조각의 [BrandFinder]로 읽는다. 삭제가 함께 삭제하는 상품은 상품 조각의 [ProductFinder]로 읽고,
- * 어느 포트로도 읽히지 않는 삭제된 상품의 삭제 시각만 [JdbcTemplate]으로 읽는다.
+ * 어느 포트로도 읽히지 않는 삭제된 상품의 삭제 시각만 [productDeletedAt]으로 읽는다. 그 시각을 정해 둔 값으로 덮어쓸 때만 [JdbcTemplate]을 쓴다.
  */
 class BrandRegisterTest(
     private val brandRegister: BrandRegister,
@@ -227,8 +228,8 @@ class BrandRegisterTest(
         brandRegister.delete(brand.id)
         entityManager.flushAndClear()
 
-        val deletedAt = jdbc.queryForObject("select deleted_at from product where id = ?", LocalDateTime::class.java, product.id)
-        assertThat(deletedAt).isEqualTo(LocalDateTime.parse("2020-01-01T00:00:00.123456"))
+        val deletedAt = entityManager.productDeletedAt(product.id)
+        assertThat(deletedAt).isEqualTo(Instant.parse("2020-01-01T00:00:00.123456Z"))
         val exception = assertThrows<CoreException> { brandFinder.find(brand.id) }
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }

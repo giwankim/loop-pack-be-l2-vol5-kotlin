@@ -12,6 +12,7 @@ import com.loopers.domain.product.Product
 import com.loopers.support.Pause
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
@@ -114,7 +115,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isZero()
             assertThat(stockOf(product)).isEqualTo(7)
-            assertThat(deletedAtOf(product)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -136,7 +137,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isZero()
             assertThat(stockOf(product)).isEqualTo(7)
-            assertThat(deletedAtOf(product)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -160,7 +161,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
             assertThat(stockOf(product)).isEqualTo(10)
-            assertThat(deletedAtOf(product)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -183,7 +184,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
             assertThat(stockOf(product)).isEqualTo(10)
-            assertThat(deletedAtOf(product)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -222,12 +223,5 @@ class OrderConfirmerConcurrencyTest(
                 .setParameter("id", product.id)
                 .singleResult as Number
         ).toInt()
-    }
-
-    private fun deletedAtOf(product: Product): Any? {
-        return entityManager
-            .createNativeQuery("select deleted_at from product where id = :id")
-            .setParameter("id", product.id)
-            .singleResult
     }
 }
