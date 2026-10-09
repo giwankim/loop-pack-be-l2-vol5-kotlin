@@ -42,20 +42,23 @@ class LostUpdateControlTest(
 
     @Test
     fun `two transactions that read stock 5 without a lock and each write 4 both commit, losing one deduction`() {
-        prepareProduct(stock = 5)
+        val initialStock = 5
+        prepareProduct(stock = initialStock)
         val bothRead = CountDownLatch(2)
+        val tasks = List(2) { { readThenWrite(product.id, bothRead) } }
 
-        val results = runConcurrently(List(2) { { readThenWrite(product.id, bothRead) } })
+        val results = runConcurrently(tasks)
 
-        // 시간 초과나 SQL 오류로 끝난 쪽은 재현으로 세지 않는다. 그 예외를 그대로 던져 테스트를 실패시킨다.
+        // 기대하는 업무 거절이 없으므로 시간 초과와 SQL 오류는 기술 오류로 세어 테스트를 실패시킨다. 재현으로 세지 않는다.
+        val outcomes = tally(results)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 2, rejections = 0, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(tasks.size)
         val reads = results.map { it.getOrThrow() }
-        assertThat(reads.map { it.stock }).containsExactly(5, 5)
+        assertThat(reads.map { it.stock }).containsExactly(initialStock, initialStock)
         assertThat(reads[0].connectionId).isNotEqualTo(reads[1].connectionId)
-        val successes = results.count { it.isSuccess }
-        val finalStock = stockOf(product.id)
-        assertThat(successes).isEqualTo(2)
+        val finalStock = inNewTransaction { stockOf(product.id) }
         assertThat(finalStock).isEqualTo(4)
-        assertThat(successes + finalStock).isNotEqualTo(5)
+        assertThat(outcomes.successes + finalStock).isNotEqualTo(initialStock)
     }
 
     /**
@@ -81,7 +84,7 @@ class LostUpdateControlTest(
         }
     }
 
-    /** 재고를 잠그지 않고 읽는다. 트랜잭션 안에서는 그 트랜잭션의 커넥션으로 읽고, 트랜잭션 밖에서는 커밋된 값을 새로 읽는다. */
+    /** 재고를 잠그지 않고 읽는다. 부른 트랜잭션의 커넥션으로 읽으므로, 새 트랜잭션에서 부르면 커밋된 값을 읽는다. */
     private fun stockOf(productId: Long): Int {
         return jdbc.queryForObject("select stock from product where id = ?", Int::class.java, productId)!!
     }
