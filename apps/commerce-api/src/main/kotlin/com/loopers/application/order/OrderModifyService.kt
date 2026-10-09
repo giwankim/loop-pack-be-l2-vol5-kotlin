@@ -61,7 +61,8 @@ class OrderModifyService(
         order.items.forEach { item -> stockDeductor.deduct(item.productId, item.quantity) }
         pointDeductor.deduct(userId, order.totalAmount)
         order.confirm()
-        return order
+
+        return orderRepository.save(order)
     }
 
     /** 생성의 상품 읽기. 논리 삭제된 상품·브랜드는 주문할 수 없다. 상품을 바꾸지 않으므로 잠그지 않는다. */

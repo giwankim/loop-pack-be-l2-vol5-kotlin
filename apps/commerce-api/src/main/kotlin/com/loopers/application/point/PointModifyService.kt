@@ -4,6 +4,7 @@ import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.point.provided.PointChargeRequest
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.provided.PointDeductor
+import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.shared.Money
 import com.loopers.support.stereotype.ValidatedApplicationService
@@ -16,16 +17,21 @@ import com.loopers.support.stereotype.ValidatedApplicationService
 @ValidatedApplicationService
 class PointModifyService(
     private val pointAccountFinder: PointAccountFinder,
+    private val pointAccountRepository: PointAccountRepository,
 ) : PointCharger,
     PointDeductor {
     override fun charge(userId: Long, request: PointChargeRequest): PointAccount {
         val account = pointAccountFinder.findByUser(userId)
         account.charge(Money(request.amount))
-        return account
+
+        return pointAccountRepository.save(account)
     }
 
     /** 주문 확정이 부른다. 결제의 기록은 확정된 주문이므로 차감의 기록은 따로 남기지 않는다(ADR 0006). */
     override fun deduct(userId: Long, amount: Money) {
-        pointAccountFinder.findByUser(userId).pay(amount)
+        val account = pointAccountFinder.findByUser(userId)
+        account.pay(amount)
+
+        pointAccountRepository.save(account)
     }
 }

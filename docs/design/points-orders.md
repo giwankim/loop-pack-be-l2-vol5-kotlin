@@ -941,11 +941,13 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 > 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)이 `hibernate.order_updates`를 켜면서 위의 flush 차례가 바뀌었다. 커밋의 flush는 이제 엔티티 이름 순으로 `orders` → `point_account` → `product`를 보내고, 첫 상품의 재고는 둘째 상품의 잠금 읽기가 부른 자동 flush로 그보다 먼저 나간다. `point_account`의 CHECK는 더는 마지막 UPDATE를 거절하지 않았고, 둘째 상품의 UPDATE가 MySQL에 닿지 않은 채로 테스트가 통과했다. 늦은 실패는 이제 `product`에 `check (stock <> 2)`를 잠시 걸어 마지막인 둘째 상품의 재고 UPDATE를 거절하고, 앞서 나간 재고·주문·잔액의 UPDATE가 모두 되돌아가는지 본다.
 
+> 2026-10-09 [카탈로그 설계 5.37](./catalog.md)로 확정은 차감 뒤 주문을 `orderRepository.save`에 넘기고, 두 차감도 각자의 저장소에 `save`한다. 관리 상태 엔티티의 `save`는 SQL을 보내지 않으므로 쓰기가 커밋의 flush에서 나간다는 위의 말과 늦은 실패의 CHECK는 그대로다. Q38이 미룬 `save` 호출은 테스트가 아니라 이 규칙 때문에 들어왔고, 늦은 실패 테스트는 그대로 CHECK를 쓴다.
+
 ### 18.3 지금의 흐름
 
-- 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)`. `point_account` 한 행만 바뀐다.
+- 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 저장. `point_account` 한 행만 바뀐다.
 - DRAFT 생성: 17.3과 같다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()`. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
 
 ### 18.4 테스트가 바뀐 자리
 

@@ -19,6 +19,9 @@ import org.springframework.data.repository.Repository
 interface ProductRepository : Repository<Product, Long> {
     fun save(product: Product): Product
 
+    /** `CrudRepository.saveAll`과 이름·매개변수가 같아 `SimpleJpaRepository`로 간다. 항목마다 [save]를 부른다(설계 5.37). */
+    fun saveAll(products: Iterable<Product>): List<Product>
+
     /**
      * `CrudRepository.findById`와 이름·매개변수가 같아 `EntityManager.find`로 간다.
      * 없으면 null이다. 반환을 non-null로 적으면 없을 때 예외를 던진다(설계 5.20).

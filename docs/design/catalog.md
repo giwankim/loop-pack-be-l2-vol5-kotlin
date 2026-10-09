@@ -156,7 +156,8 @@ sequenceDiagram
     PR-->>PM: Product (deletedAt == null)
     PM->>P: updateStock(0)
     Note over P: 재고를 0으로 맞춘다. 음수면 거절하고 기존 값 유지
-    Note over PM,PR: @Transactional 안의 관리 상태 엔티티이므로 더티 체킹이 flush한다. save는 register에만 있다
+    PM->>PR: save(product)
+    Note over PM,PR: 관리 상태 엔티티라 save는 SQL을 보내지 않는다. UPDATE는 커밋의 flush가 보낸다(5.37)
     PM-->>AC: ProductInfo (stock 0, soldOut true)
     Note over AC: ProductAdminResponse가 stock과 시각을 고르고 soldOut은 버린다
     AC-->>Admin: 200 {id, brandId, name, price, stock: 0, …}
@@ -702,6 +703,23 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 좋아요 하나를 읽는 `GET /api/v1/likes/{productId}`는 두지 않는다. 부르는 곳이 없고, 나중에 더해도 깨지는 것이 없다.
 - 대가: 과제의 경로와 다르고, 누르기의 200이 RFC 9110의 SHOULD를 벗어난다. ADR은 두지 않았다. 부르는 클라이언트가 없어 되돌리기 싸다.
 - 다시 볼 조건: 클라이언트가 좋아요를 새로 만들었는지 알아야 할 때(201과 `Location`). 또는 요청자가 남의 좋아요를 볼 수 있는 역할을 갖게 될 때(5.30의 다시 볼 조건). 그때는 경로가 다른 사용자를 품게 된다.
+
+### 5.37 바꾼 애그리거트의 저장
+
+- 문제: 변경 Service가 바꾼 애그리거트를 저장하는 방식이 둘이었다. `BrandModifyService`의 수정·삭제는 바꾼 브랜드를 `brandRepository.save`에 넘겼다. 상품의 수정·재고 수정·삭제·차감·연쇄 삭제, 포인트의 충전·차감, 주문 확정은 `save`를 부르지 않고 dirty checking에 맡겼다. Service만 읽어서는 `save`가 없는 것이 실수인지 의도인지 알 수 없다. 이 문서의 재고 변경 흐름도에는 "save는 register에만 있다"고 적혀 있었다.
+- 대안 A: 그대로 둔다. `save`는 새 엔티티에만 부르고, 관리 상태 엔티티의 변경은 dirty checking에 맡긴다.
+- 대안 B: 상태를 바꾼 애그리거트는 application Service가 자기 조각 저장소의 `save`에 넘긴다. 여럿이면 `saveAll`에 넘긴다. Spring Data가 저장소를 쓰는 방식이고, splearn의 `MemberModifyService`도 `member.activate()` 뒤에 `memberRepository.save(member)`를 부른다(ADR 0013).
+- 선택: B (2026-10-09). 모든 변경 Service에 적용한다.
+  - Spring Data의 저장소는 애그리거트를 넣고 꺼내는 컬렉션이다. dirty checking은 JPA 영속성 컨텍스트의 동작이라, 그것에 기대는 Service는 저장소 뒤의 구현을 안다는 전제를 드러내지 않는다. 영속성 컨텍스트가 없는 Spring Data JDBC라면 `save` 없이 바꾼 값은 저장되지 않는다.
+  - 바꾼 엔티티는 관리 상태다. `SimpleJpaRepository.save`는 식별자가 0이 아니면 `EntityManager.merge`를 부르고, 관리 중인 엔티티를 병합하면 SQL을 보내지 않고 같은 인스턴스를 돌려준다. UPDATE는 전처럼 커밋의 flush가 보낸다. 그래서 ADR 0018의 잠금 순서, `order_updates`의 차례, 배치는 그대로다. 주문 품목의 cascade는 `PERSIST`뿐이라 병합이 품목으로 번지지 않는다.
+  - `save`가 돌려준 값을 쓴다. 돌려줄 것이 있으면 `return brandRepository.save(brand)`, 응답으로 옮길 것이면 `productInfoAssembler.toInfo(productRepository.save(product))`다. Spring Data는 `save`가 돌려준 인스턴스를 이어서 쓰라고 권한다. 관리 상태에서는 같은 인스턴스다.
+  - 바꾸는 단계와 저장 사이에 빈 줄을 둔다(5.33의 덩어리). 엔티티를 바꾸는 줄과 저장하는 줄이 따로 있어야 하므로 `finder.findForUpdate(id).delete()` 같은 한 줄 연쇄는 지역 변수로 푼다.
+  - 각 Service는 자기 조각의 애그리거트만 저장한다. 확정은 주문을 `orderRepository`로 저장하고, 재고와 잔액은 `StockDeductor`·`PointDeductor`의 구현이 자기 저장소로 저장한다. 그래서 `PointModifyService`가 `PointAccountRepository`를 받는다.
+  - 브랜드 삭제의 연쇄(`deleteAllOfBrand`)는 `saveAll`로 저장한다. `ProductRepository`가 `CrudRepository.saveAll`과 같은 이름·매개변수로 선언하므로 호출은 `SimpleJpaRepository.saveAll`로 가고(5.20), 그 구현은 항목마다 `save`를 부른다.
+- 그대로 두는 것: dirty checking 자체. `save`를 빠뜨려도 관리 엔티티의 변경은 커밋된다. 이 규칙은 저장의 의도를 코드에 적을 뿐 dirty checking을 끄지 않는다. 그러니 `product.brand`에서 상태를 바꾸는 메서드를 부르면 브랜드도 함께 바뀐다는 주의(5.1)는 여전히 참이다. 행을 지우는 좋아요 취소의 `delete`와 새 엔티티의 `save`는 이미 저장소를 불렀다.
+- 지키는 것: 리뷰다. 빠뜨린 `save`는 동작을 바꾸지 않으므로 스위트가 잡지 못한다. ArchUnit은 메서드 본문에서 호출의 차례를 보지 못한다.
+- 대가: 변경마다 한두 줄이 는다. `PointModifyService`의 의존이 하나 늘고, `ProductRepository`에 `saveAll`이 생긴다. ADR은 두지 않았다. 동작이 바뀌지 않아 되돌리기 싸다.
+- 다시 볼 조건: 애그리거트에 `CascadeType.MERGE`나 `ALL`인 큰 컬렉션이 생길 때. 관리 상태의 병합도 그 컬렉션을 훑는다.
 
 ## 6. 테스트 경계
 

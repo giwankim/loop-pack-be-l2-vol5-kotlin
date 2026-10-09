@@ -49,30 +49,41 @@ class ProductModifyService(
     override fun update(id: Long, request: ProductAdminUpdateRequest): ProductInfo {
         val product = productFinder.findForUpdate(id)
         product.update(name = request.name, price = Money(request.price))
-        return productInfoAssembler.toInfo(product)
+
+        return productInfoAssembler.toInfo(productRepository.save(product))
     }
 
     override fun updateStock(id: Long, request: ProductAdminStockUpdateRequest): ProductInfo {
         val product = productFinder.findForUpdate(id)
         product.updateStock(request.quantity)
-        return productInfoAssembler.toInfo(product)
+
+        return productInfoAssembler.toInfo(productRepository.save(product))
     }
 
     /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
     override fun delete(id: Long) {
-        productFinder.findForUpdate(id).delete()
+        val product = productFinder.findForUpdate(id)
+        product.delete()
+
+        productRepository.save(product)
     }
 
     /** 주문 확정이 부른다. 재고 수정과 달리 최종 수량이 아니라 줄일 수량을 받는다. */
     override fun deduct(productId: Long, quantity: Int) {
-        productFinder.findForUpdate(productId).deductStock(quantity)
+        val product = productFinder.findForUpdate(productId)
+        product.deductStock(quantity)
+
+        productRepository.save(product)
     }
 
     /**
-     * 브랜드 삭제가 부른다. 잠가 읽은 차례대로 삭제 시각을 찍고, UPDATE는 커밋의 flush가 묶어 보낸다(ADR 0018).
+     * 브랜드 삭제가 부른다. 잠가 읽은 차례대로 삭제 시각을 찍어 저장한다. UPDATE는 커밋의 flush가 묶어 보낸다(ADR 0018).
      * 이미 삭제된 상품은 삭제 필터가 읽지 않으므로 그 삭제 시각에 닿지 않는다.
      */
     override fun deleteAllOfBrand(brandId: Long) {
-        productRepository.findForUpdateByBrandIdOrderById(brandId).forEach { it.delete() }
+        val products = productRepository.findForUpdateByBrandIdOrderById(brandId)
+        products.forEach { it.delete() }
+
+        productRepository.saveAll(products)
     }
 }

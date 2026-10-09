@@ -15,6 +15,8 @@ date: 2026-10-09
    - 브랜드 삭제의 연쇄([ADR 0017](./0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md))는 `findForUpdateByBrandIdOrderById(brandId)`로 그 브랜드의 삭제되지 않은 상품을 잠가 읽고, 각각 `delete()`를 부른다.
    - 브랜드의 삭제와 수정은 `BrandFinder.findForUpdate(id)`, 상품 등록은 `BrandFinder.findForShare(id)`로 브랜드를 읽는다. 같은 브랜드에 상품을 등록하는 요청끼리는 서로 막지 않고, 브랜드 삭제만 그것들과 엇갈린다.
    - 주문 생성(DRAFT)과 좋아요는 상품을 바꾸지 않으므로 잠그지 않는다. 브랜드 삭제와 겹치면 "생성 뒤 삭제"로 끝나고, 확정이 다시 확인한다.
+
+   > 2026-10-09 [카탈로그 설계 5.37](../design/catalog.md)로 바꾼 엔티티는 Service가 저장소의 `save`(연쇄는 `saveAll`)에 넘긴다. 관리 상태 엔티티의 `save`는 SQL을 보내지 않으므로 UPDATE는 여전히 커밋의 flush에서 나가고, 이 결정의 잠금 순서와 3·9번은 그대로다.
 2. **첫 읽기가 잠가야 한다.** 한 영속성 컨텍스트에서 Hibernate는 이미 읽은 엔티티를 다시 돌려줄 때 처음 읽은 필드 값을 그대로 둔다. 나중의 잠금 읽기가 최신 행을 가져와도 메모리의 낡은 값이 이긴다. 확정에서는 `availableProduct`가 잠그고, `deduct`의 잠금 읽기는 이미 가진 잠금을 다시 확인할 뿐이다.
 3. **잠금 순서는 브랜드 → 상품(id 오름차순) → 포인트 계정이다.** 여러 상품을 잠그는 곳은 모두 id 오름차순이다.
    - 확정의 품목은 생성 때 `productId` 순으로 정렬되어 있다(`@OrderBy("productId ASC")`).
