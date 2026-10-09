@@ -3,11 +3,14 @@ package com.loopers.application.order.provided
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.point.PointModifyService
 import com.loopers.application.point.provided.PointAccountFinder
+import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.product.ProductModifyService
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.point.InsufficientPointsException
+import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
 import com.loopers.support.Pause
@@ -23,9 +26,9 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.test.util.AopTestUtils
 
 /**
- * 같은 재고를 두고 겹치는 확정, 같은 주문의 겹치는 확정, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018, 0019).
- * 재고 경합과 같은 주문의 확정은 start gate로 함께 풀고, 결과를 성공·업무 거절·기술 오류로 센다. 그다음 새 트랜잭션에서 읽은
- * 주문·품목·재고·잔액으로 수량과 잔액의 식을 계산해 본다.
+ * 같은 재고를 두고 겹치는 확정, 같은 주문의 겹치는 확정, 같은 포인트 계정을 두고 겹치는 확정과 충전, 확정·상품 삭제가 엇갈릴 때를
+ * 실제 MySQL의 행 잠금으로 확인한다(ADR 0018, 0019). 재고와 포인트 계정의 경합, 같은 주문의 확정, 충전과 결제는 start gate로 함께 풀고,
+ * 결과를 성공·업무 거절·기술 오류로 센다. 그다음 새 트랜잭션에서 읽은 주문·품목·재고·잔액으로 수량과 잔액의 식을 계산해 본다.
  *
  * 한쪽이 잠금을 쥔 채 [Pause]에서 멈추도록 그 Service의 단계를 spy하고, 다른 쪽을 다른 스레드에서 부른다.
  * 다른 쪽이 [LOCK_WAIT_PROBE] 뒤에도 끝나지 않았으면 잠금을 기다리는 것이다. 멈춘 쪽을 풀고 나서 두 결과와 새 트랜잭션에서 읽은
@@ -38,6 +41,7 @@ class OrderConfirmerConcurrencyTest(
     private val productRegister: ProductRegister,
     private val productFinder: ProductFinder,
     private val pointAccountFinder: PointAccountFinder,
+    private val pointCharger: PointCharger,
 ) : BaseCommittingApplicationServiceTest() {
     @MockkSpyBean
     private lateinit var pointModifyService: PointModifyService
@@ -128,6 +132,81 @@ class OrderConfirmerConcurrencyTest(
     }
 
     /**
+     * 같은 사용자의 확정 셋이 서로 다른 상품을 사므로 상품 잠금에서는 줄 서지 않고 포인트 계정의 잠금에서 겨룬다(ADR 0019).
+     * 한 상품을 함께 사면 상품 잠금이 확정을 먼저 줄 세워 계정 잠금에서는 겨루지 않는다. 그때도 계정을 잠그지 않으면 테스트는 실패하지만,
+     * 기다린 확정의 계정 읽기가 앞선 확정이 커밋하기 전의 스냅샷을 읽기 때문이라 계정 잠금의 경쟁을 보는 것이 아니다.
+     * 잔액의 식은 처음 잔액 − 확정된 주문의 결제액 = 최종 잔액이고, 수량의 식은 상품마다 본다.
+     */
+    @Test
+    fun `three concurrent confirmations of different products on one account confirm two and reject one for lack of points`() {
+        val initialBalance = 10_000L
+        prepareUser()
+        charge(amount = initialBalance)
+        val products = List(3) { prepareProduct(price = 4_000) }
+        val drafts = products.map { each -> prepareOrder(user = user, products = listOf(each), quantity = 1) }
+
+        val results = runConcurrently(drafts.map { draft -> { orderConfirmer.confirm(draft.userId, draft.id) } })
+
+        val outcomes = tally(results, InsufficientPointsException::class)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 2, rejections = 1, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(drafts.size)
+        val rejectedDraft = drafts.zip(results).single { (_, result) -> result.isFailure }.first
+        inNewTransaction {
+            val reread = drafts.map { draft -> orderFinder.find(draft.userId, draft.id) }
+            val confirmed = reread.filter { persisted -> persisted.status == OrderStatus.CONFIRMED }
+            val paid = confirmed.sumOf { persisted -> persisted.paidAmount!!.amount }
+            val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
+            assertThat(finalBalance).isEqualTo(initialBalance - paid)
+            assertThat(finalBalance).isEqualTo(2_000L)
+            val confirmedItems = confirmed.flatMap { persisted -> persisted.items }
+            products.forEach { each ->
+                val soldQuantity = confirmedItems.filter { item -> item.productId == each.id }.sumOf { item -> item.quantity }
+                assertThat(productFinder.find(each.id).stock).isEqualTo(each.stock - soldQuantity)
+            }
+            val rejected = reread.single { persisted -> persisted.id == rejectedDraft.id }
+            assertThat(rejected.status).isEqualTo(OrderStatus.DRAFT)
+            assertThat(rejected.paidAmount).isNull()
+            assertThat(rejected.confirmedAt).isNull()
+            assertThat(rejected.updatedAt).isEqualTo(rejectedDraft.updatedAt)
+            val rejectedProduct = products.single { each -> each.id == rejected.items.single().productId }
+            assertThat(productFinder.find(rejectedProduct.id).stock).isEqualTo(rejectedProduct.stock)
+        }
+    }
+
+    /**
+     * 충전과 확정은 계정 행의 잠금에서 차례로 지나가므로, 잔액의 식은 처음 잔액 + 충전액 − 확정된 주문의 결제액 = 최종 잔액이다.
+     * 계정을 잠그지 않으면 나중에 커밋한 쪽이 앞의 변경을 덮어 충전이나 결제가 사라진다.
+     */
+    @Test
+    fun `a charge and a confirmation released together on one account both succeed and both reach the balance`() {
+        val initialBalance = 10_000L
+        val chargeAmount = 2_000L
+        prepareOrder(products = listOf(prepareProduct(price = 7_000)), quantity = 1)
+        charge(amount = initialBalance)
+
+        val results = runConcurrently(
+            listOf(
+                { pointCharger.charge(user.id, createPointChargeRequest(amount = chargeAmount)) },
+                { orderConfirmer.confirm(user.id, order.id) },
+            ),
+        )
+
+        val outcomes = tally(results)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 2, rejections = 0, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(results.size)
+        inNewTransaction {
+            val persisted = orderFinder.find(user.id, order.id)
+            assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
+            val paid = persisted.paidAmount!!.amount
+            val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
+            assertThat(finalBalance).isEqualTo(initialBalance + chargeAmount - paid)
+            assertThat(finalBalance).isEqualTo(5_000L)
+            val soldQuantity = persisted.items.sumOf { item -> item.quantity }
+            assertThat(productFinder.find(product.id).stock).isEqualTo(product.stock - soldQuantity)
+        }
+    }
+
+    /**
      * 멈춘 확정은 주문과 상품을 잠근 채다. 같은 주문의 둘째 확정은 주문 잠금에서 기다리다, 풀린 뒤 확정된 주문을 읽고 거절된다.
      * 잔액은 두 번 결제할 만큼 충전하므로, 주문을 잠그지 않으면 둘째 확정도 성공해 재고와 잔액이 두 번 줄어든다.
      */
@@ -135,7 +214,7 @@ class OrderConfirmerConcurrencyTest(
     fun `confirming an order held by another confirmation waits, then is rejected as already confirmed and deducts nothing`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
         charge(amount = 6_000)
-        pauseConfirmationAtPointDeduction()
+        pauseConfirmationBeforePointDeduction()
 
         val first = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
         pause.awaitHeld()
@@ -152,11 +231,59 @@ class OrderConfirmerConcurrencyTest(
         }
     }
 
+    /**
+     * 멈춘 충전은 계정을 잠근 채다. 확정은 주문과 상품을 잠가 재고를 차감한 뒤 계정 잠금에서 기다리다, 풀린 뒤 충전이 커밋한 잔액에서 결제한다.
+     * 잔액은 10,000 + 2,000 − 7,000원이다. 계정을 잠그지 않으면 확정이 충전 전의 잔액에서 결제하고, 나중에 커밋한 쪽이 앞의 변경을 덮는다.
+     */
+    @Test
+    fun `confirming while a charge holds the point account waits, then pays from the charged balance`() {
+        prepareOrder(products = listOf(prepareProduct(price = 7_000)), quantity = 1)
+        charge(amount = 10_000)
+        pauseChargeAfterCharging()
+
+        val charging = inAnotherThread { pointCharger.charge(user.id, createPointChargeRequest(amount = 2_000)) }
+        pause.awaitHeld()
+        val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
+
+        assertThat(confirming.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
+        pause.release()
+        charging.await()
+        assertThat(confirming.await().status).isEqualTo(OrderStatus.CONFIRMED)
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L)
+        }
+    }
+
+    /**
+     * 멈춘 확정은 주문, 상품, 계정을 잠근 채다. 충전은 계정 잠금에서 기다리다, 풀린 뒤 결제가 커밋한 잔액에 더한다.
+     * 잔액은 10,000 − 7,000 + 2,000원이다. 계정을 잠그지 않으면 충전이 결제 전의 잔액에 더하고, 나중에 커밋한 쪽이 앞의 변경을 덮는다.
+     */
+    @Test
+    fun `charging while a confirmation holds the point account waits, then adds to the balance left after payment`() {
+        prepareOrder(products = listOf(prepareProduct(price = 7_000)), quantity = 1)
+        charge(amount = 10_000)
+        pauseConfirmationAfterPointDeduction()
+
+        val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
+        pause.awaitHeld()
+        val charging = inAnotherThread { pointCharger.charge(user.id, createPointChargeRequest(amount = 2_000)) }
+
+        assertThat(charging.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
+        pause.release()
+        assertThat(confirming.await().status).isEqualTo(OrderStatus.CONFIRMED)
+        charging.await()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L)
+        }
+    }
+
     @Test
     fun `deleting a brand while a confirmation holds its product waits, then deletes the product keeping the deduction`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
         charge(amount = 3_000)
-        pauseConfirmationAtPointDeduction()
+        pauseConfirmationBeforePointDeduction()
 
         val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
         pause.awaitHeld()
@@ -178,7 +305,7 @@ class OrderConfirmerConcurrencyTest(
     fun `deleting a product while a confirmation holds it waits, then deletes the product keeping the deduction`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
         charge(amount = 3_000)
-        pauseConfirmationAtPointDeduction()
+        pauseConfirmationBeforePointDeduction()
 
         val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
         pause.awaitHeld()
@@ -262,11 +389,30 @@ class OrderConfirmerConcurrencyTest(
     }
 
     /** 확정이 모든 품목의 상품을 읽고 재고를 차감한 뒤, 포인트를 차감하기 전에 멈춘다. */
-    private fun pauseConfirmationAtPointDeduction() {
+    private fun pauseConfirmationBeforePointDeduction() {
         val target = AopTestUtils.getUltimateTargetObject<PointModifyService>(pointModifyService)
         every { target.deduct(any(), any()) } answers {
             pause.hold()
             callOriginal()
+        }
+    }
+
+    /** 확정이 계정을 잠가 포인트를 차감한 뒤, 커밋하기 전에 멈춘다. [pauseConfirmationBeforePointDeduction]은 계정을 잠그기 전에 멈춘다. */
+    private fun pauseConfirmationAfterPointDeduction() {
+        val target = AopTestUtils.getUltimateTargetObject<PointModifyService>(pointModifyService)
+        every { target.deduct(any(), any()) } answers {
+            callOriginal()
+            pause.hold()
+        }
+    }
+
+    /** 충전이 계정을 잠가 잔액을 더한 뒤, 커밋하기 전에 멈춘다. */
+    private fun pauseChargeAfterCharging() {
+        val target = AopTestUtils.getUltimateTargetObject<PointModifyService>(pointModifyService)
+        every { target.charge(any(), any()) } answers {
+            val charged = callOriginal()
+            pause.hold()
+            charged
         }
     }
 
