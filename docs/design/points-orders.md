@@ -937,15 +937,23 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 > 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)로 재고의 몫은 풀렸다. 확정은 품목의 상품 행을 처음 읽을 때 `FOR UPDATE`로 잠근다. 같은 상품을 두고 겹친 확정은 앞선 쪽의 커밋을 기다린 뒤 가장 최근에 커밋된 재고를 읽으므로, 위의 절댓값 쓰기가 다른 확정의 차감을 덮지 않는다. 관리자의 상품 쓰기와 브랜드 삭제도 같은 행 잠금으로 확정과 차례를 지킨다. 같은 주문의 동시 확정은 그대로 열려 있다. 주문 행을 잠그지 않으므로 두 확정이 모두 DRAFT를 읽고, 이제는 뒤진 쪽이 잠금을 기다린 뒤 재고를 한 번 더 차감한다. 포인트 계정의 잠금과 함께 다음 설계 인터뷰에서 다룬다.
 
+> 2026-10-09 [ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)로 같은 주문의 빈틈이 닫혔다. 확정의 첫 문장이 주문 행을 품목과 함께 잠가 읽으므로, 같은 주문의 뒤진 확정은 앞선 확정이 끝나기를 기다리고, 그것이 커밋했으면 CONFIRMED를 읽어 409 `ORDER_ALREADY_CONFIRMED`로 차감 없이 거절된다. 충전과 확정의 결제도 포인트 계정 행을 처음 읽을 때 잠가, 위의 절댓값 쓰기가 그 사이 커밋된 충전이나 결제를 덮지 않는다. 결정은 19절에 있다.
+
 늦은 실패를 넣는 자리도 바뀌었다. 확정은 이제 차감 뒤 어떤 저장소도 부르지 않고, 모든 쓰기가 커밋의 flush에서 나간다. 테스트의 SQL 로그에서 flush는 엔티티를 읽은 차례로 UPDATE를 보냈다. `orders` → `product`(품목마다) → `point_account`다. 그래서 `point_account`에 `check (balance <> 3000)`을 잠시 걸어 마지막 UPDATE만 거절하면, 앞선 주문·재고의 UPDATE가 실제로 나간 뒤의 실패가 된다. 3주차 과제가 요구하는 "실제 변경 SQL이 나간 뒤 다음 저장 단계의 실패"와 같은 모양이다. 대가는 트랜잭션 안에서 flush된 값을 들여다보던 확인이 빠진 것이다. 테스트는 새 트랜잭션에서 재고·잔액·주문이 모두 그대로임을 보고, 같은 DRAFT를 다시 확정한다.
 
 > 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)이 `hibernate.order_updates`를 켜면서 위의 flush 차례가 바뀌었다. 커밋의 flush는 이제 엔티티 이름 순으로 `orders` → `point_account` → `product`를 보내고, 첫 상품의 재고는 둘째 상품의 잠금 읽기가 부른 자동 flush로 그보다 먼저 나간다. `point_account`의 CHECK는 더는 마지막 UPDATE를 거절하지 않았고, 둘째 상품의 UPDATE가 MySQL에 닿지 않은 채로 테스트가 통과했다. 늦은 실패는 이제 `product`에 `check (stock <> 2)`를 잠시 걸어 마지막인 둘째 상품의 재고 UPDATE를 거절하고, 앞서 나간 재고·주문·잔액의 UPDATE가 모두 되돌아가는지 본다.
 
+> 2026-10-09 [카탈로그 설계 5.37](./catalog.md)로 확정은 차감 뒤 주문을 `orderRepository.save`에 넘기고, 두 차감도 각자의 저장소에 `save`한다. 관리 상태 엔티티의 `save`는 SQL을 보내지 않으므로 쓰기가 커밋의 flush에서 나간다는 위의 말과 늦은 실패의 CHECK는 그대로다. Q38이 미룬 `save` 호출은 테스트가 아니라 이 규칙 때문에 들어왔고, 늦은 실패 테스트는 그대로 CHECK를 쓴다.
+
+> 2026-10-09 ADR 0019의 잠금 읽기를 들인 뒤 SQL 로그를 다시 보았다. 결제의 계정 잠금 읽기는 `point_account`만 읽는 조회라 바뀐 상품을 자동 flush하지 않는다. 첫 상품의 재고는 여전히 둘째 상품의 잠금 읽기 때 먼저 나가고, 커밋의 flush는 `orders` → `point_account` → 둘째 상품 차례다. 둘째 상품의 재고가 마지막 쓰기이므로 늦은 실패의 CHECK와 KDoc은 그대로다.
+
 ### 18.3 지금의 흐름
 
-- 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)`. `point_account` 한 행만 바뀐다.
+> 2026-10-09 충전과 확정의 첫 읽기가 잠금 읽기로 바뀌었다. 지금의 흐름은 19.2에 있다.
+
+- 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 저장. `point_account` 한 행만 바뀐다.
 - DRAFT 생성: 17.3과 같다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()`. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
 
 ### 18.4 테스트가 바뀐 자리
 
@@ -954,3 +962,45 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 - 이력의 행 수나 내용을 함께 보던 테스트 19개는 그 확인만 덜었다. 이름에 이력이 들어 있던 테스트는 이름을 고쳤다. 결제가 일어났는지는 잔액·재고·주문 상세가 이미 보고 있었다.
 - `countPointHistories`·`lastPointHistoryRow`·`assertPaymentCount`를 지웠다. `OrderApiTest`의 스키마 재생성 테스트는 `point_history`와 그 두 FK를 목록에서 뺐다.
 - commerce-api 테스트는 412개에서 405개가 되었다. ktlint와 ArchUnit도 통과했다.
+
+## 19. 주문·포인트 계정 행의 잠금 — ADR 0019
+
+2026-10-09 3주차 과제의 3절(기존 포인트 주문의 원자성과 경쟁 제어)과 4절(실패·경쟁 결과 확인)을 두고 설계 인터뷰를 했다. [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)이 상품과 브랜드의 몫을 끝낸 뒤 남은 것은 같은 주문의 동시 확정, 포인트 계정의 잠금, 과제가 요구하는 검증이었다(18.2). 결정은 [ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)이고 명세는 #109다. 인터뷰의 번호를 이어 Q43부터 적는다.
+
+### 19.1 결정
+
+| ID | 결정한 것 | 사용자의 선택 |
+| --- | --- | --- |
+| Q43 | 범위 | 3절의 같은 주문 확정과 포인트 계정 잠금, 4절의 검증(갱신 유실 대조군, 과제 표의 경쟁 행, 확정과 브랜드 삭제의 중간 실패)까지다. 다른 잠금 전략의 비교, 재고 요청 12개 실험, 기술 글, `week3`에서 upstream으로 가는 PR은 뺀다. 브랜드 삭제와 상품 등록의 동시 실행은 #107이 이미 했으므로 PR에 적을 수 있다. 하지 않은 시나리오는 검증했다고 쓰지 않는다. |
+| Q44 | 포인트 계정의 잠금 | 비관적 잠금. 충전과 확정의 결제가 모두 `PointAccountFinder.findForUpdate(userId)`로 계정을 처음 읽을 때 잠근다. 저장소 포트는 `findForUpdateByUserId`에 `@Lock(PESSIMISTIC_WRITE)`를 단다. 잔액 조회는 잠그지 않는다. 조건부 UPDATE는 잔액 규칙을 SQL로 옮기고, `@Version`은 잔액이 넉넉해도 실패해 과제의 2/1을 맞추려면 재시도가 필요하다. |
+| Q45 | 주문의 잠금 | 확정이 첫 문장에서 주문 행을 잠근다. `OrderFinder.findForUpdate(userId, orderId)`가 `find`를 대신하고, 저장소 포트는 `findForUpdateWithLineItemsByIdAndUserId`에 `@Lock`과 지금의 `@EntityGraph`를 단다. 기다린 확정은 409 `ORDER_ALREADY_CONFIRMED`다. 잠금은 주문을 읽는 그 SELECT에 걸려야 하며, Hibernate가 따로 잠그면(follow-on locking) 구현을 멈추고 보고한다. 포인트 계정의 잠금보다 늦게 들어가지 않는다. 계정만 잠그면 지금의 우연한 단일 결제가 이중 결제가 된다(ADR 0019 규칙 4). |
+| Q46 | 잠금 순서 | 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정. 0018 규칙 3의 앞에 주문을 둔다. 주문을 잠그는 곳은 확정 하나이고 그 첫 문장에서 잠그므로, 주문 잠금을 기다리는 트랜잭션은 다른 잠금을 쥐고 있지 않다. 확정의 세 행이 모두 첫 읽기에서 잠기므로 커밋의 flush는 새 잠금을 얻지 않는다. |
+| Q47 | 갱신 유실 대조군 | 둔다. 실제 서비스의 경쟁 테스트와 겹쳐 보였지만, 4절이 원인 설명용 재현과 개선된 서비스의 검증을 나누라고 하고 체크리스트가 그것을 묻는다. `LostUpdateControlTest`는 JDBC로 두 트랜잭션을 열어 잠그지 않고 읽고, 둘 다 읽을 때까지 latch에서 기다린 뒤, 조건과 버전 없이 상수를 쓴다. 위반을 단언해 초록으로 남고, 모든 대기에 시간 제한을 둔다. |
+| Q48 | 경쟁 테스트의 모양 | 과제 표의 행은 start gate로 함께 푼다. 새 잠금 쌍마다 한쪽을 `Pause`에서 멈추는 멈춤 테스트를 둔다. 잠금 읽기를 잠그지 않는 읽기로 바꿔 관련 테스트가 한 번 실패하는 것을 보고, 그 결과를 티켓의 닫는 댓글에 남긴다. 잠금 구간의 멈춤은 테스트의 spy stub에만 있고 운영 코드에는 장벽도 sleep도 없다. |
+| Q49 | 집계와 기대 거절 | 커밋하는 기반에 `tally`를 둔다. 요청마다 성공·업무 거절·기술 오류로 센다. 각 테스트가 기대하는 업무 거절의 예외 타입을 넘기고, 나머지는 모두 기술 오류로 0이어야 한다. 그래서 잠금 실패가 품절이나 포인트 부족으로 섞여 통과하지 않는다. 수량과 잔액의 식은 새 트랜잭션에서 읽은 DB 행으로 계산한다. 기존 5×8 테스트도 같은 모양으로 고친다. |
+| Q50 | 확정의 중간 실패 자리 | 주문의 저장 단계. `OrderConfirmerRollbackTest`가 `OrderRepository`를 spy해 `save`가 영속성 컨텍스트를 flush한 뒤 던지게 한다. 처음에는 `PointModifyService.deduct`에 넣으려 했다. 같은 날 확정이 `orderRepository.save`로 끝나게 되어(카탈로그 설계 5.37) `BrandRegisterRollbackTest`와 같은 모양을 골랐다. HTTP의 CHECK 테스트는 HTTP의 실패 대표로 남긴다. |
+| Q51 | 브랜드 삭제의 준비 | `BrandRegisterRollbackTest`가 과제의 준비를 그대로 쓴다. 브랜드 하나에 상품 둘(하나는 재고 0), 다른 브랜드의 상품, 그 브랜드 상품의 과거 CONFIRMED 주문이다. 실패 테스트 옆에 정상 테스트를 두고, 둘 다 `deletedAt`만이 아니라 전체 상태를 본다. |
+| Q52 | 테스트 자리 | 새 경쟁은 `OrderConfirmerConcurrencyTest`에, 집계는 커밋하는 기반에 둔다. `OrderConfirmerRollbackTest`와 `LostUpdateControlTest`는 확정 포트의 패키지(`application/order/provided`)에 둔다. |
+| Q53 | 기록 방식 | 새 ADR 0019를 쓴다. ADR 0018·0003과 이 설계의 18.2에는 원문을 두고 날짜 메모를 단다. 결정은 이 절에 적는다. 도메인 문서는 지금 모습으로 고친다. |
+| Q54 | 용어 | `CONTEXT.md`의 주문을 확정하다에 "같은 주문의 확정이 함께 들어와도 한 번만 확정되고, 나머지는 이미 확정된 주문으로 차감 없이 거절된다"를 더한다. 새 용어는 없다. |
+| Q55 | 기술 글 | 범위에서 뺀다. 사용자가 직접 쓴다. 티켓의 닫는 댓글이 재료(대조군의 결과, 잠금을 뺀 실행의 결과, SQL 로그)를 모은다. |
+
+### 19.2 지금의 흐름
+
+- 충전: 요청자 확인 → 계정을 잠가 읽음(`PointAccountFinder.findForUpdate`) → `PointAccount.charge(amount)` → 저장. 같은 계정의 다른 충전이나 결제와 겹치면 계정 행에서 기다리고, 뒤에 온 쪽은 앞선 쪽이 커밋한 잔액에 더한다.
+- DRAFT 생성: 17.3과 같다. 새 행을 넣을 뿐 잠그지 않는다.
+- 확정: 요청자 확인 → 본인 주문을 품목과 함께 잠가 읽음(`OrderFinder.findForUpdate`) → `validateConfirmable()` → 모든 품목의 상품 행을 잠가 읽어 판매 가능 확인 → 재고 차감 → 계정을 잠가 읽어 `PointAccount.pay(amount)` → `confirm()` → 저장. 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 앞선 상품의 재고 UPDATE는 다음 상품을 다시 잠가 읽을 때의 자동 flush로 먼저 나가고, 나머지는 커밋의 flush에서 나간다. 어느 flush도 새 잠금을 얻지 않는다.
+- 잔액 조회와 고객·관리자의 주문 조회는 잠그지 않는다.
+
+### 19.3 주문 잠금이 한 문장인지
+
+ADR 0019 규칙 2는 첫 작업이 SQL 로그로 확인하라고 했다(#114). MySQL 방언의 Hibernate 7.4는 엔티티 그래프의 조회 끝에 주문 별칭만 잠그는 절을 붙였다.
+
+```sql
+select … from orders o1_0 left join order_line_item li1_0 on o1_0.id=li1_0.order_id
+where (o1_0.deleted_at is null) and o1_0.id=? and o1_0.user_id=? order by li1_0.product_id for update of o1_0
+```
+
+읽은 뒤 주문을 따로 잠그는 조회는 로그에 없었다. `for update of o1_0`는 `orders`의 행만 잠그므로 품목 행은 잠기지 않는다. 계정은 `… from point_account pa1_0 where … pa1_0.user_id=? for update of pa1_0`로 잠긴다.
+
+확정의 첫 읽기를 `find`로 되돌리자 새 테스트 둘이 실패했다. 같은 DRAFT를 다섯 번 함께 확정하면 다섯 모두 성공해 재고 10이 5로, 잔액 5,000원이 0원으로 줄었다. 멈춤 테스트에서는 둘째 확정도 성공해 재고 10이 4로, 잔액 6,000원이 0원으로 줄었다. 계정 잠금이 있는 채로 주문 잠금만 빠지면 뒤진 확정이 가장 최근 잔액에서 다시 결제한다. 규칙 4가 말한 이중 결제다.

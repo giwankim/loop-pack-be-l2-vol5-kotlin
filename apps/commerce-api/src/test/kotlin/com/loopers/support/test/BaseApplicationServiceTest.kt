@@ -4,6 +4,7 @@ import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
@@ -79,6 +80,9 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var orderCreator: OrderCreator
+
+    @Autowired
+    private lateinit var orderConfirmer: OrderConfirmer
 
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
@@ -189,5 +193,10 @@ abstract class BaseApplicationServiceTest {
     /** 사용자의 포인트 계정에 충전액만큼 충전한다. */
     protected fun charge(amount: Long, user: User = this.user) {
         pointCharger.charge(user.id, createPointChargeRequest(amount = amount))
+    }
+
+    /** 주문한 사용자가 주문을 확정한다. 품목의 재고와 그 사용자의 잔액이 넉넉해야 한다. */
+    protected fun confirmOrder(order: Order = this.order) {
+        orderConfirmer.confirm(order.userId, order.id)
     }
 }

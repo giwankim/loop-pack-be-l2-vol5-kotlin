@@ -38,7 +38,7 @@
 - 등록: `BrandRegister.register` → `Brand(name)`(공백, 길이 상한 검사) → `BrandValidator.validateForRegister`가 받은 이름으로 중복 조회 → 저장. 공백뿐이거나 너무 긴 이름은 조회 없이 거절된다.
 - 수정: `BrandRegister.update` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회 → `BrandValidator.validateForUpdate`가 받은 이름을 자기 말고 다른 브랜드가 쓰는지 조회 → `brand.update(name)`(공백, 길이 상한 검사) → 저장. 중복 거절은 브랜드를 바꾸기 전에 끝나므로 거절된 이름은 브랜드에 닿지 않는다.
 - 목록: `BrandFinder.findAll` → 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각. 총 개수는 세지 않는다.
-- 삭제: `BrandRegister.delete` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회(없으면 `BRAND_NOT_FOUND`) → `ProductDeleter.deleteAllOfBrand`가 그 브랜드의 삭제되지 않은 상품을 지운다. 상품의 `ProductModifyService`가 `ProductRepository.findForUpdateByBrandIdOrderById`로 id 오름차순으로 잠가 읽고 각각 `product.delete()`를 부른다 → `brand.delete()` → 저장. 브랜드와 상품의 변경은 함께 커밋되고 함께 되돌아간다. 잠금은 브랜드 → 상품의 차례다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+- 삭제: `BrandRegister.delete` → `BrandFinder.findForUpdate`가 삭제되지 않은 브랜드를 잠가 조회(없으면 `BRAND_NOT_FOUND`) → `ProductDeleter.deleteAllOfBrand`가 그 브랜드의 삭제되지 않은 상품을 지운다. 상품의 `ProductModifyService`가 `ProductRepository.findForUpdateByBrandIdOrderById`로 id 오름차순으로 잠가 읽고 각각 `product.delete()`를 부른 뒤 `saveAll`로 저장한다 → `brand.delete()` → 저장. 브랜드와 상품의 변경은 함께 커밋되고 함께 되돌아간다. 잠금은 브랜드 → 상품의 차례다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 
 ## 상품 (Product)
 

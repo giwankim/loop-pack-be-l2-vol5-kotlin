@@ -13,6 +13,8 @@ import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.Pause
+import com.loopers.support.brandDeletedAt
+import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
@@ -84,7 +86,7 @@ class BrandRegisterConcurrencyTest(
         deleting.await()
         inNewTransaction {
             assertThat(countProductRows()).isOne()
-            assertThat(columnOf("product", "deleted_at", registered.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(registered.id)).isNotNull()
         }
     }
 
@@ -126,7 +128,7 @@ class BrandRegisterConcurrencyTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
         inNewTransaction {
             assertThat(columnOf("product", "name", product.id)).isEqualTo("처음 이름")
-            assertThat(columnOf("product", "deleted_at", product.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -148,7 +150,7 @@ class BrandRegisterConcurrencyTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
         inNewTransaction {
             assertThat(columnOf("product", "stock", product.id)).isEqualTo(10)
-            assertThat(columnOf("product", "deleted_at", product.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -167,7 +169,7 @@ class BrandRegisterConcurrencyTest(
         val exception = assertThrows<CoreException> { deletingProduct.await() }
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
         inNewTransaction {
-            assertThat(columnOf("product", "deleted_at", product.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -190,7 +192,7 @@ class BrandRegisterConcurrencyTest(
         inNewTransaction {
             assertThat(columnOf("product", "name", product.id)).isEqualTo("바꾼 이름")
             assertThat(columnOf("product", "price", product.id)).isEqualTo(2_000L)
-            assertThat(columnOf("product", "deleted_at", product.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 
@@ -211,7 +213,7 @@ class BrandRegisterConcurrencyTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
         inNewTransaction {
             assertThat(columnOf("brand", "name", brand.id)).isEqualTo("처음 이름")
-            assertThat(columnOf("brand", "deleted_at", brand.id)).isNotNull()
+            assertThat(entityManager.brandDeletedAt(brand.id)).isNotNull()
         }
     }
 
@@ -230,7 +232,7 @@ class BrandRegisterConcurrencyTest(
         deleting.await()
         inNewTransaction {
             assertThat(columnOf("brand", "name", brand.id)).isEqualTo("바꾼 이름")
-            assertThat(columnOf("brand", "deleted_at", brand.id)).isNotNull()
+            assertThat(entityManager.brandDeletedAt(brand.id)).isNotNull()
         }
     }
 
@@ -250,8 +252,8 @@ class BrandRegisterConcurrencyTest(
         val exception = assertThrows<CoreException> { second.await() }
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
         inNewTransaction {
-            assertThat(columnOf("brand", "deleted_at", brand.id)).isNotNull()
-            assertThat(columnOf("product", "deleted_at", product.id)).isNotNull()
+            assertThat(entityManager.brandDeletedAt(brand.id)).isNotNull()
+            assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
 

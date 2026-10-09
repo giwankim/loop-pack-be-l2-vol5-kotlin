@@ -7,6 +7,7 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.errorTypeOf
 import com.loopers.support.flushAndClear
+import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseApplicationServiceTest
 import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
@@ -149,7 +150,7 @@ class ProductRegisterTest(
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
         assertThat(countProducts()).isZero()
-        assertThat(deletedAtOf(product.id)).isNotNull()
+        assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
     }
 
     @Test
@@ -216,14 +217,6 @@ class ProductRegisterTest(
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("재고는 0 이상이어야 합니다.")
         assertThat(productFinder.findInfo(product.id).stock).isEqualTo(7)
-    }
-
-    /** 논리 삭제는 행을 지우지 않으므로 삭제 시각은 SQL 제한을 지나는 native 조회로만 볼 수 있다. */
-    private fun deletedAtOf(id: Long): Any? {
-        return entityManager
-            .createNativeQuery("select deleted_at from product where id = :id")
-            .setParameter("id", id)
-            .singleResult
     }
 
     /** 삭제되지 않은 상품 행 수. 엔티티의 SQL 제한이 JPQL에도 붙는다. */

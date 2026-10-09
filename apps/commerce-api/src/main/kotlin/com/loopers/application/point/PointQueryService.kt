@@ -20,4 +20,9 @@ class PointQueryService(
     override fun findByUser(userId: Long): PointAccount {
         return pointAccountRepository.findByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
     }
+
+    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
+    override fun findForUpdate(userId: Long): PointAccount {
+        return pointAccountRepository.findForUpdateByUserId(userId) ?: throw CoreException(ErrorType.POINT_ACCOUNT_MISSING)
+    }
 }

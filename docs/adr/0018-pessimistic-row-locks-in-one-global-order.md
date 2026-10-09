@@ -15,12 +15,16 @@ date: 2026-10-09
    - 브랜드 삭제의 연쇄([ADR 0017](./0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md))는 `findForUpdateByBrandIdOrderById(brandId)`로 그 브랜드의 삭제되지 않은 상품을 잠가 읽고, 각각 `delete()`를 부른다.
    - 브랜드의 삭제와 수정은 `BrandFinder.findForUpdate(id)`, 상품 등록은 `BrandFinder.findForShare(id)`로 브랜드를 읽는다. 같은 브랜드에 상품을 등록하는 요청끼리는 서로 막지 않고, 브랜드 삭제만 그것들과 엇갈린다.
    - 주문 생성(DRAFT)과 좋아요는 상품을 바꾸지 않으므로 잠그지 않는다. 브랜드 삭제와 겹치면 "생성 뒤 삭제"로 끝나고, 확정이 다시 확인한다.
+
+   > 2026-10-09 [카탈로그 설계 5.37](../design/catalog.md)로 바꾼 엔티티는 Service가 저장소의 `save`(연쇄는 `saveAll`)에 넘긴다. 관리 상태 엔티티의 `save`는 SQL을 보내지 않으므로 UPDATE는 여전히 커밋의 flush에서 나가고, 이 결정의 잠금 순서와 3·9번은 그대로다.
 2. **첫 읽기가 잠가야 한다.** 한 영속성 컨텍스트에서 Hibernate는 이미 읽은 엔티티를 다시 돌려줄 때 처음 읽은 필드 값을 그대로 둔다. 나중의 잠금 읽기가 최신 행을 가져와도 메모리의 낡은 값이 이긴다. 확정에서는 `availableProduct`가 잠그고, `deduct`의 잠금 읽기는 이미 가진 잠금을 다시 확인할 뿐이다.
 3. **잠금 순서는 브랜드 → 상품(id 오름차순) → 포인트 계정이다.** 여러 상품을 잠그는 곳은 모두 id 오름차순이다.
    - 확정의 품목은 생성 때 `productId` 순으로 정렬되어 있다(`@OrderBy("productId ASC")`).
    - 연쇄는 `brand_id` 인덱스를 따라 잠근다. 그 인덱스의 항목이 `(brand_id, id)`이므로 id 순이다. 잠금은 훑는 인덱스의 순서로 걸리고 `ORDER BY`가 정하지 않는다. `OrderById`는 그 뜻을 적고 결과의 순서를 고정한다.
    - 확정은 브랜드를 잠그지 않는다.
    - `hibernate.order_updates: true`는 flush 때의 UPDATE를 엔티티 이름 순으로, 같은 엔티티 안에서는 id 순으로 보낸다. 표 사이의 차례는 위의 잠금 순서와 다르다. 확정의 커밋은 주문 → 포인트 계정 → 상품 차례로 쓴다. 그래도 잠금 순서가 지켜지는 것은 2번 덕분이다. 상품 행은 첫 읽기에서 이미 잠겨 있어 flush의 상품 UPDATE는 새 잠금을 얻지 않고, flush에서 처음 잠기는 행은 상품 뒤의 주문과 포인트 계정뿐이다.
+
+   > 2026-10-09 [ADR 0019](./0019-order-and-point-account-rows-locked-on-first-read.md)가 이 순서의 맨 앞에 주문을 두었다. 잠금 순서는 이제 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정이다. 확정은 첫 문장에서 주문 행을, 결제에서 포인트 계정 행을 잠가 읽으므로 위 마지막 항목의 "flush에서 처음 잠기는 행"은 더는 없다. 커밋의 flush(주문 → 포인트 계정 → 상품)는 새 잠금을 얻지 않는다.
 4. **삭제 여부는 잠금을 얻은 뒤에 본다.** 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽는다. 그래서 `@SQLRestriction("deleted_at is null")`이 그 사이 커밋된 삭제를 걸러 낸다. 이 동작은 첫 테스트가 MySQL에서 확인한다. 브랜드 삭제가 상품을 함께 삭제하고 상품 등록이 브랜드를 잠그므로, 커밋된 모든 상태에서 "삭제된 브랜드의 상품은 삭제됐다"가 성립한다. 확정이 상품 행만 보는 까닭이다. 읽기 쪽의 브랜드 필터(목록의 inner join, 주문 생성의 `findByIdWithActiveBrand`, 좋아요한 상품 목록의 그래프)는 방어로 남긴다.
 5. **저장소 포트는 Spring Data의 파생 이름에 `@Lock`을 단다.** `findForUpdateById`(`PESSIMISTIC_WRITE`), `findForShareById`(`PESSIMISTIC_READ`), `findForUpdateByBrandIdOrderById`(`PESSIMISTIC_WRITE`)가 그렇다. Spring Data는 `find`와 `By` 사이를 설명으로 보므로 `@Query`가 필요 없다. 파생 조회는 상품 표만 읽는다. `brand`가 LAZY라서 잠금이 상품 행에만 걸린다. Finder의 잠금 메서드는 트랜잭션 속성을 따로 달지 않는다. 대신 KDoc에 "호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다."를 적는다. 부르는 곳은 모두 쓰기 트랜잭션에 참여하므로 Query Service의 `readOnly`는 걸리지 않는다.
 6. **`product.brand_id` 인덱스를 엔티티에 적고 테스트로 고정한다.** 지금은 InnoDB가 외래 키를 위해 만든 암묵 인덱스뿐이다. 그 인덱스가 없으면 REPEATABLE READ의 잠금 읽기가 훑은 모든 행을 잠가, 상품 표 전체가 브랜드 삭제의 커밋까지 잠긴다.
@@ -50,6 +54,8 @@ date: 2026-10-09
 ## 이번 범위 밖에 남은 빈틈
 
 - **같은 주문의 동시 확정.** 주문 행을 잠그지 않으므로 둘 다 DRAFT를 읽고 재고를 두 번 차감한다. 포인트 계정의 잠금(충전과 결제, 같은 사용자의 여러 확정)과 함께 따로 정한다.
+
+  > 2026-10-09 [ADR 0019](./0019-order-and-point-account-rows-locked-on-first-read.md)가 정했다. 확정의 첫 문장이 주문 행을 잠가 읽으므로 같은 주문의 확정은 그 잠금에서 차례로 지나가고, 앞선 확정이 커밋했으면 뒤진 쪽은 확정된 주문을 읽어 409 `ORDER_ALREADY_CONFIRMED`로 차감 없이 거절된다. 충전과 확정의 결제는 포인트 계정 행을 처음 읽을 때 잠근다.
 - **브랜드 이름의 중복.** 동시에 들어온 등록이나 이름 변경은 서로 다른 행을 쓰므로 브랜드 행의 잠금으로 막지 못한다. 이름에는 유일 인덱스가 없다(ADR 0001).
 
 ## 다시 볼 조건

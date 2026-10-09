@@ -24,8 +24,8 @@ import java.time.Duration
 import kotlin.concurrent.thread
 
 /**
- * 행 잠금을 3초 안에 얻지 못한 요청의 응답을 고정한다(ADR 0018 규칙 7, 8). 잠금 대기는 두 자리에서 일어난다.
- * 쓰기가 행을 처음 읽는 잠금 조회와, 잠그지 않고 읽은 행의 UPDATE를 보내는 커밋의 flush다. 둘 다 409로 끝나고 아무것도 바꾸지 않아야 한다.
+ * 행 잠금을 3초 안에 얻지 못한 요청의 응답을 고정한다(ADR 0018 규칙 7, 8). 두 경우 모두 쓰기가 행을 처음 읽는 잠금 조회에서 기다린다.
+ * 관리자의 상품 쓰기는 첫 문장에서, 확정은 앞선 잠금을 쥔 채 결제의 계정 잠금에서다(ADR 0019). 둘 다 409로 끝나고 아무것도 바꾸지 않아야 한다.
  *
  * 다른 스레드의 트랜잭션이 포트로 행을 잠근 채 [Pause]에서 멈춘 동안 같은 행이 필요한 요청을 보낸다.
  * 준비한 데이터를 그 스레드가 읽어야 하고 요청이 그 트랜잭션의 잠금을 기다려야 하므로, 클래스는 테스트 트랜잭션에서 빠지고
@@ -79,17 +79,14 @@ class LockFailureApiTest(
     }
 
     /**
-     * 확정은 포인트 계정을 잠그지 않고 읽으므로, 계정의 UPDATE가 커밋의 flush에서 처음 잠금을 기다린다.
-     * `hibernate.order_updates`가 UPDATE를 엔티티 종류 순으로 보내 주문의 UPDATE는 이미 나간 뒤다. 409는 그것까지 되돌린 결과다.
+     * 확정의 결제는 포인트 계정을 잠가 읽으므로(ADR 0019), 다른 충전이 계정을 쥐고 있으면 주문과 상품을 잠그고 재고를 차감한 뒤
+     * `deduct`의 잠금 읽기에서 기다린다. 409는 그때까지 잡은 잠금을 풀고 재고 차감을 되돌린 결과다.
      */
     @Test
-    fun `a confirmation whose point update cannot lock at commit within the lock wait returns 409 and changes nothing`() {
+    fun `a confirmation that cannot lock its point account within the lock wait returns 409 and changes nothing`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
         charge(amount = 3_000)
-        holdInAnotherTransaction {
-            charge(amount = 1_000)
-            entityManager.flush()
-        }
+        holdInAnotherTransaction { charge(amount = 1_000) }
 
         val body = assertThat(requestConfirm(order.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
