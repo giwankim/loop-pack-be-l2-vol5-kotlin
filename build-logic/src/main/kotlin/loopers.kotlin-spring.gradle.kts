@@ -81,6 +81,10 @@ tasks.test {
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")
     jvmArgs("-Xshare:off")
+    // Spring Data 저장소는 JDK 프록시다. MockK 가 그것을 spy 하려면 java.lang.reflect.Proxy 의 필드를 열어야 한다
+    // (springmockk README 의 Gotchas, https://github.com/Ninja-Squad/springmockk#jdk-proxies).
+    // 빠지면 저장소를 @MockkSpyBean 하는 테스트의 컨텍스트가 IllegalAccessException 으로 뜨지 않는다.
+    jvmArgs("--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED")
 }
 
 // jacoco 플러그인이 jacocoTestReport 에 test 태스크의 실행 데이터(build/jacoco/test.exec)를 연결하고 test 뒤에 돌게 한다.
