@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.concurrent.thread
+import kotlin.reflect.KClass
 
 /**
  * 커밋하는 provided 포트 테스트의 기반. [BaseApplicationServiceTest]의 컨텍스트와 `prepare` 메서드를 물려받되 테스트 트랜잭션에서
@@ -26,6 +27,7 @@ import kotlin.concurrent.thread
  * - [inAnotherThread]는 포트를 다른 스레드에서 부르고 곧바로 돌아온다. 돌려준 [Running]으로 그 호출이 끝났는지 묻고 결과를 받는다.
  *   잠금을 기다리는지는 SQL이 아니라 "[LOCK_WAIT_PROBE] 안에 끝나지 않았는가"로 본다. 잠금을 쥔 쪽은 [com.loopers.support.Pause]로 멈춘다.
  * - [runConcurrently]는 모든 호출이 start gate에 닿으면 함께 풀고, 넘긴 차례대로 성공 값이나 던진 예외를 돌려준다.
+ *   [tally]는 그 결과를 성공·업무 거절·기술 오류로 센다.
  * - [inNewTransaction]은 결과를 새 트랜잭션에서 다시 읽는다. 커밋된 것만 보이고, 앞선 트랜잭션의 영속성 컨텍스트가 답하지 않는다.
  *
  * `prepare`가 돌려준 엔티티는 그 트랜잭션이 끝나 분리되어 있다. 지연 연관(`Product.brand` 등)을 건드리지 않는다.
@@ -108,6 +110,32 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
             start.countDown()
         }
         return running.map { it.await() }
+    }
+
+    /**
+     * [runConcurrently]의 결과를 성공·업무 거절·기술 오류로 센다. [expectedRejections]는 그 테스트가 기대하는 업무 거절의 예외 타입이다.
+     * 타입이 정확히 같은 예외만 업무 거절로 세므로, 상위 타입(`RuleViolationException`)을 넘겨 다른 거절까지 셀 수 없다.
+     * 나머지 예외는 모두 기술 오류다. API가 409로 바꾸는 잠금 실패(`CannotAcquireLockException` 등)도 여기서는 기술 오류다.
+     * 그래서 기술 오류가 품절이나 포인트 부족으로 섞여 통과하지 않는다.
+     */
+    protected fun tally(results: List<Result<*>>, vararg expectedRejections: KClass<out Throwable>): Outcomes {
+        val exceptions = results.mapNotNull { it.exceptionOrNull() }
+        val rejections = exceptions.count { it::class in expectedRejections }
+        return Outcomes(
+            successes = results.count { it.isSuccess },
+            rejections = rejections,
+            technicalErrors = exceptions.size - rejections,
+        )
+    }
+
+    /** [tally]가 센 결과. start gate 테스트는 셋을 함께 단언하고, [total]이 요청 수와 같은지 본다. */
+    protected data class Outcomes(
+        val successes: Int,
+        val rejections: Int,
+        val technicalErrors: Int,
+    ) {
+        val total: Int
+            get() = successes + rejections + technicalErrors
     }
 
     /** 다른 스레드에서 도는 호출. */

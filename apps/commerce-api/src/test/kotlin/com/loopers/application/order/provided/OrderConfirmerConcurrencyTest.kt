@@ -22,7 +22,8 @@ import org.springframework.test.util.AopTestUtils
 
 /**
  * 같은 재고를 두고 겹치는 확정과, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
- * 재고 경합은 start gate로 확정을 함께 풀고, 각 결과와 새 트랜잭션에서 읽은 주문·재고·잔액을 본다.
+ * 재고 경합은 start gate로 확정을 함께 풀고, 결과를 성공·업무 거절·기술 오류로 센다. 그다음 새 트랜잭션에서 읽은
+ * 주문·품목·재고·잔액으로 수량과 잔액의 식을 계산해 본다.
  *
  * 한쪽이 잠금을 쥔 채 [Pause]에서 멈추도록 그 Service의 단계를 spy하고, 다른 쪽을 다른 스레드에서 부른다.
  * 다른 쪽이 [LOCK_WAIT_PROBE] 뒤에도 끝나지 않았으면 잠금을 기다리는 것이다. 멈춘 쪽을 풀고 나서 두 결과와 새 트랜잭션에서 읽은
@@ -44,40 +45,52 @@ class OrderConfirmerConcurrencyTest(
 
     private val pause = Pause()
 
+    /**
+     * 수량의 식은 처음 재고 − 확정된 주문의 품목 수량 = 최종 재고다. 이 경쟁에는 충전이 없으므로 잔액의 식은
+     * 처음 잔액 − 확정된 주문의 결제액 = 최종 잔액이고, 구매자마다 계정이 따로라 계정마다 본다.
+     */
     @Test
     fun `eight concurrent confirmations for five units confirm five orders and leave three drafts with unchanged balances`() {
-        prepareProduct(price = 1_000, stock = 5)
-        val orders = List(8) {
+        val initialStock = 5
+        val initialBalance = 10_000L
+        prepareProduct(price = 1_000, stock = initialStock)
+        val drafts = List(8) {
             val owner = prepareUser()
-            charge(amount = 10_000, user = owner)
+            charge(amount = initialBalance, user = owner)
             prepareOrder(user = owner, products = listOf(product), quantity = 1)
         }
 
-        val results = runConcurrently(orders.map { draft -> { orderConfirmer.confirm(draft.userId, draft.id) } })
+        val results = runConcurrently(drafts.map { draft -> { orderConfirmer.confirm(draft.userId, draft.id) } })
 
-        assertThat(results.count { it.isSuccess }).isEqualTo(5)
-        val exceptions = results.mapNotNull { it.exceptionOrNull() }
-        assertThat(exceptions).hasSize(3)
-        exceptions.forEach { exception ->
-            assertThat(exception).isInstanceOf(InsufficientStockException::class.java)
-        }
+        val outcomes = tally(results, InsufficientStockException::class)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 5, rejections = 3, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(drafts.size)
         inNewTransaction {
-            assertThat(productFinder.find(product.id).stock).isZero()
-            orders.zip(results).forEach { (draft, result) ->
-                val persisted = orderFinder.find(draft.userId, draft.id)
-                val balance = pointAccountFinder.findByUser(draft.userId).balance.amount
+            val reread = drafts.associate { draft -> draft.id to orderFinder.find(draft.userId, draft.id) }
+            val confirmed = reread.values.filter { persisted -> persisted.status == OrderStatus.CONFIRMED }
+            val confirmedItems = confirmed.flatMap { persisted -> persisted.items }
+            val soldQuantity = confirmedItems.filter { item -> item.productId == product.id }.sumOf { item -> item.quantity }
+            val finalStock = productFinder.find(product.id).stock
+            assertThat(finalStock).isEqualTo(initialStock - soldQuantity)
+            assertThat(finalStock).isZero()
+            drafts.forEach { draft ->
+                val confirmedByOwner = confirmed.filter { persisted -> persisted.userId == draft.userId }
+                val paid = confirmedByOwner.sumOf { persisted -> persisted.paidAmount!!.amount }
+                val finalBalance = pointAccountFinder.findByUser(draft.userId).balance.amount
+                assertThat(finalBalance).isEqualTo(initialBalance - paid)
+            }
+            drafts.zip(results).forEach { (draft, result) ->
+                val persisted = reread.getValue(draft.id)
                 if (result.isSuccess) {
                     assertThat(result.getOrThrow().status).isEqualTo(OrderStatus.CONFIRMED)
                     assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
                     assertThat(persisted.paidAmount).isEqualTo(draft.totalAmount)
                     assertThat(persisted.confirmedAt).isNotNull()
-                    assertThat(balance).isEqualTo(9_000L)
                 } else {
                     assertThat(persisted.status).isEqualTo(OrderStatus.DRAFT)
                     assertThat(persisted.paidAmount).isNull()
                     assertThat(persisted.confirmedAt).isNull()
                     assertThat(persisted.updatedAt).isEqualTo(draft.updatedAt)
-                    assertThat(balance).isEqualTo(10_000L)
                 }
             }
         }

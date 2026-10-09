@@ -14,6 +14,7 @@
 ### 단언
 
 - 단언은 차례로 적는다. `assertAll`이나 soft assertion(`assertSoftly`, `SoftAssertions`)으로 묶지 않는다. 테스트는 동작 하나를 보므로 첫 실패에서 멈추면 충분하다.
+- start gate 테스트(`runConcurrently`)는 기대하는 업무 거절의 예외 타입을 `tally`에 넘겨, 성공·업무 거절·기술 오류의 세 수(기술 오류는 0)와 그 합이 요청 수와 같은지 단언한다. 수량과 잔액의 식(처음 재고 − 확정된 주문의 품목 수량 = 최종 재고, 처음 잔액 + 성공한 충전 − 확정된 주문의 결제액 = 최종 잔액)은 새 트랜잭션에서 읽은 주문·품목·재고·잔액으로 계산해 본다. 고정된 숫자와만 견주지 않는다.
 
 ### 쿼리 수
 
@@ -76,7 +77,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   - 서비스(provided 포트) 테스트: `BaseApplicationServiceTest`
   - MockMvc 테스트: `BaseWebApiAdapterTest`. `BaseApplicationServiceTest`를 넓혀 MockMvc와 관리자 보안 설정을 더한다.
   - 저장소(required 포트) 테스트: `BaseRepositoryTest`
-  - 커밋해야 하는 provided 포트 테스트(잠금을 쥔 트랜잭션 곁에서 다른 트랜잭션이 기다리는지 보는 멈춤 테스트, 변경 SQL이 나간 뒤 실패해 되돌아가는지 보는 중간 실패 테스트 등): `BaseCommittingApplicationServiceTest`. `BaseApplicationServiceTest`를 넓혀 테스트 트랜잭션에서 빠지고 테스트마다 표를 비운다. 다른 스레드의 호출(`inAnotherThread`), start gate에서 함께 풀리는 호출들(`runConcurrently`), 새 트랜잭션의 다시 읽기(`inNewTransaction`)를 준다. 잠금을 쥔 쪽은 Service의 단계를 `@MockkSpyBean`으로 spy해 `com.loopers.support`의 `Pause`에서 멈추고, 다른 쪽이 기반의 `LOCK_WAIT_PROBE` 안에 끝나지 않으면 기다리는 것으로 본다. Service는 CGLIB 프록시이므로 `AopTestUtils.getUltimateTargetObject`로 얻은 spy에 stub한다. 중간 실패 테스트는 저장소를 `@MockkSpyBean`으로 spy해, 저장 단계가 영속성 컨텍스트를 flush한 뒤 던지게 한다. Spring Data 저장소는 JDK 프록시이므로 stub은 spy에 바로 걸고, spy는 Kotlin·Spring 컨벤션이 테스트 JVM에 거는 `--add-opens java.base/java.lang.reflect=ALL-UNNAMED`가 있어야 만들어진다. 기반의 `prepare`도 그 저장소를 거치므로 stub은 준비를 마친 뒤에 건다. spy 필드가 있는 클래스는 컨텍스트를 하나 더 띄운다.
+  - 커밋해야 하는 provided 포트 테스트(잠금을 쥔 트랜잭션 곁에서 다른 트랜잭션이 기다리는지 보는 멈춤 테스트, 변경 SQL이 나간 뒤 실패해 되돌아가는지 보는 중간 실패 테스트 등): `BaseCommittingApplicationServiceTest`. `BaseApplicationServiceTest`를 넓혀 테스트 트랜잭션에서 빠지고 테스트마다 표를 비운다. 다른 스레드의 호출(`inAnotherThread`), start gate에서 함께 풀리는 호출들(`runConcurrently`), 그 결과를 성공·업무 거절·기술 오류로 세는 집계(`tally`), 새 트랜잭션의 다시 읽기(`inNewTransaction`)를 준다. `tally`는 넘긴 업무 거절의 예외 타입과 정확히 같은 예외만 업무 거절로 세고, 잠금 실패까지 나머지는 모두 기술 오류로 센다. 잠금을 쥔 쪽은 Service의 단계를 `@MockkSpyBean`으로 spy해 `com.loopers.support`의 `Pause`에서 멈추고, 다른 쪽이 기반의 `LOCK_WAIT_PROBE` 안에 끝나지 않으면 기다리는 것으로 본다. Service는 CGLIB 프록시이므로 `AopTestUtils.getUltimateTargetObject`로 얻은 spy에 stub한다. 중간 실패 테스트는 저장소를 `@MockkSpyBean`으로 spy해, 저장 단계가 영속성 컨텍스트를 flush한 뒤 던지게 한다. Spring Data 저장소는 JDK 프록시이므로 stub은 spy에 바로 걸고, spy는 Kotlin·Spring 컨벤션이 테스트 JVM에 거는 `--add-opens java.base/java.lang.reflect=ALL-UNNAMED`가 있어야 만들어진다. 기반의 `prepare`도 그 저장소를 거치므로 stub은 준비를 마친 뒤에 건다. spy 필드가 있는 클래스는 컨텍스트를 하나 더 띄운다.
   - domain 테스트와 컨텍스트 적재 테스트(`CommerceApiContextTest`)는 상속하지 않는다. 다만 저장한 엔티티가 있어야 하는 fixture 계약 테스트(`OrderFixturesTest`)는 domain 패키지에 있어도 `@DataJpaTest`이므로 `BaseRepositoryTest`를 상속한다.
 - 테스트 설정 애노테이션(`@SpringBootTest`, `@DataJpaTest`, `@AutoConfigureMockMvc`, `@AutoConfigureTestDatabase`, `@Transactional`, 공통 `@Import`)은 기반 클래스만 진다. 하위 클래스가 더하는 애노테이션은 추가 `@Import`(QueryDSL 설정과 그 어댑터), 트랜잭션에서 빠지는 표시, `BaseCommittingApplicationServiceTest`의 하위 클래스가 Service(멈춤 테스트)나 저장소(중간 실패 테스트)를 spy하는 `@MockkSpyBean` 필드뿐이다. 하위 클래스의 `@Import`는 기반의 것과 합쳐진다.
 - `entityManager`와 `mvc`는 기반 클래스의 `protected` 필드로 쓴다. 준비만을 위해 포트나 저장소를 주입받지 않는다. 생성자로 받는 것은 검증하는 포트와 단언·정리에 쓰는 의존이다. 포트로도 저장소로도 만들 수 없는 상태(정해 둔 시각, 표현 범위를 넘는 가격 등)를 준비한 데이터 위에 SQL로 덮어쓰는 클래스는 `JdbcTemplate`도 받는다.
