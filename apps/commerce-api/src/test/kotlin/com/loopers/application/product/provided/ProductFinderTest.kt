@@ -88,6 +88,24 @@ class ProductFinderTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
+    /**
+     * 브랜드 삭제가 함께 삭제한 상품도 직접 삭제한 상품처럼 없는 상품이다(ADR 0017). 다른 브랜드의 상품은 목록에 남는다.
+     * 목록은 삭제된 브랜드를 따로 거르기도 하지만, 상세는 브랜드를 보지 않으므로 연쇄가 없으면 상품을 내준다.
+     */
+    @Test
+    fun `a product deleted with its brand is gone from the customer list and the detail`() {
+        val kept = prepareProduct()
+        val deletedBrand = prepareBrand()
+        val deleted = prepareProduct(deletedBrand)
+        deleteBrand(deletedBrand)
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> { productFinder.findInfo(deleted.id) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(productFinder.findAll(ProductListRequest()).content.map { it.id }).containsExactly(kept.id)
+    }
+
     @Test
     fun `the orderable lookup gives a product of a brand that is not deleted`() {
         prepareProduct(name = "티셔츠", price = 12_000)

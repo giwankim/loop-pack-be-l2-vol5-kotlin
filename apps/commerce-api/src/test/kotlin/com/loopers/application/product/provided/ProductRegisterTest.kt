@@ -174,6 +174,20 @@ class ProductRegisterTest(
         assertThat(errorTypeOf { productRegister.delete(product.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
     }
 
+    /** 브랜드 삭제가 함께 삭제한 상품도 직접 삭제한 상품처럼 없는 상품이다(ADR 0017). */
+    @Test
+    fun `updating, setting the stock of, and deleting a product deleted with its brand all throw PRODUCT_NOT_FOUND`() {
+        prepareProduct()
+        deleteBrand()
+        entityManager.flushAndClear()
+
+        assertThat(errorTypeOf { productRegister.update(product.id, createProductAdminUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productRegister.updateStock(product.id, createProductAdminStockUpdateRequest()) })
+            .isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(errorTypeOf { productRegister.delete(product.id) }).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+    }
+
     @Test
     fun `an update rejected by request validation keeps the stored name and price`() {
         prepareProduct(name = "티셔츠", price = 12_000)

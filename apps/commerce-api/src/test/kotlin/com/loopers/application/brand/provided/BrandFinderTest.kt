@@ -22,6 +22,20 @@ class BrandFinderTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
     }
 
+    /** 잠그는 읽기도 [BrandFinder.find]처럼 삭제된 브랜드를 없는 브랜드로 본다. 잠금은 테스트 트랜잭션이 끝날 때 풀린다. */
+    @Test
+    fun `getting an unknown or a deleted brand for update throws BRAND_NOT_FOUND`() {
+        prepareBrand()
+        deleteBrand()
+        entityManager.flushAndClear()
+
+        listOf(999L, brand.id).forEach { id ->
+            val exception = assertThrows<CoreException> { brandFinder.findForUpdate(id) }
+
+            assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
+        }
+    }
+
     @Test
     fun `listing brands returns the active ones newest first as a slice`() {
         prepareBrand()

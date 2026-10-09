@@ -19,7 +19,7 @@
 > - 유스케이스는 포트로 드러난다. 읽기는 조각마다 Finder 하나(`BrandFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `ProductRegister`, 주문 확정이 부르는 `StockDeductor`). `Facade`는 쓰지 않고 domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 > - Request는 이름 규칙(`<개념><동사>Request`) 그대로 `provided`에 둔다(5.17). `Money`는 `domain/shared`에 남는다.
 > - 다른 조각은 그 조각의 provided 포트로만 부른다. 다른 조각의 Service, `required` 저장소, 구현 클래스를 쓰지 않는다. 이 쓰임은 ArchUnit이 아니라 리뷰가 지킨다.
-> - 저장소는 `required`의 Spring Data 인터페이스이고 Spring Data가 구현한다(5.20). 저장소의 위치가 만든 두 순환은 묻는 쪽이 선언한 포트(`ActiveProductChecker`, `LikeCounter`)로 끊는다(5.16).
+> - 저장소는 `required`의 Spring Data 인터페이스이고 Spring Data가 구현한다(5.20). 저장소의 위치가 만든 두 순환은 묻는 쪽이 선언한 포트(`ActiveProductChecker`, `LikeCounter`)로 끊는다(5.16). (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `ActiveProductChecker`는 지웠다. 브랜드 쪽 순환은 이제 브랜드가 선언한 `ProductDeleter`를 상품의 `ProductModifyService`가 직접 구현해 끊는다. `LikeCounter`는 `LikeQueryService`가 직접 구현한다.)
 
 과제의 "버드뷰"를 C4 컴포넌트 다이어그램으로 그린다. 고객과 관리자, API 서버 안의 네 계층, DB와 요청 방향을 담는다.
 
@@ -127,7 +127,7 @@ classDiagram
     Like "*" ..> "1" User : userId
 ```
 
-- 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 조각에 물어서(`ActiveProductChecker`) 판단한다.
+- 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 조각에 물어서(`ActiveProductChecker`) 판단한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 이제 묻지 않는다. 브랜드를 삭제하면 application이 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품도 함께 삭제한다.)
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
@@ -199,7 +199,7 @@ sequenceDiagram
 | 브랜드 등록 | `POST /brands` | `{name}` | 201 브랜드 | 이름 공백·100자 초과 → 400. 삭제되지 않은 브랜드와 이름 중복 → 409 CONFLICT | 이름 길이는 앞뒤 공백을 포함해 검사하고(5.18) 받은 그대로 저장한다. 중복은 컬럼 collation이 정한다: 대소문자·뒤 공백만 다른 이름은 겹치고 앞 공백이 다른 이름은 겹치지 않는다(5.13) |
 | 브랜드 상세 | `GET /brands/{brandId}` | path | 200 브랜드 | 없거나 삭제됨 → 404 | |
 | 브랜드 수정 | `PUT /brands/{brandId}` | `{name}` | 200 브랜드 | 404, 400, 409 | 거절 시 기존 값 유지. 이름 검사는 등록과 같다(5.18, 5.22) |
-| 브랜드 삭제 | `DELETE /brands/{brandId}` | path | 200, data 없음 | 404. 삭제되지 않은 상품이 남음 → 409 | 재고 0인 상품도 남은 상품이다. 이미 삭제된 브랜드는 404 |
+| 브랜드 삭제 | `DELETE /brands/{brandId}` | path | 200, data 없음 | 404. ~~삭제되지 않은 상품이 남음 → 409~~ | ~~재고 0인 상품도 남은 상품이다.~~ 이미 삭제된 브랜드는 404. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 409는 없다. 상품이 남아도 200이고, 브랜드와 그 브랜드의 삭제되지 않은 상품을 한 트랜잭션에서 함께 삭제한다. 재고 0인 상품도 함께 삭제하고, 이미 삭제된 상품의 삭제 시각은 그대로 둔다.) |
 | 상품 목록 | `GET /products` | `brandId?`, `page`, `size` | 200 `{items:[{id, brandId, name, price, stock, createdAt, updatedAt}], …}` | 400 paging | 삭제된 상품 제외 |
 | 상품 등록 | `POST /products` | `{brandId, name, price, stock}` | 201 상품 | 없거나 삭제된 brandId → 404. 이름·가격·재고 범위 → 400 | 가격 1..1,000,000,000원, 재고 0 이상 |
 | 상품 상세 | `GET /products/{productId}` | path | 200 상품 | 404 | |
@@ -216,7 +216,7 @@ sequenceDiagram
 | `UNAUTHORIZED` (신규 status) | 401 | 헤더 없음, 없는 사용자 |
 | ~~`FORBIDDEN`~~ | — | 지웠다. 경로가 사용자를 품지 않아 요청자와 견줄 것이 없다(5.36) |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
-| `BRAND_NAME_DUPLICATED`, `BRAND_HAS_PRODUCTS` | 409, code는 CONFLICT와 같음 | 이름 중복, 삭제 조건 |
+| `BRAND_NAME_DUPLICATED`, ~~`BRAND_HAS_PRODUCTS`~~ | 409, code는 CONFLICT와 같음 | 이름 중복, ~~삭제 조건~~. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `BRAND_HAS_PRODUCTS`는 지웠다. 브랜드 삭제가 그 상품을 함께 삭제하므로 거절할 조건이 없다.) |
 | `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 모르는 정렬 값(5.24) |
 | ~~`INVALID_PAGE`~~ | — | 두지 않았다. `page`·`size`는 Request 제약이 거른다(5.22) |
 
@@ -227,6 +227,8 @@ sequenceDiagram
 설계 인터뷰에서 대안을 놓고 고른 것들이다. 각 항목의 마지막 줄이 다시 볼 조건이다.
 
 ### 5.1 브랜드와 상품의 애그리거트 경계
+
+> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)로 아래 다시 볼 조건 "브랜드 단위로 상품을 한꺼번에 바꾸는 요구가 생기면 A를 다시 본다"가 걸렸다. 3주차 과제가 브랜드 삭제를 그 브랜드의 상품 삭제와 같은 성공·실패로 묶으라고 했기 때문이다. A를 다시 보고 B를 지켰다. A를 버린 까닭이 그대로다. 상품 목록은 브랜드를 가로지르고, 상품 하나를 고치려고 브랜드의 상품 전체를 싣게 되며, 주문 확정이 브랜드 애그리거트 전체를 잠그게 된다. 대신 브랜드 삭제가 주문 확정에 이은 두 번째 예외가 되었다. 한 트랜잭션이 `Brand` 하나와 그 브랜드의 삭제되지 않은 `Product` 전부를 바꾼다. 셋째 규칙의 "브랜드 삭제 거절"은 연쇄로 바뀌었고, "삭제되지 않은 상품의 브랜드는 삭제되지 않았다"는 이제 연쇄가 보장한다. 그래서 연관은 그대로 둔다. 동시 등록과의 경합은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금이 맡는다.
 
 - 대안 A: 브랜드가 루트인 하나의 애그리거트. 상품 등록이 브랜드를 거치고 삭제 조건이 `Brand` 안의 불변식이 된다.
 - 대안 B: 브랜드와 상품은 각자 애그리거트. 상품이 브랜드를 `@ManyToOne`으로 읽기 참조한다. 삭제 조건은 application이 상품 저장소에 묻는다.
@@ -288,7 +290,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.8 교차 검사의 위치
 
-브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.)
+브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.) (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 브랜드 삭제 조건은 없어졌다. 브랜드 삭제는 상품 조각에 묻지 않고 시킨다. 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품을 함께 삭제하게 하고, `ActiveProductChecker`와 `BrandValidator.validateForDelete`는 지웠다. 남은 교차 검사는 브랜드 이름 중복과 상품 등록 시 브랜드 존재다.)
 
 ### 5.9 카탈로그 조회의 식별
 
@@ -355,6 +357,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 계층 이름이 바뀌었다. 계층마다 따로 검사하는 선택(B)은 그대로이고, 대안과 선택에 적힌 계층·규칙 이름은 지금 것으로 고쳤다. 문제와 "확인"은 그때의 계층(`interfaces`, `infrastructure`)과 `LayeredArchitectureTest`를 두고 적은 것이다. 다시 볼 조건이 카탈로그를 나눌 때 쓰겠다던 `required` 포트는 그 계기 없이 먼저 들어왔다. 저장소가 `domain`에서 `application`의 `required`로 옮겨 오자 `application.brand`와 `application.product`가 서로를 참조해 순환이 생겼다. 그래서 brand가 `ActiveProductChecker`("삭제되지 않은 상품이 남았는가")를 선언하고 product의 `ProductFinder`가 상속해 구현한다. 의존은 도메인과 같은 product → brand다. 같은 까닭으로 product가 선언한 `LikeCounter`를 like의 `LikeFinder`가 구현한다.
 >
 > 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)으로 provided 포트는 다른 조각의 required 포트를 상속하지 않는다. Service가 맡는 역할 인터페이스를 모두 직접 구현한다. 위 메모의 "`ProductFinder`가 상속해 구현한다"와 "`LikeCounter`를 like의 `LikeFinder`가 구현한다"는 그때의 모양이다. 지금은 `LikeQueryService`가 `LikeFinder`와 `LikeCounter`를 각자 구현한다. `ProductFinder : ActiveProductChecker`는 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지울 때까지 남는다. 의존 방향은 product → brand, like → product 그대로이고, 계층마다 따로 검사하는 선택(B)도 그대로다.
+>
+> 2026-10-09 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지웠다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)). 브랜드 ↔ 상품 순환은 이제 brand가 선언한 `ProductDeleter`("이 브랜드의 삭제되지 않은 상품을 삭제하라")를 product의 `ProductModifyService`가 `ProductRegister`, `StockDeductor`와 나란히 직접 구현해 끊는다. 묻는 포트가 시키는 포트로 바뀌었을 뿐 타입의 의존은 product → brand 그대로이고, `HexagonalArchitectureTest`는 고치지 않았다. 아래 문제와 다시 볼 조건의 "삭제되지 않은 상품이 있는가"는 그때의 물음이다.
 
 - 문제: #6의 브랜드 삭제 거절은 `application.brand`가 `domain.product`의 저장소에 묻는 일이다. `domain.product`는 이미 `domain.brand`를 참조한다(5.1). 계층을 가로질러 기능을 한 조각으로 묶으면 `brand → product → brand`가 순환으로 잡힌다.
 - 대안 A: 기능 조각 하나가 네 계층을 가로지른다. `domain.brand`, `application.brand`, `adapter.webapi.v1.brand`를 조각 `brand` 하나로 묶고 조각 사이 순환을 막는다. 기능 하나를 통째로 떼어 낼 수 있음을 보장한다.
@@ -697,6 +701,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ## 6. 테스트 경계
 
+> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)로 아래 표의 "브랜드 삭제 조건"은 그때의 것이 되었다. 삭제 조건이 없어지고 브랜드 삭제의 연쇄가 그 자리에 들어왔다. 연쇄는 같은 application 통합 테스트(`BrandRegisterTest`)가 본다. 재고 0인 상품도 함께 삭제되는지, 이미 삭제된 상품이 삭제 시각을 지키는지, 다른 브랜드와 그 상품이 그대로인지가 그 대상이다. 삭제된 상품의 삭제 시각은 어느 포트로도 읽히지 않으므로 SQL로 읽는다. 함께 삭제된 상품이 고객 목록·상세, 좋아요, 내 좋아요, 관리자의 상품 쓰기에서 없는 상품인지는 그 포트의 테스트(`ProductFinderTest`, `LikerTest`, `LikeFinderTest`, `ProductRegisterTest`)가 본다. 새 주문과 확정의 거절은 주문 HTTP 테스트가 본다. 읽기 쪽 브랜드 필터는 연쇄 때문에 포트로 닿을 수 없게 된 상태(`deleteBrandKeepingProducts`)로 고정한다.
+
 | 확인할 것 | 테스트 | 비고 |
 | --- | --- | --- |
 | `Product` 재고: 음수 거절과 기존 값 유지, 0 허용, 0 이하 차감 수량·부족 거절 | domain 단위 테스트, TDD 대표 사례 | Spring·DB 없음 |
@@ -733,4 +739,4 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - `ProductSort.LIKES_DESC`는 #9(2026-09-18)에서 들어왔다. 목록 쿼리가 `left join` + `group by`로 차례만 내고 `likeCount` 값은 5.28의 C가 그대로 센다. 쿼리를 QueryDSL로 옮긴 까닭과 치른 값은 5.32에 있다.
 - 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
 - `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.
-- `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다.
+- `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 삭제 조건은 풀렸고 그 자리에 연쇄가 들어왔다. 한 트랜잭션 안에서는 이제 연쇄가 그 조합을 막는다. 브랜드를 삭제하면 그 브랜드의 삭제되지 않은 상품도 함께 삭제되기 때문이다. 그 테스트는 지우지 않고 읽기 쪽 브랜드 필터를 고정하려고 남긴다. 검사와 커밋 사이의 동시 등록은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금이 맡는다.)

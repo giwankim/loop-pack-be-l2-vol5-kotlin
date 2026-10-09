@@ -131,6 +131,23 @@ class LikerTest(
         assertThat(entityManager.countLikes(user.id, product.id)).isZero()
     }
 
+    /** 브랜드 삭제가 함께 삭제한 상품도 직접 삭제한 상품처럼 없는 상품이다(ADR 0017). */
+    @Test
+    fun `liking a product deleted with its brand throws PRODUCT_NOT_FOUND and saves nothing`() {
+        prepareUser()
+        prepareProduct()
+        deleteBrand()
+        entityManager.flushAndClear()
+
+        val exception = assertThrows<CoreException> {
+            liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
+        }
+        entityManager.flushAndClear()
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
+    }
+
     @Test
     fun `liking an unknown product throws PRODUCT_NOT_FOUND`() {
         prepareUser()
@@ -165,6 +182,19 @@ class LikerTest(
     fun `unliking a deleted product still lets the remaining like go`() {
         prepareLike()
         deleteProduct()
+        entityManager.flushAndClear()
+
+        liker.unlike(userId = user.id, productId = product.id)
+        entityManager.flushAndClear()
+
+        assertThat(entityManager.countLikes(user.id, product.id)).isZero()
+    }
+
+    /** 브랜드 삭제는 좋아요 행을 바꾸지 않으므로(ADR 0017), 함께 삭제된 상품에 남은 좋아요도 취소할 수 있다. */
+    @Test
+    fun `unliking a product deleted with its brand still lets the remaining like go`() {
+        prepareLike()
+        deleteBrand()
         entityManager.flushAndClear()
 
         liker.unlike(userId = user.id, productId = product.id)

@@ -52,6 +52,24 @@ class LikeFinderTest(
         assertThat(entityManager.countLikes(user.id, deleted.id)).isOne()
     }
 
+    /** 브랜드 삭제가 함께 삭제한 상품도 목록에서 빠진다. 브랜드 삭제는 좋아요 행을 바꾸지 않으므로 행은 남는다(ADR 0017). */
+    @Test
+    fun `the like list leaves out a product deleted with its brand after it was liked`() {
+        prepareUser()
+        val active = prepareProduct()
+        val deletedBrand = prepareBrand()
+        val deleted = prepareProduct(deletedBrand)
+        prepareLike(user, active)
+        prepareLike(user, deleted)
+        deleteBrand(deletedBrand)
+        entityManager.flushAndClear()
+
+        val slice = likeFinder.findLikedProducts(user.id, LikeListRequest())
+
+        assertThat(slice.content.map { it.id }).containsExactly(active.id)
+        assertThat(entityManager.countLikes(user.id, deleted.id)).isOne()
+    }
+
     /**
      * 조각의 차례와 `hasNext`는 [com.loopers.application.product.required.ProductRepositoryTest]가 SQL로 이미 고정한다.
      * 여기서는 입력이 조각까지 이어지는지와, 트랜잭션 안에서만 읽을 수 있는 값이 항목에 실리는지를 본다(설계 6).

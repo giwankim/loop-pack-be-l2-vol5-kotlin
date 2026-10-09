@@ -69,11 +69,6 @@ class ProductQueryService(
         )
     }
 
-    /** 삭제된 상품은 [com.loopers.domain.product.Product]의 `@SQLRestriction`이 걸러 주므로 남은 상품이 있는지만 묻는다. */
-    override fun hasActiveProducts(brandId: Long): Boolean {
-        return productRepository.existsByBrandId(brandId)
-    }
-
     /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
     private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): Slice<ProductInfo> {
         return productInfoAssembler.toInfos(

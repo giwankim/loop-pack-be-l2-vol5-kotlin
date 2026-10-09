@@ -1,9 +1,11 @@
 package com.loopers.application.product.required
 
 import com.loopers.domain.product.Product
+import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
 import org.springframework.data.jpa.repository.EntityGraph
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.Repository
 
@@ -54,8 +56,12 @@ interface ProductRepository : Repository<Product, Long> {
     fun findAllLikedBy(userId: Long, pageable: Pageable): Slice<Product>
 
     /**
-     * [brandId] 브랜드에 상품이 하나라도 남아 있는지. 브랜드 삭제 조건이 묻는다.
-     * `brandId`는 상품의 외래 키라 [com.loopers.domain.brand.Brand]로 가는 조인이 없다.
+     * [brandId] 브랜드의 삭제되지 않은 상품을 id 오름차순으로 `FOR UPDATE`로 잠가 읽는다. 브랜드 삭제의 연쇄가 부른다(ADR 0017).
+     *
+     * 잠금은 `ORDER BY`가 아니라 훑는 인덱스의 차례로 걸린다. `brand_id` 인덱스의 항목이 `(brand_id, id)`이므로 id 차례이고,
+     * `OrderById`는 그 뜻을 적고 결과의 차례를 고정한다(ADR 0018). `brandId`는 상품의 외래 키라 브랜드로 가는 조인이 없어
+     * 상품 행만 잠근다. `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query`가 필요 없다.
      */
-    fun existsByBrandId(brandId: Long): Boolean
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findForUpdateByBrandIdOrderById(brandId: Long): List<Product>
 }

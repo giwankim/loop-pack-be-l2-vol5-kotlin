@@ -9,15 +9,21 @@ import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
+import jakarta.persistence.Index
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
+import jakarta.persistence.Table
 import org.hibernate.annotations.SQLRestriction
 
 /**
  * 브랜드 아래 파는 상품. 브랜드는 만들 때 정해지고 바뀌지 않으며, 상품은 브랜드의 상태를 바꾸지 않는다.
  * [brand]는 읽기용 참조이고 브랜드는 자기 저장소를 가진 별도 애그리거트다.
+ *
+ * `brand_id` 인덱스는 브랜드 삭제의 연쇄가 그 브랜드의 상품만 잠그게 한다. 잠금 읽기는 훑은 행을 모두 잠그므로,
+ * 인덱스가 없으면 상품 표 전체가 연쇄의 커밋까지 잠긴다(ADR 0018). 외래 키도 이 인덱스를 쓴다.
  */
 @Entity
+@Table(indexes = [Index(name = "IDX_PRODUCT_BRAND", columnList = "brand_id")])
 @SQLRestriction("deleted_at is null")
 class Product(
     brand: Brand,

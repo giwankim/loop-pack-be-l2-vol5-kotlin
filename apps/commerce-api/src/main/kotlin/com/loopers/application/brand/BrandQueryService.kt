@@ -19,6 +19,11 @@ class BrandQueryService(
         return brandRepository.findById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
     }
 
+    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
+    override fun findForUpdate(id: Long): Brand {
+        return brandRepository.findForUpdateById(id) ?: throw CoreException(ErrorType.BRAND_NOT_FOUND)
+    }
+
     override fun findAll(request: BrandAdminListRequest): Slice<Brand> {
         return brandRepository.findAllByOrderByCreatedAtDescIdDesc(PageRequest.of(request.page, request.size))
     }

@@ -171,8 +171,7 @@ class OrderConfirmationApiTest(
         if (deleted == "product") {
             deleteProduct(second)
         } else {
-            // The catalog normally prevents this; exercise the same legacy state as OrderApiTest.
-            deleteBrandKeepingProducts(secondBrand)
+            deleteBrand(secondBrand)
         }
 
         val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
@@ -253,7 +252,8 @@ class OrderConfirmationApiTest(
 
     /**
      * 확정할 수 있는지를 상품·재고·포인트보다 먼저 본다. 잔액을 다 쓰고 상품·브랜드가 삭제돼도 판매 불가나 잔액 부족이 아니라
-     * 이미 확정된 주문이라는 거절이 나온다(ADR 0005).
+     * 이미 확정된 주문이라는 거절이 나온다(ADR 0005). 재고가 0인 상품은 브랜드 삭제가 함께 삭제하고(ADR 0017),
+     * 확정된 주문은 품목, 수량, 단가, 합계, 결제 결과까지 그대로 읽힌다.
      */
     @Test
     fun `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`() {
@@ -266,7 +266,6 @@ class OrderConfirmationApiTest(
         assertThat(requestConfirm(secondId)).hasStatusOk()
         balance(0)
         assertStock(product, 0)
-        deleteProduct()
         deleteBrand()
 
         repeat(2) {

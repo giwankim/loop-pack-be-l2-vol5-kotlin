@@ -1,8 +1,10 @@
 package com.loopers.application.brand.required
 
 import com.loopers.domain.brand.Brand
+import jakarta.persistence.LockModeType
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Slice
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.repository.Repository
 
 /**
@@ -17,6 +19,14 @@ interface BrandRepository : Repository<Brand, Long> {
      * 없으면 null이다. 반환을 non-null로 적으면 없을 때 예외를 던진다(설계 5.20).
      */
     fun findById(id: Long): Brand?
+
+    /**
+     * [id] 브랜드를 `FOR UPDATE`로 잠가 읽는다. 없거나 삭제됐으면 null이다(ADR 0018).
+     * `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query` 없이 `id`로 찾는 파생 조회다.
+     * 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽으므로, 그 사이 커밋된 삭제도 `@SQLRestriction`이 걸러 낸다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findForUpdateById(id: Long): Brand?
 
     /**
      * 삭제되지 않은 브랜드를 최신 등록순(등록 시각 내림차순, 동률은 id 내림차순)으로 한 조각 읽는다. 차례는 이름이 적으므로

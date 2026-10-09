@@ -6,18 +6,21 @@ import com.loopers.application.brand.provided.BrandFinder
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.provided.BrandValidator
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.brand.required.ProductDeleter
 import com.loopers.domain.brand.Brand
 import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
  * [BrandRegister]의 구현. 바꿀 브랜드는 [BrandFinder]로 읽어 없는 브랜드를 같은 오류로 거절한다.
- * 저장소나 상품 조각에 물어야 하는 사전 조건은 [BrandValidator]가 보고, 여기에는 단계의 차례만 있다(ADR 0014).
+ * 저장소에 물어야 하는 사전 조건은 [BrandValidator]가 보고, 상품의 삭제는 브랜드가 선언한 [ProductDeleter]에 시킨다.
+ * 여기에는 단계의 차례만 있다(ADR 0014, 0017).
  */
 @ValidatedApplicationService
 class BrandModifyService(
     private val brandFinder: BrandFinder,
     private val brandRepository: BrandRepository,
     private val brandValidator: BrandValidator,
+    private val productDeleter: ProductDeleter,
 ) : BrandRegister {
     /** 이름 규칙을 지나는 브랜드를 만든 뒤, 저장하기 전에 중복을 본다. 이름은 받은 그대로 저장한다. */
     override fun register(request: BrandAdminRegisterRequest): Brand {
@@ -37,15 +40,13 @@ class BrandModifyService(
     }
 
     /**
-     * 삭제 시각을 찍는다. 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다.
-     *
-     * 이 조건은 [Brand] 안의 불변식이 아니라 [BrandValidator]가 상품 조각에 묻는다(설계 5.1, 5.8).
-     * 거절되면 브랜드가 그대로 남아야 하므로 [Brand.delete] 앞에서 묻는다. 뒤에서 물으면 찍힌 삭제 시각이
-     * 영속성 컨텍스트에 남아 flush 때 저장된다.
+     * 브랜드를 잠가 읽고, 그 브랜드의 삭제되지 않은 상품을 [ProductDeleter]로 삭제한 뒤, 브랜드에 삭제 시각을 찍는다.
+     * 한 트랜잭션이 브랜드와 상품을 함께 바꾸는, 주문 확정에 이은 두 번째 예외다(ADR 0017). 그래서 어느 단계가 실패해도 브랜드와
+     * 상품은 함께 되돌아간다. 잠금은 브랜드 → 상품(id 오름차순)의 차례로 건다(ADR 0018).
      */
     override fun delete(id: Long) {
-        val brand = brandFinder.find(id)
-        brandValidator.validateForDelete(brand)
+        val brand = brandFinder.findForUpdate(id)
+        productDeleter.deleteAllOfBrand(brand.id)
         brand.delete()
 
         brandRepository.save(brand)

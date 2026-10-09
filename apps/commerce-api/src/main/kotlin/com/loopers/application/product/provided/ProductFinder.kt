@@ -1,6 +1,5 @@
 package com.loopers.application.product.provided
 
-import com.loopers.application.brand.required.ActiveProductChecker
 import com.loopers.domain.product.Product
 import jakarta.validation.Valid
 import org.springframework.data.domain.Slice
@@ -11,10 +10,8 @@ import org.springframework.data.domain.Slice
  *
  * 상품 하나는 [find]가 엔티티로 준다(ADR 0014). 응답은 브랜드 이름과 좋아요 수까지 합치므로 상세와 목록은 [ProductInfo]를 준다.
  * 브랜드는 다른 애그리거트라 [find]는 읽지 않는다. 브랜드를 건너는 읽기는 [findInfo], 목록들, [findOrderableOrNull]이다.
- *
- * 브랜드가 선언한 [ActiveProductChecker]에도 답한다. 상품이 브랜드의 물음을 따르므로 브랜드는 상품을 모른다.
  */
-interface ProductFinder : ActiveProductChecker {
+interface ProductFinder {
     /**
      * [id]가 가리키는 상품. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기와 좋아요의 존재 확인이 부른다.
      * 브랜드는 지연 프록시로 남으므로 트랜잭션 밖에서 브랜드 이름을 읽지 않는다.

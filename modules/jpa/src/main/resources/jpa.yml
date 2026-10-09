@@ -10,6 +10,8 @@ spring:
         default_batch_fetch_size: 100
         timezone.default_storage: NORMALIZE_UTC
         jdbc.time_zone: UTC
+        jdbc.batch_size: 50 # flush 때의 UPDATE를 50개씩 묶어 보낸다. IDENTITY 식별자라 INSERT는 묶이지 않는다(ADR 0018)
+        order_updates: true # 묶을 UPDATE를 엔티티 종류와 id 순으로 보낸다(ADR 0018)
 
 datasource:
   mysql-jpa:
