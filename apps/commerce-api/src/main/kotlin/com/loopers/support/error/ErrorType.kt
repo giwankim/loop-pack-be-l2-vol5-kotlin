@@ -9,6 +9,11 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "존재하지 않는 요청입니다."),
     CONFLICT(HttpStatus.CONFLICT, HttpStatus.CONFLICT.reasonPhrase, "이미 존재하는 리소스입니다."),
 
+    /**
+     * 행 잠금을 얻지 못한 요청. 아무 변경도 반영되지 않아 다시 보내도 되는 409라서, 업무 규칙의 409와 구별되도록 code도 새로 갖는다(ADR 0018).
+     */
+    CONCURRENT_REQUEST(HttpStatus.CONFLICT, "CONCURRENT_REQUEST", "다른 요청과 겹쳐 처리하지 못했습니다. 다시 시도해 주세요."),
+
     /** 카탈로그. 범용 에러와 status·code를 공유하고 message만 다르다. */
     BRAND_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "브랜드를 찾을 수 없습니다."),
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.reasonPhrase, "상품을 찾을 수 없습니다."),

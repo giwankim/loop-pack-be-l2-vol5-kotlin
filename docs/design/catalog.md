@@ -217,6 +217,7 @@ sequenceDiagram
 | ~~`FORBIDDEN`~~ | — | 지웠다. 경로가 사용자를 품지 않아 요청자와 견줄 것이 없다(5.36) |
 | `BRAND_NOT_FOUND`, `PRODUCT_NOT_FOUND` | 404, code는 NOT_FOUND와 같음 | 없거나 삭제된 대상 |
 | `BRAND_NAME_DUPLICATED`, ~~`BRAND_HAS_PRODUCTS`~~ | 409, code는 CONFLICT와 같음 | 이름 중복, ~~삭제 조건~~. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `BRAND_HAS_PRODUCTS`는 지웠다. 브랜드 삭제가 그 상품을 함께 삭제하므로 거절할 조건이 없다.) |
+| `CONCURRENT_REQUEST` (신규 code) | 409 | 행 잠금을 3초 안에 얻지 못했거나 교착에서 진 쓰기. (2026-10-09, [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md): status는 CONFLICT와 같지만 code를 새로 갖는다. 아무 변경도 반영되지 않아 다시 보내도 되는 409라서 클라이언트가 업무 규칙의 409와 구별해야 한다.) |
 | `INVALID_SORT` | 400, code는 BAD_REQUEST와 같음 | 모르는 정렬 값(5.24) |
 | ~~`INVALID_PAGE`~~ | — | 두지 않았다. `page`·`size`는 Request 제약이 거른다(5.22) |
 

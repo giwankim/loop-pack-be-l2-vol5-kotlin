@@ -223,6 +223,8 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 > 2026-09-28 `Idempotency-Key` 헤더와 두 키 오류 코드를 17절에서 철회했다.
 >
 > 2026-10-03 JSON 형태·필수 값 오류의 전용 code를 5.10과 함께 철회했다(#55). 그 오류는 다른 엔드포인트와 같은 범용 `Bad Request`다.
+>
+> 2026-10-09 잠금 실패의 409 `CONCURRENT_REQUEST` 행을 오류 표에 더했다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 충전이나 확정이 행 잠금을 3초 넘게 기다리면 이 code로 답하고, 아무것도 반영하지 않는다. 확정에서는 상품 행의 잠금 조회와, 커밋 때 보내는 포인트 계정 등의 UPDATE가 기다릴 수 있다.
 
 
 상태 코드·조회 범위·페이지 계약은 확정 사항이다. 아래 필드 이름과 응답 조합은 그 계약을 구체화한 초안이다. 응답은 기존 `ApiResponse`를 사용하며 null 필드는 기존 Jackson 정책에 따라 생략한다.
@@ -294,6 +296,7 @@ Content-Type: application/json
 | 재고 부족 | 409 | `INSUFFICIENT_STOCK` |
 | 포인트 부족 | 409 | `INSUFFICIENT_POINTS` |
 | 성공한 같은 키에 다른 의도 | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
+| 행 잠금을 3초 안에 얻지 못함, 교착에서 짐 | 409 | `CONCURRENT_REQUEST` |
 
 ```json
 {"meta":{"result":"FAIL","errorCode":"INSUFFICIENT_POINTS","message":"포인트가 부족합니다."}}

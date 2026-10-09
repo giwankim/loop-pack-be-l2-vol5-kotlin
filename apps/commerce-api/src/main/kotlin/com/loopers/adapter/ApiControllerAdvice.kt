@@ -9,6 +9,7 @@ import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.validation.ConstraintViolationException
+import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
@@ -44,6 +45,16 @@ class ApiControllerAdvice {
     fun handleOrderAlreadyConfirmed(e: OrderAlreadyConfirmedException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.ORDER_ALREADY_CONFIRMED)
+    }
+
+    /**
+     * 행 잠금을 3초 안에 얻지 못했거나(MySQL 1205) 교착에서 졌다(1213). 잠금 조회에서 났든 커밋의 flush에서 났든 트랜잭션은 되돌려졌으므로
+     * 다시 보내도 된다는 409로 답한다(ADR 0018).
+     */
+    @ExceptionHandler
+    fun handlePessimisticLockingFailure(e: PessimisticLockingFailureException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.CONCURRENT_REQUEST)
     }
 
     @ExceptionHandler

@@ -31,6 +31,7 @@ datasource:
       initialization-fail-timeout: 1  # DB 연결 실패 시 즉시 예외 발생 ( default: -1 = 무한대기 )
       data-source-properties:
         rewriteBatchedStatements: true
+        sessionVariables: innodb_lock_wait_timeout=3 # 행 잠금 대기(초). 세션 값이라 flush 때의 UPDATE에도 걸린다(ADR 0018)
 
 ---
 spring.config.activate.on-profile: local

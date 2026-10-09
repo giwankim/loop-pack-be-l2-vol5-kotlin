@@ -9,6 +9,7 @@ import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
+import com.loopers.support.Pause
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
@@ -19,8 +20,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.test.util.AopTestUtils
 import java.time.Duration
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * 같은 재고를 두고 겹치는 확정과, 확정·상품 삭제가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018).
@@ -41,12 +40,9 @@ class OrderConfirmerConcurrencyTest(
     companion object {
         /**
          * 다른 쪽이 잠금을 기다리는지 보려고 기다리는 시간. 잠금이 없으면 이 안에 끝난다.
-         * 잠금 대기를 3초로 줄여도(ADR 0018 규칙 7) 기다리는 쪽이 그 전에 풀려나도록 넉넉히 짧다.
+         * 잠금 대기가 3초여도(ADR 0018 규칙 7) 기다리는 쪽이 그 전에 풀려나도록 넉넉히 짧다.
          */
         private val LOCK_WAIT_PROBE: Duration = Duration.ofSeconds(1)
-
-        /** 테스트가 풀지 못하고 실패해도 멈춘 쪽이 이어 가는 한도. */
-        private val HOLD_LIMIT: Duration = Duration.ofSeconds(10)
     }
 
     @MockkSpyBean
@@ -229,27 +225,5 @@ class OrderConfirmerConcurrencyTest(
             .createNativeQuery("select deleted_at from product where id = :id")
             .setParameter("id", product.id)
             .singleResult
-    }
-
-    /**
-     * 잠금을 쥔 쪽을 멈춰 두는 latch. 멈출 단계의 stub이 [hold]를 부르고, 테스트는 [awaitHeld]로 멈춘 것을 확인한 뒤
-     * 다른 쪽을 부르고 [release]로 푼다. 테스트가 풀기 전에 실패해도 [hold]는 [HOLD_LIMIT] 뒤에 이어 가므로 기반 클래스의 정리가 끝난다.
-     */
-    private class Pause {
-        private val held = CountDownLatch(1)
-        private val released = CountDownLatch(1)
-
-        fun hold() {
-            held.countDown()
-            released.await(HOLD_LIMIT.toMillis(), TimeUnit.MILLISECONDS)
-        }
-
-        fun awaitHeld() {
-            assertThat(held.await(HOLD_LIMIT.toMillis(), TimeUnit.MILLISECONDS)).describedAs("멈출 단계에 닿았다").isTrue()
-        }
-
-        fun release() {
-            released.countDown()
-        }
     }
 }
