@@ -2,7 +2,10 @@ package com.loopers.application.product.provided
 
 import jakarta.validation.Valid
 
-/** 관리자의 상품 쓰기. 등록·수정·재고 수정·삭제를 맡는다. */
+/**
+ * 관리자의 상품 쓰기. 등록·수정·재고 수정·삭제를 맡는다. 수정·재고 수정·삭제는 상품 행을 잠가 읽으므로,
+ * 같은 상품을 바꾸는 주문 확정이나 브랜드 삭제와 겹치면 한쪽이 커밋할 때까지 기다린다(ADR 0018).
+ */
 interface ProductRegister {
     /** 브랜드가 없거나 삭제됐으면 `BRAND_NOT_FOUND`를 던진다. */
     fun register(@Valid request: ProductAdminRegisterRequest): ProductInfo

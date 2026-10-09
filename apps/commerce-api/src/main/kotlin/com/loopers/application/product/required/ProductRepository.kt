@@ -26,6 +26,14 @@ interface ProductRepository : Repository<Product, Long> {
     fun findById(id: Long): Product?
 
     /**
+     * [id] 상품을 `FOR UPDATE`로 잠가 읽는다. 없거나 삭제됐으면 null이다(ADR 0018).
+     * `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query` 없이 `id`로 찾는 파생 조회다. 상품 표만 읽고 `brand`는 LAZY라
+     * 브랜드 행은 잠그지 않는다. 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽으므로, 그 사이 커밋된 삭제도 `@SQLRestriction`이 걸러 낸다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findForUpdateById(id: Long): Product?
+
+    /**
      * [id] 상품을 브랜드와 함께 읽는다. 상품이 없거나 삭제됐거나 브랜드가 삭제됐으면 null이다.
      *
      * 브랜드를 inner join으로 건너므로 [com.loopers.domain.brand.Brand]의 `@SQLRestriction`이 그 조인에도 붙어

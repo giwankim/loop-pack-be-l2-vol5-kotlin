@@ -45,3 +45,5 @@ date: 2026-10-07
 ## 다시 보는 조건
 
 실제 서버(`RANDOM_PORT`)나 다른 스레드로 요청하는 HTTP 테스트가 생기면 MockMvc에 묶인 `BaseWebApiAdapterTest` 말고 기반이 하나 더 필요하다. 그 테스트는 트랜잭션 롤백으로 정리할 수 없다. DataSource를 `@ServiceConnection`으로 자동 구성하게 되면 `replace = NONE`을 뺀다.
+
+> 2026-10-09 [ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)로 HTTP보다 먼저 포트를 다른 스레드에서 부르는 테스트가 생겼다. 행 잠금을 쥔 트랜잭션 곁에서 다른 트랜잭션이 기다리는지 보려면 둘 다 커밋해야 하므로, 롤백하는 기반을 쓸 수 없다. 그래서 기반이 넷이 되었다. `BaseCommittingApplicationServiceTest : BaseApplicationServiceTest`는 클래스에 `@Transactional(propagation = NOT_SUPPORTED)`를 달아 테스트 트랜잭션에서 빠지고, 테스트마다 모든 표를 비운다. 포트를 다른 스레드에서 부르고 끝났는지 묻는 `inAnotherThread`와, 결과를 새 트랜잭션에서 다시 읽는 `inNewTransaction`을 준다. `prepare`는 물려받으므로 준비 규칙은 그대로다. 설정이 같아 컨텍스트도 롤백하는 기반과 나눠 쓴다. 다만 잠금을 쥔 쪽을 멈추려고 Service를 `@MockkSpyBean`으로 spy하는 클래스는 컨텍스트가 하나 더 뜬다. 위 "하위 클래스가 더하는 애노테이션"에 이 spy 필드가 더해진다. 첫 하위 클래스는 `OrderConfirmerConcurrencyTest`다. 위 조건의 HTTP 기반은 아직 필요하지 않다.

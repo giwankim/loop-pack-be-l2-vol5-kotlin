@@ -30,6 +30,16 @@ class ProductQueryService(
         return productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
     }
 
+    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
+    override fun findForUpdate(id: Long): Product {
+        return productRepository.findForUpdateById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
+    }
+
+    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
+    override fun findForUpdateOrNull(id: Long): Product? {
+        return productRepository.findForUpdateById(id)
+    }
+
     /** 브랜드 이름을 연관에서 건너 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다. */
     override fun findInfo(id: Long): ProductInfo {
         return productInfoAssembler.toInfo(find(id))

@@ -75,12 +75,12 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003).
+주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 상품 행은 확정이 처음 읽을 때 `ProductFinder.findForUpdateOrNull`로 잠그고, `deduct`도 `findForUpdate`로 잠가 읽는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
 
-- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.find`로 삭제되지 않은 상품 조회 → `product.updateStock(quantity)` → 저장.
+- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.findForUpdate`로 삭제되지 않은 상품을 잠가 조회 → `product.updateStock(quantity)` → 저장. 수정과 삭제도 같은 잠금 읽기로 상품을 얻는다. 잠금은 상품 행만 걸고 커밋까지 간다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
 - 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되며, `updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다. 재고는 값 객체가 아니라 `Product`의 `Int`다(설계 5.35).
