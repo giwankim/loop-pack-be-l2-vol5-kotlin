@@ -1,5 +1,6 @@
 plugins {
-    id("org.jetbrains.kotlin.plugin.jpa")
+    alias(conventions.plugins.loopers.spring.boot.application)
+    alias(conventions.plugins.loopers.jpa)
 }
 
 dependencies {
@@ -11,11 +12,8 @@ dependencies {
     implementation(project(":supports:monitoring"))
 
     // batch
-    implementation("org.springframework.boot:spring-boot-starter-batch")
-    testImplementation("org.springframework.batch:spring-batch-test")
-
-    // querydsl
-    kapt("com.querydsl:querydsl-apt::jakarta")
+    implementation(libs.springBootStarterBatchJdbc)
+    testImplementation(libs.springBootStarterBatchJdbcTest)
 
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))

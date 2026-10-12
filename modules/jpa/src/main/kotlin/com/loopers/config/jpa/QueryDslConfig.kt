@@ -11,6 +11,7 @@ class QueryDslConfig {
 
     @Primary
     @Bean
-    fun mySqlJpaQueryFactory(entityManager: EntityManager): JPAQueryFactory =
-        JPAQueryFactory(entityManager)
+    fun mySqlJpaQueryFactory(entityManager: EntityManager): JPAQueryFactory {
+        return JPAQueryFactory(entityManager)
+    }
 }

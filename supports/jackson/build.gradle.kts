@@ -1,7 +1,11 @@
+plugins {
+    alias(conventions.plugins.loopers.kotlin.spring)
+}
+
 dependencies {
     // spring
-    implementation("org.springframework:spring-web")
+    implementation(libs.springWeb)
+    implementation(libs.springBootJackson)
     // jackson
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+    implementation(libs.jackson.kotlin)
 }

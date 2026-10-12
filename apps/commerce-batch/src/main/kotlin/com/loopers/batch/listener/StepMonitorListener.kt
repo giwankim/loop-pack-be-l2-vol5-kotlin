@@ -2,8 +2,8 @@ package com.loopers.batch.listener
 
 import org.slf4j.LoggerFactory
 import org.springframework.batch.core.ExitStatus
-import org.springframework.batch.core.StepExecution
-import org.springframework.batch.core.StepExecutionListener
+import org.springframework.batch.core.listener.StepExecutionListener
+import org.springframework.batch.core.step.StepExecution
 import org.springframework.stereotype.Component
 
 @Component

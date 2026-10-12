@@ -41,7 +41,11 @@ out/
 
 ### Claude Code ###
 .claude/worktrees/
+.claude/skills/
 
 ### JVM crash and replay dumps ###
 hs_err_pid*.log
 replay_pid*.log
+
+### Personal notes (not for the repo) ###
+/.notes/

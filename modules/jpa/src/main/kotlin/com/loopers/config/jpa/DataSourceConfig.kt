@@ -12,11 +12,13 @@ import org.springframework.context.annotation.Primary
 class DataSourceConfig {
     @Bean
     @ConfigurationProperties(prefix = "datasource.mysql-jpa.main")
-    fun mySqlMainHikariConfig(): HikariConfig =
-        HikariConfig()
+    fun mySqlMainHikariConfig(): HikariConfig {
+        return HikariConfig()
+    }
 
     @Primary
     @Bean
-    fun mySqlMainDataSource(@Qualifier("mySqlMainHikariConfig") hikariConfig: HikariConfig) =
-        HikariDataSource(hikariConfig)
+    fun mySqlMainDataSource(@Qualifier("mySqlMainHikariConfig") hikariConfig: HikariConfig): HikariDataSource {
+        return HikariDataSource(hikariConfig)
+    }
 }

@@ -1,0 +1,28 @@
+package com.loopers.adapter.webapi.v1.product
+
+import com.loopers.application.product.provided.ProductInfo
+import java.time.Instant
+
+data class ProductAdminResponse(
+    val id: Long,
+    val brandId: Long,
+    val name: String,
+    val price: Long,
+    val stock: Int,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+) {
+    companion object {
+        fun from(info: ProductInfo): ProductAdminResponse {
+            return ProductAdminResponse(
+                id = info.id,
+                brandId = info.brandId,
+                name = info.name,
+                price = info.price,
+                stock = info.stock,
+                createdAt = info.createdAt,
+                updatedAt = info.updatedAt,
+            )
+        }
+    }
+}

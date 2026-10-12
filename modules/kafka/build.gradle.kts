@@ -1,12 +1,13 @@
 plugins {
+    alias(conventions.plugins.loopers.kotlin.spring)
     `java-test-fixtures`
 }
 
 dependencies {
-    api("org.springframework.kafka:spring-kafka")
+    api(libs.springBootStarterKafka)
 
-    testImplementation("org.springframework.kafka:spring-kafka-test")
-    testImplementation("org.testcontainers:kafka")
+    testImplementation(libs.springBootStarterKafkaTest)
+    testImplementation(libs.testcontainers.kafka)
 
-    testFixturesImplementation("org.testcontainers:kafka")
+    testFixturesImplementation(libs.testcontainers.kafka)
 }

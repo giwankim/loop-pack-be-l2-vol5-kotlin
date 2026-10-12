@@ -1,3 +1,10 @@
+dependencyResolutionManagement {
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    repositories {
+        mavenCentral()
+    }
+}
+
 rootProject.name = "loopers-kotlin-spring-template"
 
 include(
@@ -12,30 +19,6 @@ include(
     ":supports:monitoring",
 )
 
-// configurations
-pluginManagement {
-    val kotlinVersion: String by settings
-    val springBootVersion: String by settings
-    val springDependencyManagementVersion: String by settings
-    val ktLintPluginVersion: String by settings
-
-    repositories {
-        maven { url = uri("https://repo.spring.io/milestone") }
-        maven { url = uri("https://repo.spring.io/snapshot") }
-        gradlePluginPortal()
-    }
-
-    resolutionStrategy {
-        eachPlugin {
-            when (requested.id.id) {
-                "org.jetbrains.kotlin.jvm" -> useVersion(kotlinVersion)
-                "org.jetbrains.kotlin.kapt" -> useVersion(kotlinVersion)
-                "org.jetbrains.kotlin.plugin.spring" -> useVersion(kotlinVersion)
-                "org.jetbrains.kotlin.plugin.jpa" -> useVersion(kotlinVersion)
-                "org.springframework.boot" -> useVersion(springBootVersion)
-                "io.spring.dependency-management" -> useVersion(springDependencyManagementVersion)
-                "org.jlleitschuh.gradle.ktlint" -> useVersion(ktLintPluginVersion)
-            }
-        }
-    }
-}
+// 컨벤션 플러그인을 담은 빌드다. pluginManagement 안에 넣으면, 이 settings 에 plugins {} 가 생기는 순간
+// build-logic 이 먼저 평가되는 빌드가 되어 typesafe-conventions 가 실패한다.
+includeBuild("build-logic")

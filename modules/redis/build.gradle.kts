@@ -1,9 +1,11 @@
 plugins {
+    alias(conventions.plugins.loopers.kotlin.spring)
     `java-test-fixtures`
 }
 
 dependencies {
-    api("org.springframework.boot:spring-boot-starter-data-redis")
+    api(libs.springBootStarterDataRedis)
 
-    testFixturesImplementation("com.redis:testcontainers-redis")
+    testFixturesImplementation(libs.springBootTest)
+    testFixturesImplementation(libs.testcontainers)
 }

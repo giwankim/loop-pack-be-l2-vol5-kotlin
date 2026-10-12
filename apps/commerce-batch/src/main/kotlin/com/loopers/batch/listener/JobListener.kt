@@ -1,9 +1,9 @@
 package com.loopers.batch.listener
 
 import org.slf4j.LoggerFactory
-import org.springframework.batch.core.JobExecution
 import org.springframework.batch.core.annotation.AfterJob
 import org.springframework.batch.core.annotation.BeforeJob
+import org.springframework.batch.core.job.JobExecution
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
