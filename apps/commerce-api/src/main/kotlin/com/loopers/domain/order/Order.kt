@@ -78,22 +78,22 @@ class Order(
         protected set
 
     /**
-     * 확정할 수 있는 주문인지 본다. 확정 전 주문만 확정할 수 있다. application이 상품·재고·포인트를 보기 전에 불러,
+     * 확정 전(DRAFT) 주문인지 본다. 확정 전 주문만 확정할 수 있다. application이 상품·재고·포인트를 보기 전에 불러,
      * 그 사이 잔액을 쓰거나 상품이 삭제됐어도 이미 확정된 주문이라는 거절이 앞서게 한다(ADR 0005).
      */
-    fun validateConfirmable() {
-        if (status == OrderStatus.CONFIRMED) {
+    fun ensureDraft() {
+        if (status != OrderStatus.DRAFT) {
             throw OrderAlreadyConfirmedException()
         }
     }
 
     /**
      * 저장된 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003).
-     * 이미 확정된 주문은 거절해 결제액·확정 시각을 다시 쓰지 않는다. application이 [validateConfirmable]로 먼저 거절하므로
+     * 이미 확정된 주문은 거절해 결제액·확정 시각을 다시 쓰지 않는다. application이 [ensureDraft]로 먼저 거절하므로
      * 정상 흐름은 여기서 거절되지 않는다.
      */
     fun confirm() {
-        validateConfirmable()
+        ensureDraft()
         paidAmount = totalAmount
         confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
         status = OrderStatus.CONFIRMED

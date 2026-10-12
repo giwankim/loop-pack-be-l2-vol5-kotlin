@@ -21,7 +21,7 @@ class OrderTest {
     fun `a draft passes the confirmation check and stays a draft`() {
         val order = createOrder(userId = 1)
 
-        assertDoesNotThrow { order.validateConfirmable() }
+        assertDoesNotThrow { order.ensureDraft() }
 
         assertThat(order.status).isEqualTo(OrderStatus.DRAFT)
     }
@@ -31,13 +31,13 @@ class OrderTest {
         val order = createOrder(userId = 1)
         order.confirm()
 
-        val exception = assertThrows<OrderAlreadyConfirmedException> { order.validateConfirmable() }
+        val exception = assertThrows<OrderAlreadyConfirmedException> { order.ensureDraft() }
 
         assertThat(exception.message).isEqualTo("이미 확정된 주문입니다.")
     }
 
     /**
-     * application이 차감 전에 [Order.validateConfirmable]로 먼저 거절하므로 정상 흐름은 여기에 닿지 않는다. 그래도
+     * application이 차감 전에 [Order.ensureDraft]로 먼저 거절하므로 정상 흐름은 여기에 닿지 않는다. 그래도
      * 애그리거트가 스스로 거절해야 결제액·확정 시각을 두 번 쓰는 길이 남지 않는다.
      */
     @Test

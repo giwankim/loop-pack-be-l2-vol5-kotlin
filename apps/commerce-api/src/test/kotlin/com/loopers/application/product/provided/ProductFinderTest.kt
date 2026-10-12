@@ -107,11 +107,11 @@ class ProductFinderTest(
     }
 
     @Test
-    fun `the orderable lookup gives a product of a brand that is not deleted`() {
+    fun `the nullable lookup gives the product`() {
         prepareProduct(name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
-        val found = productFinder.findOrderableOrNull(product.id)
+        val found = productFinder.findOrNull(product.id)
 
         assertThat(found?.id).isEqualTo(product.id)
         assertThat(found?.name).isEqualTo("티셔츠")
@@ -120,20 +120,20 @@ class ProductFinderTest(
 
     /**
      * 주문은 없음을 오류가 아니라 정상 결과로 받아 자기 오류로 옮긴다. 그래서 세 경우 모두 던지지 않고 null이다.
-     * 삭제된 브랜드의 상품은 상품 행이 남아 있어도 주문할 수 없다.
+     * 브랜드 삭제가 함께 삭제한 상품은 직접 삭제한 상품과 같은 까닭으로 null이다(ADR 0017).
      */
     @Test
-    fun `the orderable lookup gives null for an unknown or deleted product and for a product of a deleted brand`() {
+    fun `the nullable lookup gives null for an unknown or deleted product and for a product deleted with its brand`() {
         val deleted = prepareProduct()
         deleteProduct(deleted)
-        val closedBrand = prepareBrand()
-        val ofClosedBrand = prepareProduct(closedBrand)
-        deleteBrandKeepingProducts(closedBrand)
+        val deletedBrand = prepareBrand()
+        val ofDeletedBrand = prepareProduct(deletedBrand)
+        deleteBrand(deletedBrand)
         entityManager.flushAndClear()
 
-        assertThat(productFinder.findOrderableOrNull(Long.MAX_VALUE)).isNull()
-        assertThat(productFinder.findOrderableOrNull(deleted.id)).isNull()
-        assertThat(productFinder.findOrderableOrNull(ofClosedBrand.id)).isNull()
+        assertThat(productFinder.findOrNull(Long.MAX_VALUE)).isNull()
+        assertThat(productFinder.findOrNull(deleted.id)).isNull()
+        assertThat(productFinder.findOrNull(ofDeletedBrand.id)).isNull()
     }
 
     /**

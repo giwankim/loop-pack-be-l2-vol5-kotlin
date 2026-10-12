@@ -250,7 +250,7 @@ class OrderApiTest(
     }
 
     @Test
-    fun `new orders reject unknown or deleted products and deleted brands`() {
+    fun `new orders reject unknown or deleted products`() {
         prepareBrand()
         val active = prepareProduct(brand).id
         val deleted = prepareProduct(brand)
@@ -262,11 +262,6 @@ class OrderApiTest(
             body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
-        // The brand delete cascade makes this state unreachable; seed it directly to pin the read-side brand filter.
-        deleteBrandKeepingProducts()
-        val error = assertThat(requestCreate(item(active))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
-        assertNoOrders()
     }
 
     @Test

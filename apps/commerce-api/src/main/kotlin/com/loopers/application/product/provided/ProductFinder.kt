@@ -9,7 +9,7 @@ import org.springframework.data.domain.Slice
  * 삭제된 상품은 없는 상품이므로 어느 읽기에도 나오지 않는다.
  *
  * 상품 하나는 [find]가 엔티티로 준다(ADR 0014). 응답은 브랜드 이름과 좋아요 수까지 합치므로 상세와 목록은 [ProductInfo]를 준다.
- * 브랜드는 다른 애그리거트라 [find]는 읽지 않는다. 브랜드를 건너는 읽기는 [findInfo], 목록들, [findOrderableOrNull]이다.
+ * 브랜드는 다른 애그리거트라 [find]와 [findOrNull]은 읽지 않는다. 브랜드를 건너는 읽기는 [findInfo]와 목록들이다.
  * 상품을 바꾸는 쪽은 [findForUpdate]와 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
  */
 interface ProductFinder {
@@ -18,6 +18,16 @@ interface ProductFinder {
      * 브랜드는 지연 프록시로 남으므로 트랜잭션 밖에서 브랜드 이름을 읽지 않는다.
      */
     fun find(id: Long): Product
+
+    /**
+     * [id]가 가리키는 상품. 없거나 삭제됐으면 null이다. 주문 생성이 품목의 상품을 읽을 때 부른다(포인트·주문 설계 2).
+     * 주문은 없음을 정상 결과로 받아 자기 오류로 옮기므로 [find]처럼 던지지 않고, null일 수 있다는 것을 이름이 말한다(ADR 0014).
+     * 생성은 상품을 바꾸지 않으므로 잠그지 않는다. 확정은 상품을 읽지 않고, 확정의 [StockDeductor]가 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
+     *
+     * 브랜드를 보지 않는 까닭은 [findForUpdateOrNull]과 같다. 삭제되지 않은 상품의 브랜드는 삭제되지 않았다.
+     * [find]처럼 브랜드는 지연 프록시로 남는다. 주문은 상품의 이름과 단가만 쓴다.
+     */
+    fun findOrNull(id: Long): Product?
 
     /**
      * [id] 상품을 잠가 읽는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기(수정, 재고 수정, 삭제, 재고 차감)가
@@ -31,8 +41,8 @@ interface ProductFinder {
     fun findForUpdate(id: Long): Product
 
     /**
-     * [id] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 주문 확정이 품목의 상품을 처음 읽을 때 부른다(ADR 0018).
-     * 확정은 없음을 자기 오류로 옮기므로 [findForUpdate]처럼 던지지 않는다.
+     * [id] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 주문 확정의 [StockDeductor]가 품목의 상품을 처음 읽을 때 부른다(ADR 0018).
+     * 차감은 모든 상품을 잠가 읽은 뒤에야 없는 상품을 거절하므로 [findForUpdate]처럼 던지지 않는다.
      *
      * 상품 행만 잠그고 브랜드를 조인하지 않는다. 브랜드 삭제가 그 브랜드의 상품을 함께 삭제하므로(ADR 0017),
      * 삭제되지 않은 상품의 브랜드는 삭제되지 않았다. 브랜드 삭제와 겹친 상품 등록이 이 성질을 깨지 않게 하는 것은
@@ -44,17 +54,6 @@ interface ProductFinder {
 
     /** [id]가 가리키는 상품의 상세. 브랜드 이름과 좋아요 수를 함께 싣는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. */
     fun findInfo(id: Long): ProductInfo
-
-    /**
-     * 주문할 수 있는 상품. 상품이 없거나 삭제됐거나 브랜드가 삭제됐으면 null이다(포인트·주문 설계 2).
-     * 주문 조각의 생성이 부른다. 주문은 없음을 정상 결과로 받아 자기 오류로 옮기므로 [find]처럼 던지지 않고,
-     * null일 수 있다는 것을 이름이 말한다(ADR 0014). 생성은 상품을 바꾸지 않으므로 잠그지 않는다.
-     * 확정은 이것을 쓰지 않고 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
-     *
-     * 주문은 좋아요 수를 쓰지 않으므로, 좋아요 수를 세는 [ProductInfo] 대신 엔티티를 돌려준다.
-     * 브랜드는 함께 읽혀 있어 트랜잭션 밖에서 건너도 지연 로딩이 없다.
-     */
-    fun findOrderableOrNull(id: Long): Product?
 
     /** 관리자 목록. 늦게 등록된 상품이 앞서는 한 조각이고 정렬 기준을 고르지 않는다. 총 개수는 세지 않는다(설계 5.5). */
     fun findAll(@Valid request: ProductAdminListRequest): Slice<ProductInfo>
