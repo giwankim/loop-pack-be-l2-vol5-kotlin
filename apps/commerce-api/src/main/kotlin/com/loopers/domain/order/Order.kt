@@ -33,11 +33,11 @@ import java.time.temporal.ChronoUnit
         Index(name = "IDX_ORDERS_ON_CREATED_AT_AND_ID", columnList = "created_at DESC, id DESC"),
     ],
     check = [
-        CheckConstraint(name = "CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE", constraint = "total_amount > 0"),
+        CheckConstraint(name = "CK_ORDERS_ON_PAID_AMOUNT_POSITIVE", constraint = "paid_amount > 0"),
         CheckConstraint(
             name = "CK_ORDERS_ON_PAYMENT_STATE",
             constraint = "(status = 'DRAFT' and paid_amount is null and confirmed_at is null) or " +
-                "(status = 'CONFIRMED' and paid_amount is not null and paid_amount = total_amount and confirmed_at is not null)",
+                "(status = 'CONFIRMED' and paid_amount is not null and confirmed_at is not null)",
         ),
     ],
 )
@@ -59,11 +59,11 @@ class Order(
         .map { OrderLineItem(this, it) }.toMutableList()
 
     val items: List<OrderLineItem>
-        get() = lineItems.toList()
+        get() = lineItems
 
-    @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "total_amount", nullable = false, updatable = false))
-    val totalAmount: Money = lineItems.fold(Money(0)) { total, item -> total + item.lineAmount }
+    /** 품목 금액의 합. 생성 뒤 바뀌지 않는 품목에서 바로 나오므로 저장하지 않는다. */
+    val totalAmount: Money
+        get() = lineItems.fold(Money.ZERO) { total, item -> total + item.lineAmount }
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -89,7 +89,7 @@ class Order(
     }
 
     /**
-     * 저장된 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003).
+     * 총액으로 확정한다. 재고·포인트의 차감은 application의 같은 트랜잭션에서 이뤄진다(ADR 0003).
      * 이미 확정된 주문은 거절해 결제액·확정 시각을 다시 쓰지 않는다. application이 [ensureDraft]로 먼저 거절하므로
      * 정상 흐름은 여기서 거절되지 않는다.
      */

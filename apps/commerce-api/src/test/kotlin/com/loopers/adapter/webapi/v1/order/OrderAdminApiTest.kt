@@ -194,7 +194,7 @@ class OrderAdminApiTest(
         val draft = prepareOrder(user, listOf(product)).id
         val confirmed = prepareOrder(user, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
+            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
             confirmed,
         )

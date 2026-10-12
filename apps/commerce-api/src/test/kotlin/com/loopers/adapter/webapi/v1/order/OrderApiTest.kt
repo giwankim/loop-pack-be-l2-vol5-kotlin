@@ -326,8 +326,7 @@ class OrderApiTest(
             "order_line_item.product_id->product",
         )
         assertConstraint(
-            "insert into orders (user_id, status, total_amount, created_at, updated_at) " +
-                "values (?, 'DRAFT', 1000, now(6), now(6))",
+            "insert into orders (user_id, status, created_at, updated_at) values (?, 'DRAFT', now(6), now(6))",
             Long.MAX_VALUE,
         )
         val insertItem = "insert into order_line_item " +
@@ -372,8 +371,7 @@ class OrderApiTest(
             "paid_amount = 1000",
             "confirmed_at = now(6)",
             "status = 'CONFIRMED'",
-            "total_amount = 0",
-            "status = 'CONFIRMED', paid_amount = total_amount - 1, confirmed_at = now(6)",
+            "status = 'CONFIRMED', paid_amount = 0, confirmed_at = now(6)",
             "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
         ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
         listOf("quantity = 0", "unit_price = 0").forEach { update ->
@@ -457,7 +455,7 @@ class OrderApiTest(
         prepareOrder(owner, listOf(product))
         val confirmed = prepareOrder(owner, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
+            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
             confirmed,
         )

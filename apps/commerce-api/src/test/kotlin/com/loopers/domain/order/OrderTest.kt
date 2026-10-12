@@ -7,7 +7,7 @@ import org.junit.jupiter.api.assertThrows
 
 class OrderTest {
     @Test
-    fun `confirming a draft records the stored total and the confirmation time`() {
+    fun `confirming a draft records the total as the paid amount and the confirmation time`() {
         val order = createOrder(userId = 1)
 
         order.confirm()
