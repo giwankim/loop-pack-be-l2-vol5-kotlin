@@ -9,6 +9,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
+import jakarta.persistence.ForeignKey
 import jakarta.persistence.Index
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
@@ -23,7 +24,7 @@ import org.hibernate.annotations.SQLRestriction
  * 인덱스가 없으면 상품 표 전체가 연쇄의 커밋까지 잠긴다(ADR 0018). 외래 키도 이 인덱스를 쓴다.
  */
 @Entity
-@Table(indexes = [Index(name = "IDX_PRODUCT_BRAND", columnList = "brand_id")])
+@Table(indexes = [Index(name = "IDX_PRODUCT_ON_BRAND_ID", columnList = "brand_id")])
 @SQLRestriction("deleted_at is null")
 class Product(
     brand: Brand,
@@ -32,7 +33,7 @@ class Product(
     stock: Int,
 ) : BaseEntity() {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(nullable = false, updatable = false)
+    @JoinColumn(nullable = false, updatable = false, foreignKey = ForeignKey(name = "FK_PRODUCT_ON_BRAND_ID"))
     var brand: Brand = brand
         protected set
 

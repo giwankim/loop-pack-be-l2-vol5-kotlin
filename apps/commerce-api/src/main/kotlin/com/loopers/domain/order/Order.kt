@@ -29,14 +29,15 @@ import java.time.temporal.ChronoUnit
 @Table(
     name = "orders",
     indexes = [
-        Index(name = "IDX_ORDERS_USER_CREATED", columnList = "user_id, created_at DESC, id DESC"),
-        Index(name = "IDX_ORDERS_CREATED", columnList = "created_at DESC, id DESC"),
+        Index(name = "IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID", columnList = "user_id, created_at DESC, id DESC"),
+        Index(name = "IDX_ORDERS_ON_CREATED_AT_AND_ID", columnList = "created_at DESC, id DESC"),
     ],
     check = [
+        CheckConstraint(name = "CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE", constraint = "total_amount > 0"),
         CheckConstraint(
-            constraint = "total_amount > 0 and " +
-                "((status = 'DRAFT' and paid_amount is null and confirmed_at is null) or " +
-                "(status = 'CONFIRMED' and paid_amount is not null and paid_amount = total_amount and confirmed_at is not null))",
+            name = "CK_ORDERS_ON_PAYMENT_STATE",
+            constraint = "(status = 'DRAFT' and paid_amount is null and confirmed_at is null) or " +
+                "(status = 'CONFIRMED' and paid_amount is not null and paid_amount = total_amount and confirmed_at is not null)",
         ),
     ],
 )
@@ -94,6 +95,7 @@ class Order(
      */
     fun confirm() {
         ensureDraft()
+
         paidAmount = totalAmount
         confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
         status = OrderStatus.CONFIRMED

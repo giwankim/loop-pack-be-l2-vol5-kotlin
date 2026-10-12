@@ -331,8 +331,8 @@ class OrderApiTest(
             Long.MAX_VALUE,
         )
         val insertItem = "insert into order_line_item " +
-            "(order_id, product_id, product_name, unit_price, quantity, line_amount, created_at, updated_at) " +
-            "values (?, ?, '상품', 1000, 1, 1000, now(6), now(6))"
+            "(order_id, product_id, product_name, unit_price, quantity, created_at, updated_at) " +
+            "values (?, ?, '상품', 1000, 1, now(6), now(6))"
         assertConstraint(insertItem, Long.MAX_VALUE, id)
         assertConstraint(insertItem, orderId, Long.MAX_VALUE)
         assertConstraint(insertItem, orderId, id)
@@ -376,7 +376,7 @@ class OrderApiTest(
             "status = 'CONFIRMED', paid_amount = total_amount - 1, confirmed_at = now(6)",
             "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
         ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
-        listOf("quantity = 0", "unit_price = 0", "line_amount = 0").forEach { update ->
+        listOf("quantity = 0", "unit_price = 0").forEach { update ->
             jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
         assertThat(requestDetail(orderId).json()).isEqualTo(original.json())
@@ -404,9 +404,9 @@ class OrderApiTest(
             String::class.java,
         )
         assertThat(constraints).containsExactlyInAnyOrder(
-            "FK_ORDERS_USER",
-            "FK_ORDER_LINE_ITEM_ORDER",
-            "FK_ORDER_LINE_ITEM_PRODUCT",
+            "FK_ORDERS_ON_USER_ID",
+            "FK_ORDER_LINE_ITEM_ON_ORDER_ID",
+            "FK_ORDER_LINE_ITEM_ON_PRODUCT_ID",
         )
         owner = prepareUser()
         assertThat(requestCreate(item(prepareProduct().id))).hasStatus(HttpStatus.CREATED)

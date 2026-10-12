@@ -84,6 +84,20 @@ class ProductRepositoryTest(
     }
 
     @Test
+    fun `the brand foreign key exists in the database`() {
+        val foreignKeys = entityManager
+            .createNativeQuery(
+                "select constraint_name, referenced_table_name, referenced_column_name " +
+                    "from information_schema.key_column_usage " +
+                    "where table_schema = database() and table_name = 'product' and referenced_table_name is not null",
+            )
+            .resultList
+            .map { (it as Array<*>).joinToString(":") }
+
+        assertThat(foreignKeys).containsExactly("FK_PRODUCT_ON_BRAND_ID:brand:id")
+    }
+
+    @Test
     fun `findById returns null for a deleted product`() {
         prepareProduct()
         deleteProduct()

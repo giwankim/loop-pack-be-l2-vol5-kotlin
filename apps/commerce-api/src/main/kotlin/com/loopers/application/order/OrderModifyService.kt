@@ -63,7 +63,7 @@ class OrderModifyService(
 
         deductStock(order)
 
-        pointDeductor.deduct(userId, order.totalAmount)
+        pointDeductor.deduct(order.userId, order.totalAmount)
 
         order.confirm()
 
