@@ -5,6 +5,8 @@ date: 2026-10-08
 
 # 모든 엔티티는 `BaseEntity`를 상속하고, 애그리거트 루트는 기본으로 논리 삭제한다
 
+> 2026-10-12 주문 총액을 저장하지 않고 품목에서 계산하게 되었다([포인트·주문 설계 5.6](../design/points-orders.md)). 규칙 3의 끝 문장("`totalAmount`는 그 품목을 계속 센다")과 고르지 않은 것의 둘째 항목이 말하는 어긋남은 이제 생기지 않는다. 대신 필터에 걸린 품목은 총액에서도 빠져, 만든 주문의 품목과 총액이 함께 말없이 바뀐다. 생성 정보는 바뀌지 않아야 하므로([ADR 0002](./0002-preserve-order-creation-price.md)) 품목에 필터를 두지 않는 결정은 그대로다.
+
 `Order`와 `OrderLineItem`은 `BaseEntity`를 상속하지 않았다. 상속하면 카탈로그의 논리 삭제를 물려받는데, 주문을 지우는 유스케이스가 없다는 까닭이었다([포인트·주문 설계 13](../design/points-orders.md)). 그런데 `User`와 `PointAccount`도 지우는 유스케이스가 없는데 `BaseEntity`를 상속했고, 삭제 필터만 없었다. 같은 사실에서 반대의 선택이 나왔다. 행이 사라지는지 삭제 표시가 남는지가, 엔티티가 어쩌다 기반 클래스를 상속했는지에 달려 있었다.
 
 시각도 두 벌이었다. `BaseEntity`는 JVM 기본 시간대 `Asia/Seoul`의 `ZonedDateTime.now()`를 자르지 않고 찍었다. `Order`는 `Instant.now()`를 마이크로초로 잘라, 첫 응답이 `datetime(6)`에서 다시 읽은 값과 같았다. 그래서 브랜드·상품 관리자 JSON은 `+09:00`으로, 주문 JSON은 `Z`로 나갔다. 저장은 어느 쪽이든 UTC다(`NORMALIZE_UTC`, `jdbc.time_zone: UTC`).

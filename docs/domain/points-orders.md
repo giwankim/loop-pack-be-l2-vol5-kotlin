@@ -52,20 +52,20 @@
 | `id` | `Long` | 식별자. `BaseEntity` |
 | `userId` | `Long` | 주문한 사용자. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(설계 13) |
 | `items` | `List<OrderLineItem>` | 주문 품목. `productId` 오름차순이며 상품별로 하나씩이다 |
-| `totalAmount` | `Money` | 품목 금액의 합. 생성 후 바뀌지 않는다 |
+| `totalAmount` | `Money` | 품목 금액의 합. 열이 없고 읽을 때 계산한다(설계 5.6). 품목이 바뀌지 않으므로 생성 후 바뀌지 않는다 |
 | `status` | `OrderStatus` | `DRAFT` 또는 `CONFIRMED` |
 | `paidAmount` | `Money?` | 확정으로 결제한 금액. `DRAFT`에는 없다 |
 | `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
 | `createdAt` | `Instant` | 생성 시각. `BaseEntity`가 저장할 때 마이크로초로 잘라 찍는다 |
 
-테이블 `orders`. `users`로 외래 키(`FK_ORDERS_ON_USER_ID`), 조회용 인덱스 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`·`IDX_ORDERS_ON_CREATED_AT_AND_ID`. 총액이 양수인지(`CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE`), 상태와 결제 필드가 맞는지(`CK_ORDERS_ON_PAYMENT_STATE`)는 DB `CHECK`도 본다.
+테이블 `orders`. `users`로 외래 키(`FK_ORDERS_ON_USER_ID`), 조회용 인덱스 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`·`IDX_ORDERS_ON_CREATED_AT_AND_ID`. 결제액이 양수인지(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`), 상태와 결제 필드가 맞는지(`CK_ORDERS_ON_PAYMENT_STATE`)는 DB `CHECK`도 본다. 총액 열이 없으므로 결제액이 총액과 같은지는 `confirm()`만 지킨다.
 
 ### 규칙
 
 - 품목은 하나 이상이고 상품별로 하나씩이다. 어기면 `InvalidOrderException`.
 - 생성 정보(품목의 상품·이름·단가·수량·금액과 총액, 생성 시각)는 생성 후 바뀌지 않는다(ADR 0002).
 - `DRAFT`는 재고도 포인트도 건드리지 않는다. 재고 0이거나 잔액이 부족한 상태에서도 생성된다(설계 5.7, Q12).
-- 총액은 품목 금액의 합이며 `Money`가 `Long` 범위를 지킨다. 넘치면 `InvalidMoneyException`이고 주문은 저장되지 않는다.
+- 총액은 품목 금액의 합이며 `Money`가 `Long` 범위를 지킨다. 넘치면 `InvalidMoneyException`이고 주문은 저장되지 않는다. 생성자가 총액을 한 번 세므로 만든 주문의 총액을 읽을 때는 넘치지 않는다.
 - `DRAFT`에는 `paidAmount`·`confirmedAt`이 없고 `CONFIRMED`에는 둘 다 있으며 `paidAmount`는 총액과 같다. 확정 전 주문만 확정할 수 있다. 이미 확정된 주문은 `OrderAlreadyConfirmedException`으로 거절해 결제액·확정 시각을 다시 쓰지 않는다.
 - 생성 시각은 MySQL `datetime(6)`과 정밀도를 맞춰 생성 응답과 저장 후 조회가 같은 값을 준다. `updatedAt`에 기대지 않는다.
 
@@ -75,7 +75,7 @@
 | --- | --- | --- |
 | `Order(userId, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException`, `InvalidMoneyException` |
 | `ensureDraft()` | 확정 전(DRAFT) 주문인지 본다. 상태를 바꾸지 않는다 | `OrderAlreadyConfirmedException`. application이 상품·재고·포인트를 보기 전에 불러 이 거절이 앞서게 한다(설계 17.2) |
-| `confirm()` | 저장된 총액과 마이크로초 정밀도의 현재 시각으로 확정한다 | `OrderAlreadyConfirmedException`. `ensureDraft()`와 같은 검사다. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
+| `confirm()` | 총액과 마이크로초 정밀도의 현재 시각으로 확정한다 | `OrderAlreadyConfirmedException`. `ensureDraft()`와 같은 검사다. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
 
 ### 저장 약속
 
@@ -88,7 +88,7 @@
 - 생성: `OrderCreator.create` → 받은 품목마다 삭제되지 않은 상품인지 확인하고 이름·단가를 읽는다(`ProductFinder.findOrNull`. 브랜드는 보지 않는다. 브랜드 삭제가 상품을 함께 삭제하기 때문이다) → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둔 뒤 저장. 주문과 품목은 한 트랜잭션이다. 판매할 수 없는 상품이 중복으로 오면 상품 확인의 `ORDER_PRODUCT_NOT_AVAILABLE`(404)이 중복의 400보다 먼저다(설계 15). 요청마다 새 주문이라 같은 품목을 다시 보내면 `DRAFT`가 하나 더 생긴다(설계 17).
 - 상세 조회: `OrderFinder.find` → `findWithLineItemsByIdAndUserId`로 주문과 품목을 한 번에 읽는다 → 없거나 남의 주문이면 `ORDER_NOT_FOUND`(404). 저장된 스냅샷만 읽고 현재 상품을 읽지 않는다. 잠그지 않는다.
 - 목록 조회: `OrderFinder.findAll(userId, OrderListRequest)` → `findAll(userId, …)` → 조각의 주문과 품목을 읽기 트랜잭션 안에서 읽어 `Order`로 돌려준다. 상세와 같은 스냅샷을 최신순으로 주고, 남의 주문은 오르지 않는다(설계 14).
-- 확정: `OrderConfirmer.confirm` → `OrderFinder.findForUpdate`로 요청자의 주문을 품목과 함께 잠가 읽는다(소유권 확인. 잠금은 그 조회 자체에 걸린다) → `Order.ensureDraft`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 품목 전부의 상품 ID별 수량으로 `StockDeductor.deduct`를 한 번 부른다(→ 모든 상품 행을 상품 ID 순으로 잠가 읽고(`ProductFinder.findForUpdateOrNull`. 브랜드는 조인하지 않는다. 브랜드 삭제가 상품을 함께 삭제하기 때문이다) → 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절하고, 확정이 그것을 `ORDER_PRODUCT_NOT_AVAILABLE`(404)로 옮긴다 → 상품마다 `Product.deductStock` → 저장) → `PointDeductor.deduct`(→ `PointAccountFinder.findForUpdate`로 계정을 잠가 읽음 → `PointAccount.pay(총액)` → 저장) → `Order.confirm` → 저장. 두 차감 포트는 상품·포인트 쪽의 것이고 확정의 트랜잭션에 참여한다. 재고·잔액·주문의 변경은 하나의 트랜잭션으로 커밋되며 실패 시 같은 DRAFT를 유지한다. 가격은 저장된 총액을 사용한다.
+- 확정: `OrderConfirmer.confirm` → `OrderFinder.findForUpdate`로 요청자의 주문을 품목과 함께 잠가 읽는다(소유권 확인. 잠금은 그 조회 자체에 걸린다) → `Order.ensureDraft`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 품목 전부의 상품 ID별 수량으로 `StockDeductor.deduct`를 한 번 부른다(→ 모든 상품 행을 상품 ID 순으로 잠가 읽고(`ProductFinder.findForUpdateOrNull`. 브랜드는 조인하지 않는다. 브랜드 삭제가 상품을 함께 삭제하기 때문이다) → 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절하고, 확정이 그것을 `ORDER_PRODUCT_NOT_AVAILABLE`(404)로 옮긴다 → 상품마다 `Product.deductStock` → 저장) → `PointDeductor.deduct`(→ `PointAccountFinder.findForUpdate`로 계정을 잠가 읽음 → `PointAccount.pay(총액)` → 저장) → `Order.confirm` → 저장. 두 차감 포트는 상품·포인트 쪽의 것이고 확정의 트랜잭션에 참여한다. 재고·잔액·주문의 변경은 하나의 트랜잭션으로 커밋되며 실패 시 같은 DRAFT를 유지한다. 가격은 품목에 저장된 단가로 센 총액을 사용한다.
   - 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 같은 주문의 확정끼리는 주문 행에서 기다린다. 뒤진 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된 주문을 읽으므로, 앞선 확정이 커밋했으면 상품과 계정을 읽기 전에 `ORDER_ALREADY_CONFIRMED`(409)로 거절된다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)).
   - 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제)나 같은 상품의 다른 확정과는 상품 행에서([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)), 같은 사용자의 충전이나 다른 확정의 결제와는 계정 행에서 한쪽이 커밋할 때까지 기다린다. 3초 안에 잠금을 얻지 못하면 `CONCURRENT_REQUEST`(409)이고 아무것도 바뀌지 않는다.
 - 관리자 상세 조회: `OrderFinder.findForAdmin` → `findWithLineItemsById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
@@ -96,7 +96,7 @@
 
 ## 주문 품목 (OrderLineItem)
 
-주문이 소유한다. `BaseEntity`를 상속하고 생성자가 `internal`이라 `Order`만 만든다. 주문을 거쳐서만 읽고 `delete()`를 부르지 않는다. 삭제 필터도 두지 않는다. 주문이 품목을 조인으로 읽을 때 품목의 필터도 붙어, 걸러진 품목이 총액이 세는 주문에서 빠지기 때문이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
+주문이 소유한다. `BaseEntity`를 상속하고 생성자가 `internal`이라 `Order`만 만든다. 주문을 거쳐서만 읽고 `delete()`를 부르지 않는다. 삭제 필터도 두지 않는다. 주문이 품목을 조인으로 읽을 때 품목의 필터도 붙어, 걸러진 품목이 주문에서도 총액에서도 빠지기 때문이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 속성
 

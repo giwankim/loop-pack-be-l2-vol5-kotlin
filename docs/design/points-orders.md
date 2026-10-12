@@ -165,6 +165,8 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 > 2026-10-12 품목 금액을 저장하지 않기로 했다. `order_line_item.line_amount` 열과 그 양수 CHECK를 지우고, `OrderLineItem.lineAmount`는 읽을 때 `unitPrice × quantity`로 계산한다. 단가와 수량이 같은 행에 있고 셋 모두 생성 뒤 바뀌지 않으므로, 저장한 값은 계산한 값과 어긋날 수만 있었고 둘이 같은지 보는 제약도 없었다. 생성 당시 가격의 보존(5.1, ADR 0002)은 단가가 맡는다. 넘침은 주문이 총액을 셀 때 생성에서 거절되며, `line amount overflow is rejected with no partial order`가 그대로 붙든다.
 >
 > 총액은 저장한다. 여러 품목 행의 합이라 한 행의 CHECK가 품목에서 계산할 수 없는데, `paid_amount = total_amount` CHECK가 결제액을 이 값에 묶는다. 품목별 할인·세금처럼 품목 금액이 단가 × 수량에서 벗어나면, 그때는 기록할 사실이므로 열을 다시 둔다. 이름은 `lineAmount`를 지킨다. 다른 금액 필드(`totalAmount`·`paidAmount`·`chargeAmount`)와 같은 `<qualifier>Amount` 모양이고, [CONTEXT.md](../../CONTEXT.md)에 품목 금액으로 올렸다.
+>
+> 2026-10-12 위 둘째 문단을 뒤집어 총액도 저장하지 않는다. `orders.total_amount` 열과 `CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE`를 지우고, `CK_ORDERS_ON_PAYMENT_STATE`에서 `paid_amount = total_amount`를 뺐다. `Order.totalAmount`는 읽을 때 품목 금액을 더한다. 까닭은 품목 금액과 같다. 총액은 생성 뒤 바뀌지 않는 품목에서 나오는데, 저장한 총액이 품목의 합과 같은지는 여러 행에 걸친 일이라 어느 CHECK도 보지 못했다. 그러니 `paid_amount = total_amount`가 결제액을 묶던 값도 검사되지 않은 사본이었다. 총액을 읽는 곳은 모두 품목을 함께 읽으므로([ADR 0014](../adr/0014-finders-load-whole-aggregates.md), 목록 조회의 fetch join) 조회가 늘지 않는다. 결제액이 총액과 같다는 것은 이제 `Order.confirm` 한 곳이 지킨다. 총액의 양수 조건과 결제액 = 총액이 함께 막던 0원 결제는 결제액의 양수 조건(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`)이 막는다. 넘침은 생성자가 총액을 한 번 세어 여전히 생성에서 거절한다. 주문 단위 할인처럼 총액이 품목 금액의 합에서 벗어나면, 그때 벗어나게 한 사실(할인액 같은 것)을 열로 둔다.
 
 ### 5.7 DRAFT 생성과 범위 — Q12, Q13
 
@@ -385,6 +387,8 @@ classDiagram
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 논리 삭제를 모든 애그리거트 루트의 기본으로 넓혔다. 주문·계정을 지우는 유스케이스는 여전히 없지만 `PointAccount`와 `Order`도 `@SQLRestriction`으로 삭제된 행을 숨긴다. 아래 "카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다"는 철회했다.
 >
 > 2026-10-12 `order_line_item.line_amount` 열과 품목 금액의 양수 조건을 5.6의 메모에서 철회했다. 품목 금액은 단가 × 수량으로 계산한다.
+>
+> 2026-10-12 `orders.total_amount` 열, 총액의 양수 조건, 결제액 = 총액 조건을 5.6의 메모에서 철회했다. 총액은 품목 금액의 합으로 계산하고, 결제액의 양수 조건을 더했다.
 
 아래는 실행 가능한 migration이 아니라 모델과 필요한 제약의 초안이다. BaseEntity의 ID·시간 필드를 재사용하되 주문·계정·이력을 삭제하는 유스케이스는 이번 범위에 없다. 카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다.
 
@@ -932,7 +936,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q36 | 기록 방식 | 17절과 같다. 이 절을 덧붙이고 철회한 행과 절에 한 줄 표시를 단다. 도메인 문서와 CONTEXT.md는 지금 모습으로 고치고 ADR 0003에는 범위 메모를 단다. [카탈로그 설계](./catalog.md)에서 저장소 구현 수를 세던 결정에도 한 줄 표시를 단다. |
 | Q37 | 기술 글 | `docs/blog`의 글은 이번에 고치지 않는다. 이력을 예로 든 두 논지(루트 중심 저장소의 예외, 같은 트랜잭션 안의 도메인 이벤트)를 다시 쓰는 일은 17절로 낡은 곳과 함께 따로 한다. |
 | Q38 | 늦은 실패 테스트의 자리 | 충전의 늦은 실패 테스트는 지운다. 충전은 `point_account` 한 행만 바꿔 함께 되돌릴 쓰기가 없다. 커밋되는지만 보는 테스트는 남긴다. 확정의 늦은 실패는 커밋의 마지막 UPDATE를 임시 CHECK로 거절한다(18.2). `@SpykBean`과 커밋 전 콜백은 스위트에 없는 장치라 대안으로만 두고, 테스트를 위해 main에 `save` 호출을 더하지 않는다. **커밋만 보는 테스트는 ADR 0012에서 지웠다(#84).** |
-| Q39 | `PointAccount`의 모양 | `charge(amount)`와 `pay(amount)`는 아무것도 돌려주지 않고 `pay`는 주문을 받지 않는다. `domain.point`가 `domain.order`를 들여오지 않게 된다. 결제액과 주문을 잇는 것은 `Order`의 CHECK(`paid_amount = total_amount`)다. |
+| Q39 | `PointAccount`의 모양 | `charge(amount)`와 `pay(amount)`는 아무것도 돌려주지 않고 `pay`는 주문을 받지 않는다. `domain.point`가 `domain.order`를 들여오지 않게 된다. 결제액과 주문을 잇는 것은 `Order`의 CHECK(`paid_amount = total_amount`)다. **2026-10-12 총액 열과 함께 이 CHECK를 지웠다. 결제액은 `Order.confirm`이 총액에서 정한다(5.6).** |
 | Q40 | ADR과 다시 들이는 조건 | ADR 0006. 고객의 충전·사용 내역 조회, 관리자 감사, 환불·취소처럼 원장이 필요한 흐름이 생기면 다시 연다. 그때는 잔액과 이력을 함께 둘지, 이력을 잔액의 원천으로 삼을지부터 고른다. ADR 0003은 대체하지 않고 범위 메모만 단다. |
 | Q41 | 충전의 흔적 | 받아들인다. 충전은 잔액 말고 흔적을 남기지 않는다. 결제는 확정된 주문으로 답할 수 있지만 누가 언제 얼마를 충전했는지는 답할 수 없고, 이력을 다시 들여도 그 사이의 충전은 되살아나지 않는다. 운영 데이터는 없다. local/test가 `ddl-auto=create`이고 migration 도구가 없어 지금 지우는 비용이 없다(Q23, Q27). |
 | Q42 | 결제의 기록을 부르는 말 | CONTEXT.md의 확정된 주문이 결제의 기록이라고 적고 `결제 이력`·`결제 내역`을 피할 말로 둔다. 개념이 사라진 충전 키와 달리 결제의 기록은 자리만 옮겼다. |
