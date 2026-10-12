@@ -16,7 +16,7 @@
 | `userId` | `Long` | 계정의 사용자. 연관이 아닌 스칼라 열이다. 계정을 읽는 쪽이 사용자를 건너 읽지 않는다(설계 12.1, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)) |
 | `balance` | `Money` | 잔액. 처음 0원 |
 
-테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_USER`). 연관이 없으므로 외래 키는 `scalar-foreign-keys.sql`이 만든다. 계정을 지우는 유스케이스는 없지만 애그리거트 루트라 논리 삭제가 기본이다. `@SQLRestriction`이 삭제된 계정을 가리므로 삭제된 계정은 없는 계정이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
+테이블 `point_account`. `user_id` 유일(`UK_POINT_ACCOUNT_ON_USER_ID`), `users`로 외래 키(`FK_POINT_ACCOUNT_ON_USER_ID`). 연관이 없으므로 외래 키는 `scalar-foreign-keys.sql`이 만든다. 계정을 지우는 유스케이스는 없지만 애그리거트 루트라 논리 삭제가 기본이다. `@SQLRestriction`이 삭제된 계정을 가리므로 삭제된 계정은 없는 계정이다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)).
 
 ### 규칙
 
@@ -58,7 +58,7 @@
 | `confirmedAt` | `Instant?` | 확정 시각. `DRAFT`에는 없다 |
 | `createdAt` | `Instant` | 생성 시각. `BaseEntity`가 저장할 때 마이크로초로 잘라 찍는다 |
 
-테이블 `orders`. `users`로 외래 키(`FK_ORDERS_USER`), 조회용 인덱스 `IDX_ORDERS_USER_CREATED`·`IDX_ORDERS_CREATED`. 총액이 양수인지, 상태와 결제 필드가 맞는지는 DB `CHECK`도 본다.
+테이블 `orders`. `users`로 외래 키(`FK_ORDERS_ON_USER_ID`), 조회용 인덱스 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`·`IDX_ORDERS_ON_CREATED_AT_AND_ID`. 총액이 양수인지(`CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE`), 상태와 결제 필드가 맞는지(`CK_ORDERS_ON_PAYMENT_STATE`)는 DB `CHECK`도 본다.
 
 ### 규칙
 
@@ -108,9 +108,9 @@
 | `productName` | `String` | 생성 당시의 상품 이름 |
 | `unitPrice` | `Money` | 생성 당시의 상품 가격. 양수 |
 | `quantity` | `Int` | 구매 수량. 양수 |
-| `lineAmount` | `Money` | `unitPrice` × `quantity` |
+| `lineAmount` | `Money` | 품목 금액. `unitPrice` × `quantity`. 열이 없고 읽을 때 계산한다(설계 5.6) |
 
-테이블 `order_line_item`. `(order_id, product_id)` 유일(`UK_ORDER_LINE_ITEM_PRODUCT`), `orders`로 외래 키(`FK_ORDER_LINE_ITEM_ORDER`), `product`로 외래 키(`FK_ORDER_LINE_ITEM_PRODUCT`). 단가·수량·금액이 양수인지는 DB `CHECK`도 본다.
+테이블 `order_line_item`. `(order_id, product_id)` 유일(`UK_ORDER_LINE_ITEM_ON_ORDER_ID_AND_PRODUCT_ID`), `orders`로 외래 키(`FK_ORDER_LINE_ITEM_ON_ORDER_ID`), `product`로 외래 키(`FK_ORDER_LINE_ITEM_ON_PRODUCT_ID`)와 그 외래 키가 쓰는 인덱스 `IDX_ORDER_LINE_ITEM_ON_PRODUCT_ID`. 단가가 양수인지(`CK_ORDER_LINE_ITEM_ON_UNIT_PRICE_POSITIVE`), 수량이 양수인지(`CK_ORDER_LINE_ITEM_ON_QUANTITY_POSITIVE`)는 DB `CHECK`도 본다.
 
 ### 규칙
 

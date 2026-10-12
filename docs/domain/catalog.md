@@ -125,7 +125,7 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 | `userId` | `Long` | 누른 사용자. 자연 식별자 |
 | `productId` | `Long` | 대상 상품. 자연 식별자 |
 
-좋아요의 정체는 사용자–상품 쌍이다. `userId`·`productId`는 Hibernate의 `@NaturalId`로 표시하며 바뀌지 않는다. 저장 약속은 자연 식별자로 읽지 않고 파생 조회를 쓴다. DB 유일 제약은 `UK_LIKES_USER_ID_PRODUCT_ID` `(user_id, product_id)` 하나다.
+좋아요의 정체는 사용자–상품 쌍이다. `userId`·`productId`는 Hibernate의 `@NaturalId`로 표시하며 바뀌지 않는다. 저장 약속은 자연 식별자로 읽지 않고 파생 조회를 쓴다. DB 유일 제약은 `UK_LIKES_ON_USER_ID_AND_PRODUCT_ID` `(user_id, product_id)` 하나다. 상품의 좋아요 수를 세는 조회와 상품 외래 키는 인덱스 `IDX_LIKES_ON_PRODUCT_ID`를 쓴다.
 
 ### 규칙
 
