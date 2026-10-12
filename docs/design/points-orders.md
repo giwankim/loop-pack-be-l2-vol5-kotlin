@@ -763,7 +763,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ## 15. 주문 확정 구현 — #14
 
-> 2026-09-28 확정·생성·충전의 성공 재생을 17절에서 철회했다. 재확정은 `Order.validateConfirmable`이 먼저 거절한다(17.2).
+> 2026-09-28 확정·생성·충전의 성공 재생을 17절에서 철회했다. 재확정은 `Order.ensureDraft`가 먼저 거절한다(17.2).
 >
 > 2026-09-28 PAYMENT 이력, `uk_point_history_order_id`, 이력 저장 경계에 넣던 늦은 실패를 18절에서 철회했다. 늦은 실패는 커밋의 마지막 UPDATE에 넣는다(18.2).
 >
@@ -877,7 +877,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q30 | 새 계약의 고정 | 같은 충전액을 두 번 충전하면 두 번 늘고, 같은 품목을 두 번 생성하면 DRAFT가 둘이라는 것을 서비스 테스트로 고정한다. 키를 되살리는 변경이 이 계약을 모르고 바꾸지 않게 한다. |
 | Q31 | 기록 방식 | 이 절을 덧붙이고 철회한 행과 절에 한 줄 표시를 단다. 인터뷰 기록을 고쳐 쓰지 않는다. [도메인 문서](../domain/points-orders.md)와 [CONTEXT.md](../../CONTEXT.md)는 지금 모습으로 고친다. |
 | Q32 | 재확정의 status와 code | 409 `ORDER_ALREADY_CONFIRMED`. `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`처럼 전용 예외와 advice 처리기를 둔다. 취소는 범위 밖이라(Q1) 아직 없는 상태를 내다본 이름(`ORDER_NOT_CONFIRMABLE`)을 쓰지 않는다. |
-| Q33 | 확정할 수 있는지 보는 자리 | `Order.validateConfirmable()`을 application이 소유권 확인 직후에 부른다. `Order.confirm()`은 차감 뒤 마지막에 두고 같은 검사를 다시 쓴다. |
+| Q33 | 확정할 수 있는지 보는 자리 | `Order.ensureDraft()`를 application이 소유권 확인 직후에 부른다. `Order.confirm()`은 차감 뒤 마지막에 두고 같은 검사를 다시 쓴다. |
 
 ### 17.2 확정 재요청의 검사 차례
 
@@ -885,14 +885,14 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 재생을 지우는 것만으로는 모자랐다. `OrderService.confirm`의 이른 반환을 지우면 재요청이 `availableProduct` → `deductStock` → `PointAccount.pay`를 차례로 지난 뒤에야 `Order.confirm()`의 거절에 닿는다. 그사이 상품이 삭제됐으면 `ORDER_PRODUCT_NOT_AVAILABLE`, 잔액을 썼으면 `INSUFFICIENT_POINTS`가 먼저 나온다. 거절에 닿더라도 당시의 `InvalidOrderException`은 `RuleViolationException`이라 범용 400이었다.
 
-그래서 거절 차례를 정했다. 401 요청자 → 404 없거나 남의 주문 → **409 이미 확정된 주문** → 15절의 차례(판매 불가 404가 재고 부족 409보다 앞섬) → 포인트 부족 409. 이미 확정된 주문은 전용 `OrderAlreadyConfirmedException`이며 `validateConfirmable()`과 `confirm()`이 같은 검사를 쓴다. 규칙은 `Order` 한 곳에 있다.
+그래서 거절 차례를 정했다. 401 요청자 → 404 없거나 남의 주문 → **409 이미 확정된 주문** → 15절의 차례(판매 불가 404가 재고 부족 409보다 앞섬) → 포인트 부족 409. 이미 확정된 주문은 전용 `OrderAlreadyConfirmedException`이며 `ensureDraft()`와 `confirm()`이 같은 검사를 쓴다. 규칙은 `Order` 한 곳에 있다.
 
 고르지 않은 대안은 둘이다.
 
 - `order.confirm()`을 차감보다 먼저 부른다. 호출이 하나로 줄지만 트랜잭션 안에서 결제보다 확정 표시가 앞선다. 밖에서는 보이지 않아도 "차감한 뒤 확정한다"는 읽는 차례를 지키려고 고르지 않았다.
 - application이 `order.status`를 직접 보고 `CoreException`을 던진다. 규칙이 서비스와 애그리거트 두 곳에 적힌다.
 
-`validateConfirmable()` 호출을 지운 구현으로 세 HTTP 테스트가 실제로 실패하는 것을 확인했다. 잔액을 쓰고 상품·브랜드를 지운 뒤의 재확정은 404, 나머지 둘은 `INSUFFICIENT_POINTS`가 나왔다. 이 차례를 붙드는 것은 `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`이다.
+`ensureDraft()` 호출을 지운 구현으로 세 HTTP 테스트가 실제로 실패하는 것을 확인했다. 잔액을 쓰고 상품·브랜드를 지운 뒤의 재확정은 404, 나머지 둘은 `INSUFFICIENT_POINTS`가 나왔다. 이 차례를 붙드는 것은 `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`이다.
 
 동시 확정은 여전히 범위 밖이다. 두 요청이 모두 DRAFT를 읽으면 하나가 커밋 때 `uk_point_history_order_id`에 막혀 500이 된다. 3주차 잠금 과제의 몫이다(ADR 0003).
 
@@ -902,7 +902,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 돌려받은 CHARGE 이력 저장. 잔액 변경과 이력은 한 트랜잭션이다.
 - DRAFT 생성: 요청자 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽음 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둠 → 저장. (처음에는 상품 확인 앞에서 입력을 정규화했다(상품별 수량 합산·정렬). 2026-10-03(#55)에 합산을 지웠다(5.2).) 주문과 품목은 한 트랜잭션이다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → 포인트 결제 → `confirm()` → PAYMENT 이력 저장. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `ensureDraft()` → 모든 품목의 판매 가능 확인 → 재고 차감 → 포인트 결제 → `confirm()` → PAYMENT 이력 저장. 확정 결과는 GET으로 읽는다.
 
 ### 17.4 테스트가 바뀐 자리
 
@@ -953,7 +953,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 저장. `point_account` 한 행만 바뀐다.
 - DRAFT 생성: 17.3과 같다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `ensureDraft()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
 
 ### 18.4 테스트가 바뀐 자리
 
@@ -989,8 +989,10 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정을 잠가 읽음(`PointAccountFinder.findForUpdate`) → `PointAccount.charge(amount)` → 저장. 같은 계정의 다른 충전이나 결제와 겹치면 계정 행에서 기다리고, 뒤에 온 쪽은 앞선 쪽이 커밋한 잔액에 더한다.
 - DRAFT 생성: 17.3과 같다. 새 행을 넣을 뿐 잠그지 않는다.
-- 확정: 요청자 확인 → 본인 주문을 품목과 함께 잠가 읽음(`OrderFinder.findForUpdate`) → `validateConfirmable()` → 모든 품목의 상품 행을 잠가 읽어 판매 가능 확인 → 재고 차감 → 계정을 잠가 읽어 `PointAccount.pay(amount)` → `confirm()` → 저장. 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 앞선 상품의 재고 UPDATE는 다음 상품을 다시 잠가 읽을 때의 자동 flush로 먼저 나가고, 나머지는 커밋의 flush에서 나간다. 어느 flush도 새 잠금을 얻지 않는다.
+- 확정: 요청자 확인 → 본인 주문을 품목과 함께 잠가 읽음(`OrderFinder.findForUpdate`) → `ensureDraft()` → 모든 품목의 상품 행을 잠가 읽어 판매 가능 확인 → 재고 차감 → 계정을 잠가 읽어 `PointAccount.pay(amount)` → `confirm()` → 저장. 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 앞선 상품의 재고 UPDATE는 다음 상품을 다시 잠가 읽을 때의 자동 flush로 먼저 나가고, 나머지는 커밋의 flush에서 나간다. 어느 flush도 새 잠금을 얻지 않는다.
 - 잔액 조회와 고객·관리자의 주문 조회는 잠그지 않는다.
+
+> 2026-10-12 DRAFT 생성의 상품 확인은 확정처럼 상품 행만 보고 브랜드는 보지 않는다. 17.3의 "상품·브랜드 확인"은 그때의 것이다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 4의 메모).
 
 ### 19.3 주문 잠금이 한 문장인지
 
