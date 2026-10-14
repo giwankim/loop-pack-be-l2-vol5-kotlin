@@ -822,7 +822,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 조각을 만드는 세 줄(`offset(page * size)`, `limit(size + 1)`, `hasNext = rows.size > size`)은 `ProductRepositoryImpl.findAll`과 글자까지 같았다. `size + 1`을 읽어 다음 조각의 존재를 정한다는 규칙은 `PageSlice`의 KDoc 한 자리에 적혀 있는데 구현은 두 자리에 있었던 것이다. #15가 `Slice`를 옮기는 두 줄을 `infrastructure/shared`로 모았으므로, QueryDSL 쪽도 같은 파일의 `JPAQuery<T>.fetchSlice(page, size)`로 모았다. 상품 목록과 주문 목록이 그 하나를 쓴다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 그 파일은 `adapter/persistence/shared/Slices.kt`이고, #81 뒤로는 `fetchSlice(pageable)`이 Spring Data의 `Slice`를 돌려준다.)
 
-`QOrder.lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order.lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
+`QOrder._lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order._lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
 
 ### 16.2 저장소와 application의 자리
 

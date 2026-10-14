@@ -51,7 +51,7 @@
 | --- | --- | --- |
 | `id` | `Long` | 식별자. `BaseEntity` |
 | `userId` | `Long` | 주문한 사용자. 스칼라 참조이며 객체 연관을 두지 않는다. DB 외래 키는 있다(설계 13) |
-| `items` | `List<OrderLineItem>` | 주문 품목. `productId` 오름차순이며 상품별로 하나씩이다 |
+| `lineItems` | `List<OrderLineItem>` | 주문 품목. `productId` 오름차순이며 상품별로 하나씩이다. 읽기 전용이며, 매핑되는 쪽은 `private`인 `_lineItems`다 |
 | `totalAmount` | `Money` | 품목 금액의 합. 열이 없고 읽을 때 계산한다(설계 5.6). 품목이 바뀌지 않으므로 생성 후 바뀌지 않는다 |
 | `status` | `OrderStatus` | `DRAFT` 또는 `CONFIRMED` |
 | `paidAmount` | `Money?` | 확정으로 결제한 금액. `DRAFT`에는 없다 |

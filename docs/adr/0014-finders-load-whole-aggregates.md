@@ -21,7 +21,7 @@ date: 2026-10-08
 
 조각마다 이렇게 바뀐다.
 
-- **주문.** `OrderRepository`의 조회는 `findWithLineItemsByIdAndUserId`와 `findWithLineItemsById`다. 둘 다 `@EntityGraph(attributePaths = ["lineItems"])`로 품목을 함께 읽는다. 품목 없는 주문을 원하는 호출자가 없어서 지연 짝은 두지 않는다. `OrderFinder`, `OrderCreator`, `OrderConfirmer`가 `Order`를 돌려주고 `OrderInfo`는 지운다. 목록은 `QuerydslOrderListRepository`가 이미 품목까지 읽는다. `OrderModifyService.confirm`은 `OrderFinder.find`로 주문을 얻는다.
+- **주문.** `OrderRepository`의 조회는 `findWithLineItemsByIdAndUserId`와 `findWithLineItemsById`다. 둘 다 `@EntityGraph(attributePaths = ["_lineItems"])`로 품목을 함께 읽는다. 품목 없는 주문을 원하는 호출자가 없어서 지연 짝은 두지 않는다. `OrderFinder`, `OrderCreator`, `OrderConfirmer`가 `Order`를 돌려주고 `OrderInfo`는 지운다. 목록은 `QuerydslOrderListRepository`가 이미 품목까지 읽는다. `OrderModifyService.confirm`은 `OrderFinder.find`로 주문을 얻는다.
 - **포인트.** `PointAccount.user` 연관은 스칼라 `userId`가 되고, `FK_POINT_ACCOUNT_ON_USER_ID`는 같은 이름으로 스크립트로 옮긴다. `PointAccountFinder.findByUser(userId): PointAccount`가 `findBalance`를 대신한다. `PointCharger.charge`는 `PointAccount`를 돌려주고 `PointAccountInfo`는 지운다. `PointModifyService`는 `findByUser`로 계정을 얻는다.
 - **상품.** `ProductFinder.find(id): Product`는 브랜드를 지연으로 둔 채 상품만 읽는다. `ProductInfo`를 주는 상세는 `findInfo(id)`가 되고, 주문이 부르는 `findOrderable`은 `findOrderableOrNull`이 된다. `ProductModifyService`는 `find`로 상품을 얻는다.
 
