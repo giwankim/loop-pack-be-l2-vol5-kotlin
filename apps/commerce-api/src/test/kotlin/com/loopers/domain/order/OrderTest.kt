@@ -1,11 +1,33 @@
 package com.loopers.domain.order
 
+import com.loopers.domain.shared.InvalidMoneyException
+import com.loopers.domain.shared.Money
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 
 class OrderTest {
+    @Test
+    fun `an order whose line amount overflows is rejected at creation`() {
+        val product = createOrderProduct(unitPrice = Money(Long.MAX_VALUE), quantity = 2)
+
+        val exception = assertThrows<InvalidMoneyException> { createOrder(userId = 1, products = listOf(product)) }
+
+        assertThat(exception.message).isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
+    }
+
+    @Test
+    fun `an order whose total overflows is rejected at creation`() {
+        val products = listOf(1L, 2L).map { productId ->
+            createOrderProduct(productId = productId, unitPrice = Money(Long.MAX_VALUE / 2 + 1), quantity = 1)
+        }
+
+        val exception = assertThrows<InvalidMoneyException> { createOrder(userId = 1, products = products) }
+
+        assertThat(exception.message).isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
+    }
+
     @Test
     fun `confirming a draft records the total as the paid amount and the confirmation time`() {
         val order = createOrder(userId = 1)

@@ -47,12 +47,6 @@ class Order(
     val userId: Long,
     products: List<OrderProduct>,
 ) : BaseEntity() {
-    init {
-        if (products.isEmpty() || products.map { it.productId }.distinct().size != products.size) {
-            throw InvalidOrderException("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")
-        }
-    }
-
     @OneToMany(mappedBy = "order", cascade = [CascadeType.PERSIST])
     @OrderBy("productId ASC")
     private val lineItems: MutableList<OrderLineItem> = products.sortedBy { it.productId }
@@ -64,6 +58,16 @@ class Order(
     /** 품목 금액의 합. 생성 뒤 바뀌지 않는 품목에서 바로 나오므로 저장하지 않는다. */
     val totalAmount: Money
         get() = lineItems.fold(Money.ZERO) { total, item -> total + item.lineAmount }
+
+    // 총액을 세려면 품목이 있어야 하므로 lineItems 초기화 뒤에 둔다.
+    init {
+        if (products.isEmpty() || products.map { it.productId }.distinct().size != products.size) {
+            throw InvalidOrderException("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")
+        }
+
+        // 저장하지 않는 총액을 생성에서 한 번 센다. 넘치는 주문은 저장 전에 거절되어, 읽을 때마다 넘치는 주문이 남지 않는다.
+        totalAmount
+    }
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
