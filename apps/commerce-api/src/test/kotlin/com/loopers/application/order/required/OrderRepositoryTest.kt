@@ -85,12 +85,12 @@ class OrderRepositoryTest(
         assertThat(firstPage.hasNext()).isTrue()
         assertThat(firstPage.number).isZero()
         assertThat(firstPage.size).isOne()
-        assertThat(firstPage.content.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(firstPage.content.single().lineItems.map { it.productId }).containsExactlyElementsOf(productIds)
         assertThat(secondPage.content.map { it.id }).containsExactly(first.id)
         assertThat(secondPage.hasNext()).isFalse()
         assertThat(secondPage.number).isEqualTo(1)
         assertThat(secondPage.size).isOne()
-        assertThat(secondPage.content.single().items.map { it.productId }).containsExactlyElementsOf(productIds)
+        assertThat(secondPage.content.single().lineItems.map { it.productId }).containsExactlyElementsOf(productIds)
         assertThat(thirdPage.content).isEmpty()
         assertThat(thirdPage.number).isEqualTo(2)
         assertThat(thirdPage.hasNext()).isFalse()
@@ -161,7 +161,7 @@ class OrderRepositoryTest(
         val slice = orderListRepository.findAll(userId = null, pageable = PageRequest.of(0, 20))
         entityManager.clear()
 
-        assertThat(slice.content.map { order -> order.items.map { it.productId } })
+        assertThat(slice.content.map { order -> order.lineItems.map { it.productId } })
             .containsExactly(listOf(shared.id), listOf(shared.id, other.id).sorted())
     }
 

@@ -29,7 +29,7 @@ data class OrderAdminResponse(
                 orderId = order.id,
                 userId = order.userId,
                 status = order.status,
-                items = order.items.map(OrderLineItemResponse::from),
+                items = order.lineItems.map(OrderLineItemResponse::from),
                 totalAmount = order.totalAmount.amount,
                 createdAt = order.createdAt,
                 paidAmount = order.paidAmount?.amount,

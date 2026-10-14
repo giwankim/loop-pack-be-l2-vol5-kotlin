@@ -49,17 +49,18 @@ class Order(
 ) : BaseEntity() {
     @OneToMany(mappedBy = "order", cascade = [CascadeType.PERSIST])
     @OrderBy("productId ASC")
-    private val lineItems: MutableList<OrderLineItem> = products.sortedBy { it.productId }
+    private val _lineItems: MutableList<OrderLineItem> = products.sortedBy { it.productId }
         .map { OrderLineItem(this, it) }.toMutableList()
 
-    val items: List<OrderLineItem>
-        get() = lineItems
+    /** 주문 품목. `productId` 오름차순이며 읽기 전용이다. 매핑되는 쪽은 [_lineItems]라 JPA 속성 이름은 `_lineItems`다. */
+    val lineItems: List<OrderLineItem>
+        get() = _lineItems
 
     /** 품목 금액의 합. 생성 뒤 바뀌지 않는 품목에서 바로 나오므로 저장하지 않는다. */
     val totalAmount: Money
-        get() = lineItems.fold(Money.ZERO) { total, item -> total + item.lineAmount }
+        get() = _lineItems.fold(Money.ZERO) { total, item -> total + item.lineAmount }
 
-    // 총액을 세려면 품목이 있어야 하므로 lineItems 초기화 뒤에 둔다.
+    // 총액을 세려면 품목이 있어야 하므로 _lineItems 초기화 뒤에 둔다.
     init {
         if (products.isEmpty() || products.map { it.productId }.distinct().size != products.size) {
             throw InvalidOrderException("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")

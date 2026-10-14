@@ -79,7 +79,7 @@ class OrderModifyService(
      * 나오는 순간 트랜잭션은 되돌릴 것으로 표시된다. 잡은 예외는 삼키지 않고 반드시 다시 던진다.
      */
     private fun deductStock(order: Order) {
-        val quantities = order.items.associate { item -> item.productId to item.quantity }
+        val quantities = order.lineItems.associate { item -> item.productId to item.quantity }
 
         try {
             stockDeductor.deduct(quantities)

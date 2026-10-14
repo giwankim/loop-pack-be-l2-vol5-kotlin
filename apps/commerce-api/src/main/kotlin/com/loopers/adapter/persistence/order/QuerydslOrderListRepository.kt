@@ -60,7 +60,7 @@ class QuerydslOrderListRepository(
 
         queryFactory
             .selectFrom(order)
-            .leftJoin(order.lineItems).fetchJoin()
+            .leftJoin(order._lineItems).fetchJoin()
             .where(order.id.`in`(orders.map { it.id }))
             .fetch()
     }
