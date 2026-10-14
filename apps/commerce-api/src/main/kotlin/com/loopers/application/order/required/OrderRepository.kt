@@ -19,10 +19,10 @@ interface OrderRepository : Repository<Order, Long> {
     fun save(order: Order): Order
 
     /** 소유자를 묻지 않는 조회. 관리자만 쓴다([findWithLineItemsByIdAndUserId]가 고객의 것이다). */
-    @EntityGraph(attributePaths = ["lineItems"])
+    @EntityGraph(attributePaths = ["_lineItems"])
     fun findWithLineItemsById(id: Long): Order?
 
-    @EntityGraph(attributePaths = ["lineItems"])
+    @EntityGraph(attributePaths = ["_lineItems"])
     fun findWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
 
     /**
@@ -33,6 +33,6 @@ interface OrderRepository : Repository<Order, Long> {
      * 메모리의 주문이 잠금 전 스냅샷으로 남는다. 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽으므로 그 사이의 확정도 본다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @EntityGraph(attributePaths = ["lineItems"])
+    @EntityGraph(attributePaths = ["_lineItems"])
     fun findForUpdateWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
 }

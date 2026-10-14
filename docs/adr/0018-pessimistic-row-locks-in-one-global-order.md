@@ -18,6 +18,8 @@ date: 2026-10-09
 
    > 2026-10-09 [카탈로그 설계 5.37](../design/catalog.md)로 바꾼 엔티티는 Service가 저장소의 `save`(연쇄는 `saveAll`)에 넘긴다. 관리 상태 엔티티의 `save`는 SQL을 보내지 않으므로 UPDATE는 여전히 커밋의 flush에서 나가고, 이 결정의 잠금 순서와 3·9번은 그대로다.
 2. **첫 읽기가 잠가야 한다.** 한 영속성 컨텍스트에서 Hibernate는 이미 읽은 엔티티를 다시 돌려줄 때 처음 읽은 필드 값을 그대로 둔다. 나중의 잠금 읽기가 최신 행을 가져와도 메모리의 낡은 값이 이긴다. 확정에서는 `availableProduct`가 잠그고, `deduct`의 잠금 읽기는 이미 가진 잠금을 다시 확인할 뿐이다.
+
+   > 2026-10-12 확정은 상품을 읽지 않는다. `StockDeductor.deduct(quantities)`가 품목 전부를 한 번에 받아, 상품 조각 안에서 잠가 읽기(`findForUpdateOrNull`, 받은 키를 직접 id 오름차순으로 정렬), 없는 상품의 거절(`PRODUCT_NOT_FOUND`), 차감을 차례로 한다. 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 그래서 규칙 1의 "주문 확정의 첫 상품 읽기"는 이제 `StockDeductor`의 첫 읽기이고, 이 규칙의 "부르는 쪽이 먼저 잠갔어야 한다"는 두 조각 사이의 약속이 상품 조각 안으로 들어갔다. 규칙 3의 확정 항목도 `Order`의 `@OrderBy`가 아니라 그 정렬이 지킨다. 대가의 "잠금 읽기를 두 번"은 품목마다 한 번이 됐다. 상품을 잠그는 방법을 바꿔 볼 때 주문 조각을 고치지 않게 하려는 것이다.
 3. **잠금 순서는 브랜드 → 상품(id 오름차순) → 포인트 계정이다.** 여러 상품을 잠그는 곳은 모두 id 오름차순이다.
    - 확정의 품목은 생성 때 `productId` 순으로 정렬되어 있다(`@OrderBy("productId ASC")`).
    - 연쇄는 `brand_id` 인덱스를 따라 잠근다. 그 인덱스의 항목이 `(brand_id, id)`이므로 id 순이다. 잠금은 훑는 인덱스의 순서로 걸리고 `ORDER BY`가 정하지 않는다. `OrderById`는 그 뜻을 적고 결과의 순서를 고정한다.
@@ -26,6 +28,8 @@ date: 2026-10-09
 
    > 2026-10-09 [ADR 0019](./0019-order-and-point-account-rows-locked-on-first-read.md)가 이 순서의 맨 앞에 주문을 두었다. 잠금 순서는 이제 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정이다. 확정은 첫 문장에서 주문 행을, 결제에서 포인트 계정 행을 잠가 읽으므로 위 마지막 항목의 "flush에서 처음 잠기는 행"은 더는 없다. 커밋의 flush(주문 → 포인트 계정 → 상품)는 새 잠금을 얻지 않는다.
 4. **삭제 여부는 잠금을 얻은 뒤에 본다.** 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽는다. 그래서 `@SQLRestriction("deleted_at is null")`이 그 사이 커밋된 삭제를 걸러 낸다. 이 동작은 첫 테스트가 MySQL에서 확인한다. 브랜드 삭제가 상품을 함께 삭제하고 상품 등록이 브랜드를 잠그므로, 커밋된 모든 상태에서 "삭제된 브랜드의 상품은 삭제됐다"가 성립한다. 확정이 상품 행만 보는 까닭이다. 읽기 쪽의 브랜드 필터(목록의 inner join, 주문 생성의 `findByIdWithActiveBrand`, 좋아요한 상품 목록의 그래프)는 방어로 남긴다.
+
+   > 2026-10-12 주문 생성의 브랜드 필터(`findByIdWithActiveBrand`)를 걷어 냈다. 생성도 확정처럼 상품 행만 본다(`ProductFinder.findOrNull`). 그 필터가 일을 하는 것은 위 성질이 깨진 상태뿐인데, 그 상태에서 재고와 잔액을 바꾸는 확정은 처음부터 브랜드를 보지 않았다. 재고와 잔액을 바꾸지 않는 생성만 막아서는 지키는 것이 없다. 그 상태는 포트로 닿을 수 없어 테스트도 저장소로 심어야 만들 수 있었고, 생성은 조인한 브랜드를 쓰지도 않았다. 목록의 inner join과 좋아요한 상품 목록의 그래프는 브랜드 이름을 싣느라 어차피 브랜드를 건너고 필터는 거기에 덤으로 붙으므로 그대로 둔다.
 5. **저장소 포트는 Spring Data의 파생 이름에 `@Lock`을 단다.** `findForUpdateById`(`PESSIMISTIC_WRITE`), `findForShareById`(`PESSIMISTIC_READ`), `findForUpdateByBrandIdOrderById`(`PESSIMISTIC_WRITE`)가 그렇다. Spring Data는 `find`와 `By` 사이를 설명으로 보므로 `@Query`가 필요 없다. 파생 조회는 상품 표만 읽는다. `brand`가 LAZY라서 잠금이 상품 행에만 걸린다. Finder의 잠금 메서드는 트랜잭션 속성을 따로 달지 않는다. 대신 KDoc에 "호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다."를 적는다. 부르는 곳은 모두 쓰기 트랜잭션에 참여하므로 Query Service의 `readOnly`는 걸리지 않는다.
 6. **`product.brand_id` 인덱스를 엔티티에 적고 테스트로 고정한다.** 지금은 InnoDB가 외래 키를 위해 만든 암묵 인덱스뿐이다. 그 인덱스가 없으면 REPEATABLE READ의 잠금 읽기가 훑은 모든 행을 잠가, 상품 표 전체가 브랜드 삭제의 커밋까지 잠긴다.
 7. **잠금 대기는 3초다.** `modules/jpa`의 `jpa.yml`에서 `data-source-properties`에 `sessionVariables: innodb_lock_wait_timeout=3`을 둔다. 모든 프로필과 앱에 걸린다. 쿼리 힌트(`jakarta.persistence.lock.timeout`)는 잠금 조회에만 닿고 flush 때의 UPDATE에는 닿지 않으므로 세션 값으로 둔다. Hikari의 `connection-timeout` 3초와 같은 값이다.

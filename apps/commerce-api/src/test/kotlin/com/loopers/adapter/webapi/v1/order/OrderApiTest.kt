@@ -250,7 +250,7 @@ class OrderApiTest(
     }
 
     @Test
-    fun `new orders reject unknown or deleted products and deleted brands`() {
+    fun `new orders reject unknown or deleted products`() {
         prepareBrand()
         val active = prepareProduct(brand).id
         val deleted = prepareProduct(brand)
@@ -262,11 +262,6 @@ class OrderApiTest(
             body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
-        // The brand delete cascade makes this state unreachable; seed it directly to pin the read-side brand filter.
-        deleteBrandKeepingProducts()
-        val error = assertThat(requestCreate(item(active))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
-        assertNoOrders()
     }
 
     @Test
@@ -331,13 +326,12 @@ class OrderApiTest(
             "order_line_item.product_id->product",
         )
         assertConstraint(
-            "insert into orders (user_id, status, total_amount, created_at, updated_at) " +
-                "values (?, 'DRAFT', 1000, now(6), now(6))",
+            "insert into orders (user_id, status, created_at, updated_at) values (?, 'DRAFT', now(6), now(6))",
             Long.MAX_VALUE,
         )
         val insertItem = "insert into order_line_item " +
-            "(order_id, product_id, product_name, unit_price, quantity, line_amount, created_at, updated_at) " +
-            "values (?, ?, '상품', 1000, 1, 1000, now(6), now(6))"
+            "(order_id, product_id, product_name, unit_price, quantity, created_at, updated_at) " +
+            "values (?, ?, '상품', 1000, 1, now(6), now(6))"
         assertConstraint(insertItem, Long.MAX_VALUE, id)
         assertConstraint(insertItem, orderId, Long.MAX_VALUE)
         assertConstraint(insertItem, orderId, id)
@@ -377,11 +371,10 @@ class OrderApiTest(
             "paid_amount = 1000",
             "confirmed_at = now(6)",
             "status = 'CONFIRMED'",
-            "total_amount = 0",
-            "status = 'CONFIRMED', paid_amount = total_amount - 1, confirmed_at = now(6)",
+            "status = 'CONFIRMED', paid_amount = 0, confirmed_at = now(6)",
             "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
         ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
-        listOf("quantity = 0", "unit_price = 0", "line_amount = 0").forEach { update ->
+        listOf("quantity = 0", "unit_price = 0").forEach { update ->
             jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
         assertThat(requestDetail(orderId).json()).isEqualTo(original.json())
@@ -409,9 +402,9 @@ class OrderApiTest(
             String::class.java,
         )
         assertThat(constraints).containsExactlyInAnyOrder(
-            "FK_ORDERS_USER",
-            "FK_ORDER_LINE_ITEM_ORDER",
-            "FK_ORDER_LINE_ITEM_PRODUCT",
+            "FK_ORDERS_ON_USER_ID",
+            "FK_ORDER_LINE_ITEM_ON_ORDER_ID",
+            "FK_ORDER_LINE_ITEM_ON_PRODUCT_ID",
         )
         owner = prepareUser()
         assertThat(requestCreate(item(prepareProduct().id))).hasStatus(HttpStatus.CREATED)
@@ -462,7 +455,7 @@ class OrderApiTest(
         prepareOrder(owner, listOf(product))
         val confirmed = prepareOrder(owner, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = total_amount, " +
+            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
                 "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
             confirmed,
         )

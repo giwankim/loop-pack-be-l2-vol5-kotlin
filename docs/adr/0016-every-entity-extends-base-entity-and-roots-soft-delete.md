@@ -5,6 +5,8 @@ date: 2026-10-08
 
 # 모든 엔티티는 `BaseEntity`를 상속하고, 애그리거트 루트는 기본으로 논리 삭제한다
 
+> 2026-10-12 주문 총액을 저장하지 않고 품목에서 계산하게 되었다([포인트·주문 설계 5.6](../design/points-orders.md)). 규칙 3의 끝 문장("`totalAmount`는 그 품목을 계속 센다")과 고르지 않은 것의 둘째 항목이 말하는 어긋남은 이제 생기지 않는다. 대신 필터에 걸린 품목은 총액에서도 빠져, 만든 주문의 품목과 총액이 함께 말없이 바뀐다. 생성 정보는 바뀌지 않아야 하므로([ADR 0002](./0002-preserve-order-creation-price.md)) 품목에 필터를 두지 않는 결정은 그대로다.
+
 `Order`와 `OrderLineItem`은 `BaseEntity`를 상속하지 않았다. 상속하면 카탈로그의 논리 삭제를 물려받는데, 주문을 지우는 유스케이스가 없다는 까닭이었다([포인트·주문 설계 13](../design/points-orders.md)). 그런데 `User`와 `PointAccount`도 지우는 유스케이스가 없는데 `BaseEntity`를 상속했고, 삭제 필터만 없었다. 같은 사실에서 반대의 선택이 나왔다. 행이 사라지는지 삭제 표시가 남는지가, 엔티티가 어쩌다 기반 클래스를 상속했는지에 달려 있었다.
 
 시각도 두 벌이었다. `BaseEntity`는 JVM 기본 시간대 `Asia/Seoul`의 `ZonedDateTime.now()`를 자르지 않고 찍었다. `Order`는 `Instant.now()`를 마이크로초로 잘라, 첫 응답이 `datetime(6)`에서 다시 읽은 값과 같았다. 그래서 브랜드·상품 관리자 JSON은 `+09:00`으로, 주문 JSON은 `Z`로 나갔다. 저장은 어느 쪽이든 UTC다(`NORMALIZE_UTC`, `jdbc.time_zone: UTC`).
@@ -16,7 +18,7 @@ date: 2026-10-08
 3. **딸린 엔티티는 루트를 따른다.** 필터를 붙이지 않고 `delete()`를 부르지 않으며, 루트를 거쳐서만 읽는다. 딸린 엔티티를 가리는 것은 루트의 필터다. `OrderLineItem`에 필터를 두지 않는 까닭이 있다. 주문은 품목을 `@EntityGraph` 조인으로 읽고([ADR 0014](./0014-finders-load-whole-aggregates.md)), 대상의 `@SQLRestriction`은 조인에도 붙는다. `ProductRepository`가 브랜드에서 이미 기대는 동작이다. 필터에 걸린 품목은 주문에서 빠지지만 `totalAmount`는 그 품목을 계속 센다.
 4. **`Like`는 하나뿐인 예외로 행을 지운다(ADR 0001).** 취소한 좋아요가 행으로 남으면 같은 쌍을 다시 누를 때 `(user_id, product_id)` 유일 키와 충돌한다. `delete()`는 지금처럼 쓰지 않는다.
 5. **`BaseEntity`의 시각은 마이크로초로 자른 `Instant`다.** `createdAt`, `updatedAt`, `deletedAt` 셋 다 그렇다. `Order`는 자기 `id`와 `createdAt`을 버리고 물려받는다. `confirmedAt`은 `Order`가 스스로 자른다.
-6. **`Like`는 `userId`와 `productId`를 `@NaturalId`로 표시한다.** 좋아요의 정체가 그 쌍이라는 것을 적는다. Spring Data의 파생 조회(`findByUserIdAndProductId`, `existsByUserIdAndProductId`)는 이 애노테이션을 보지 않고 그대로 SQL을 보낸다. 자연 식별자로 읽으려면 포트 뒤에서 `Session` API를 써야 하고, 2차 캐시도 없다. 그래서 지금은 정체를 적고 불변을 지킬 뿐 읽는 방식은 바꾸지 않는다. 이름 있는 `UK_LIKES_USER_ID_PRODUCT_ID`는 그대로다. Hibernate는 자연 식별자 열에 제 유일 키를 만들 수 있으므로, 쌍의 유일 인덱스가 이름 있는 그것 하나뿐임을 `LikeRepositoryTest`가 `information_schema`로 고정한다.
+6. **`Like`는 `userId`와 `productId`를 `@NaturalId`로 표시한다.** 좋아요의 정체가 그 쌍이라는 것을 적는다. Spring Data의 파생 조회(`findByUserIdAndProductId`, `existsByUserIdAndProductId`)는 이 애노테이션을 보지 않고 그대로 SQL을 보낸다. 자연 식별자로 읽으려면 포트 뒤에서 `Session` API를 써야 하고, 2차 캐시도 없다. 그래서 지금은 정체를 적고 불변을 지킬 뿐 읽는 방식은 바꾸지 않는다. 이름 있는 `UK_LIKES_ON_USER_ID_AND_PRODUCT_ID`는 그대로다. Hibernate는 자연 식별자 열에 제 유일 키를 만들 수 있으므로, 쌍의 유일 인덱스가 이름 있는 그것 하나뿐임을 `LikeRepositoryTest`가 `information_schema`로 고정한다.
 
 ## 고르지 않은 것
 
@@ -37,7 +39,7 @@ date: 2026-10-08
 
 ## 다시 볼 조건
 
-- 사용자나 주문을 지우는 일이 기능이 되면 딸린 것들(포인트 계정, 좋아요, 주문)을 어떻게 할지 그때 정한다. 지금의 필터는 행을 가릴 뿐이고, 외래 키와 유일 키는 삭제된 행도 센다. 예를 들어 삭제된 사용자의 계정이 `UK_POINT_ACCOUNT_USER_ID`를 계속 차지한다.
+- 사용자나 주문을 지우는 일이 기능이 되면 딸린 것들(포인트 계정, 좋아요, 주문)을 어떻게 할지 그때 정한다. 지금의 필터는 행을 가릴 뿐이고, 외래 키와 유일 키는 삭제된 행도 센다. 예를 들어 삭제된 사용자의 계정이 `UK_POINT_ACCOUNT_ON_USER_ID`를 계속 차지한다.
 - 딸린 엔티티를 루트 밖에서 읽어야 하는 일이 생기면 규칙 3을 다시 본다.
 
 ## 바꾸는 결정

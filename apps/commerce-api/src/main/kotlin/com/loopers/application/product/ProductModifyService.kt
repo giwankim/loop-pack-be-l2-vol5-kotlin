@@ -12,6 +12,8 @@ import com.loopers.application.product.provided.StockDeductor
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
+import com.loopers.support.error.CoreException
+import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
@@ -37,17 +39,22 @@ class ProductModifyService(
      */
     override fun register(request: ProductAdminRegisterRequest): ProductInfo {
         val brand = brandFinder.findForShare(request.brandId)
-        val product = Product(
-            brand = brand,
-            name = request.name,
-            price = Money(request.price),
-            stock = request.stock,
+
+        val product = productRepository.save(
+            Product(
+                brand = brand,
+                name = request.name,
+                price = Money(request.price),
+                stock = request.stock,
+            ),
         )
-        return ProductInfo.from(productRepository.save(product), likeCount = 0)
+
+        return ProductInfo.from(product, 0)
     }
 
     override fun update(id: Long, request: ProductAdminUpdateRequest): ProductInfo {
         val product = productFinder.findForUpdate(id)
+
         product.update(name = request.name, price = Money(request.price))
 
         return productInfoAssembler.toInfo(productRepository.save(product))
@@ -55,6 +62,7 @@ class ProductModifyService(
 
     override fun updateStock(id: Long, request: ProductAdminStockUpdateRequest): ProductInfo {
         val product = productFinder.findForUpdate(id)
+
         product.updateStock(request.quantity)
 
         return productInfoAssembler.toInfo(productRepository.save(product))
@@ -63,17 +71,23 @@ class ProductModifyService(
     /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
     override fun delete(id: Long) {
         val product = productFinder.findForUpdate(id)
+
         product.delete()
 
         productRepository.save(product)
     }
 
-    /** 주문 확정이 부른다. 재고 수정과 달리 최종 수량이 아니라 줄일 수량을 받는다. */
-    override fun deduct(productId: Long, quantity: Int) {
-        val product = productFinder.findForUpdate(productId)
-        product.deductStock(quantity)
+    /**
+     * 주문 확정이 부른다. 재고 수정과 달리 최종 수량이 아니라 줄일 수량을 받는다.
+     * 잠가 읽기, 없는 상품의 거절, 차감을 차례로 나눈다. 모두 잠가 읽은 뒤에 거절하므로 없는 상품이 재고 부족보다 앞선다(포인트·주문 설계 15).
+     */
+    override fun deduct(quantities: Map<Long, Int>) {
+        val locked = lockAll(quantities.keys)
+        val products = locked.map { product -> product ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND) }
 
-        productRepository.save(product)
+        products.forEach { product -> product.deductStock(quantities.getValue(product.id)) }
+
+        productRepository.saveAll(products)
     }
 
     /**
@@ -82,8 +96,18 @@ class ProductModifyService(
      */
     override fun deleteAllOfBrand(brandId: Long) {
         val products = productRepository.findForUpdateByBrandIdOrderById(brandId)
+
         products.forEach { it.delete() }
 
         productRepository.saveAll(products)
+    }
+
+    /**
+     * 차감할 상품 행을 id 오름차순으로 잠가 읽는다. 없거나 삭제된 상품은 null로 남기고, 거절은 [deduct]가 정한다.
+     * 트랜잭션이 이 상품들을 처음 읽는 자리라서 잠근다(ADR 0018 규칙 2). 받은 키의 차례를 믿지 않고 여기서 정렬하므로,
+     * 여러 상품을 잠그는 브랜드 삭제의 연쇄와 같은 차례가 된다(규칙 3).
+     */
+    private fun lockAll(ids: Set<Long>): List<Product?> {
+        return ids.sorted().map { id -> productFinder.findForUpdateOrNull(id) }
     }
 }

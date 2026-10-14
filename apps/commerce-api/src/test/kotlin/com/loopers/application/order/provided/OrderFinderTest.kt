@@ -49,11 +49,11 @@ class OrderFinderTest(
         assertThat(listed.paidAmount).isNull()
         assertThat(listed.confirmedAt).isNull()
         assertThat(listed.createdAt).isNotNull()
-        assertThat(listed.items.map { it.productId }).containsExactly(shirt.id, socks.id)
-        assertThat(listed.items.map { it.productName }).containsExactly("티셔츠", "양말")
-        assertThat(listed.items.map { it.unitPrice }).containsExactly(Money(1_000), Money(2_000))
-        assertThat(listed.items.map { it.quantity }).containsExactly(2, 1)
-        assertThat(listed.items.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
+        assertThat(listed.lineItems.map { it.productId }).containsExactly(shirt.id, socks.id)
+        assertThat(listed.lineItems.map { it.productName }).containsExactly("티셔츠", "양말")
+        assertThat(listed.lineItems.map { it.unitPrice }).containsExactly(Money(1_000), Money(2_000))
+        assertThat(listed.lineItems.map { it.quantity }).containsExactly(2, 1)
+        assertThat(listed.lineItems.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
     }
 
     /**
@@ -70,7 +70,7 @@ class OrderFinderTest(
         entityManager.withStatistics { statistics ->
             val found = orderFinder.find(user.id, order.id)
 
-            assertThat(found.items.map { it.productId }).containsExactlyElementsOf(products.map { it.id })
+            assertThat(found.lineItems.map { it.productId }).containsExactlyElementsOf(products.map { it.id })
             assertThat(statistics.prepareStatementCount).isEqualTo(1L)
         }
     }
@@ -106,7 +106,7 @@ class OrderFinderTest(
             val slice = orderFinder.findAll(user.id, OrderListRequest(size = size))
 
             assertThat(slice.content).hasSize(size)
-            assertThat(slice.content.flatMap { it.items }).hasSize(size)
+            assertThat(slice.content.flatMap { it.lineItems }).hasSize(size)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
@@ -146,8 +146,8 @@ class OrderFinderTest(
         entityManager.withStatistics { statistics ->
             val slice = orderFinder.findAll(OrderAdminListRequest())
 
-            assertThat(slice.content.map { it.items.size }).containsExactly(1, 3)
-            assertThat(slice.content.flatMap { it.items }.map { it.quantity }).containsExactly(2, 1, 1, 1)
+            assertThat(slice.content.map { it.lineItems.size }).containsExactly(1, 3)
+            assertThat(slice.content.flatMap { it.lineItems }.map { it.quantity }).containsExactly(2, 1, 1, 1)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
@@ -178,8 +178,8 @@ class OrderFinderTest(
         assertThat(found.userId).isEqualTo(user.id)
         assertThat(found.status).isEqualTo(OrderStatus.DRAFT)
         assertThat(found.totalAmount).isEqualTo(Money(4_000))
-        assertThat(found.items.map { it.productId }).containsExactly(shirt.id, pants.id)
-        assertThat(found.items.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
+        assertThat(found.lineItems.map { it.productId }).containsExactly(shirt.id, pants.id)
+        assertThat(found.lineItems.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
         assertThat(found.paidAmount).isNull()
         assertThat(found.confirmedAt).isNull()
     }

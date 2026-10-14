@@ -1,7 +1,6 @@
 package com.loopers.support.test
 
 import com.loopers.application.brand.provided.BrandRegister
-import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderConfirmer
@@ -53,9 +52,6 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var brandRegister: BrandRegister
-
-    @Autowired
-    private lateinit var brandRepository: BrandRepository
 
     @Autowired
     private lateinit var productRegister: ProductRegister
@@ -166,15 +162,6 @@ abstract class BaseApplicationServiceTest {
 
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
-    }
-
-    /**
-     * 삭제되지 않은 상품을 남긴 채 브랜드를 삭제한다. 브랜드 삭제의 연쇄와 브랜드 잠금 때문에 포트로는 닿을 수 없는 상태라
-     * 저장소로 만든다(ADR 0017, 0018). 읽기 쪽 브랜드 필터(목록의 inner join, 주문의 `findByIdWithActiveBrand`)를
-     * 고정하려고 둔다. 테스트 트랜잭션 없이도 남도록 삭제 시각을 찍어 명시적으로 저장한다.
-     */
-    protected fun deleteBrandKeepingProducts(brand: Brand = this.brand) {
-        brandRepository.save(brand.apply { delete() })
     }
 
     protected fun updateProduct(name: String? = null, price: Long? = null, product: Product = this.product) {

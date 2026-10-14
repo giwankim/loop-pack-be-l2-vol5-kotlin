@@ -94,7 +94,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - MockMvc 요청의 JSON 본문은 손으로 적는다. 필드 이름과 JSON 타입까지 HTTP 계약이다.
 - 서비스·MockMvc·저장소 테스트는 자기 조각이든 다른 조각이든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 그리고 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`)뿐이다. 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다.
 - `prepare`가 데이터를 만드는 길은 기반마다 다르다.
-  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 조각의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`deleteBrandKeepingProducts`).
+  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 조각의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`BaseRepositoryTest`의 `deleteBrandKeepingProducts`).
   - `BaseRepositoryTest`는 같은 이름으로 저장소에 엔티티를 저장한다. 저장소 테스트의 컨텍스트에는 포트가 없다.
 - `prepare`가 다른 애그리거트를 받는 파라미터의 기본값은 `prepare`로 저장한 엔티티다(`prepareProduct(brand: Brand = prepareBrand())`). 그 밖의 파라미터는 nullable이고 기본값 `null`을 fixture에 그대로 넘긴다.
 - `prepare`는 마지막으로 준비한 엔티티를 타입마다 `protected` 필드(`brand`, `product`)에 둔다. 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾸며, 나중 것이 남는다. 테스트는 기본값으로 만든 것까지 세어 그 타입의 엔티티를 하나만 준비했을 때만 필드를 읽고, 그렇지 않으면 반환값을 쓴다.
@@ -121,3 +121,20 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 규칙이 걸린 필드는 fixture가 그 자리에서 `gen()`으로 범위를 정해 `set`한다(이름 2..100자, 가격 1..1,000,000,000원). 따로 두는 값 생성기 함수는 없다. 값 객체(`Money`)는 Instancio에 맡기지 않고 뽑은 값으로 fixture가 만든다. 맡기면 값 객체의 검사도 건너뛰어 음수 금액이 나온다. 기본값은 동작을 바꾸는 경계를 피한다(재고는 100..1,000개라 품절이 나오지 않는다).
 - Request의 상한 없는 `@Positive`·`@Min` 필드도 fixture가 범위를 정한다. `instancio.properties`로 켠 Bean Validation 연동은 fixture가 빠뜨린 제약 필드를 채우는데, 상한 없는 필드에는 큰 값이 나와 기본값끼리 더하면 넘칠 수 있다.
 - 값을 뽑는 fixture 파일마다 같은 패키지에 계약 테스트가 있다. Instancio가 생성자를 건너뛰므로 범위는 여기서 지킨다. 기본값을 1,000개 뽑아 엔티티 fixture의 값은 진짜 생성자에 다시 넣어 예외가 없는지와 저장하지 않은 상태(`id` 0, `deletedAt` `null`)를 확인하고, Request fixture의 값은 그 Request의 제약으로 검증한다. 기본값이 피하는 경계(품절 등)도 확인한다. fixture마다 인자를 넘겨 그 값이 그대로 쓰이는지 하나씩 확인한다. fixture를 더하거나 범위를 바꾸면 계약 테스트도 함께 바꾼다. 계약 테스트 없이 값을 뽑는 fixture를 두지 않는다. 기반 클래스의 `prepare`는 값을 뽑지 않고 fixture를 부르므로 계약 테스트를 따로 두지 않는다.
+
+## 스키마
+
+### 제약과 인덱스의 이름
+
+- 이름은 `<접두사>_<테이블>_ON_<대상>`이며 모두 대문자다. `_ON_` 앞이 테이블 이름이다. 예: `UK_ORDER_LINE_ITEM_ON_ORDER_ID_AND_PRODUCT_ID`.
+- 접두사는 유일 키 `UK_`, 외래 키 `FK_`, 인덱스 `IDX_`, CHECK `CK_`다.
+- 테이블은 DB의 테이블 이름 그대로다(`orders`, `likes`).
+- 유일 키·외래 키·인덱스의 대상은 컬럼 이름을 선언한 차례대로 `_AND_`로 잇는다. 컬럼 이름은 줄이지 않고(`USER_ID`, `CREATED_AT`), 정렬 방향은 넣지 않으며, 같은 값을 가르는 `id`도 넣는다. 예: `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`.
+- 외래 키는 자기 컬럼으로 이름 짓고 가리키는 테이블은 넣지 않는다. 예: `FK_LIKES_ON_USER_ID`. 두 컬럼이 같은 테이블을 가리켜도 이름이 겹치지 않는다.
+- CHECK 하나에는 규칙 하나를 둔다. 대상은 컬럼 하나의 규칙이면 `<컬럼>_<조건>`(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`), 여러 컬럼에 걸친 규칙이면 그 규칙의 이름(`CK_ORDERS_ON_PAYMENT_STATE`)이다.
+- 유일 키·외래 키·인덱스·CHECK에는 모두 이름을 준다. Hibernate(`FK<hash>`)나 MySQL(`<테이블>_chk_<n>`)이 짓게 두지 않는다. 테스트가 잠시 걸었다 지우는 CHECK만 예외다.
+
+### 외래 키
+
+- 외래 키 컬럼은 코드에 선언한 유일 키나 인덱스의 첫 컬럼이다. 그런 것이 없으면 `IDX_<테이블>_ON_<컬럼>`을 선언한다. MySQL이 외래 키 이름으로 몰래 만드는 인덱스에 기대지 않는다.
+- 연관의 외래 키는 `@JoinColumn(foreignKey = ForeignKey(name = …))`에, 연관 없는 식별자 컬럼의 외래 키는 `scalar-foreign-keys.sql`에 둔다(ADR 0014).

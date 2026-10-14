@@ -148,7 +148,7 @@ class LikeRepositoryTest(
             .resultList
             .map { (it as Array<*>).joinToString(":") }
 
-        assertThat(foreignKeys).containsExactlyInAnyOrder("FK_LIKES_USER:users:id", "FK_LIKES_PRODUCT:product:id")
+        assertThat(foreignKeys).containsExactlyInAnyOrder("FK_LIKES_ON_USER_ID:users:id", "FK_LIKES_ON_PRODUCT_ID:product:id")
     }
 
     /** 자연 식별자 컬럼에는 Hibernate가 제 이름으로 유일 키를 만들 수 있다. 쌍을 지키는 유일 인덱스는 이름 붙인 하나뿐이다(ADR 0016). */
@@ -163,7 +163,7 @@ class LikeRepositoryTest(
             .resultList
             .map { (it as Array<*>).joinToString(":") }
 
-        assertThat(uniqueIndexes).containsExactly("UK_LIKES_USER_ID_PRODUCT_ID:user_id,product_id")
+        assertThat(uniqueIndexes).containsExactly("UK_LIKES_ON_USER_ID_AND_PRODUCT_ID:user_id,product_id")
     }
 
     @Test

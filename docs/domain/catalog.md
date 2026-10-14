@@ -75,7 +75,7 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 상품의 `StockDeductor.deduct`를 거쳐 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 상품 행은 확정이 처음 읽을 때 `ProductFinder.findForUpdateOrNull`로 잠그고, `deduct`도 `findForUpdate`로 잠가 읽는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockDeductor.deduct`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 확정은 상품을 읽지 않는다. `deduct`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다.
 브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
@@ -125,7 +125,7 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 | `userId` | `Long` | 누른 사용자. 자연 식별자 |
 | `productId` | `Long` | 대상 상품. 자연 식별자 |
 
-좋아요의 정체는 사용자–상품 쌍이다. `userId`·`productId`는 Hibernate의 `@NaturalId`로 표시하며 바뀌지 않는다. 저장 약속은 자연 식별자로 읽지 않고 파생 조회를 쓴다. DB 유일 제약은 `UK_LIKES_USER_ID_PRODUCT_ID` `(user_id, product_id)` 하나다.
+좋아요의 정체는 사용자–상품 쌍이다. `userId`·`productId`는 Hibernate의 `@NaturalId`로 표시하며 바뀌지 않는다. 저장 약속은 자연 식별자로 읽지 않고 파생 조회를 쓴다. DB 유일 제약은 `UK_LIKES_ON_USER_ID_AND_PRODUCT_ID` `(user_id, product_id)` 하나다. 상품의 좋아요 수를 세는 조회와 상품 외래 키는 인덱스 `IDX_LIKES_ON_PRODUCT_ID`를 쓴다.
 
 ### 규칙
 

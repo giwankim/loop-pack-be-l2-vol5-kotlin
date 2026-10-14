@@ -24,6 +24,7 @@ class PointModifyService(
     PointDeductor {
     override fun charge(userId: Long, request: PointChargeRequest): PointAccount {
         val account = pointAccountFinder.findForUpdate(userId)
+
         account.charge(Money(request.amount))
 
         return pointAccountRepository.save(account)
@@ -35,6 +36,7 @@ class PointModifyService(
      */
     override fun deduct(userId: Long, amount: Money) {
         val account = pointAccountFinder.findForUpdate(userId)
+
         account.pay(amount)
 
         pointAccountRepository.save(account)

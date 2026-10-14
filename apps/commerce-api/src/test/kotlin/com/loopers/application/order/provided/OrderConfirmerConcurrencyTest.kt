@@ -74,7 +74,7 @@ class OrderConfirmerConcurrencyTest(
         inNewTransaction {
             val reread = drafts.associate { draft -> draft.id to orderFinder.find(draft.userId, draft.id) }
             val confirmed = reread.values.filter { persisted -> persisted.status == OrderStatus.CONFIRMED }
-            val confirmedItems = confirmed.flatMap { persisted -> persisted.items }
+            val confirmedItems = confirmed.flatMap { persisted -> persisted.lineItems }
             val soldQuantity = confirmedItems.filter { item -> item.productId == product.id }.sumOf { item -> item.quantity }
             val finalStock = productFinder.find(product.id).stock
             assertThat(finalStock).isEqualTo(initialStock - soldQuantity)
@@ -124,7 +124,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
             assertThat(persisted.paidAmount).isEqualTo(order.totalAmount)
             assertThat(persisted.confirmedAt).isEqualTo(confirmed.confirmedAt)
-            val soldQuantity = persisted.items.sumOf { item -> item.quantity }
+            val soldQuantity = persisted.lineItems.sumOf { item -> item.quantity }
             assertThat(productFinder.find(product.id).stock).isEqualTo(initialStock - soldQuantity)
             val paid = persisted.paidAmount!!.amount
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(initialBalance - paid)
@@ -158,7 +158,7 @@ class OrderConfirmerConcurrencyTest(
             val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
             assertThat(finalBalance).isEqualTo(initialBalance - paid)
             assertThat(finalBalance).isEqualTo(2_000L)
-            val confirmedItems = confirmed.flatMap { persisted -> persisted.items }
+            val confirmedItems = confirmed.flatMap { persisted -> persisted.lineItems }
             products.forEach { ordered ->
                 val soldQuantity = confirmedItems.filter { item -> item.productId == ordered.id }.sumOf { item -> item.quantity }
                 assertThat(productFinder.find(ordered.id).stock).isEqualTo(ordered.stock - soldQuantity)
@@ -168,7 +168,7 @@ class OrderConfirmerConcurrencyTest(
             assertThat(rejected.paidAmount).isNull()
             assertThat(rejected.confirmedAt).isNull()
             assertThat(rejected.updatedAt).isEqualTo(rejectedDraft.updatedAt)
-            val rejectedProduct = products.single { ordered -> ordered.id == rejected.items.single().productId }
+            val rejectedProduct = products.single { ordered -> ordered.id == rejected.lineItems.single().productId }
             assertThat(productFinder.find(rejectedProduct.id).stock).isEqualTo(rejectedProduct.stock)
         }
     }
@@ -201,7 +201,7 @@ class OrderConfirmerConcurrencyTest(
             val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
             assertThat(finalBalance).isEqualTo(initialBalance + chargeAmount - paid)
             assertThat(finalBalance).isEqualTo(5_000L)
-            val soldQuantity = persisted.items.sumOf { item -> item.quantity }
+            val soldQuantity = persisted.lineItems.sumOf { item -> item.quantity }
             assertThat(productFinder.find(product.id).stock).isEqualTo(product.stock - soldQuantity)
         }
     }
