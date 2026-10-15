@@ -31,10 +31,12 @@ private val log = KotlinLogging.logger {}
 
 /**
  * 과제 2절의 측정. [ProductQuerySeed]의 카탈로그 위에서 고객 상품 목록을 실제 HTTP 요청으로 보내고, 응답·요청당 SQL 수·
- * 실행 계획·지연을 잰다. 기준선은 지금의 스키마다(카탈로그 설계 8).
+ * 실행 계획·지연을 잰다. 브랜드 필터 + `price_asc`는 `(brand_id, price, id DESC)` 인덱스를 숨긴 "전"과 보이는 "후"를 한 실행에서
+ * 견주고, `likes_desc`는 기준선만 잰다(카탈로그 설계 5.38, 8).
  *
- * seed를 넣은 뒤의 `ANALYZE TABLE`이 열린 트랜잭션을 암묵으로 커밋하므로 롤백으로 정리할 수 없다. 그래서 클래스는 테스트 트랜잭션에서
- * 빠지고, seed는 클래스마다 한 번 넣어 끝나면 [DatabaseCleanUp]으로 표를 비운다. 수만 행을 테스트마다 다시 넣지 않으려고 PER_CLASS다.
+ * seed를 넣은 뒤의 `ANALYZE TABLE`과 인덱스를 숨겼다 보이게 하는 DDL이 열린 트랜잭션을 암묵으로 커밋하므로 롤백으로 정리할 수 없다.
+ * 그래서 클래스는 테스트 트랜잭션에서 빠지고, seed는 클래스마다 한 번 넣어 끝나면 [DatabaseCleanUp]으로 표를 비운다.
+ * 수만 행을 테스트마다 다시 넣지 않으려고 PER_CLASS다.
  *
  * 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센다. 측정값은 출력만 하고 단언하지 않는다. 시간의 흔들림이 빌드를 깨지 않게 하려는 것이다.
  *
@@ -64,6 +66,9 @@ class ProductQueryPerformanceApiTest(
         private const val LIKES_DESC = "likes_desc"
 
         private const val PAGE_SIZE = 20
+
+        /** 전후를 견주려고 숨겼다 보이게 하는 인덱스. DDL에만 쓰고 단언에는 쓰지 않는다. */
+        private const val BRAND_PRICE_INDEX = "IDX_PRODUCT_ON_BRAND_ID_AND_PRICE_AND_ID"
     }
 
     /** 브랜드 삭제를 감싸는 바깥 트랜잭션. 서비스의 트랜잭션이 여기에 합류하고, 테스트가 롤백만 하도록 표시한다. */
@@ -156,23 +161,58 @@ class ProductQueryPerformanceApiTest(
         }
     }
 
+    /**
+     * 인덱스는 결과를 바꾸지 않고 빠르게만 해야 한다. 새 인덱스를 숨긴 "전"과 보이는 "후"의 응답이 모두 seed에서 센 기대값과
+     * 엄격하게 같고, 두 본문이 글자 그대로 같다. 큰 브랜드의 첫 페이지는 한 가격이라 인덱스를 거쳐도 동점 규칙이 지켜지는지 본다.
+     */
     @ParameterizedTest
     @ValueSource(longs = [BRAND_ID, LARGE_BRAND_ID])
-    fun `the brand price_asc baseline prints the plans of the statements the request sent and its latency`(brandId: Long) {
-        printBaseline(brandId, PRICE_ASC, page = 0, warmUps = 50, samples = 200)
+    fun `a brand's price_asc first page is the same with the brand and price index invisible and visible`(brandId: Long) {
+        val expected = expectedPageBody(priceAscCandidates(brandId), page = 0)
+
+        val before = withBrandPriceIndexInvisible { requestGetProducts(brandId, PRICE_ASC) }
+        val after = requestGetProducts(brandId, PRICE_ASC)
+
+        assertThat(before).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)
+        assertThat(after).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)
+        assertThat(after.response.getContentAsString(Charsets.UTF_8))
+            .isEqualTo(before.response.getContentAsString(Charsets.UTF_8))
+    }
+
+    /**
+     * 새 인덱스가 하는 일은 정렬 단계를 없애는 것이다. 숨기면 브랜드의 상품을 모두 읽고 정렬하고, 보이면 인덱스의 차례로 읽어
+     * 앞의 21행에서 멈춘다. 계획의 모양만 보고 인덱스 이름은 단언하지 않는다.
+     */
+    @ParameterizedTest
+    @ValueSource(longs = [BRAND_ID, LARGE_BRAND_ID])
+    fun `a brand's price_asc page query sorts with the brand and price index invisible and not with it visible`(brandId: Long) {
+        val before = withBrandPriceIndexInvisible { pageQueryPlan(brandId, PRICE_ASC, page = 0) }
+        val after = pageQueryPlan(brandId, PRICE_ASC, page = 0)
+
+        assertThat(before).describedAs("index invisible").contains("-> Sort")
+        assertThat(after).describedAs("index visible").doesNotContain("-> Sort")
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = [BRAND_ID, LARGE_BRAND_ID])
+    fun `the brand price_asc before and after print the plans and latency with the brand and price index invisible and visible`(
+        brandId: Long,
+    ) {
+        withBrandPriceIndexInvisible { printMeasurement("before", brandId, PRICE_ASC, page = 0, warmUps = 50, samples = 200) }
+        printMeasurement("after", brandId, PRICE_ASC, page = 0, warmUps = 50, samples = 200)
     }
 
     /** 집계로 정렬하므로 1쪽도 후보 전체를 센다. 두 쪽의 계획을 나란히 출력해 비용이 같은지 본다(설계 5.32). */
     @Test
     fun `the brand likes_desc baseline prints the plans and latency of pages 0 and 1`() {
-        printBaseline(BRAND_ID, LIKES_DESC, page = 0, warmUps = 50, samples = 200)
-        printBaseline(BRAND_ID, LIKES_DESC, page = 1, warmUps = 50, samples = 200)
+        printMeasurement("baseline", BRAND_ID, LIKES_DESC, page = 0, warmUps = 50, samples = 200)
+        printMeasurement("baseline", BRAND_ID, LIKES_DESC, page = 1, warmUps = 50, samples = 200)
     }
 
     /** 요청 하나가 80 ms 남짓 걸리므로 준비 10회, 측정 50회만 보낸다. */
     @Test
     fun `the whole catalog likes_desc baseline prints the plans and latency of the first page`() {
-        printBaseline(brandId = null, sort = LIKES_DESC, page = 0, warmUps = 10, samples = 50)
+        printMeasurement("baseline", brandId = null, sort = LIKES_DESC, page = 0, warmUps = 10, samples = 50)
     }
 
     private fun requestGetProducts(brandId: Long?, sort: String, page: Int = 0): MvcTestResult {
@@ -184,28 +224,53 @@ class ProductQueryPerformanceApiTest(
     }
 
     /**
-     * 기준선을 출력한다. 요청이 실제로 보낸 두 문장을 잡아 같은 바인드 값으로 EXPLAIN하고, 준비 요청 뒤에 지연을 잰다.
-     * 문장이 둘이라는 단언은 바인드 값을 문장에 맞추려는 것이고, 시간이나 계획의 모양은 단언하지 않는다.
-     * 페이지 쿼리의 바인드 값은 브랜드(있으면), offset, `size + 1`이다. 좋아요 수 배치 조회의 바인드 값은 그 페이지의 상품 id다.
-     * 응답이 그 페이지와 같다는 것은 기대값 테스트가 지킨다.
+     * [state]("before", "after", "baseline")의 측정을 출력한다. 요청이 실제로 보낸 두 문장을 잡아 같은 바인드 값으로 EXPLAIN하고,
+     * 준비 요청 뒤에 지연을 잰다. 문장이 둘이라는 단언은 바인드 값을 문장에 맞추려는 것이고, 시간이나 계획의 모양은 단언하지 않는다.
+     * 좋아요 수 배치 조회의 바인드 값은 그 페이지의 상품 id다. 응답이 그 페이지와 같다는 것은 기대값 테스트가 지킨다.
      */
-    private fun printBaseline(brandId: Long?, sort: String, page: Int, warmUps: Int, samples: Int) {
+    private fun printMeasurement(state: String, brandId: Long?, sort: String, page: Int, warmUps: Int, samples: Int) {
         val captured = captureSql { requestGetProducts(brandId, sort, page) }
         assertThat(captured.result).hasStatusOk()
         assertThat(captured.statements).hasSize(2)
         val (pageQuery, likeCountQuery) = captured.statements
-        val pageBinds = listOfNotNull<Any>(brandId) + listOf(page * PAGE_SIZE, PAGE_SIZE + 1)
         val pageIds = sortedCandidates(brandId, sort).drop(page * PAGE_SIZE).take(PAGE_SIZE).map { it.id }
 
         val latency = measureLatency(warmUps, samples) { requestGetProducts(brandId, sort, page) }
 
         log.info {
             """
-            |brand ${brandId ?: "(whole catalog)"} $sort page $page size $PAGE_SIZE
-            |${plans("page query", pageQuery, pageBinds)}
+            |$state: brand ${brandId ?: "(whole catalog)"} $sort page $page size $PAGE_SIZE
+            |${plans("page query", pageQuery, pageBinds(brandId, page))}
             |${plans("like count query", likeCountQuery, pageIds)}
             |latency $latency
             """.trimMargin()
+        }
+    }
+
+    /** 요청이 실제로 보낸 페이지 쿼리의 `EXPLAIN FORMAT=TREE`. 요청의 첫 문장이 페이지 쿼리다. */
+    private fun pageQueryPlan(brandId: Long?, sort: String, page: Int): String {
+        val captured = captureSql { requestGetProducts(brandId, sort, page) }
+        assertThat(captured.result).hasStatusOk()
+
+        return explainTree(captured.statements.first(), pageBinds(brandId, page))
+    }
+
+    /** 페이지 쿼리의 바인드 값. 브랜드(있으면), offset, `size + 1`이다. */
+    private fun pageBinds(brandId: Long?, page: Int): List<Any> {
+        return listOfNotNull<Any>(brandId) + listOf(page * PAGE_SIZE, PAGE_SIZE + 1)
+    }
+
+    /**
+     * [block]을 새 인덱스를 숨긴 채 돌린다. 옵티마이저는 숨은 인덱스를 보지 않고, 쓰기는 계속 그 인덱스를 고친다.
+     * 블록이 실패해도 인덱스를 다시 보이게 한다. 스키마는 같은 Spring 컨텍스트를 쓰는 다음 클래스에도 남기 때문이다.
+     * DDL이라 MySQL이 열린 트랜잭션을 암묵으로 커밋한다. 이 클래스가 테스트 트랜잭션에서 빠지는 까닭 중 하나다.
+     */
+    private fun <T> withBrandPriceIndexInvisible(block: () -> T): T {
+        jdbc.execute("alter table product alter index $BRAND_PRICE_INDEX invisible")
+        try {
+            return block()
+        } finally {
+            jdbc.execute("alter table product alter index $BRAND_PRICE_INDEX visible")
         }
     }
 
