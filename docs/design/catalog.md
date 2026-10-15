@@ -764,3 +764,43 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
 - `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.
 - `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 삭제 조건은 풀렸고 그 자리에 연쇄가 들어왔다. 한 트랜잭션 안에서는 이제 연쇄가 그 조합을 막는다. 브랜드를 삭제하면 그 브랜드의 삭제되지 않은 상품도 함께 삭제되기 때문이다. 그 테스트는 지우지 않고 읽기 쪽 브랜드 필터를 고정하려고 남긴다. 검사와 커밋 사이의 동시 등록은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금이 맡는다.)
+
+## 8. 상품 목록 조회의 측정
+
+4주차 과제 1·2절의 기준선이다. 측정 대상은 지금의 조회 계약 그대로이고, 인덱스는 하나도 더하거나 지우지 않았다(과제: "성능 비교를 위해 … 다른 과제의 인덱스를 삭제하지 않습니다"). 수치는 `ProductQueryPerformanceApiTest`가 [`ProductQuerySeed`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/ProductQuerySeed.kt)의 카탈로그 위에서 다시 재고 테스트 로그에만 출력한다. 아래 값은 그 출력을 옮긴 것이다. 캐시 설계가 같은 절에 캐시 범위·변경 책임·장애 계약을 더한다.
+
+### 8.1 조회 계약
+
+`GET /api/v1/products`의 계약이다(4절 표의 상품 목록 행). 측정과 개선은 이 계약을 바꾸지 않는다.
+
+- 필터: `brandId`를 주면 그 브랜드의 상품만, 주지 않으면 전체 카탈로그다. 없거나 삭제된 브랜드는 오류가 아니라 빈 목록이다. 삭제된 상품과 삭제된 브랜드의 상품은 어느 경우든 빠진다(7절).
+- 정렬(`sort`, 5.24): `latest`(기본값)는 늦게 등록된 상품이, `price_asc`는 싼 상품이, `likes_desc`는 좋아요가 많은 상품이 앞선다. `likes_desc`는 좋아요가 하나도 없는 상품도 0으로 남아 끝에 오고, 후보 전체를 센 차례로 페이지를 자른다(5.32). 어느 기준이든 같은 값끼리는 id가 큰(늦게 등록된) 상품이 앞선다.
+- 페이지: `page` 기본값 0, `size` 기본값 20, 상한 100. `size + 1`개를 읽어 `hasNext`를 정하고 총 개수는 세지 않는다(5.5, 5.21). 첫 페이지는 `limit 0,21`을 보낸다.
+- 오류: 모르는 `sort`는 400 `INVALID_SORT`, `page < 0`이나 `size ∉ 1..100`은 400 `BAD_REQUEST`다(5.22).
+- 응답: `{items:[{id, name, price, soldOut, brand:{id, name}, likeCount}], page, size, hasNext}`. 재고 수량과 시각은 싣지 않는다(5.7). `likeCount`는 관계에서 센다(5.28).
+
+### 8.2 측정 대상
+
+- 요청: `GET /api/v1/products?brandId=7&sort=price_asc`, page 0, size 20. 브랜드 7은 상품 100개 중 3개가 삭제되어 97개가 살아 있다. 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센 첫 페이지(id, 이름, 가격, 품절, 브랜드, 좋아요 수, `hasNext`)이고, 응답이 그것과 정확히 같다.
+- 요청당 SQL: 2개. 브랜드를 fetch join한 페이지 쿼리 하나와 그 페이지의 좋아요 수 배치 조회 하나다(5.28의 C). Hibernate 통계로 단언한다.
+- 좋아요 수 배치 조회의 비용: 페이지의 상품 id 20개를 `in (…)`으로 받아 `group by product_id`로 센다. `IDX_LIKES_ON_PRODUCT_ID`의 커버링 인덱스 범위 훑기로 범위 20개에서 165행을 읽어 18그룹을 낸다(좋아요가 없는 두 상품은 `LikeCounter`가 0으로 채운다). 0.135 ms(`EXPLAIN ANALYZE`). 읽는 행은 그 페이지 상품들의 좋아요 합이라 카탈로그의 크기와 무관하다.
+- 계획: 요청이 실제로 보낸 두 문장을 `captureSql`로 잡아 같은 바인드 값(브랜드 7, offset 0, limit 21 / 페이지의 id 20개)으로 `EXPLAIN FORMAT=TREE`와 `EXPLAIN ANALYZE`를 돌린다.
+
+### 8.3 측정 환경
+
+- DB: Testcontainers `mysql:8.4`(8.4.11), 개발 기기(Apple M2 Pro, 32 GB, JDK 25)의 Docker. 운영과 같은 사양이 아니므로 절대값이 아니라 같은 조건에서의 비교에 쓴다.
+- 데이터: `ProductQuerySeed`. 브랜드 101개(삭제 2), 상품 12,000개(큰 브랜드 101의 2,000개 포함), 사용자 1,000명, 좋아요 126,955개. 넣은 뒤 `ANALYZE TABLE`로 통계를 새로 만든다.
+- 지연: `MockMvcTester`로 실제 요청을 보낸다. 준비 50회 뒤 200회를 하나씩 재고 min·p50·p95·p99·max를 낸다(가장 가까운 순위). 네트워크와 톰캣은 지나지 않지만 디스패치, 검증, JSON 직렬화, 두 SQL의 왕복, test 프로파일의 `show-sql` 출력이 들어 있다. 그래서 DB 안의 시간은 `EXPLAIN ANALYZE`의 actual time으로 따로 본다. 시간은 단언하지 않는다.
+
+### 8.4 기준선
+
+2026-10-15 측정. 인덱스는 지금의 스키마 그대로다.
+
+| 요청 | 사용 key·접근 경로 | 예상/실제 rows | loops | 정렬 단계 | 요청당 SQL | 준비·표본 | 지연 min / p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 브랜드 7 `price_asc` page 0 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=7`) → `deleted_at is null` 필터 → 정렬 → 21행 | Index lookup 100/100, Filter 100/97, Sort 100/21, Limit 21/21 | 모두 1 | 있음: `Sort: p1_0.price, p1_0.id DESC, limit input to 21 row(s) per chunk` | 2 | 50 · 200 | 4.673 / 6.770 / 10.273 / 12.799 / 17.043 ms |
+
+- 값은 과제의 명령(`./gradlew :apps:commerce-api:test --tests '*ProductQuery*Test'`)으로 seed 테스트 둘과 이 클래스만 돈 실행의 출력이다. 같은 날 이 클래스만 돈 다른 실행의 p50은 6.542 ms, 전체 스위트(`check`) 안에서 돈 실행의 p50은 4.178 ms였다. 지연의 절대값은 실행마다 흔들리므로 전후는 한 실행 안에서만 견준다.
+- 페이지 쿼리의 DB 안 시간은 0.369 ms다(`EXPLAIN ANALYZE`의 Limit). 그 브랜드의 상품 100행을 모두 읽고, 그중 살아 있는 97행을 정렬한 뒤 21행을 자른다. 정렬할 행은 브랜드의 상품 수를 따라 는다.
+- 정렬은 `limit input to 21 row(s) per chunk`라 97행 전체를 정렬하지 않고 앞의 21행만 남긴다. 그래도 브랜드의 상품을 모두 읽어야 정렬을 시작할 수 있다.
+- 브랜드 필터는 조인한 브랜드의 별칭(`b1_0.id = ?`)에 걸리지만, MySQL은 브랜드를 기본 키 상수로 풀고 상품을 `brand_id`로 찾는다.
