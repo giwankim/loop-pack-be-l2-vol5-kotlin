@@ -13,6 +13,7 @@ import com.loopers.domain.product.Product
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Slice
 
@@ -68,7 +69,15 @@ class ProductQueryService(
      * [ProductSort]는 전송 방식을 모르므로 모르는 철자에 null을 돌려주고, 그것이 400이라는 것은 여기서 정한다.
      *
      * 항목마다 브랜드를 읽으므로 [ProductListInfo]로 옮기는 일도 이 트랜잭션 안에서 끝난다.
+     *
+     * 결과는 Redis에 캐시한다(ADR 0020). 키는 [ProductListCacheKeyGenerator]가 이 트랜잭션에서 읽은 revision을 품으므로,
+     * 목록을 바꾸는 쓰기가 커밋한 뒤의 조회는 새 키를 읽는다. `sync`는 쓰지 않는다. 같은 키를 동시에 채우는 조회들은 같은 값을 쓴다.
+     * 예외는 캐시하지 않으므로 모르는 정렬은 매번 거절된다.
      */
+    @Cacheable(
+        cacheNames = [ProductListCacheKeyGenerator.CACHE_NAME],
+        keyGenerator = ProductListCacheKeyGenerator.BEAN_NAME,
+    )
     override fun findAll(request: ProductListRequest): ProductListInfo {
         val products = findSlice(
             brandId = request.brandId,

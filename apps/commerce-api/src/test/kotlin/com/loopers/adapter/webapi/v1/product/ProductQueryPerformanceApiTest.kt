@@ -3,6 +3,7 @@ package com.loopers.adapter.webapi.v1.product
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.ProductQuerySeed
+import com.loopers.support.RedisCleanUp
 import com.loopers.support.SeedProduct
 import com.loopers.support.captureSql
 import com.loopers.support.test.BaseWebApiAdapterTest
@@ -40,6 +41,10 @@ private val log = KotlinLogging.logger {}
  *
  * 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센다. 측정값은 출력만 하고 단언하지 않는다. 시간의 흔들림이 빌드를 깨지 않게 하려는 것이다.
  *
+ * 고객 목록은 Redis에 캐시된다(ADR 0020). seed는 JDBC로 넣어 상품 목록 revision을 올리지 않으므로, 비우지 않으면 같은 요청이
+ * 앞 요청의 항목을 읽는다. 인덱스 "후"의 요청이 "전"의 항목을 읽으면 전후 비교가 뜻을 잃는다. 그래서 요청마다 캐시를 비워
+ * 지금처럼 DB 경로를 잰다. 지연 측정에서는 비우는 시간이 잰 시간에 들지 않게 요청 밖에서 비운다.
+ *
  * 같은 seed 위에서 브랜드 삭제의 연쇄가 상품을 잠그는 계획도 지킨다. 옵티마이저는 작은 표에서 다른 계획을 고를 수 있어 큰 seed가 필요하다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -48,6 +53,7 @@ class ProductQueryPerformanceApiTest(
     private val jdbc: JdbcTemplate,
     private val databaseCleanUp: DatabaseCleanUp,
     private val brandRegister: BrandRegister,
+    private val redisCleanUp: RedisCleanUp,
     transactionManager: PlatformTransactionManager,
 ) : BaseWebApiAdapterTest() {
     companion object {
@@ -143,8 +149,8 @@ class ProductQueryPerformanceApiTest(
     }
 
     /**
-     * 페이지 쿼리 하나와 좋아요 수 배치 조회 하나다. 총 개수를 세거나 항목마다 좋아요를 세기 시작하면 늘어난다(설계 5.5, 5.28).
-     * 브랜드를 비운 줄은 전체 카탈로그다.
+     * 상품 목록 revision의 읽기, 페이지 쿼리, 좋아요 수 배치 조회다. 총 개수를 세거나 항목마다 좋아요를 세기 시작하면 늘어난다
+     * (설계 5.5, 5.28). 캐시를 비운 miss라서 revision 읽기 하나만 남는 hit가 아니다(ADR 0020). 브랜드를 비운 줄은 전체 카탈로그다.
      */
     @ParameterizedTest
     @CsvSource(
@@ -154,11 +160,11 @@ class ProductQueryPerformanceApiTest(
         "$BRAND_ID, $LIKES_DESC, 1",
         ", $LIKES_DESC, 0",
     )
-    fun `each measured page request sends two SQL statements`(brandId: Long?, sort: String, page: Int) {
+    fun `each measured page request sends three SQL statements`(brandId: Long?, sort: String, page: Int) {
         entityManager.withStatistics { statistics ->
             assertThat(requestGetProducts(brandId, sort, page)).hasStatusOk()
 
-            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
     }
 
@@ -218,7 +224,14 @@ class ProductQueryPerformanceApiTest(
         printMeasurement("baseline", brandId = null, sort = LIKES_DESC, page = 0, warmUps = 10, samples = 50)
     }
 
+    /** 캐시를 비우고 보낸다. 그래서 응답은 언제나 DB에서 읽은 것이다. */
     private fun requestGetProducts(brandId: Long?, sort: String, page: Int = 0): MvcTestResult {
+        redisCleanUp.truncateAll()
+        return requestGetProductsKeepingCache(brandId, sort, page)
+    }
+
+    /** 캐시를 비우지 않고 보낸다. 지연을 잴 때 [measureLatency]가 비운 뒤 이것만 잰다. */
+    private fun requestGetProductsKeepingCache(brandId: Long?, sort: String, page: Int): MvcTestResult {
         return mvc.get().uri(ENDPOINT)
             .apply { brandId?.let { queryParam("brandId", it.toString()) } }
             .queryParam("sort", sort)
@@ -227,18 +240,19 @@ class ProductQueryPerformanceApiTest(
     }
 
     /**
-     * [state]("before", "after", "baseline")의 측정을 출력한다. 요청이 실제로 보낸 두 문장을 잡아 같은 바인드 값으로 EXPLAIN하고,
-     * 준비 요청 뒤에 지연을 잰다. 문장이 둘이라는 단언은 바인드 값을 문장에 맞추려는 것이고, 시간이나 계획의 모양은 단언하지 않는다.
+     * [state]("before", "after", "baseline")의 측정을 출력한다. 요청이 실제로 보낸 세 문장 가운데 페이지 쿼리와 좋아요 수 배치 조회를
+     * 잡아 같은 바인드 값으로 EXPLAIN하고, 준비 요청 뒤에 지연을 잰다. 첫 문장인 revision 읽기는 기본 키 조회라 EXPLAIN하지 않는다.
+     * 문장이 셋이라는 단언은 바인드 값을 문장에 맞추려는 것이고, 시간이나 계획의 모양은 단언하지 않는다.
      * 좋아요 수 배치 조회의 바인드 값은 그 페이지의 상품 id다. 응답이 그 페이지와 같다는 것은 기대값 테스트가 지킨다.
      */
     private fun printMeasurement(state: String, brandId: Long?, sort: String, page: Int, warmUps: Int, samples: Int) {
         val captured = captureSql { requestGetProducts(brandId, sort, page) }
         assertThat(captured.result).hasStatusOk()
-        assertThat(captured.statements).hasSize(2)
-        val (pageQuery, likeCountQuery) = captured.statements
+        assertThat(captured.statements).hasSize(3)
+        val (_, pageQuery, likeCountQuery) = captured.statements
         val pageIds = sortedCandidates(brandId, sort).drop(page * PAGE_SIZE).take(PAGE_SIZE).map { it.id }
 
-        val latency = measureLatency(warmUps, samples) { requestGetProducts(brandId, sort, page) }
+        val latency = measureLatency(warmUps, samples) { requestGetProductsKeepingCache(brandId, sort, page) }
 
         log.info {
             """
@@ -251,15 +265,15 @@ class ProductQueryPerformanceApiTest(
     }
 
     /**
-     * 요청이 실제로 보낸 페이지 쿼리의 `EXPLAIN FORMAT=TREE`. 요청의 두 문장 중 첫 문장이 페이지 쿼리다.
-     * 문장이 둘이라는 단언은 [printMeasurement]와 같이 바인드 값을 문장에 맞추려는 것이다.
+     * 요청이 실제로 보낸 페이지 쿼리의 `EXPLAIN FORMAT=TREE`. 요청의 세 문장 중 revision 읽기 다음 문장이 페이지 쿼리다.
+     * 문장이 셋이라는 단언은 [printMeasurement]와 같이 바인드 값을 문장에 맞추려는 것이다.
      */
     private fun pageQueryPlan(brandId: Long?, sort: String, page: Int): String {
         val captured = captureSql { requestGetProducts(brandId, sort, page) }
         assertThat(captured.result).hasStatusOk()
-        assertThat(captured.statements).hasSize(2)
+        assertThat(captured.statements).hasSize(3)
 
-        return explainTree(captured.statements.first(), pageBinds(brandId, page))
+        return explainTree(captured.statements[1], pageBinds(brandId, page))
     }
 
     /** 페이지 쿼리의 바인드 값. 브랜드(있으면), offset, `size + 1`이다. */
@@ -401,10 +415,17 @@ class ProductQueryPerformanceApiTest(
         )!!
     }
 
-    /** [warmUps]번 보낸 뒤 [samples]번을 하나씩 잰다. 응답의 상태는 잰 시간 밖에서 본다. */
+    /**
+     * [warmUps]번 보낸 뒤 [samples]번을 하나씩 잰다. 응답의 상태는 잰 시간 밖에서 본다.
+     * 보낼 때마다 그 앞에서 캐시를 비워 모든 요청이 DB를 읽는다. 비우는 시간은 잰 시간에 들지 않는다.
+     */
     private fun measureLatency(warmUps: Int, samples: Int, request: () -> MvcTestResult): Latency {
-        repeat(warmUps) { assertThat(request()).hasStatusOk() }
+        repeat(warmUps) {
+            redisCleanUp.truncateAll()
+            assertThat(request()).hasStatusOk()
+        }
         val durations = List(samples) {
+            redisCleanUp.truncateAll()
             val (result, elapsed) = measureTimedValue(request)
             assertThat(result).hasStatusOk()
             elapsed

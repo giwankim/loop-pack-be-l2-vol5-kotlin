@@ -7,6 +7,7 @@ import com.loopers.application.product.provided.ProductAdminStockUpdateRequest
 import com.loopers.application.product.provided.ProductAdminUpdateRequest
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
+import com.loopers.application.product.provided.ProductListChangeMarker
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.application.product.provided.StockDeductor
 import com.loopers.application.product.required.ProductRepository
@@ -22,6 +23,7 @@ import com.loopers.support.stereotype.ValidatedApplicationService
  * 바꿀 상품은 같은 조각의 [ProductFinder.findForUpdate]로 잠가 얻으므로, 없는 상품의 거절도 조회와 같다(ADR 0014).
  * 잠금은 커밋까지 가므로 같은 상품을 바꾸는 다른 쓰기는 이 쓰기가 끝난 뒤의 행을 읽는다(ADR 0018).
  * 관리자 응답이 브랜드 이름과 좋아요 수를 합치므로 쓰기는 [ProductInfo]를 돌려준다.
+ * 고객 목록을 바꾸는 쓰기는 [ProductListChangeMarker]로 표시해, 커밋 바로 앞에 상품 목록 revision을 올린다(ADR 0020).
  */
 @ValidatedApplicationService
 class ProductModifyService(
@@ -29,6 +31,7 @@ class ProductModifyService(
     private val productFinder: ProductFinder,
     private val productRepository: ProductRepository,
     private val productInfoAssembler: ProductInfoAssembler,
+    private val productListChangeMarker: ProductListChangeMarker,
 ) : ProductRegister,
     StockDeductor,
     ProductDeleter {
@@ -52,10 +55,12 @@ class ProductModifyService(
         return ProductInfo.from(product, 0)
     }
 
+    /** 이름과 가격은 모두 고객 목록에 보이므로 값이 그대로여도 표시한다. */
     override fun update(productId: Long, request: ProductAdminUpdateRequest): ProductInfo {
         val product = productFinder.findForUpdate(productId)
 
         product.update(name = request.name, price = Money(request.price))
+        productListChangeMarker.markChanged()
 
         return productInfoAssembler.toInfo(productRepository.save(product))
     }

@@ -14,6 +14,8 @@ date: 2026-10-08
 규칙 여섯을 둔다.
 
 1. **모든 엔티티가 `BaseEntity`를 상속한다.** 애그리거트에 딸린 엔티티도 그렇다. 이름은 그대로 두고, KDoc이 이 규칙을 적는다.
+
+   > 2026-10-15 [ADR 0020](./0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)의 상품 목록 revision 행(`ProductListRevision`)은 이 규칙의 예외로 `BaseEntity`를 상속하지 않는다. 카탈로그 전체에 행 하나인 카운터라서, 생성되는 식별자, 생성·수정·삭제 시각, 논리 삭제가 맞지 않는다. 식별자는 1로 정해져 있고 행은 지우지 않는다. 엔티티로 두는 것은 Hibernate가 local·test에서 표를 만들고 `DatabaseCleanUp`이 함께 비우게 하려는 것뿐이고, 읽기와 올리기는 저장소의 문장 하나씩이다. 엔티티의 KDoc이 같은 까닭을 적는다.
 2. **애그리거트 루트는 지우는 것이 기능이 아니어도 논리 삭제를 기본으로 한다.** 루트마다 `@SQLRestriction("deleted_at is null")`과 "삭제된 것은 없는 것" 저장소 테스트를 둔다. [ADR 0001](./0001-soft-delete-catalog-hard-delete-like.md)이 브랜드·상품에 요구한 그대로다. Hibernate는 `@MappedSuperclass`의 `@SQLRestriction`을 무시하므로 엔티티마다 붙인다. 지금의 루트는 `Brand`, `Product`, `User`, `PointAccount`, `Order`다.
 3. **딸린 엔티티는 루트를 따른다.** 필터를 붙이지 않고 `delete()`를 부르지 않으며, 루트를 거쳐서만 읽는다. 딸린 엔티티를 가리는 것은 루트의 필터다. `OrderLineItem`에 필터를 두지 않는 까닭이 있다. 주문은 품목을 `@EntityGraph` 조인으로 읽고([ADR 0014](./0014-finders-load-whole-aggregates.md)), 대상의 `@SQLRestriction`은 조인에도 붙는다. `ProductRepository`가 브랜드에서 이미 기대는 동작이다. 필터에 걸린 품목은 주문에서 빠지지만 `totalAmount`는 그 품목을 계속 센다.
 4. **`Like`는 하나뿐인 예외로 행을 지운다(ADR 0001).** 취소한 좋아요가 행으로 남으면 같은 쌍을 다시 누를 때 `(user_id, product_id)` 유일 키와 충돌한다. `delete()`는 지금처럼 쓰지 않는다.

@@ -85,7 +85,7 @@ class ProductFinderTest(
 
     /**
      * 목록의 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다(설계 5.28). 항목마다 세면 조각 크기만큼 SQL이 늘어난다.
-     * 조각 조회 하나와 집계 하나, 둘이어야 한다.
+     * 조각 조회 하나와 집계 하나, 둘이어야 한다. 셋째는 캐시 키에 넣을 상품 목록 revision의 읽기다(ADR 0020). 캐시는 비어 있다.
      */
     @Test
     fun `listing counts the likes of the whole slice in one query`() {
@@ -100,7 +100,7 @@ class ProductFinderTest(
 
             assertThat(list.items).hasSize(3)
             assertThat(list.items.map { it.likeCount }).containsOnly(1L)
-            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
     }
 
@@ -245,8 +245,8 @@ class ProductFinderTest(
     }
 
     /**
-     * 좋아요 많은순도 조각 조회 하나와 집계 하나, 둘이어야 한다. 기본 정렬을 세는 위쪽 테스트와 겹쳐 보이지만
-     * 겹치지 않는다. 이 기준만 `group by`가 붙어(설계 5.32) 총 개수를 세고 싶은 유혹이 생기는 자리이고,
+     * 좋아요 많은순도 조각 조회 하나와 집계 하나, 둘이어야 한다. 셋째는 위처럼 revision의 읽기다.
+     * 기본 정렬을 세는 위쪽 테스트와 겹쳐 보이지만 겹치지 않는다. 이 기준만 `group by`가 붙어(설계 5.32) 총 개수를 세고 싶은 유혹이 생기는 자리이고,
      * 조각을 뜨는 방법이 기준마다 갈리므로 세는 자리도 기준마다 있어야 한다(설계 5.5).
      */
     @Test
@@ -262,7 +262,7 @@ class ProductFinderTest(
 
             assertThat(list.items).hasSize(3)
             assertThat(list.items.map { it.likeCount }).containsOnly(1L)
-            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
     }
 

@@ -23,10 +23,12 @@ import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.domain.user.User
+import com.loopers.support.RedisCleanUp
 import com.loopers.support.SqlCaptureConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
+import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -45,6 +47,11 @@ import org.springframework.transaction.annotation.Transactional
  * 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.
  * 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾼다.
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
+ *
+ * 테스트가 끝날 때마다 [RedisCleanUp]으로 테스트 Redis를 비운다. 세 기반이 모두 물려받는다. 고객 목록의 캐시 키는 상품 목록
+ * revision을 품는데(ADR 0020), 롤백하는 테스트는 revision을 올리지 않고 커밋하는 테스트는 끝에 revision 표를 비우므로
+ * 테스트마다 revision이 0에서 시작한다. Redis를 비우지 않으면 뒤 테스트가 같은 키에서 앞 테스트의 목록을 읽는다.
+ * 비우는 것은 JVM마다 띄우는 테스트 컨테이너다. 공유 Redis가 아니다.
  */
 @SpringBootTest
 @Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, SqlCaptureConfig::class)
@@ -52,6 +59,9 @@ import org.springframework.transaction.annotation.Transactional
 abstract class BaseApplicationServiceTest {
     @Autowired
     protected lateinit var entityManager: EntityManager
+
+    @Autowired
+    private lateinit var redisCleanUp: RedisCleanUp
 
     @Autowired
     private lateinit var brandRegister: BrandRegister
@@ -100,6 +110,11 @@ abstract class BaseApplicationServiceTest {
 
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
+
+    @AfterEach
+    fun cleanUpRedis() {
+        redisCleanUp.truncateAll()
+    }
 
     protected fun prepareBrand(name: String? = null): Brand {
         return brandRegister.register(createBrandAdminRegisterRequest(name = name)).also { brand = it }
