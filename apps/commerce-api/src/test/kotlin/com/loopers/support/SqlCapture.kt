@@ -15,8 +15,11 @@ data class CapturedSql<T>(
  * MockMvc는 요청을 테스트 스레드에서 처리하므로 블록 안에서 보낸 요청의 SQL도 잡힌다. 바인드 값은 잡지 않는다. 부르는 쪽이 안다.
  *
  * [SqlCaptureConfig]가 [SqlCaptureInspector]를 설치한 컨텍스트에서만 잡힌다. `BaseApplicationServiceTest`가 그 설정을 가져온다.
+ *
+ * 블록은 중첩할 수 없다. 안쪽 블록이 기록을 가로채고 끝나며 지우면 바깥 블록이 말없이 덜 받으므로, 안쪽 호출이 곧바로 실패한다.
  */
 fun <T> captureSql(block: () -> T): CapturedSql<T> {
+    check(recording.get() == null) { "captureSql 블록 안에서 captureSql을 다시 부를 수 없다." }
     val statements = mutableListOf<String>()
     recording.set(statements)
     try {

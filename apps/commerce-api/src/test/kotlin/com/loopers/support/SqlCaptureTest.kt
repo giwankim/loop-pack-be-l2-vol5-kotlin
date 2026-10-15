@@ -3,6 +3,7 @@ package com.loopers.support
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import kotlin.concurrent.thread
 
 /** [captureSql]을 실제 MySQL 위에서 확인한다. MockMvc 요청의 SQL도 잡히는지 보려고 MockMvc 기반을 상속한다. */
@@ -54,5 +55,18 @@ class SqlCaptureTest : BaseWebApiAdapterTest() {
 
         assertThat(anotherResult).isEqualTo("another")
         assertThat(captured.statements).containsExactly("select 'inside'")
+    }
+
+    /** 안쪽 블록이 바깥 블록의 기록을 가로채면 바깥 블록이 말없이 덜 받으므로, 중첩은 곧바로 실패한다. 바깥 블록은 계속 기록한다. */
+    @Test
+    fun `captureSql inside another captureSql block fails and the outer block keeps recording`() {
+        val captured = captureSql {
+            val exception = assertThrows<IllegalStateException> { captureSql { } }
+            entityManager.createNativeQuery("select 'after the nested call'").singleResult
+            exception
+        }
+
+        assertThat(captured.result).hasMessage("captureSql 블록 안에서 captureSql을 다시 부를 수 없다.")
+        assertThat(captured.statements).containsExactly("select 'after the nested call'")
     }
 }
