@@ -20,6 +20,10 @@ import java.net.ServerSocket
  * - [close]: 이 컨테이너만 지운다. 컨텍스트가 닫힐 때 Spring이 부른다.
  *
  * 컨텍스트를 나눠 쓰는 다음 테스트를 위해, 멈추거나 걸리게 한 테스트는 끝날 때 [stop]·[pause]를 되돌린다.
+ *
+ * [RedisTestContainersConfig]처럼 저장 지점을 두지 않아 `FLUSHALL`이 RDB 파일을 쓰지 않는다. 다만 멈출 때(SIGTERM)는 RDB를 남긴다
+ * (`--shutdown-on-sigterm save`). 저장 지점이 없으면 Redis는 멈출 때도 저장하지 않으므로, 이것이 없으면 다시 띄운 Redis가
+ * 멈추기 전의 값을 잃는다. 그 값이 남아 있다는 것이 장애 테스트의 장면이다.
  */
 class StoppableRedis : AutoCloseable {
     companion object {
@@ -30,6 +34,7 @@ class StoppableRedis : AutoCloseable {
         .apply {
             val hostPort = ServerSocket(0).use { it.localPort }
             withExposedPorts(REDIS_PORT)
+            withCommand("redis-server", "--save", "", "--appendonly", "no", "--shutdown-on-sigterm", "save")
             withCreateContainerCmdModifier { command ->
                 command.hostConfig!!.withPortBindings(
                     PortBinding(Ports.Binding.bindPort(hostPort), ExposedPort.tcp(REDIS_PORT)),
