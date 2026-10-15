@@ -1,5 +1,6 @@
 package com.loopers.adapter.webapi.v1.product
 
+import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.ProductQuerySeed
 import com.loopers.support.SeedProduct
@@ -14,8 +15,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.assertj.MvcTestResult
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import kotlin.math.ceil
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
@@ -31,12 +34,16 @@ private val log = KotlinLogging.logger {}
  * 빠지고, seed는 클래스마다 한 번 넣어 끝나면 [DatabaseCleanUp]으로 표를 비운다. 수만 행을 테스트마다 다시 넣지 않으려고 PER_CLASS다.
  *
  * 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센다. 측정값은 출력만 하고 단언하지 않는다. 시간의 흔들림이 빌드를 깨지 않게 하려는 것이다.
+ *
+ * 같은 seed 위에서 브랜드 삭제의 연쇄가 상품을 잠그는 계획도 지킨다. 옵티마이저는 작은 표에서 다른 계획을 고를 수 있어 큰 seed가 필요하다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ProductQueryPerformanceApiTest(
     private val jdbc: JdbcTemplate,
     private val databaseCleanUp: DatabaseCleanUp,
+    private val brandRegister: BrandRegister,
+    transactionManager: PlatformTransactionManager,
 ) : BaseWebApiAdapterTest() {
     companion object {
         private const val ENDPOINT = "/api/v1/products"
@@ -48,6 +55,9 @@ class ProductQueryPerformanceApiTest(
 
         private const val PAGE_SIZE = 20
     }
+
+    /** 브랜드 삭제를 감싸는 바깥 트랜잭션. 서비스의 트랜잭션이 여기에 합류하고, 테스트가 롤백만 하도록 표시한다. */
+    private val transaction = TransactionTemplate(transactionManager)
 
     @BeforeAll
     fun loadSeed() {
@@ -101,6 +111,37 @@ class ProductQueryPerformanceApiTest(
         }
     }
 
+    /**
+     * 브랜드 삭제의 연쇄가 상품을 id 오름차순으로 잠그는지 지킨다(ADR 0018 규칙 6의 2026-10-15 덧붙임, 규칙 3).
+     *
+     * 잠금은 `ORDER BY`가 아니라 훑는 인덱스의 차례로 걸린다. 연쇄가 어느 인덱스를 쓸지는 옵티마이저가 고르고,
+     * `(brand_id, deleted_at, price, id DESC)`를 고른 계획은 가장 싼 상품부터 잠그고 `Sort: p1_0.id`로 돌려줄 행만 다시 늘어놓았다.
+     * 그래서 계획에 정렬 단계가 없음을 단언한다. 정렬 없이 `ORDER BY id`에 답하는 훑기는 id 차례로 읽고 그 차례로 잠근다.
+     * 인덱스 이름은 단언하지 않는다.
+     *
+     * 실제 연쇄를 [BrandRegister.delete]로 돌려 그 잠금 읽기를 잡는다. 상품의 UPDATE는 커밋의 flush가 보내므로 블록 안에서 flush해
+     * 연쇄 전체를 보낸 뒤, 바깥 트랜잭션을 롤백해 브랜드와 상품을 삭제되지 않은 채로 둔다. 그래서 이 클래스의 다른 테스트는 차례와
+     * 상관없이 같은 seed를 본다. EXPLAIN은 문장을 실행하지 않으므로 잠그지 않는다.
+     */
+    @Test
+    fun `the brand delete cascade locks the brand's products without a sort step in its plan`() {
+        val captured = transaction.execute { status ->
+            status.setRollbackOnly()
+            captureSql {
+                brandRegister.delete(BRAND_ID)
+                entityManager.flush()
+            }
+        }!!
+        val productLockRead = captured.statements.single { it.contains("from product") && it.contains(" for update") }
+
+        val plan = explainTree(productLockRead, listOf(BRAND_ID))
+
+        assertThat(plan).describedAs("EXPLAIN FORMAT=TREE of %s", productLockRead).doesNotContain("-> Sort")
+        assertThat(activeBrandCount(BRAND_ID)).isEqualTo(1)
+        assertThat(activeProductCount(BRAND_ID))
+            .isEqualTo(ProductQuerySeed.products.count { it.brandId == BRAND_ID && it.deletedAt == null })
+    }
+
     private fun requestGetProducts(brandId: Long, sort: String): MvcTestResult {
         return mvc.get().uri(ENDPOINT)
             .queryParam("brandId", brandId.toString())
@@ -140,8 +181,7 @@ class ProductQueryPerformanceApiTest(
      * `EXPLAIN ANALYZE`는 문장을 실제로 실행해 행 수와 시간을 잰다.
      */
     private fun plans(label: String, sql: String, binds: List<Any>): String {
-        check(sql.count { it == '?' } == binds.size) { "바인드 값 ${binds.size}개가 SQL의 자리 수와 다르다: $sql" }
-        val tree = jdbc.queryForObject("explain format=tree $sql", String::class.java, *binds.toTypedArray())
+        val tree = explainTree(sql, binds)
         val analyze = jdbc.queryForObject("explain analyze $sql", String::class.java, *binds.toTypedArray())
 
         return """
@@ -152,6 +192,29 @@ class ProductQueryPerformanceApiTest(
             |-- EXPLAIN ANALYZE
             |$analyze
         """.trimMargin()
+    }
+
+    /** [sql]의 `EXPLAIN FORMAT=TREE`. 문장을 실행하지 않고 계획만 세운다. */
+    private fun explainTree(sql: String, binds: List<Any>): String {
+        check(sql.count { it == '?' } == binds.size) { "바인드 값 ${binds.size}개가 SQL의 자리 수와 다르다: $sql" }
+
+        return jdbc.queryForObject("explain format=tree $sql", String::class.java, *binds.toTypedArray())!!
+    }
+
+    private fun activeBrandCount(brandId: Long): Int {
+        return jdbc.queryForObject(
+            "select count(*) from brand where id = ? and deleted_at is null",
+            Int::class.java,
+            brandId,
+        )!!
+    }
+
+    private fun activeProductCount(brandId: Long): Int {
+        return jdbc.queryForObject(
+            "select count(*) from product where brand_id = ? and deleted_at is null",
+            Int::class.java,
+            brandId,
+        )!!
     }
 
     /** [warmUps]번 보낸 뒤 [samples]번을 하나씩 잰다. 응답의 상태는 잰 시간 밖에서 본다. */
