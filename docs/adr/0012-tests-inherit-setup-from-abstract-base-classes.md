@@ -53,3 +53,5 @@ date: 2026-10-07
 > 2026-10-09 잠금 실패의 409를 보는 `LockFailureApiTest`가 `BaseWebApiAdapterTest`에서 빠지는 두 번째 까닭을 더했다. 다른 스레드의 트랜잭션이 포트로 행 잠금을 쥔 동안 요청이 그 잠금을 기다려야 하므로, 준비한 데이터와 두 트랜잭션이 모두 커밋해야 한다. 주문 MockMvc 테스트 셋처럼 클래스에 `NOT_SUPPORTED`를 달고 표를 비운다. 요청은 여전히 테스트 스레드에서 MockMvc로 보내고 다른 스레드에서는 포트만 부르므로, 위 조건의 HTTP 기반은 아직 필요하지 않다.
 >
 > 2026-10-15 `BaseApplicationServiceTest`의 `@Import`에 `SqlCaptureConfig`가 더해져 `@Import(MySqlTestContainersConfig, RedisTestContainersConfig, SqlCaptureConfig)`가 되었다. 이 설정은 테스트용 `StatementInspector`를 `HibernatePropertiesCustomizer`로 설치해, `com.loopers.support`의 `captureSql { … }`이 블록 안에서 현재 스레드가 보낸 SQL을 잡게 한다. 블록 밖에서는 아무것도 적지 않고 SQL도 바꾸지 않는다. 모든 하위 클래스의 `@Import`가 같으므로 컨텍스트는 늘지 않았다(전후 9개). 상속하지 않는 `CommerceApiContextTest`도 같은 세 설정을 가져온다. 빠지면 캐시 키가 갈려 그 테스트만의 컨텍스트가 하나 더 뜬다. 둘의 `@Import`는 함께 바꾼다.
+>
+> 2026-10-15 상품 목록을 재는 `ProductQueryPerformanceApiTest`가 `@TestInstance(PER_CLASS)`를 단다. 수만 행의 seed를 테스트마다 다시 넣지 않고 `@BeforeAll`에서 한 번 넣어 `@AfterAll`에서 표를 비우려는 것이다. 이것도 "하위 클래스가 더하는 애노테이션"에 든다. 클래스는 `LockFailureApiTest`처럼 테스트 트랜잭션에서 빠진다. seed 뒤의 `ANALYZE TABLE`과 인덱스를 숨겼다 보이게 하는 DDL이 열린 트랜잭션을 암묵으로 커밋하기 때문이다.

@@ -22,7 +22,7 @@ class BrandModifyService(
     private val brandValidator: BrandValidator,
     private val productDeleter: ProductDeleter,
 ) : BrandRegister {
-    /** 이름 규칙을 지나는 브랜드를 만든 뒤, 저장하기 전에 중복을 본다. 이름은 받은 그대로 저장한다. */
+    /** 다른 브랜드가 그 이름을 쓰는지 먼저 본 뒤 브랜드를 만들어 저장한다. 이름 규칙은 [Brand]가 만들며 본다. 이름은 받은 그대로 저장한다. */
     override fun register(request: BrandAdminRegisterRequest): Brand {
         brandValidator.validateForRegister(request)
 
