@@ -3,7 +3,9 @@ package com.loopers.adapter.persistence.product
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.application.product.provided.ProductListInfo
 import org.springframework.boot.cache.autoconfigure.RedisCacheManagerBuilderCustomizer
+import org.springframework.cache.annotation.CachingConfigurer
 import org.springframework.cache.annotation.EnableCaching
+import org.springframework.cache.interceptor.CacheErrorHandler
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.cache.RedisCacheConfiguration
@@ -22,13 +24,25 @@ import java.time.Duration
  *
  * 연결 팩터리는 `@Primary`(REPLICA_PREFERRED)다. GET은 replica를 먼저 읽고 SET은 Lettuce가 master로 보낸다.
  * 한 키의 값은 바뀌지 않으므로 replica의 지연은 miss를 늘릴 뿐 옛 값을 돌려주지 않는다.
+ *
+ * Redis가 실패하면 목록은 DB에서 답한다. 오류 처리기가 캐시 오류를 삼키고, 명령마다의 대기는 `redis.yml`의 한도(100 ms)로 끝난다.
+ * Redis가 멈춘 동안의 miss는 읽기와 쓰기의 두 한도에 DB를 더한 만큼 걸린다. circuit breaker는 두지 않는다.
+ * 다시 띄운 Redis가 RDB에서 되살린 값은 저마다 자기 revision의 키에 있으므로 여전히 옳다.
  */
 @Configuration
 @EnableCaching
-class ProductListCacheConfig {
+class ProductListCacheConfig : CachingConfigurer {
     companion object {
         /** 옛 revision의 키를 치우는 시간. 신선도의 상한이 아니다(ADR 0020 규칙 5). 지터를 두지 않는다. */
         private val PRODUCT_LIST_TTL: Duration = Duration.ofMinutes(5)
+    }
+
+    /**
+     * 이 컨텍스트의 모든 캐시 오류를 WARN으로 남기고 삼킨다. 캐시는 고객 목록 하나뿐이다.
+     * 키 생성기의 revision 읽기는 캐시 오류가 아니라서 여기를 거치지 않는다. DB가 실패하면 목록도 기존 오류 계약대로 실패한다.
+     */
+    override fun errorHandler(): CacheErrorHandler {
+        return ProductListCacheErrorHandler()
     }
 
     /**
@@ -50,6 +64,7 @@ class ProductListCacheConfig {
      *
      * `transactionAware()`는 켜지 않는다. 미룬 put이 `afterCommit`에서 오류 처리기를 거치지 않고 Redis를 부르고, Spring은
      * `afterCommit`의 예외를 호출자에게 던진다. 그러면 Redis가 멈췄을 때 이미 커밋한 목록 요청이 실패한다.
+     * `ProductCacheRedisFailureTest`의 멈춘 Redis 테스트가 그것을 지킨다.
      * 고객 목록의 읽기 전용 트랜잭션에는 되돌릴 쓰기도 없어 미룰 까닭이 없다.
      */
     @Bean
