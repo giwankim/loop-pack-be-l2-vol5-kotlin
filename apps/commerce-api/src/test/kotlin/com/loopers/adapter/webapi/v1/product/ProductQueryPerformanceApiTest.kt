@@ -247,10 +247,14 @@ class ProductQueryPerformanceApiTest(
         }
     }
 
-    /** 요청이 실제로 보낸 페이지 쿼리의 `EXPLAIN FORMAT=TREE`. 요청의 첫 문장이 페이지 쿼리다. */
+    /**
+     * 요청이 실제로 보낸 페이지 쿼리의 `EXPLAIN FORMAT=TREE`. 요청의 두 문장 중 첫 문장이 페이지 쿼리다.
+     * 문장이 둘이라는 단언은 [printMeasurement]와 같이 바인드 값을 문장에 맞추려는 것이다.
+     */
     private fun pageQueryPlan(brandId: Long?, sort: String, page: Int): String {
         val captured = captureSql { requestGetProducts(brandId, sort, page) }
         assertThat(captured.result).hasStatusOk()
+        assertThat(captured.statements).hasSize(2)
 
         return explainTree(captured.statements.first(), pageBinds(brandId, page))
     }
