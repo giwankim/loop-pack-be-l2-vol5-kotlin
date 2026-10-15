@@ -57,7 +57,7 @@ class ProductQueryPerformanceApiTest(
         private const val BRAND_ID = 7L
 
         /** 큰 브랜드. 가장 싼 1,000원에 삭제되지 않은 상품이 97개라 첫 페이지 전체가 한 가격이고, 차례는 동점 규칙만 정한다. */
-        private const val LARGE_BRAND_ID = 101L
+        private const val LARGE_BRAND_ID = ProductQuerySeed.LARGE_BRAND_ID
 
         private const val LARGE_BRAND_LOWEST_PRICE = 1_000
 
@@ -94,7 +94,8 @@ class ProductQueryPerformanceApiTest(
     fun `a brand's price_asc first page lists the seed's active products of that brand cheapest first`() {
         val expected = expectedPageBody(priceAscCandidates(BRAND_ID), page = 0)
 
-        assertThat(requestGetProducts(BRAND_ID, PRICE_ASC)).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)
+        val body = assertThat(requestGetProducts(BRAND_ID, PRICE_ASC)).hasStatusOk().bodyJson()
+        body.isStrictlyEqualTo(expected)
     }
 
     /** 첫 페이지가 모두 한 가격이라 차례를 정하는 것은 동점 규칙뿐이다. 같은 가격이면 늦게 등록된(id가 큰) 상품이 앞선다. */
@@ -173,8 +174,10 @@ class ProductQueryPerformanceApiTest(
         val before = withBrandPriceIndexInvisible { requestGetProducts(brandId, PRICE_ASC) }
         val after = requestGetProducts(brandId, PRICE_ASC)
 
-        assertThat(before).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)
-        assertThat(after).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)
+        val body = assertThat(before).hasStatusOk().bodyJson()
+        body.isStrictlyEqualTo(expected)
+        val list = assertThat(after).hasStatusOk().bodyJson()
+        list.isStrictlyEqualTo(expected)
         assertThat(after.response.getContentAsString(Charsets.UTF_8))
             .isEqualTo(before.response.getContentAsString(Charsets.UTF_8))
     }

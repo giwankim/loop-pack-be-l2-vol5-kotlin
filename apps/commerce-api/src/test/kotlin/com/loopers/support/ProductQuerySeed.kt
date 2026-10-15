@@ -29,7 +29,7 @@ object ProductQuerySeed {
     private val BRANDS = 1L..100L
 
     /** 큰 브랜드. 순번 10,001…12,000의 상품을 모두 가진다. */
-    private const val LARGE_BRAND_ID = 101L
+    const val LARGE_BRAND_ID = 101L
 
     private val LARGE_BRAND_PRODUCTS = 10_001L..12_000L
 
@@ -47,12 +47,12 @@ object ProductQuerySeed {
     private val DELETED_AT: Instant = REGISTERED_FROM.plusSeconds(86_400)
 
     val brands: List<SeedBrand> by lazy {
-        (BRANDS + LARGE_BRAND_ID).map { id ->
+        (BRANDS + LARGE_BRAND_ID).map { brandId ->
             SeedBrand(
-                id = id,
-                name = "brand-$id",
+                id = brandId,
+                name = "brand-$brandId",
                 createdAt = REGISTERED_FROM,
-                deletedAt = DELETED_AT.takeIf { id in DELETED_BRAND_IDS },
+                deletedAt = DELETED_AT.takeIf { brandId in DELETED_BRAND_IDS },
             )
         }
     }
@@ -75,7 +75,7 @@ object ProductQuerySeed {
     }
 
     val users: List<SeedUser> by lazy {
-        (1L..USER_COUNT).map { id -> SeedUser(id = id, createdAt = REGISTERED_FROM) }
+        (1L..USER_COUNT).map { userId -> SeedUser(id = userId, createdAt = REGISTERED_FROM) }
     }
 
     /** 상품 순번 차례로, 한 상품의 좋아요는 순번 `i`부터 이어지는 서로 다른 사용자가 누른다. 식별자는 1부터 차례로 붙는다. */
