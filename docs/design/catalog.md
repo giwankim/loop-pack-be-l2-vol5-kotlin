@@ -117,7 +117,7 @@ classDiagram
         LATEST
         PRICE_ASC
         LIKES_DESC
-        +String apiValue
+        +String value
         +from(value) ProductSort?
     }
 
@@ -131,7 +131,7 @@ classDiagram
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
-- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `apiValue`와 `from`은 #7에서 생겼다(5.24). (2026-10-08, 5.24: `ProductSort`는 domain을 떠나 `application/product/provided`에 있다. 쓰는 곳이 application과 그 포트를 구현한 저장소뿐이기 때문이다. 그림은 그대로 둔다.)
+- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `value`와 `from`은 #7에서 생겼다(5.24). (2026-10-08, 5.24: `ProductSort`는 domain을 떠나 `application/product/provided`에 있다. 쓰는 곳이 application과 그 포트를 구현한 저장소뿐이기 때문이다. 그림은 그대로 둔다.)
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -495,14 +495,14 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.24 정렬 기준의 자리와 모르는 값의 거절
 
-> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `apiValue` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
+> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `value` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
 
 - 문제: 고객 목록은 `sort=latest|price_asc`를 받고 모르는 값을 거절해야 한다. 5.22가 `page`·`size`를 Request 제약에 맡겼으니 `sort`도 같은 자리인지, 아니면 `INVALID_SORT`를 두는지 정해야 한다(5.22가 #7로 미뤄 둔 것).
 - `sort`가 `page`·`size`와 다른 점: 숫자의 범위가 아니라 낱말이다. Bean Validation은 범위를 그대로 말할 수 있지만 "이 열거가 아는 낱말"은 말할 수 없다.
 - 대안 A: `@Pattern(regexp = "latest|price_asc")`. 철자가 정규식 문자열에 한 벌 더 적힌다. `likes_desc`가 생기면 고칠 자리가 둘이고 서로 어긋날 수 있다.
 - 대안 B: 필드 타입을 `ProductSort`로 두고 Spring의 타입 변환에 맡긴다. 기본 변환기는 `Enum.valueOf`라 상수 이름(`PRICE_ASC`)만 받고 API 철자(`price_asc`)를 거절한다. 변환기를 따로 등록하면 실패가 `MethodArgumentTypeMismatchException`으로 올라와 응답 메시지가 "요청 파라미터 'sort' (타입: ProductSort)…"가 된다. 고객에게 Kotlin 타입 이름이 나간다.
 - 대안 C: `ProductSort.from(value): ProductSort?`를 domain에 두고, Service가 옮기면서 null이면 `CoreException(ErrorType.INVALID_SORT)`를 던진다.
-- 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.apiValue` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
+- 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.value` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
 - `INVALID_SORT`는 두고 `INVALID_PAGE`는 두지 않는 것이 엇갈려 보이지만, 갈린 기준은 "Bean Validation이 그 규칙을 그대로 말할 수 있는가"다. 범위는 말할 수 있고 낱말은 말할 수 없다.
 - `sort`는 고객 목록 입력에만 있다. 관리자 목록은 정렬을 고르지 않으므로 요청 타입을 둘로 나눴다. 두 타입이 페이지 세 필드를 겹쳐 갖는 대신, 관리자 API가 조용히 넓어지지 않는다.
 - 이름은 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)다. CONTEXT.md의 고객 항목이 "코드에 별도 이름이 없고, 고객 쪽이 기본이며 관리자 쪽에만 Admin을 붙인다"이고 `Customer`를 _Avoid_에 적었으므로, 수식어가 붙는 쪽은 관리자다. 응답 DTO(`ProductResponse`/`ProductAdminResponse`)와 컨트롤러가 이미 그렇게 갈려 있다. 페이지 값의 범위는 역할에 따라 다르지 않으므로 상수는 `ProductListRequest`의 companion 하나에 둔다.
