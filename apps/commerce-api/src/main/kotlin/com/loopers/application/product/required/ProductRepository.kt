@@ -26,15 +26,15 @@ interface ProductRepository : Repository<Product, Long> {
      * `CrudRepository.findById`와 이름·매개변수가 같아 `EntityManager.find`로 간다.
      * 없으면 null이다. 반환을 non-null로 적으면 없을 때 예외를 던진다(설계 5.20).
      */
-    fun findById(id: Long): Product?
+    fun findById(productId: Long): Product?
 
     /**
-     * [id] 상품을 `FOR UPDATE`로 잠가 읽는다. 없거나 삭제됐으면 null이다(ADR 0018).
+     * [productId] 상품을 `FOR UPDATE`로 잠가 읽는다. 없거나 삭제됐으면 null이다(ADR 0018).
      * `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query` 없이 `id`로 찾는 파생 조회다. 상품 표만 읽고 `brand`는 LAZY라
      * 브랜드 행은 잠그지 않는다. 잠금 읽기는 기다린 뒤 가장 최근에 커밋된 행을 읽으므로, 그 사이 커밋된 삭제도 `@SQLRestriction`이 걸러 낸다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    fun findForUpdateById(id: Long): Product?
+    fun findForUpdateById(productId: Long): Product?
 
     /**
      * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고, 누른 시각이 같으면 나중에 누른 쪽이 앞선다.

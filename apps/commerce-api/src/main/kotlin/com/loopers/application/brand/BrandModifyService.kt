@@ -22,10 +22,11 @@ class BrandModifyService(
     private val brandValidator: BrandValidator,
     private val productDeleter: ProductDeleter,
 ) : BrandRegister {
-    /** 이름 규칙을 지나는 브랜드를 만든 뒤, 저장하기 전에 중복을 본다. 이름은 받은 그대로 저장한다. */
+    /** 다른 브랜드가 그 이름을 쓰는지 먼저 본 뒤 브랜드를 만들어 저장한다. 이름 규칙은 [Brand]가 만들며 본다. 이름은 받은 그대로 저장한다. */
     override fun register(request: BrandAdminRegisterRequest): Brand {
-        val brand = Brand(request.name)
         brandValidator.validateForRegister(request)
+
+        val brand = Brand(request.name)
 
         return brandRepository.save(brand)
     }
@@ -34,9 +35,11 @@ class BrandModifyService(
      * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 다른 브랜드가 그 이름을 쓰는지 본다.
      * 브랜드는 잠가 읽는다. 행 전체를 쓰므로, 잠그지 않으면 겹친 삭제가 커밋한 삭제 시각을 옛 값으로 덮어 브랜드가 되살아난다(ADR 0018).
      */
-    override fun update(id: Long, request: BrandAdminUpdateRequest): Brand {
-        val brand = brandFinder.findForUpdate(id)
+    override fun update(brandId: Long, request: BrandAdminUpdateRequest): Brand {
+        val brand = brandFinder.findForUpdate(brandId)
+
         brandValidator.validateForUpdate(brand, request)
+
         brand.update(request.name)
 
         return brandRepository.save(brand)
@@ -47,8 +50,9 @@ class BrandModifyService(
      * 한 트랜잭션이 브랜드와 상품을 함께 바꾸는, 주문 확정에 이은 두 번째 예외다(ADR 0017). 그래서 어느 단계가 실패해도 브랜드와
      * 상품은 함께 되돌아간다. 잠금은 브랜드 → 상품(id 오름차순)의 차례로 건다(ADR 0018).
      */
-    override fun delete(id: Long) {
-        val brand = brandFinder.findForUpdate(id)
+    override fun delete(brandId: Long) {
+        val brand = brandFinder.findForUpdate(brandId)
+
         productDeleter.deleteAllOfBrand(brand.id)
         brand.delete()
 

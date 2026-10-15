@@ -13,10 +13,10 @@ class ProductSortTest {
 
     @Test
     fun `every sort answers to exactly one API value`() {
-        val apiValues = ProductSort.entries.map { it.apiValue }
+        val values = ProductSort.entries.map { it.value }
 
-        assertThat(apiValues).doesNotHaveDuplicates()
-        assertThat(apiValues).allSatisfy { assertThat(ProductSort.from(it)).isNotNull() }
+        assertThat(values).doesNotHaveDuplicates()
+        assertThat(values).allSatisfy { assertThat(ProductSort.from(it)).isNotNull() }
     }
 
     @Test
@@ -30,7 +30,7 @@ class ProductSortTest {
         assertThat(ProductSort.from("")).isNull()
     }
 
-    /** 상수 이름은 API 철자가 아니다. 밖에서 오는 값은 [ProductSort.apiValue]와만 맞춰 본다. */
+    /** 상수 이름은 API 철자가 아니다. 밖에서 오는 값은 [ProductSort.value]와만 맞춰 본다. */
     @Test
     fun `from does not read the constant name`() {
         assertThat(ProductSort.from("PRICE_ASC")).isNull()

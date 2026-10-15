@@ -10,5 +10,5 @@ import org.springframework.data.repository.Repository
 interface UserRepository : Repository<User, Long> {
     fun save(user: User): User
 
-    fun existsById(id: Long): Boolean
+    fun existsById(userId: Long): Boolean
 }

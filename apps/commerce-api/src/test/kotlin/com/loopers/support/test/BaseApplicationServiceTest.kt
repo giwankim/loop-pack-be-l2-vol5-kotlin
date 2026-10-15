@@ -23,6 +23,7 @@ import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.domain.user.User
+import com.loopers.support.SqlCaptureConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -33,8 +34,10 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * provided 포트 테스트의 기반. 전체 컨텍스트를 실제 MySQL·Redis 위에 띄우고, 테스트 트랜잭션이 포트의 트랜잭션을 감싸
- * 테스트마다 롤백으로 정리한다. 추가 설정이 없어 [com.loopers.CommerceApiContextTest]와 컨텍스트를 나눠 쓴다.
- * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`와 트랜잭션에서 빠지는 표시뿐이다(ADR 0012).
+ * 테스트마다 롤백으로 정리한다. `@Import`가 [com.loopers.CommerceApiContextTest]와 같아 그 컨텍스트를 나눠 쓴다.
+ * [SqlCaptureConfig]는 `com.loopers.support`의 `captureSql`이 블록 안의 SQL을 잡게 한다. 블록 밖에서는 아무것도 하지 않는다.
+ * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소를
+ * spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`뿐이다(ADR 0012).
  *
  * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 조각의 provided 포트로 만든다.
  * 포트가 엔티티를 돌려주면 그대로 쓰고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다(ADR 0014).
@@ -44,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
  */
 @SpringBootTest
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, SqlCaptureConfig::class)
 @Transactional
 abstract class BaseApplicationServiceTest {
     @Autowired

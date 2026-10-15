@@ -32,6 +32,6 @@ data class ProductListRequest(
         const val MAX_SIZE = 100
 
         /** 아무것도 고르지 않으면 늦게 등록된 상품이 앞선다. */
-        val DEFAULT_SORT = ProductSort.LATEST.apiValue
+        val DEFAULT_SORT = ProductSort.LATEST.value
     }
 }

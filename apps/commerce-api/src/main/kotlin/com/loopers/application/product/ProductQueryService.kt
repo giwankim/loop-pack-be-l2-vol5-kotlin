@@ -26,27 +26,27 @@ class ProductQueryService(
     private val productInfoAssembler: ProductInfoAssembler,
 ) : ProductFinder {
     /** 삭제된 상품은 없는 상품이므로 저장소가 이미 걸러 주고, 없으면 여기서 거절한다. 브랜드는 읽지 않는다. */
-    override fun find(id: Long): Product {
-        return productRepository.findById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
+    override fun find(productId: Long): Product {
+        return productRepository.findById(productId) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
     }
 
-    override fun findOrNull(id: Long): Product? {
-        return productRepository.findById(id)
-    }
-
-    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
-    override fun findForUpdate(id: Long): Product {
-        return productRepository.findForUpdateById(id) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
+    override fun findOrNull(productId: Long): Product? {
+        return productRepository.findById(productId)
     }
 
     /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
-    override fun findForUpdateOrNull(id: Long): Product? {
-        return productRepository.findForUpdateById(id)
+    override fun findForUpdate(productId: Long): Product {
+        return productRepository.findForUpdateById(productId) ?: throw CoreException(ErrorType.PRODUCT_NOT_FOUND)
+    }
+
+    /** 클래스의 `readOnly`는 부르는 쪽의 쓰기 트랜잭션에 참여할 때 걸리지 않는다. */
+    override fun findForUpdateOrNull(productId: Long): Product? {
+        return productRepository.findForUpdateById(productId)
     }
 
     /** 브랜드 이름을 연관에서 건너 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다. */
-    override fun findInfo(id: Long): ProductInfo {
-        return productInfoAssembler.toInfo(find(id))
+    override fun findInfo(productId: Long): ProductInfo {
+        return productInfoAssembler.toInfo(find(productId))
     }
 
     override fun findAll(request: ProductAdminListRequest): Slice<ProductInfo> {
