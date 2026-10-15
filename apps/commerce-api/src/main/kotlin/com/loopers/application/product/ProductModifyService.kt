@@ -52,16 +52,16 @@ class ProductModifyService(
         return ProductInfo.from(product, 0)
     }
 
-    override fun update(id: Long, request: ProductAdminUpdateRequest): ProductInfo {
-        val product = productFinder.findForUpdate(id)
+    override fun update(productId: Long, request: ProductAdminUpdateRequest): ProductInfo {
+        val product = productFinder.findForUpdate(productId)
 
         product.update(name = request.name, price = Money(request.price))
 
         return productInfoAssembler.toInfo(productRepository.save(product))
     }
 
-    override fun updateStock(id: Long, request: ProductAdminStockUpdateRequest): ProductInfo {
-        val product = productFinder.findForUpdate(id)
+    override fun updateStock(productId: Long, request: ProductAdminStockUpdateRequest): ProductInfo {
+        val product = productFinder.findForUpdate(productId)
 
         product.updateStock(request.quantity)
 
@@ -69,8 +69,8 @@ class ProductModifyService(
     }
 
     /** 논리 삭제. 이미 삭제된 상품은 없는 상품이므로 다시 삭제할 수 없다. 남은 좋아요는 그대로 둔다. */
-    override fun delete(id: Long) {
-        val product = productFinder.findForUpdate(id)
+    override fun delete(productId: Long) {
+        val product = productFinder.findForUpdate(productId)
 
         product.delete()
 
@@ -107,7 +107,7 @@ class ProductModifyService(
      * 트랜잭션이 이 상품들을 처음 읽는 자리라서 잠근다(ADR 0018 규칙 2). 받은 키의 차례를 믿지 않고 여기서 정렬하므로,
      * 여러 상품을 잠그는 브랜드 삭제의 연쇄와 같은 차례가 된다(규칙 3).
      */
-    private fun lockAll(ids: Set<Long>): List<Product?> {
-        return ids.sorted().map { id -> productFinder.findForUpdateOrNull(id) }
+    private fun lockAll(productIds: Set<Long>): List<Product?> {
+        return productIds.sorted().map { productId -> productFinder.findForUpdateOrNull(productId) }
     }
 }

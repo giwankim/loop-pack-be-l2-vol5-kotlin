@@ -126,8 +126,8 @@ class OrderApiTest(
     fun `a request that repeats an unavailable product returns 404 and saves nothing`() {
         val deleted = prepareProduct()
         deleteProduct(deleted)
-        listOf(Long.MAX_VALUE, deleted.id).forEach { id ->
-            val body = assertThat(requestCreate(items(id, "1,1"))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        listOf(Long.MAX_VALUE, deleted.id).forEach { productId ->
+            val body = assertThat(requestCreate(items(productId, "1,1"))).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
             body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
         }
@@ -255,9 +255,9 @@ class OrderApiTest(
         val active = prepareProduct(brand).id
         val deleted = prepareProduct(brand)
         deleteProduct(deleted)
-        listOf(Long.MAX_VALUE, deleted.id).forEach { id ->
+        listOf(Long.MAX_VALUE, deleted.id).forEach { productId ->
             val body = assertThat(
-                requestCreate("""{"items":[{"productId":$active,"quantity":1},{"productId":$id,"quantity":1}]}"""),
+                requestCreate("""{"items":[{"productId":$active,"quantity":1},{"productId":$productId,"quantity":1}]}"""),
             ).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
             body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
             assertNoOrders()
@@ -535,13 +535,13 @@ class OrderApiTest(
         list.extractingPath("$.data.hasNext").isEqualTo(false)
     }
 
-    private fun item(id: Long, quantity: Int = 1): String {
-        return """{"items":[{"productId":$id,"quantity":$quantity}]}"""
+    private fun item(productId: Long, quantity: Int = 1): String {
+        return """{"items":[{"productId":$productId,"quantity":$quantity}]}"""
     }
 
-    private fun items(id: Long, quantities: String): String {
+    private fun items(productId: Long, quantities: String): String {
         return quantities.split(',')
-            .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$id,"quantity":$it}""" }
+            .joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$productId,"quantity":$it}""" }
     }
 
     private fun items(productIds: List<Long>): String {

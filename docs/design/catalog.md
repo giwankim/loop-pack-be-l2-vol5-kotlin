@@ -117,7 +117,7 @@ classDiagram
         LATEST
         PRICE_ASC
         LIKES_DESC
-        +String apiValue
+        +String value
         +from(value) ProductSort?
     }
 
@@ -131,7 +131,7 @@ classDiagram
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
-- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `apiValue`와 `from`은 #7에서 생겼다(5.24). (2026-10-08, 5.24: `ProductSort`는 domain을 떠나 `application/product/provided`에 있다. 쓰는 곳이 application과 그 포트를 구현한 저장소뿐이기 때문이다. 그림은 그대로 둔다.)
+- `ProductSort`의 `LIKES_DESC`는 #9에서 더했다(5.32). `value`와 `from`은 #7에서 생겼다(5.24). (2026-10-08, 5.24: `ProductSort`는 domain을 떠나 `application/product/provided`에 있다. 쓰는 곳이 application과 그 포트를 구현한 저장소뿐이기 때문이다. 그림은 그대로 둔다.)
 
 ## 3. 대표 흐름 — 관리자 재고 변경 → 고객 상품 상세
 
@@ -405,6 +405,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.19 이름 값 객체의 철회
 
+> 2026-10-15 두 엔티티의 검사는 이제 private `checkName`이다. 이름 속성은 받은 값을 그대로 받고, `init`과 `update`가 값을 바꾸기 전에 검사한다. 상품은 가격·재고 검사(`checkPrice`·`checkStock`)와 나란히 두려고 먼저 바꿨고, 브랜드가 같은 모양을 따랐다. 아래와 5.23 메모의 `validatedName`, 5.35의 `validatePrice`는 그때의 이름이다.
+
 - 문제: 5.15 뒤 `Name`에 남은 규칙은 trim과 공백 거절뿐이다. 인터페이스(생성자, `value`, 뗀 값 기준 `equals`)가 구현과 같은 크기라 배울 값이 없다. 용어집(`CONTEXT.md`)에 재고·금액은 항목이 있지만 이름은 브랜드·상품의 속성으로만 나온다. `Name.equals`는 대소문자를 가리는데 도메인의 같은 이름은 가리지 않아(5.13) 값 객체가 맡아야 할 동일성을 DB collation이 대신 가진다. 자랄 자리도 없다. 5.15의 다시 볼 조건은 `BrandName`·`ProductName`으로 나누는 것이지 `Name`에 행위를 더하는 것이 아니다.
 - 대안 A: 그대로 둔다.
 - 대안 B: `Name`을 지우고 `Brand`·`Product`가 `String`을 받아 각자 공백·길이 상한을 검사한다. 5.14의 A와 C 사이다. (처음에는 trim도 각자 했다. 2026-10-03(#55)에 지웠다.)
@@ -495,14 +497,14 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.24 정렬 기준의 자리와 모르는 값의 거절
 
-> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `apiValue` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
+> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `value` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
 
 - 문제: 고객 목록은 `sort=latest|price_asc`를 받고 모르는 값을 거절해야 한다. 5.22가 `page`·`size`를 Request 제약에 맡겼으니 `sort`도 같은 자리인지, 아니면 `INVALID_SORT`를 두는지 정해야 한다(5.22가 #7로 미뤄 둔 것).
 - `sort`가 `page`·`size`와 다른 점: 숫자의 범위가 아니라 낱말이다. Bean Validation은 범위를 그대로 말할 수 있지만 "이 열거가 아는 낱말"은 말할 수 없다.
 - 대안 A: `@Pattern(regexp = "latest|price_asc")`. 철자가 정규식 문자열에 한 벌 더 적힌다. `likes_desc`가 생기면 고칠 자리가 둘이고 서로 어긋날 수 있다.
 - 대안 B: 필드 타입을 `ProductSort`로 두고 Spring의 타입 변환에 맡긴다. 기본 변환기는 `Enum.valueOf`라 상수 이름(`PRICE_ASC`)만 받고 API 철자(`price_asc`)를 거절한다. 변환기를 따로 등록하면 실패가 `MethodArgumentTypeMismatchException`으로 올라와 응답 메시지가 "요청 파라미터 'sort' (타입: ProductSort)…"가 된다. 고객에게 Kotlin 타입 이름이 나간다.
 - 대안 C: `ProductSort.from(value): ProductSort?`를 domain에 두고, Service가 옮기면서 null이면 `CoreException(ErrorType.INVALID_SORT)`를 던진다.
-- 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.apiValue` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
+- 선택: C (2026-09-18, #7). 철자를 아는 곳은 `ProductSort.value` 하나이고, Spring 없이 단위 테스트로 파싱을 고정할 수 있다(#7의 인수 조건). `from`이 예외 대신 null을 돌려주므로 domain은 `support/error`를 모르는 채로 남고, 모르는 낱말이 400이라는 것은 application이 정한다. `BrandRepository.findById`가 null을 돌려주고 Service가 `BRAND_NOT_FOUND`로 옮기는 것과 같은 나눔이다.
 - `INVALID_SORT`는 두고 `INVALID_PAGE`는 두지 않는 것이 엇갈려 보이지만, 갈린 기준은 "Bean Validation이 그 규칙을 그대로 말할 수 있는가"다. 범위는 말할 수 있고 낱말은 말할 수 없다.
 - `sort`는 고객 목록 입력에만 있다. 관리자 목록은 정렬을 고르지 않으므로 요청 타입을 둘로 나눴다. 두 타입이 페이지 세 필드를 겹쳐 갖는 대신, 관리자 API가 조용히 넓어지지 않는다.
 - 이름은 `ProductListRequest`(고객)와 `ProductAdminListRequest`(관리자)다. CONTEXT.md의 고객 항목이 "코드에 별도 이름이 없고, 고객 쪽이 기본이며 관리자 쪽에만 Admin을 붙인다"이고 `Customer`를 _Avoid_에 적었으므로, 수식어가 붙는 쪽은 관리자다. 응답 DTO(`ProductResponse`/`ProductAdminResponse`)와 컨트롤러가 이미 그렇게 갈려 있다. 페이지 값의 범위는 역할에 따라 다르지 않으므로 상수는 `ProductListRequest`의 companion 하나에 둔다.
@@ -553,6 +555,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ### 5.28 좋아요 수의 집계
 
 > 2026-10-08 0으로 채우는 자리가 저장소에서 `LikeCounter`의 구현으로 옮겨졌다([#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)). `LikeRepository`에는 그룹 집계 `findProductLikeCounts`만 남고, 빈 목록을 거르는 일과 좋아요가 없는 상품을 0으로 채우는 일은 `LikeQueryService.countLikes(productIds)`가 한다. 요청한 식별자마다 값이 있다는 것은 저장소가 아니라 상품이 선언한 `LikeCounter`의 약속이기 때문이다. 빈 목록은 여전히 SQL을 보내지 않는다. 다만 Hibernate 7은 빈 `in`을 `1=0`으로 바꿔 보내므로 MySQL이 거절할 일은 없고, 거르는 까닭은 헛된 왕복을 줄이는 것이다. 아래의 `countByProductIds`는 그때의 이름이다.
+>
+> 2026-10-15 4주차 측정(8.4) 뒤에도 좋아요 수는 관계에서 센다(`CONTEXT.md` 좋아요 수). 목록 항목에 수를 싣는 배치 조회는 그 페이지 상품의 좋아요만 읽는다. 브랜드 7 `price_asc`의 첫 페이지는 165행을 읽어 0.116 ms이고, 인기 상품만 모인 전체 카탈로그의 첫 페이지도 17,200행을 읽어 3.2 ms다. 비싼 것은 수를 싣는 일이 아니라 수로 정렬하는 일이다. 전체 카탈로그 `likes_desc`가 91.8 ms이고, 이것이 대안 A를 다시 볼 근거이자 조건이다(5.32의 2026-10-15 메모). 대안 A(비정규화)는 이번 주 과제에서 선택 심화이고 하지 않는다.
 
 - 문제: 상품 상세와 목록 항목의 `likeCount`. CONTEXT.md는 관계에서 세어 구하고 따로 저장하지 않는다고 정했다. 남는 것은 어디서 어떻게 세는가다.
 - 대안 A: `Product`에 `likeCount` 컬럼을 두고 누르기·취소가 증감한다. 읽기가 가장 싸다. 그러나 CONTEXT.md와 어긋나고, 상품 행에 쓰기 경합이 생기며, 관계와 수가 어긋날 수 있다.
@@ -611,6 +615,12 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: #9의 좋아요 많은순 정렬이 좋아요 수를 상품 쿼리 안으로 들일 때. 그때 이 조립기는 세는 일을 잃고 읽기 모델을 돌려주는 쪽으로 옮겨 간다(5.28, 5.29의 다시 볼 조건과 같은 자리).
 
 ### 5.32 좋아요 많은순의 쿼리
+
+> 2026-10-15 4주차 측정(8.4)의 기준선이다. 전체 카탈로그 `likes_desc`의 첫 페이지는 삭제되지 않은 상품 11,444개와 좋아요 123,255행을 조인하고 11,444그룹을 임시 테이블로 집계한 뒤 정렬한다. DB 안에서 91.8 ms, MockMvc 지연 p50 85.210 ms다. 브랜드 7은 97그룹을 세어 0.366 ms, p50 3.862 ms이고 1쪽도 같은 97그룹을 센다(아래 "0쪽과 50쪽의 비용이 같다"). 그래도 좋아요 수는 관계에서 세고(`CONTEXT.md` 좋아요 수, 5.28의 2026-10-15 메모) `like_count` 컬럼을 두지 않는다. 컬럼을 두면 누르기·취소마다 상품 행을 고치는 쓰기 경로가 생기고, 캐시를 들이면 그 무효화 경로도 하나 더 생긴다. 비정규화는 이번 주 과제의 선택 심화이고 하지 않는다.
+>
+> 다시 볼 조건: 브랜드 없는 좋아요 많은순이 자주 불려 위의 비용이 문제가 될 때. 이 측정값이 그 근거다. 4주차 캐시 설계는 어느 조회를 캐시할지 고를 때 이 측정값을 쓴다.
+>
+> 아래 "다시 볼 조건"의 `likes(product_id)` 인덱스는 이미 있다(`Like`의 `IDX_LIKES_ON_PRODUCT_ID`). 측정한 계획은 해시 조인이 아니라 후보 상품마다 그 인덱스를 찾는 중첩 루프 left join이다. 그래서 아래의 "해시 조인", "O(N + L)"은 그때의 계획이다.
 
 - 문제: `likes_desc`는 정렬 키가 상품의 컬럼이 아니라 `likes` 관계를 세어 나오는 값이다. 다른 두 기준은 Spring Data의 `Sort` 하나로 끝나지만 이것은 그럴 수 없다. `Like`는 상품을 식별자로만 가리켜(설계 2) 타고 갈 연관도 없다.
 - 대안 A: 정렬도 집계도 한 쿼리가 한다(5.28의 B로 옮긴다). 목록이 조회 한 번이다. 그러나 `ProductRepository`의 반환이 엔티티가 아닌 튜플이 된다.
@@ -721,6 +731,28 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대가: 변경마다 한두 줄이 는다. `PointModifyService`의 의존이 하나 늘고, `ProductRepository`에 `saveAll`이 생긴다. ADR은 두지 않았다. 동작이 바뀌지 않아 되돌리기 싸다.
 - 다시 볼 조건: 애그리거트에 `CascadeType.MERGE`나 `ALL`인 큰 컬렉션이 생길 때. 관리 상태의 병합도 그 컬렉션을 훑는다.
 
+### 5.38 브랜드 필터 + 가격 낮은순의 인덱스
+
+- 문제: 브랜드를 고른 `price_asc` 목록(8.1)은 `IDX_PRODUCT_ON_BRAND_ID`로 그 브랜드의 상품을 모두 읽고, 삭제되지 않은 행을 정렬한 뒤 21행을 자른다(8.4). 읽고 정렬하는 행이 브랜드의 상품 수를 따라 는다. 브랜드 7은 100행, 브랜드 101은 2,000행이다. 과제는 필터·정렬·페이지·삭제 조건을 바꾸지 않고 이것을 줄이라고 하고, 다른 인덱스를 지우지 말라고 한다.
+- 아래 "탐침"은 2026-10-14 설계 인터뷰 때 버리는 MySQL 8.4.11 컨테이너에서 같은 분포(큰 브랜드 제외, 상품 10,000개)로 잰 것이다([#119](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/119)). 스크립트와 원본 계획은 남기지 않았고, 기록하는 값은 8.5의 테스트가 다시 잰다.
+- 대안 A: `(brand_id, price)`. 보조 인덱스는 끝에 기본 키를 오름차순으로 붙이므로 같은 가격 안에서는 id 오름차순이다. 앞으로 읽으면 `price ASC, id ASC`, 뒤로 읽으면 `price DESC, id DESC`라 어느 쪽도 목록의 `price ASC, id DESC`가 아니다. 탐침에서 옵티마이저는 이 인덱스를 두어도 정렬을 남겼다.
+- 대안 B: `(brand_id, deleted_at, price, id DESC)`. `deleted_at is null`까지 인덱스로 걸러 가격순을 21행으로 가장 적게 읽는다. 그러나 셋을 치른다. 브랜드 삭제 연쇄의 잠금 읽기를 가져가 상품을 가격 차례로 잠근다(ADR 0018 규칙 3 위반, 규칙 6의 2026-10-15 메모. #123의 가드가 이 인덱스로 `Sort: p1_0.id`를 내며 실패하는 것을 보았다). 브랜드의 `likes_desc`도 이 인덱스로 옮겨 가 탐침에서 0.54 → 0.90 ms로 늦어졌다. 그리고 논리 삭제가 키 열을 바꾸므로 삭제마다 인덱스를 고친다.
+- 대안 C: 단독 인덱스를 `(brand_id, price, id DESC)`로 바꾼다. 과제가 다른 인덱스를 지우지 말라고 하기도 하지만, 그보다 외래 키 `FK_PRODUCT_ON_BRAND_ID`가 `brand_id`로 시작하는 복합 인덱스로 옮겨 가고 연쇄의 잠금 읽기도 그것을 따라 가격 차례로 잠근다.
+- 대안 D: `(brand_id, price, id DESC)`를 `IDX_PRODUCT_ON_BRAND_ID` 옆에 더한다.
+- 선택: D (2026-10-15, #124). 인덱스 이름은 `IDX_PRODUCT_ON_BRAND_ID_AND_PRICE_AND_ID`이고, 쿼리는 바꾸지 않는다. 표기는 주문의 `created_at DESC, id DESC`와 같다.
+  - 목록의 차례는 `price ASC, id DESC`다(`CONTEXT.md` 정렬 기준: 같은 값끼리는 늦게 등록된 상품이 앞선다). 브랜드를 고정하면 인덱스의 차례가 곧 목록의 차례라, MySQL은 인덱스를 앞에서부터 읽고 `deleted_at is null`을 걸러 21행을 채우면 멈춘다. 정렬 단계가 없어진다.
+  - 브랜드 7은 100행을 읽어 정렬하던 것이 22행을 읽고 멈춘다(0.298 → 0.073 ms). 브랜드 101은 2,000행이 22행이 된다(1.22 → 0.101 ms). 읽는 행이 브랜드의 크기가 아니라 페이지 크기와 그 앞에 섞인 삭제된 상품의 수를 따른다(8.5).
+  - 응답은 바뀌지 않는다. 숨긴 상태와 보이는 상태의 응답이 seed에서 센 기대값과 엄격하게 같고 서로 글자 그대로 같다. 첫 페이지 전체가 한 가격인 브랜드 101도 인덱스의 `id DESC`로 동점 규칙을 지킨다.
+  - 브랜드 필터는 조인한 브랜드의 별칭(`b1_0.id = ?`)에 걸리지만 MySQL은 브랜드를 기본 키 상수로 풀고 상품을 `brand_id`로 찾으므로(8.4) 새 인덱스에도 그대로 닿는다.
+  - 단독 인덱스는 복합 인덱스의 앞부분처럼 보여도 남는다(C의 까닭). `Product`의 KDoc이 그것을 적고, `ProductQueryPerformanceApiTest`의 연쇄 가드가 지킨다.
+- 쓰기 비용: 새 인덱스의 열은 `brand_id`, `price`, `id`뿐이다. 재고 변경(재고 수정, 주문 확정의 차감)과 논리 삭제(`deleted_at`)는 그 열을 바꾸지 않으므로 InnoDB가 이 인덱스를 고치지 않는다. 상품 등록은 항목 하나를 더하고, 가격 수정은 항목을 지우고 새 자리에 더한다. Hibernate는 수정마다 모든 컬럼을 UPDATE에 싣지만 InnoDB는 값이 실제로 바뀐 열의 인덱스만 고치므로 이름만 바꾼 수정은 닿지 않는다. 연쇄가 잠그는 행은 그대로 단독 인덱스로 찾는다.
+- 대가: 인덱스 하나만큼의 공간과 등록·가격 수정의 쓰기. 마이그레이션 도구가 없어 이 인덱스도 엔티티 선언으로 local·test 스키마에만 생긴다(5.32의 다시 볼 조건과 같다). ADR은 두지 않았다. 잠금 순서에 닿는 결정은 이미 ADR 0018의 메모에 있다.
+- 다시 볼 조건:
+  - 연쇄 가드가 실패할 때. 통계나 데이터 분포가 바뀌어 옵티마이저가 연쇄에 복합 인덱스를 고르면 잠금 차례가 바뀐다.
+  - 한 브랜드에서 싼 상품이 많이 삭제될 때. 인덱스가 `deleted_at`을 모르므로 21행을 채울 때까지 삭제된 항목도 읽는다. 그때는 `deleted_at`을 넣은 인덱스의 값과 위의 셋을 다시 잰다.
+  - 브랜드 없는 `price_asc`, 깊은 페이지(`offset`만큼 더 읽는다), `latest`를 재야 할 때. 이번 인덱스는 브랜드를 고른 가격순 첫 페이지만 받친다.
+  - 가격이 자주 바뀌게 될 때(예: 시간에 따라 바뀌는 가격). 가격 수정마다 인덱스의 항목이 옮겨 간다.
+
 ## 6. 테스트 경계
 
 > 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)로 아래 표의 "브랜드 삭제 조건"은 그때의 것이 되었다. 삭제 조건이 없어지고 브랜드 삭제의 연쇄가 그 자리에 들어왔다. 연쇄는 같은 application 통합 테스트(`BrandRegisterTest`)가 본다. 재고 0인 상품도 함께 삭제되는지, 이미 삭제된 상품이 삭제 시각을 지키는지, 다른 브랜드와 그 상품이 그대로인지가 그 대상이다. 삭제된 상품의 삭제 시각은 어느 포트로도 읽히지 않으므로 SQL로 읽는다. 함께 삭제된 상품이 고객 목록·상세, 좋아요, 내 좋아요, 관리자의 상품 쓰기에서 없는 상품인지는 그 포트의 테스트(`ProductFinderTest`, `LikerTest`, `LikeFinderTest`, `ProductRegisterTest`)가 본다. 새 주문과 확정의 거절은 주문 HTTP 테스트가 본다. 읽기 쪽 브랜드 필터는 연쇄 때문에 포트로 닿을 수 없게 된 상태(`deleteBrandKeepingProducts`)로 고정한다. 3주차 과제 4절의 "브랜드 정상·실패" 행은 과제의 준비 그대로 커밋하는 `BrandRegisterRollbackTest`가 본다. 상품 둘(하나는 재고 0)을 가진 브랜드, 다른 브랜드의 상품, 첫 브랜드 상품의 확정된 과거 주문을 두고, 삭제가 끝나면 브랜드와 두 상품이 삭제되고 중간에 실패하면 모두 그대로인지 새 트랜잭션에서 본다. 어느 쪽이든 다른 브랜드의 상품과 과거 주문의 상세는 그대로다.
@@ -764,3 +796,77 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 같은 사용자–상품 쌍을 동시에 두 번 누르면 뒤의 INSERT가 유일 제약에 걸려 500이다(5.6). 다시 부르면 200이라 받아들였다. 좋아요가 동시에 몰리는 것이 관찰되면 `INSERT IGNORE`나 제약 위반을 성공으로 바꾸는 것을 본다.
 - `User`에는 삭제 상태가 없다. 사용자를 만들거나 지우는 API가 없어 닿을 수 없는 상태다. 사용자 관리가 생기면 요청자 검사가 삭제된 사용자를 어떻게 볼지 정한다.
 - `@ManyToOne(optional = false)`의 그래프는 inner join이고 `Brand`의 `@SQLRestriction`이 그 join에도 붙으므로, 삭제된 브랜드에 달린 상품은 관리자 목록에서 빠진다. 브랜드 삭제 거절(#6, 2026-09-18)이 한 트랜잭션 안에서는 그 조합을 막는다. 삭제되지 않은 상품이 남은 브랜드는 삭제되지 않기 때문이다. 다만 그 검사는 잠그지 않고 읽으므로, 검사와 커밋 사이에 다른 트랜잭션이 상품을 등록하면 삭제된 브랜드 아래 삭제되지 않은 상품이 남을 수 있다. #6은 잠금을 요구하지 않았고 결과는 그 상품이 관리자 목록에서 빠지는 것으로 끝나므로 지금은 두고 본다. 주문이 상품을 읽기 시작하면 다시 본다. `ProductRepositoryTest`의 `findAll leaves out an active product whose brand was deleted`가 이 동작을 글이 아니라 테스트로 고정하므로, 삭제 조건을 풀면 그 테스트가 먼저 말한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 삭제 조건은 풀렸고 그 자리에 연쇄가 들어왔다. 한 트랜잭션 안에서는 이제 연쇄가 그 조합을 막는다. 브랜드를 삭제하면 그 브랜드의 삭제되지 않은 상품도 함께 삭제되기 때문이다. 그 테스트는 지우지 않고 읽기 쪽 브랜드 필터를 고정하려고 남긴다. 검사와 커밋 사이의 동시 등록은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금이 맡는다.)
+
+## 8. 상품 목록 조회의 측정
+
+> 2026-10-15 브랜드 필터 + 가격 낮은순에 `(brand_id, price, id DESC)` 인덱스를 더했다(5.38). 지운 인덱스는 여전히 없다. 아래 8.4는 인덱스를 더하기 전의 기준선이고, 같은 seed에서 인덱스를 숨긴 "전"과 보이는 "후"를 한 실행 안에서 견준 것이 8.5다.
+
+4주차 과제 1·2절의 기준선이다. 측정 대상은 지금의 조회 계약 그대로이고, 인덱스는 하나도 더하거나 지우지 않았다(과제: "성능 비교를 위해 … 다른 과제의 인덱스를 삭제하지 않습니다"). 수치는 `ProductQueryPerformanceApiTest`가 [`ProductQuerySeed`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/ProductQuerySeed.kt)의 카탈로그 위에서 다시 재고 테스트 로그에만 출력한다. 아래 값은 그 출력을 옮긴 것이다. 캐시 설계가 같은 절에 캐시 범위·변경 책임·장애 계약을 더한다.
+
+### 8.1 조회 계약
+
+`GET /api/v1/products`의 계약이다(4절 표의 상품 목록 행). 측정과 개선은 이 계약을 바꾸지 않는다.
+
+- 필터: `brandId`를 주면 그 브랜드의 상품만, 주지 않으면 전체 카탈로그다. 없거나 삭제된 브랜드는 오류가 아니라 빈 목록이다. 삭제된 상품과 삭제된 브랜드의 상품은 어느 경우든 빠진다(7절).
+- 정렬(`sort`, 5.24): `latest`(기본값)는 늦게 등록된 상품이, `price_asc`는 싼 상품이, `likes_desc`는 좋아요가 많은 상품이 앞선다. `likes_desc`는 좋아요가 하나도 없는 상품도 0으로 남아 끝에 오고, 후보 전체를 센 차례로 페이지를 자른다(5.32). 어느 기준이든 같은 값끼리는 id가 큰(늦게 등록된) 상품이 앞선다.
+- 페이지: `page` 기본값 0, `size` 기본값 20, 상한 100. `size + 1`개를 읽어 `hasNext`를 정하고 총 개수는 세지 않는다(5.5, 5.21). 첫 페이지는 `limit 0,21`을 보낸다.
+- 오류: 모르는 `sort`는 400 `INVALID_SORT`, `page < 0`이나 `size ∉ 1..100`은 400 `BAD_REQUEST`다(5.22).
+- 응답: `{items:[{id, name, price, soldOut, brand:{id, name}, likeCount}], page, size, hasNext}`. 재고 수량과 시각은 싣지 않는다(5.7). `likeCount`는 관계에서 센다(5.28).
+
+### 8.2 측정 대상
+
+- 요청: 넷(페이지 다섯)이고 모두 `GET /api/v1/products`, size 20이다. 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센 페이지(id, 이름, 가격, 품절, 브랜드, 좋아요 수, `hasNext`)이고, 응답이 그것과 정확히 같다.
+  - 브랜드 7 + `price_asc`, page 0. 브랜드 7은 상품 100개 중 3개가 삭제되어 97개가 삭제되지 않았다. 가격이 모두 달라 동점이 없다.
+  - 브랜드 101 + `price_asc`, page 0. 삭제되지 않은 상품이 1,940개다. 가장 싼 1,000원에 97개가 몰려 첫 페이지 전체가 한 가격이므로 차례는 동점 규칙(id 내림차순)만 정한다. 응답의 가격이 모두 1,000이고 id가 내림차순인 것도 따로 단언한다.
+  - 브랜드 7 + `likes_desc`, page 0과 1. 기대값은 브랜드 7의 삭제되지 않은 상품 97개 전체를 좋아요 수 내림차순, 같으면 id 내림차순으로 세운 한 차례에서 자른다. 두 응답이 그 차례의 0쪽·1쪽과 엄격하게 같으므로 두 응답을 이은 것이 그 차례의 앞 40개이고, 경계에서 빠지거나 겹친 상품이 없다(과제 체크리스트 "likes_desc의 전체 정렬 의미"). 0쪽의 끝(9006)과 1쪽의 처음(7306)은 좋아요 13개로 동점이라 동점 규칙도 경계를 건넌다.
+  - 브랜드 없이 `likes_desc`, page 0. 삭제된 상품과 삭제된 브랜드의 상품에도 좋아요가 남는다. 거르지 않으면 첫 페이지에 들 상품(삭제된 브랜드 99의 3298, 좋아요 900개)이 seed에 있음을 먼저 확인하고, 응답에 삭제된 상품도 브랜드 99·100의 상품도 없음을 단언한다. 삭제된 브랜드의 상품은 모두 삭제됐으므로 3298은 두 삭제 조건에 함께 걸리고, 이 페이지는 둘 중 하나만 있어도 통과한다. 두 조건을 따로 보는 것은 `ProductRepositoryTest`다.
+- 요청당 SQL: 다섯 페이지 모두 2개다. 브랜드를 fetch join한 페이지 쿼리 하나와 그 페이지의 좋아요 수 배치 조회 하나다(5.28의 C). Hibernate 통계로 단언한다.
+- 좋아요 수 배치 조회의 비용: 페이지의 상품 id 20개를 `in (…)`으로 받아 `group by product_id`로 센다. `IDX_LIKES_ON_PRODUCT_ID`의 커버링 인덱스 범위 훑기다. 브랜드 7 `price_asc`의 첫 페이지는 범위 20개에서 165행을 읽어 18그룹을 낸다(좋아요가 없는 두 상품은 `LikeCounter`가 0으로 채운다). 0.116 ms(`EXPLAIN ANALYZE`). 읽는 행은 그 페이지 상품들의 좋아요 합이라 카탈로그의 크기와 무관하다. 다만 좋아요가 몰린 상품이 한 페이지에 모이면 합이 커진다. 전체 카탈로그 `likes_desc`의 첫 페이지는 인기 상품 20개라 17,200행을 읽어 3.2 ms다. 브랜드 101 `price_asc`의 첫 페이지는 id가 모두 4의 배수라 좋아요가 없어 0행이다.
+- 계획: 요청이 실제로 보낸 두 문장을 `captureSql`로 잡아 같은 바인드 값(브랜드가 있으면 브랜드, offset, limit 21 / 페이지의 id 20개)으로 `EXPLAIN FORMAT=TREE`와 `EXPLAIN ANALYZE`를 돌린다.
+
+### 8.3 측정 환경
+
+- DB: Testcontainers `mysql:8.4`(8.4.11), 개발 기기(Apple M2 Pro, 32 GB, JDK 25)의 Docker. 운영과 같은 사양이 아니므로 절대값이 아니라 같은 조건에서의 비교에 쓴다.
+- 데이터: `ProductQuerySeed`. 브랜드 101개(삭제 2), 상품 12,000개(큰 브랜드 101의 2,000개 포함), 사용자 1,000명, 좋아요 126,955개. 넣은 뒤 `ANALYZE TABLE`로 통계를 새로 만든다.
+- 지연: `MockMvcTester`로 실제 요청을 보낸다. 준비 50회 뒤 200회를 하나씩 재고 min·p50·p95·p99·max를 낸다(가장 가까운 순위). 브랜드 없는 `likes_desc`만 요청 하나가 80 ms 남짓 걸리므로 준비 10회, 측정 50회다. 네트워크와 톰캣은 지나지 않지만 디스패치, 검증, JSON 직렬화, 두 SQL의 왕복, test 프로파일의 `show-sql` 출력이 들어 있다. 그래서 DB 안의 시간은 `EXPLAIN ANALYZE`의 actual time으로 따로 본다. 시간은 단언하지 않는다.
+
+### 8.4 기준선
+
+> 2026-10-15 5.38의 인덱스가 들어온 뒤 아래 `price_asc` 두 줄은 8.5의 "전"과 같은 계획이다. `likes_desc` 세 줄은 인덱스가 들어온 뒤에도 계획이 같다. 8.5와 같은 실행에서 세 계획 모두 상품을 `IDX_PRODUCT_ON_BRAND_ID`로 찾았고, 지연 p50은 브랜드 7의 0쪽 3.318 ms, 1쪽 3.144 ms, 전체 카탈로그 82.768 ms였다.
+
+2026-10-15 측정. 인덱스는 지금의 스키마 그대로다.
+
+| 요청 | 사용 key·접근 경로 | 예상/실제 rows | loops | 정렬 단계 | 요청당 SQL | 준비·표본 | 지연 min / p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 브랜드 7 `price_asc` page 0 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=7`) → `deleted_at is null` 필터 → 정렬 → 21행 | Index lookup 100/100, Filter 100/97, Sort 100/21, Limit 21/21 | 모두 1 | 있음: `Sort: p1_0.price, p1_0.id DESC, limit input to 21 row(s) per chunk` | 2 | 50 · 200 | 4.868 / 6.343 / 9.267 / 10.228 / 10.544 ms |
+| 브랜드 101 `price_asc` page 0 | 같은 경로(`brand_id=101`) | Index lookup 2000/2000, Filter 2000/1940, Sort 2000/21, Limit 21/21 | 모두 1 | 있음: 위와 같은 정렬 | 2 | 50 · 200 | 4.516 / 5.449 / 8.079 / 13.644 / 32.952 ms |
+| 브랜드 7 `likes_desc` page 0 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=7`) → `deleted_at is null` 필터 → `IDX_LIKES_ON_PRODUCT_ID` 커버링 index lookup(중첩 루프 left join) → group aggregate → 정렬 → 21행 | Index lookup 100/100, Filter 10/97, Left join 132/1,086, Group aggregate 132/97, Limit 21/21 | 좋아요 lookup 97, 나머지 1 | 있음: `Sort: count(l1_0.id) DESC, p1_0.id DESC, limit input to 21 row(s) per chunk` | 2 | 50 · 200 | 3.061 / 3.862 / 5.610 / 6.437 / 6.829 ms |
+| 브랜드 7 `likes_desc` page 1 | 위와 같은 경로, `Limit/Offset: 21/20` | 위와 같고 Sort가 41행을 남긴다, Limit 21/21 | 위와 같다 | 있음: `limit input to 41 row(s) per chunk` | 2 | 50 · 200 | 2.931 / 3.840 / 6.659 / 9.755 / 15.298 ms |
+| 전체 카탈로그 `likes_desc` page 0 | 브랜드 table scan → `deleted_at is null` 필터 → `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=b1_0.id`) → `deleted_at is null` 필터 → `IDX_LIKES_ON_PRODUCT_ID` 커버링 index lookup(중첩 루프 left join) → 임시 테이블 집계 → 임시 테이블 훑기 → 정렬 → 21행 | 브랜드 scan 101/101, 브랜드 Filter 10.1/99, 상품 lookup 121/119(loop당), 상품 Filter 12.1/116(loop당), Inner join 122/11,444, Left join 1,610/123,255, 집계 –/11,444, Limit 21/21 | 상품 lookup 99, 좋아요 lookup 11,444, 나머지 1 | 있음: `Sort: count(l1_0.id) DESC, p1_0.id DESC, limit input to 21 row(s) per chunk`, 그 앞에 임시 테이블 | 2 | 10 · 50 | 81.608 / 85.210 / 89.700 / 91.636 / 91.636 ms |
+
+- 값은 과제의 명령(`./gradlew :apps:commerce-api:test --tests '*ProductQuery*Test'`)으로 seed 테스트 둘과 이 클래스만 돈 한 실행의 출력이다. 같은 날 다른 실행에서 브랜드 7 `price_asc`의 p50은 6.770 ms와 6.542 ms였고, 전체 스위트(`check`) 안에서 돈 실행에서는 4.178 ms였다. 지연의 절대값은 실행마다 흔들리므로 전후는 한 실행 안에서만 견준다.
+- 브랜드 7 `price_asc`의 페이지 쿼리는 DB 안에서 0.271 ms다(`EXPLAIN ANALYZE`의 Limit). 그 브랜드의 상품 100행을 모두 읽고, 그중 삭제되지 않은 97행을 정렬한 뒤 21행을 자른다. 정렬할 행은 브랜드의 상품 수를 따라 는다.
+- 브랜드 101에서 그것이 보인다. 같은 경로로 2,000행을 읽고 1,940행을 정렬해 1.42 ms다. 브랜드 7보다 읽는 행이 20배, DB 안 시간이 5배다. MockMvc 지연에서는 차이가 보이지 않는다(p50 5.449 대 6.343 ms). 요청 하나에서 페이지 쿼리가 차지하는 몫이 작고 실행 안의 흔들림이 그보다 크기 때문이다.
+- 정렬은 `limit input to 21 row(s) per chunk`라 삭제되지 않은 행 전체를 정렬하지 않고 앞의 21행만 남긴다. 그래도 브랜드의 상품을 모두 읽어야 정렬을 시작할 수 있다.
+- 브랜드 필터는 조인한 브랜드의 별칭(`b1_0.id = ?`)에 걸리지만, MySQL은 브랜드를 기본 키 상수로 풀고 상품을 `brand_id`로 찾는다.
+- 브랜드 7 `likes_desc`는 0쪽(0.366 ms)도 1쪽(0.906 ms)도 삭제되지 않은 97개를 모두 세어 97그룹을 만든 뒤에 페이지를 자른다. 1쪽은 정렬이 41행을 남기고 앞의 20행을 버리는 것만 다르다. 두 쪽의 `EXPLAIN ANALYZE` 시간 차이는 한 번 실행한 값의 흔들림이고, 200회 지연의 p50은 3.862 대 3.840 ms로 같다. 5.32의 "0쪽과 50쪽의 비용이 같다"가 이것이다.
+- 전체 카탈로그 `likes_desc`는 DB 안에서 91.8 ms다. 삭제되지 않은 상품 11,444개마다 좋아요를 인덱스로 찾아 123,255행을 조인하고, 11,444그룹을 임시 테이블로 집계한 뒤 정렬한다. 비용은 브랜드 필터가 없으니 카탈로그 전체의 좋아요 수를 따라 는다. 요청 하나가 브랜드 7 `price_asc`의 열 배를 넘는다(p50 85.210 ms).
+- 관찰: 히스토그램이 없으면 MySQL은 `deleted_at is null`이 행의 10%를 남긴다고 짐작한다. 브랜드 7 `likes_desc`의 상품 Filter는 예상 10행에 실제 97행이다. 전체 카탈로그에서는 브랜드 Filter가 101행 중 10.1행(실제 99), 상품 Filter가 121행 중 12.1행(실제 116)이라 조인의 예상 행이 실제보다 두 자릿수 작다(122 대 11,444). `price_asc`의 계획에서는 같은 Filter가 100으로 찍혀 이 짐작이 드러나지 않는다. 이 짐작이 계획을 바꾸는지는 재지 않았다.
+
+### 8.5 인덱스 전후
+
+2026-10-15 측정. 5.38의 `(brand_id, price, id DESC)` 인덱스를 `ALTER TABLE product ALTER INDEX … INVISIBLE`로 숨긴 상태가 "전", `VISIBLE`이 "후"다. 옵티마이저는 숨은 인덱스를 보지 않고, 쓰기는 계속 그 인덱스를 고친다. 그래서 한 실행, 한 seed에서 인덱스 말고는 아무것도 다르지 않다. 테스트는 숨긴 블록이 실패해도 `finally`에서 인덱스를 다시 보이게 한다.
+
+| 요청 | 상태 | 사용 key·접근 경로 | 예상/실제 rows | loops | 정렬 단계 | 요청당 SQL | 준비·표본 | 지연 min / p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 브랜드 7 `price_asc` page 0 | 전 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=7`) → `deleted_at is null` 필터 → 정렬 → 21행 | Index lookup 100/100, Filter 100/97, Sort 100/21, Limit 21/21 | 모두 1 | 있음: `Sort: p1_0.price, p1_0.id DESC, limit input to 21 row(s) per chunk` | 2 | 50 · 200 | 4.470 / 6.724 / 9.436 / 11.316 / 13.789 ms |
+| 브랜드 7 `price_asc` page 0 | 후 | `IDX_PRODUCT_ON_BRAND_ID_AND_PRICE_AND_ID` index lookup(`brand_id=7`)을 인덱스 차례로 → `deleted_at is null` 필터 → 21행에서 멈춤 | Index lookup 100/22, Filter 10/21, Limit 10/21 | 모두 1 | 없음 | 2 | 50 · 200 | 3.450 / 5.870 / 14.610 / 33.614 / 70.413 ms |
+| 브랜드 101 `price_asc` page 0 | 전 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=101`) → 필터 → 정렬 → 21행 | Index lookup 2000/2000, Filter 2000/1940, Sort 2000/21, Limit 21/21 | 모두 1 | 있음: 위와 같은 정렬 | 2 | 50 · 200 | 4.309 / 5.369 / 6.226 / 6.422 / 8.988 ms |
+| 브랜드 101 `price_asc` page 0 | 후 | `IDX_PRODUCT_ON_BRAND_ID_AND_PRICE_AND_ID` index lookup(`brand_id=101`)을 인덱스 차례로 → 필터 → 21행에서 멈춤 | Index lookup 2000/22, Filter 200/21, Limit 21/21 | 모두 1 | 없음 | 2 | 50 · 200 | 2.644 / 3.380 / 4.663 / 5.226 / 5.785 ms |
+
+- 값은 과제의 명령(`./gradlew :apps:commerce-api:test --tests '*ProductQuery*Test'`)으로 돈 한 실행의 출력이다. 8.4와 다른 실행이므로 8.4의 지연과는 견주지 않는다.
+- 결과: 두 브랜드 모두 "전"과 "후"의 응답이 seed에서 센 기대값과 엄격하게 같고, 두 본문이 글자 그대로 같다. 요청당 SQL은 두 상태 모두 2개다. 좋아요 수 배치 조회는 두 상태에서 계획도 읽는 행도 같다(브랜드 7은 165행, 브랜드 101은 0행).
+- 페이지 쿼리의 DB 안 시간(`EXPLAIN ANALYZE`의 Limit): 브랜드 7은 0.298 → 0.073 ms, 브랜드 101은 1.22 → 0.101 ms다. "후"는 두 브랜드 모두 22행을 읽는다. 인덱스 차례의 앞 22개 중 하나가 삭제된 상품이라 필터가 그것을 버리고 21행을 채운다. 읽는 행이 브랜드의 크기를 따르지 않게 된 것이 이 인덱스의 효과다. 브랜드 7과 101의 "후"가 22행으로 같은 것이 그것이다.
+- MockMvc 지연의 p50은 브랜드 7이 6.724 → 5.870 ms, 브랜드 101이 5.369 → 3.380 ms다. 요청 하나에서 페이지 쿼리가 차지하는 몫이 작아(8.4), DB 안에서 1.1 ms를 줄인 브랜드 101에서만 실행 안의 흔들림보다 큰 차이가 보인다. 브랜드 7 "후"의 p95 이상(14.610 / 33.614 / 70.413 ms)은 두 SQL의 DB 안 시간이 합해 0.2 ms 남짓인 요청에서 난 꼬리라 인덱스가 아니라 JVM·컨테이너의 흔들림으로 본다. 같은 날 전체 스위트(`check`, 527개) 안에서 돈 실행에서는 그 꼬리가 없었다. 그 실행의 p50 / p99는 브랜드 7이 4.054 / 6.759 → 3.226 / 5.637 ms, 브랜드 101이 4.240 / 5.397 → 2.662 / 4.834 ms였고, 페이지 쿼리의 DB 안 시간은 0.128 → 0.066 ms와 1.14 → 0.113 ms였다. 시간은 단언하지 않는다.
+- "후"의 Filter 예상 10(브랜드 7)과 200(브랜드 101)은 8.4의 관찰과 같은 10% 짐작이다. "전"의 계획에서는 같은 Filter가 lookup과 같은 행 수로 찍혀 이 짐작이 드러나지 않는다.
+- 브랜드 삭제 연쇄의 잠금 읽기는 이 인덱스가 보이는 상태에서도 계획에 정렬 단계가 없다. `ProductQueryPerformanceApiTest`의 연쇄 가드가 같은 실행에서 통과했다.
