@@ -33,7 +33,8 @@ private val log = KotlinLogging.logger {}
 /**
  * 과제 2절의 측정. [ProductQuerySeed]의 카탈로그 위에서 고객 상품 목록을 실제 HTTP 요청으로 보내고, 응답·요청당 SQL 수·
  * 실행 계획·지연을 잰다. 브랜드 필터 + `price_asc`는 `(brand_id, price, id DESC)` 인덱스를 숨긴 "전"과 보이는 "후"를 한 실행에서
- * 견주고, `likes_desc`는 기준선만 잰다(카탈로그 설계 5.38, 8).
+ * 견주고, `likes_desc`는 기준선만 잰다(카탈로그 설계 5.38, 8). 과제 3절의 캐시는 브랜드 7 `price_asc`와 전체 카탈로그 `likes_desc`의
+ * miss와 hit를 한 실행 안에서 견준다(설계 8.9).
  *
  * seed를 넣은 뒤의 `ANALYZE TABLE`과 인덱스를 숨겼다 보이게 하는 DDL이 열린 트랜잭션을 암묵으로 커밋하므로 롤백으로 정리할 수 없다.
  * 그래서 클래스는 테스트 트랜잭션에서 빠지고, seed는 클래스마다 한 번 넣어 끝나면 [DatabaseCleanUp]으로 표를 비운다.
@@ -43,7 +44,7 @@ private val log = KotlinLogging.logger {}
  *
  * 고객 목록은 Redis에 캐시된다(ADR 0020). seed는 JDBC로 넣어 상품 목록 revision을 올리지 않으므로, 비우지 않으면 같은 요청이
  * 앞 요청의 항목을 읽는다. 인덱스 "후"의 요청이 "전"의 항목을 읽으면 전후 비교가 뜻을 잃는다. 그래서 요청마다 캐시를 비워
- * 지금처럼 DB 경로를 잰다. 지연 측정에서는 비우는 시간이 잰 시간에 들지 않게 요청 밖에서 비운다.
+ * 지금처럼 DB 경로를 잰다. 지연 측정에서는 비우는 시간이 잰 시간에 들지 않게 요청 밖에서 비운다. hit의 지연만 캐시를 비우지 않고 잰다.
  *
  * 같은 seed 위에서 브랜드 삭제의 연쇄가 상품을 잠그는 계획도 지킨다. 옵티마이저는 작은 표에서 다른 계획을 고를 수 있어 큰 seed가 필요하다.
  */
@@ -224,13 +225,65 @@ class ProductQueryPerformanceApiTest(
         printMeasurement("baseline", brandId = null, sort = LIKES_DESC, page = 0, warmUps = 10, samples = 50)
     }
 
+    /**
+     * 캐시의 miss와 hit를 한 실행 안에서 견준다(카탈로그 설계 8.9). 준비·표본 수는 위의 측정과 같다.
+     *
+     * 요청당 SQL은 miss가 셋(revision 읽기, 페이지 쿼리, 좋아요 수 배치 조회)이고, hit는 revision 읽기 하나다(ADR 0020).
+     * 두 응답은 seed에서 센 기대값과 엄격하게 같다. 이것만 단언하고 시간은 출력만 한다.
+     *
+     * hit의 지연은 miss가 채우고 hit가 읽은 같은 키를 거듭 읽어 잰다. miss의 지연은 표본마다 캐시를 비워 잰다.
+     */
+    @ParameterizedTest
+    @CsvSource(
+        "$BRAND_ID, $PRICE_ASC, 50, 200",
+        ", $LIKES_DESC, 10, 50",
+    )
+    fun `a cache miss sends three SQL statements and a hit only the revision read, and both print their latency`(
+        brandId: Long?,
+        sort: String,
+        warmUps: Int,
+        samples: Int,
+    ) {
+        val expected = expectedPageBody(sortedCandidates(brandId, sort), page = 0)
+
+        entityManager.withStatistics { statistics ->
+            val body = assertThat(requestGetProducts(brandId, sort)).hasStatusOk().bodyJson()
+
+            body.isStrictlyEqualTo(expected)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
+        }
+        entityManager.withStatistics { statistics ->
+            val hit = captureSql { requestGetProductsKeepingCache(brandId, sort, page = 0) }
+
+            val list = assertThat(hit.result).hasStatusOk().bodyJson()
+            list.isStrictlyEqualTo(expected)
+            assertThat(statistics.prepareStatementCount).isEqualTo(1L)
+            assertThat(hit.statements).singleElement().asString().contains("from product_list_revision")
+        }
+
+        val hitLatency = measureLatency(warmUps, samples, clearingCache = false) {
+            requestGetProductsKeepingCache(brandId, sort, page = 0)
+        }
+        val missLatency = measureLatency(warmUps, samples, clearingCache = true) {
+            requestGetProductsKeepingCache(brandId, sort, page = 0)
+        }
+
+        log.info {
+            """
+            |cache: brand ${brandId ?: "(whole catalog)"} $sort page 0 size $PAGE_SIZE
+            |miss: latency $missLatency
+            |hit: latency $hitLatency
+            """.trimMargin()
+        }
+    }
+
     /** 캐시를 비우고 보낸다. 그래서 응답은 언제나 DB에서 읽은 것이다. */
     private fun requestGetProducts(brandId: Long?, sort: String, page: Int = 0): MvcTestResult {
         redisCleanUp.truncateAll()
         return requestGetProductsKeepingCache(brandId, sort, page)
     }
 
-    /** 캐시를 비우지 않고 보낸다. 지연을 잴 때 [measureLatency]가 비운 뒤 이것만 잰다. */
+    /** 캐시를 비우지 않고 보낸다. hit를 읽을 때와, 지연을 잴 때 [measureLatency]가 비울지 정한 뒤 잴 요청으로 쓴다. */
     private fun requestGetProductsKeepingCache(brandId: Long?, sort: String, page: Int): MvcTestResult {
         return mvc.get().uri(ENDPOINT)
             .apply { brandId?.let { queryParam("brandId", it.toString()) } }
@@ -252,7 +305,9 @@ class ProductQueryPerformanceApiTest(
         val (_, pageQuery, likeCountQuery) = captured.statements
         val pageIds = sortedCandidates(brandId, sort).drop(page * PAGE_SIZE).take(PAGE_SIZE).map { it.id }
 
-        val latency = measureLatency(warmUps, samples) { requestGetProductsKeepingCache(brandId, sort, page) }
+        val latency = measureLatency(warmUps, samples, clearingCache = true) {
+            requestGetProductsKeepingCache(brandId, sort, page)
+        }
 
         log.info {
             """
@@ -417,15 +472,25 @@ class ProductQueryPerformanceApiTest(
 
     /**
      * [warmUps]번 보낸 뒤 [samples]번을 하나씩 잰다. 응답의 상태는 잰 시간 밖에서 본다.
-     * 보낼 때마다 그 앞에서 캐시를 비워 모든 요청이 DB를 읽는다. 비우는 시간은 잰 시간에 들지 않는다.
+     * [clearingCache]면 보낼 때마다 그 앞에서 캐시를 비워 모든 요청이 DB를 읽는다. 비우는 시간은 잰 시간에 들지 않는다.
+     * 아니면 캐시를 그대로 두므로, 이미 채운 키를 읽는 요청은 모두 hit다.
      */
-    private fun measureLatency(warmUps: Int, samples: Int, request: () -> MvcTestResult): Latency {
+    private fun measureLatency(
+        warmUps: Int,
+        samples: Int,
+        clearingCache: Boolean,
+        request: () -> MvcTestResult,
+    ): Latency {
         repeat(warmUps) {
-            redisCleanUp.truncateAll()
+            if (clearingCache) {
+                redisCleanUp.truncateAll()
+            }
             assertThat(request()).hasStatusOk()
         }
         val durations = List(samples) {
-            redisCleanUp.truncateAll()
+            if (clearingCache) {
+                redisCleanUp.truncateAll()
+            }
             val (result, elapsed) = measureTimedValue(request)
             assertThat(result).hasStatusOk()
             elapsed
