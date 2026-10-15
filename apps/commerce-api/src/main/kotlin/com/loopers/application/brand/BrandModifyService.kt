@@ -7,13 +7,15 @@ import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.brand.provided.BrandValidator
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.brand.required.ProductDeleter
+import com.loopers.application.brand.required.ProductListMarker
 import com.loopers.domain.brand.Brand
 import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
  * [BrandRegister]의 구현. 바꿀 브랜드는 [BrandFinder]로 읽어 없는 브랜드를 같은 오류로 거절한다.
  * 저장소에 물어야 하는 사전 조건은 [BrandValidator]가 보고, 상품의 삭제는 브랜드가 선언한 [ProductDeleter]에 시킨다.
- * 여기에는 단계의 차례만 있다(ADR 0014, 0017).
+ * 이름 변경이 고객 상품 목록을 바꿨다는 표시도 브랜드가 선언한 [ProductListMarker]에 시킨다.
+ * 여기에는 단계의 차례만 있다(ADR 0014, 0017, 0020).
  */
 @ValidatedApplicationService
 class BrandModifyService(
@@ -21,6 +23,7 @@ class BrandModifyService(
     private val brandRepository: BrandRepository,
     private val brandValidator: BrandValidator,
     private val productDeleter: ProductDeleter,
+    private val productListMarker: ProductListMarker,
 ) : BrandRegister {
     /** 다른 브랜드가 그 이름을 쓰는지 먼저 본 뒤 브랜드를 만들어 저장한다. 이름 규칙은 [Brand]가 만들며 본다. 이름은 받은 그대로 저장한다. */
     override fun register(request: BrandAdminRegisterRequest): Brand {
@@ -34,6 +37,7 @@ class BrandModifyService(
     /**
      * 이름을 바꾼다. 거절되면 기존 이름이 그대로 남아야 하므로, 브랜드를 바꾸기 전에 다른 브랜드가 그 이름을 쓰는지 본다.
      * 브랜드는 잠가 읽는다. 행 전체를 쓰므로, 잠그지 않으면 겹친 삭제가 커밋한 삭제 시각을 옛 값으로 덮어 브랜드가 되살아난다(ADR 0018).
+     * 목록의 항목이 브랜드 이름을 실으므로 이름이 그대로여도 표시한다. 상품이 없는 브랜드인지도 가리지 않는다(ADR 0020).
      */
     override fun update(brandId: Long, request: BrandAdminUpdateRequest): Brand {
         val brand = brandFinder.findForUpdate(brandId)
@@ -41,6 +45,7 @@ class BrandModifyService(
         brandValidator.validateForUpdate(brand, request)
 
         brand.update(request.name)
+        productListMarker.markChanged()
 
         return brandRepository.save(brand)
     }

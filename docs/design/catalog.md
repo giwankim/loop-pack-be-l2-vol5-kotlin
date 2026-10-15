@@ -364,6 +364,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)으로 provided 포트는 다른 조각의 required 포트를 상속하지 않는다. Service가 맡는 역할 인터페이스를 모두 직접 구현한다. 위 메모의 "`ProductFinder`가 상속해 구현한다"와 "`LikeCounter`를 like의 `LikeFinder`가 구현한다"는 그때의 모양이다. 지금은 `LikeQueryService`가 `LikeFinder`와 `LikeCounter`를 각자 구현한다. `ProductFinder : ActiveProductChecker`는 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지울 때까지 남는다. 의존 방향은 product → brand, like → product 그대로이고, 계층마다 따로 검사하는 선택(B)도 그대로다.
 >
 > 2026-10-09 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지웠다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)). 브랜드 ↔ 상품 순환은 이제 brand가 선언한 `ProductDeleter`("이 브랜드의 삭제되지 않은 상품을 삭제하라")를 product의 `ProductModifyService`가 `ProductRegister`, `StockDeductor`와 나란히 직접 구현해 끊는다. 묻는 포트가 시키는 포트로 바뀌었을 뿐 타입의 의존은 product → brand 그대로이고, `HexagonalArchitectureTest`는 고치지 않았다. 아래 문제와 다시 볼 조건의 "삭제되지 않은 상품이 있는가"는 그때의 물음이다.
+>
+> 2026-10-15 브랜드 이름 변경이 고객 상품 목록의 캐시를 무효로 만들면서([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)) brand가 선언한 시키는 포트가 하나 더 생겼다. `ProductListMarker`("상품 목록이 바뀌었다고 표시하라")를 product의 `ProductListRevisionMarker`가 product의 `ProductListChangeMarker`와 나란히 직접 구현한다. brand가 product의 표시 포트를 부르면 순환이므로 `ProductDeleter`와 같은 꼴로 끊는다. 브랜드 삭제는 `deleteAllOfBrand` 안에서 표시하므로 새 포트는 이름 변경만 쓴다. 타입의 의존은 product → brand 그대로다.
 
 - 문제: #6의 브랜드 삭제 거절은 `application.brand`가 `domain.product`의 저장소에 묻는 일이다. `domain.product`는 이미 `domain.brand`를 참조한다(5.1). 계층을 가로질러 기능을 한 조각으로 묶으면 `brand → product → brand`가 순환으로 잡힌다.
 - 대안 A: 기능 조각 하나가 네 계층을 가로지른다. `domain.brand`, `application.brand`, `adapter.webapi.v1.brand`를 조각 `brand` 하나로 묶고 조각 사이 순환을 막는다. 기능 하나를 통째로 떼어 낼 수 있음을 보장한다.

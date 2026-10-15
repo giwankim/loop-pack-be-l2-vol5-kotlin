@@ -98,11 +98,13 @@ class ProductModifyService(
     /**
      * 브랜드 삭제가 부른다. 잠가 읽은 차례대로 삭제 시각을 찍어 저장한다. UPDATE는 커밋의 flush가 묶어 보낸다(ADR 0018).
      * 이미 삭제된 상품은 삭제 필터가 읽지 않으므로 그 삭제 시각에 닿지 않는다.
+     * 지울 상품이 없어도 표시한다. 그 분기는 값어치가 없다. 올리기는 커밋 앞에서 상품과 브랜드의 UPDATE 뒤에 나간다(ADR 0020).
      */
     override fun deleteAllOfBrand(brandId: Long) {
         val products = productRepository.findForUpdateByBrandIdOrderById(brandId)
 
         products.forEach { it.delete() }
+        productListChangeMarker.markChanged()
 
         productRepository.saveAll(products)
     }
