@@ -22,9 +22,9 @@
 
   ```kotlin
   entityManager.withStatistics { statistics ->
-      val slice = productFinder.findAll(ProductListRequest())
+      val list = productFinder.findAll(ProductListRequest())
 
-      assertThat(slice.content).hasSize(3)
+      assertThat(list.items).hasSize(3)
       assertThat(statistics.prepareStatementCount).isEqualTo(2L)
   }
   ```

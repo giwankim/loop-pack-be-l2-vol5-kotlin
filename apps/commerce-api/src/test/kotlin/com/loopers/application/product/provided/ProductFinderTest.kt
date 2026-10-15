@@ -44,9 +44,43 @@ class ProductFinderTest(
         prepareLike(product = liked)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest())
+        val list = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.content.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+        assertThat(list.items.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+    }
+
+    /**
+     * 고객 목록의 결과는 고객이 보는 필드와 조각의 위치만 싣는다. 재고 수량과 등록·수정 시각은 싣지 않는다.
+     * 품절을 바꾸지 않는 재고 쓰기는 목록을 바꾸지 않으므로(ADR 0020), 그 값을 들고 있으면 캐시한 결과가 DB와 어긋난다.
+     * 값 전체를 견주므로 결과에 필드가 늘면 이 기대값부터 고쳐야 한다.
+     */
+    @Test
+    fun `the customer list carries only what a customer sees and where the slice sits`() {
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand, name = "티셔츠", price = 12_000, stock = 0)
+        prepareLike(product = product)
+        entityManager.flushAndClear()
+
+        val list = productFinder.findAll(ProductListRequest())
+
+        assertThat(list).isEqualTo(
+            ProductListInfo(
+                items = listOf(
+                    ProductSummaryInfo(
+                        id = product.id,
+                        name = "티셔츠",
+                        price = 12_000L,
+                        soldOut = true,
+                        brandId = brand.id,
+                        brandName = "루퍼스",
+                        likeCount = 1L,
+                    ),
+                ),
+                page = ProductListRequest.DEFAULT_PAGE,
+                size = ProductListRequest.DEFAULT_SIZE,
+                hasNext = false,
+            ),
+        )
     }
 
     /**
@@ -62,10 +96,10 @@ class ProductFinderTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            val slice = productFinder.findAll(ProductListRequest())
+            val list = productFinder.findAll(ProductListRequest())
 
-            assertThat(slice.content).hasSize(3)
-            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
+            assertThat(list.items).hasSize(3)
+            assertThat(list.items.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
@@ -103,7 +137,7 @@ class ProductFinderTest(
         val exception = assertThrows<CoreException> { productFinder.findInfo(deleted.id) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-        assertThat(productFinder.findAll(ProductListRequest()).content.map { it.id }).containsExactly(kept.id)
+        assertThat(productFinder.findAll(ProductListRequest()).items.map { it.id }).containsExactly(kept.id)
     }
 
     @Test
@@ -167,12 +201,12 @@ class ProductFinderTest(
         val second = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest())
+        val list = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.number).isEqualTo(ProductListRequest.DEFAULT_PAGE)
-        assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
-        assertThat(slice.content.map { it.id }).containsExactly(second.id, first.id)
-        assertThat(slice.content.map { it.brandName }).containsOnly("루퍼스")
+        assertThat(list.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(list.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
+        assertThat(list.items.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(list.items.map { it.brandName }).containsOnly("루퍼스")
     }
 
     @Test
@@ -182,9 +216,9 @@ class ProductFinderTest(
         val dear = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest(sort = "price_asc"))
+        val list = productFinder.findAll(ProductListRequest(sort = "price_asc"))
 
-        assertThat(slice.content.map { it.id }).containsExactly(cheap.id, dear.id)
+        assertThat(list.items.map { it.id }).containsExactly(cheap.id, dear.id)
     }
 
     /**
@@ -204,9 +238,9 @@ class ProductFinderTest(
         prepareLike(secondUser, mostLiked)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
+        val list = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-        assertThat(slice.content.map { it.id to it.likeCount })
+        assertThat(list.items.map { it.id to it.likeCount })
             .containsExactly(mostLiked.id to 2L, liked.id to 1L, unliked.id to 0L)
     }
 
@@ -224,10 +258,10 @@ class ProductFinderTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
+            val list = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-            assertThat(slice.content).hasSize(3)
-            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
+            assertThat(list.items).hasSize(3)
+            assertThat(list.items.map { it.likeCount }).containsOnly(1L)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }

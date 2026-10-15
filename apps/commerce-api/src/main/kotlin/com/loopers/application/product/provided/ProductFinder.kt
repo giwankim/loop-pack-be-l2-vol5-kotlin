@@ -8,7 +8,8 @@ import org.springframework.data.domain.Slice
  * 상품 조각이 내주는 읽기. 고객과 관리자의 상품 조회가 부르고, 다른 조각과 상품의 쓰기가 상품을 얻는다.
  * 삭제된 상품은 없는 상품이므로 어느 읽기에도 나오지 않는다.
  *
- * 상품 하나는 [find]가 엔티티로 준다(ADR 0014). 응답은 브랜드 이름과 좋아요 수까지 합치므로 상세와 목록은 [ProductInfo]를 준다.
+ * 상품 하나는 [find]가 엔티티로 준다(ADR 0014). 응답은 브랜드 이름과 좋아요 수까지 합치므로 상세와 관리자 목록, 내 좋아요 목록은
+ * [ProductInfo]를, 고객 목록은 고객이 보는 필드만 담은 [ProductListInfo]를 준다.
  * 브랜드는 다른 애그리거트라 [find]와 [findOrNull]은 읽지 않는다. 브랜드를 건너는 읽기는 [findInfo]와 목록들이다.
  * 상품을 바꾸는 쪽은 [findForUpdate]와 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
  */
@@ -58,12 +59,15 @@ interface ProductFinder {
     /** 관리자 목록. 늦게 등록된 상품이 앞서는 한 조각이고 정렬 기준을 고르지 않는다. 총 개수는 세지 않는다(설계 5.5). */
     fun findAll(@Valid request: ProductAdminListRequest): Slice<ProductInfo>
 
-    /** 고객 목록. 고객이 고른 차례로 놓인 한 조각. 모르는 정렬 기준이면 `INVALID_SORT`를 던진다(설계 5.24). */
-    fun findAll(@Valid request: ProductListRequest): Slice<ProductInfo>
+    /**
+     * 고객 목록. 고객이 고른 차례로 놓인 한 조각. 모르는 정렬 기준이면 `INVALID_SORT`를 던진다(설계 5.24).
+     * 재고 수량과 시각을 싣지 않는 [ProductListInfo]를 돌려준다. 그 까닭은 [ProductListInfo]에 있다.
+     */
+    fun findAll(@Valid request: ProductListRequest): ProductListInfo
 
     /**
      * [userId] 사용자가 좋아요를 누른 상품 한 조각. 최근에 누른 상품이 앞서고 삭제된 상품은 빠진다.
-     * 좋아요 조각의 내 좋아요 목록이 부른다. 항목이 고객 목록의 항목과 같은 [ProductInfo]라 옮기는 일은 상품 안에 남는다(설계 5.31).
+     * 좋아요 조각의 내 좋아요 목록이 부른다. 항목을 [ProductInfo]로 옮기는 일은 상품 안에 남는다(설계 5.31).
      *
      * 좋아요 목록의 입력은 좋아요의 Request이고 상품은 좋아요를 모르므로, 페이지 값은 상품의 [ProductLikedListRequest]로
      * 받아 다른 목록과 같은 길로 다시 검증한다.

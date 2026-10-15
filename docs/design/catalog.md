@@ -283,6 +283,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.7 고객·관리자 응답 모델
 
+> 2026-10-15 고객 목록(`ProductFinder.findAll(ProductListRequest)`)은 이제 `ProductInfo`의 `Slice` 대신 고객이 보는 필드만 담은 `ProductListInfo`를 돌려준다. 항목 `ProductSummaryInfo`는 id, name, price, soldOut, brandId, brandName, likeCount이고, 페이지는 page, size, hasNext다. 아래 "다시 볼 조건"의 자기 조회 모델이지만 계기는 별도 조회가 아니라 캐시다. 목록 캐시([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md))가 이 반환값을 그대로 저장하는데, 품절을 바꾸지 않는 재고 쓰기는 revision을 올리지 않으므로 `stock`·`createdAt`·`updatedAt`을 들고 있으면 캐시된 값이 DB와 어긋난다. 상세, 관리자 목록, 내 좋아요 목록은 그대로 `ProductInfo`이고, 고객 목록의 JSON은 바뀌지 않았다.
+
 - 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어 application은 역할을 모르는 하나의 `ProductInfo`(id, brandId, brandName, name, price, stock, soldOut, createdAt, updatedAt, 좋아요 티켓에서 likeCount)를 채우고, adapter.webapi의 역할별 DTO(`ProductAdminResponse`, `ProductResponse`)가 각자 내보낼 필드를 고른다. `soldOut`은 `Product.isSoldOut()`에서 오고 DTO는 계산하지 않는다. `Product`는 어느 응답의 존재도 모른다.
 - 역할 분기를 adapter.webapi에 두는 까닭: 관리자와 고객은 이미 `/api-admin`·`/api` 컨트롤러로 갈라져 있다. Service가 역할별 `Info`를 만들면 같은 지식이 한 층 아래에 한 번 더 생긴다. Service가 아는 것은 얼마나 읽었는가(목록·상세)이지 누가 보는가가 아니다. 과제 템플릿의 `ExampleInfo` → `ExampleV1Dto.ExampleResponse`도 애그리거트당 `Info` 하나, 엔드포인트당 응답 하나다.
 - `Info`를 두는 기준: Service는 연관이 없는 엔티티 하나로 답이 끝나면 그 엔티티를 돌려준다(`BrandFinder` → `Brand`). 연관을 건너 읽거나(`Product` → `Brand`, `@ManyToOne`) 다른 저장소의 값을 더해야 하면(좋아요 수) 트랜잭션 안에서 `Info`로 옮겨 돌려준다. `open-in-view: false`라 트랜잭션 밖의 지연 로딩은 실패하기 때문이다. 필드를 그대로 베끼기만 하는 `Info`는 두지 않는다. (2026-10-08, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 예외가 하나 있다. 주문이 부르는 `ProductFinder.findOrderable`은 좋아요 수가 필요 없어 `ProductInfo` 대신 엔티티를 돌려준다. 브랜드를 fetch join으로 함께 읽으므로 트랜잭션 밖에서 `product.brand`를 건너도 지연 로딩이 없다.) (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 이 기준을 대체했다. 선은 지연 로딩이 아니라 애그리거트에 있다. Finder는 자기 애그리거트를 엔티티 그래프로 통째로 읽어 엔티티로 돌려주고, `Info`는 여러 애그리거트를 합친 응답에만 둔다. 그래서 `ProductInfo`는 남고 `OrderInfo`와 `PointAccountInfo`는 없어졌다. `ProductFinder.find`는 이제 엔티티를 돌려주고, `ProductInfo`를 주는 상세는 `findInfo`, 위의 `findOrderable`은 `findOrderableOrNull`이다.)
@@ -601,6 +603,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.31 상품 조각을 ProductInfo로 옮기는 자리
 
+> 2026-10-15 `ProductInfoAssembler`가 고객 목록의 `ProductListInfo`도 만든다(`toListInfo`, 5.7의 2026-10-15 메모). 항목만 `ProductSummaryInfo`이고 조각의 좋아요 수를 한 번에 세는 일(5.28)은 `toInfos`와 같은 private 셈 하나를 쓴다. 관리자 목록과 내 좋아요 목록은 그대로 `toInfos`다.
+
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 조각의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`와 domain의 `LikeRepository.countByProductIds`는 그때의 이름과 자리다. 지금은 `application/like/required`의 `LikeRepository`가 그룹 집계 `findProductLikeCounts`만 갖고, 0을 채우는 일은 `LikeCounter`의 구현이 한다(5.28).
 >
 > 2026-10-09 위 메모의 "좋아요의 `LikeFinder`가 그 물음에 답한다"는 그때의 모양이다. 지금은 `LikeFinder`가 `LikeCounter`를 상속하지 않고, `LikeQueryService`가 `LikeCounter`를 직접 구현해 답한다(5.16의 2026-10-09 메모).
@@ -638,6 +642,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: `likes(product_id)` 인덱스. 지금은 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회에 인덱스가 없고, 이는 #8의 `countByProductId`·`countByProductIdIn`도 이미 치르고 있다. 좋아요 행이 늘어 해시 조인의 한 번 훑기가 비싸지면 그때 `@Table(indexes = ...)`을 더한다. 마이그레이션 도구가 없어 운영 DDL이 이 저장소에 없다는 것도 함께 본다.
 
 ### 5.33 웹 어댑터 메서드의 꼴
+
+> 2026-10-15 고객 목록 하나는 `PageResponse.from(slice)`를 쓰지 않는다. `ProductFinder.findAll(ProductListRequest)`가 `Slice`가 아니라 `ProductListInfo`를 돌려주기 때문이다(5.7의 2026-10-15 메모). 핸들러는 `products.items.map(ProductResponse::from)`과 `products`의 `page`·`size`·`hasNext`를 이름 붙인 인자로 `PageResponse`에 넣어 지역 변수 `page`에 담고, 빈 줄 뒤에 `ApiResponse.success(page)`로 돌려준다. 나머지 목록은 아래 꼴 그대로다.
 
 - 문제: 템플릿에서 온 Controller는 유스케이스의 반환을 `.let { BrandAdminResponse.from(it) }.let { ApiResponse.success(it) }`처럼 흘려보냈다. 주문 Controller와 몇몇 응답 DTO의 `from`은 식 본문(`= ...`)이었다. 가드 절은 중괄호를 쓴 것과 한 줄 `if (...) throw`가 섞여 있었다.
 - 선택 (2026-10-08): adapter.webapi의 Controller 메서드와 응답 DTO의 `from`은 블록 본문으로 쓴다. Controller는 유스케이스가 돌려준 값을 그 정체를 말하는 지역 변수(`brand`, `brands`, `order`, `pointAccount`, `likedProducts`)에 담고, 빈 줄 하나 뒤에 `return ApiResponse.success(BrandAdminResponse.from(brand))`로 한 번에 감싼다. 목록은 `ApiResponse.success(PageResponse.from(brands.map(BrandAdminResponse::from)))`이다. 가드 절은 한 줄이어도 중괄호를 쓰고, 닫는 중괄호 뒤에 빈 줄을 하나 두어 검사와 그 뒤의 일을 가른다. 가드가 이어지면 가드 사이에도 둔다. 가드는 층을 가리지 않으므로 이 규칙은 domain, application, adapter.persistence에도 적용한다.

@@ -4,6 +4,7 @@ import com.loopers.application.product.provided.ProductAdminListRequest
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductInfo
 import com.loopers.application.product.provided.ProductLikedListRequest
+import com.loopers.application.product.provided.ProductListInfo
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.provided.ProductSort
 import com.loopers.application.product.required.ProductListRepository
@@ -49,27 +50,34 @@ class ProductQueryService(
         return productInfoAssembler.toInfo(find(productId))
     }
 
+    /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
     override fun findAll(request: ProductAdminListRequest): Slice<ProductInfo> {
-        return findAll(
+        val products = findSlice(
             brandId = request.brandId,
             page = request.page,
             size = request.size,
             sort = ProductSort.LATEST,
         )
+
+        return productInfoAssembler.toInfos(products)
     }
 
     /**
      * 정렬 기준을 여기서 옮기는 것은 컨트롤러를 거치지 않는 호출도 같은 검사를 받게 하기 위해서다.
      * 배치나 컨슈머가 [ProductListRequest]를 손으로 만들어 불러도 모르는 철자는 여기서 걸린다.
      * [ProductSort]는 전송 방식을 모르므로 모르는 철자에 null을 돌려주고, 그것이 400이라는 것은 여기서 정한다.
+     *
+     * 항목마다 브랜드를 읽으므로 [ProductListInfo]로 옮기는 일도 이 트랜잭션 안에서 끝난다.
      */
-    override fun findAll(request: ProductListRequest): Slice<ProductInfo> {
-        return findAll(
+    override fun findAll(request: ProductListRequest): ProductListInfo {
+        val products = findSlice(
             brandId = request.brandId,
             page = request.page,
             size = request.size,
             sort = ProductSort.from(request.sort) ?: throw CoreException(ErrorType.INVALID_SORT),
         )
+
+        return productInfoAssembler.toListInfo(products)
     }
 
     /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
@@ -79,10 +87,8 @@ class ProductQueryService(
         )
     }
 
-    /** 항목마다 브랜드를 읽으므로 [ProductInfo]로 옮기는 일은 이 트랜잭션 안에서 끝난다(설계 5.31). */
-    private fun findAll(brandId: Long?, page: Int, size: Int, sort: ProductSort): Slice<ProductInfo> {
-        return productInfoAssembler.toInfos(
-            productListRepository.findAll(brandId = brandId, pageable = PageRequest.of(page, size), sort = sort),
-        )
+    /** 두 목록이 같은 쿼리로 고른다. 무엇으로 옮길지는 목록마다 다르므로 상품의 조각을 그대로 돌려준다. */
+    private fun findSlice(brandId: Long?, page: Int, size: Int, sort: ProductSort): Slice<Product> {
+        return productListRepository.findAll(brandId = brandId, pageable = PageRequest.of(page, size), sort = sort)
     }
 }
