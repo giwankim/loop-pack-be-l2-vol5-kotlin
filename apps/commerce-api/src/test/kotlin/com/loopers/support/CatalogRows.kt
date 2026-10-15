@@ -14,15 +14,15 @@ import java.time.Instant
  * Hibernate가 열을 `hibernate.jdbc.time_zone`(UTC)으로 읽은 뒤 JVM 시간대(테스트 JVM은 Asia/Seoul)의 `LocalDateTime`으로 돌려주어,
  * 열에 넣은 값보다 9시간 늦게 읽힌다.
  */
-fun EntityManager.brandDeletedAt(id: Long): Instant? {
+fun EntityManager.brandDeletedAt(brandId: Long): Instant? {
     return createNativeQuery("select deleted_at from brand where id = :id", Instant::class.java)
-        .setParameter("id", id)
+        .setParameter("id", brandId)
         .singleResult as Instant?
 }
 
 /** `product` 행의 삭제 시각. 까닭과 타입은 [brandDeletedAt]과 같다. */
-fun EntityManager.productDeletedAt(id: Long): Instant? {
+fun EntityManager.productDeletedAt(productId: Long): Instant? {
     return createNativeQuery("select deleted_at from product where id = :id", Instant::class.java)
-        .setParameter("id", id)
+        .setParameter("id", productId)
         .singleResult as Instant?
 }

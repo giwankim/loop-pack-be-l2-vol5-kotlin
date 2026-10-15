@@ -20,13 +20,13 @@ interface OrderRepository : Repository<Order, Long> {
 
     /** 소유자를 묻지 않는 조회. 관리자만 쓴다([findWithLineItemsByIdAndUserId]가 고객의 것이다). */
     @EntityGraph(attributePaths = ["_lineItems"])
-    fun findWithLineItemsById(id: Long): Order?
+    fun findWithLineItemsById(orderId: Long): Order?
 
     @EntityGraph(attributePaths = ["_lineItems"])
-    fun findWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
+    fun findWithLineItemsByIdAndUserId(orderId: Long, userId: Long): Order?
 
     /**
-     * [userId] 사용자의 [id] 주문을 품목과 함께 `FOR UPDATE`로 잠가 읽는다. 없거나 남의 주문이면 null이다(ADR 0019).
+     * [userId] 사용자의 [orderId] 주문을 품목과 함께 `FOR UPDATE`로 잠가 읽는다. 없거나 남의 주문이면 null이다(ADR 0019).
      * `find`와 `By` 사이는 Spring Data가 설명으로 보므로 `@Query` 없이 [findWithLineItemsByIdAndUserId]와 같은 파생 조회다.
      *
      * 잠금은 품목을 조인하는 바로 그 문장에 걸리고(`for update of` 주문 별칭) 주문 행만 잠근다. Hibernate가 읽은 뒤 따로 잠그면
@@ -34,5 +34,5 @@ interface OrderRepository : Repository<Order, Long> {
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = ["_lineItems"])
-    fun findForUpdateWithLineItemsByIdAndUserId(id: Long, userId: Long): Order?
+    fun findForUpdateWithLineItemsByIdAndUserId(orderId: Long, userId: Long): Order?
 }

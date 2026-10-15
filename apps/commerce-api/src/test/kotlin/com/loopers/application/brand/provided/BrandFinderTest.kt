@@ -29,8 +29,8 @@ class BrandFinderTest(
         deleteBrand()
         entityManager.flushAndClear()
 
-        listOf(999L, brand.id).forEach { id ->
-            val exception = assertThrows<CoreException> { brandFinder.findForUpdate(id) }
+        listOf(999L, brand.id).forEach { brandId ->
+            val exception = assertThrows<CoreException> { brandFinder.findForUpdate(brandId) }
 
             assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
         }
@@ -43,8 +43,8 @@ class BrandFinderTest(
         deleteBrand()
         entityManager.flushAndClear()
 
-        listOf(999L, brand.id).forEach { id ->
-            val exception = assertThrows<CoreException> { brandFinder.findForShare(id) }
+        listOf(999L, brand.id).forEach { brandId ->
+            val exception = assertThrows<CoreException> { brandFinder.findForShare(brandId) }
 
             assertThat(exception.errorType).isEqualTo(ErrorType.BRAND_NOT_FOUND)
         }

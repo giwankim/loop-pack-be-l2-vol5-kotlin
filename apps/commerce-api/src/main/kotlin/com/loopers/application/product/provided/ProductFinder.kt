@@ -14,23 +14,23 @@ import org.springframework.data.domain.Slice
  */
 interface ProductFinder {
     /**
-     * [id]가 가리키는 상품. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기와 좋아요의 존재 확인이 부른다.
+     * [productId]가 가리키는 상품. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기와 좋아요의 존재 확인이 부른다.
      * 브랜드는 지연 프록시로 남으므로 트랜잭션 밖에서 브랜드 이름을 읽지 않는다.
      */
-    fun find(id: Long): Product
+    fun find(productId: Long): Product
 
     /**
-     * [id]가 가리키는 상품. 없거나 삭제됐으면 null이다. 주문 생성이 품목의 상품을 읽을 때 부른다(포인트·주문 설계 2).
+     * [productId]가 가리키는 상품. 없거나 삭제됐으면 null이다. 주문 생성이 품목의 상품을 읽을 때 부른다(포인트·주문 설계 2).
      * 주문은 없음을 정상 결과로 받아 자기 오류로 옮기므로 [find]처럼 던지지 않고, null일 수 있다는 것을 이름이 말한다(ADR 0014).
      * 생성은 상품을 바꾸지 않으므로 잠그지 않는다. 확정은 상품을 읽지 않고, 확정의 [StockDeductor]가 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
      *
      * 브랜드를 보지 않는 까닭은 [findForUpdateOrNull]과 같다. 삭제되지 않은 상품의 브랜드는 삭제되지 않았다.
      * [find]처럼 브랜드는 지연 프록시로 남는다. 주문은 상품의 이름과 단가만 쓴다.
      */
-    fun findOrNull(id: Long): Product?
+    fun findOrNull(productId: Long): Product?
 
     /**
-     * [id] 상품을 잠가 읽는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기(수정, 재고 수정, 삭제, 재고 차감)가
+     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. 상품의 쓰기(수정, 재고 수정, 삭제, 재고 차감)가
      * 상품을 얻는다(ADR 0018). 상품 행만 잠그고 브랜드는 읽지 않는다.
      *
      * 트랜잭션이 그 상품을 처음 읽을 때 잠가 읽어야 한다. Hibernate는 이미 읽은 엔티티를 다시 돌려줄 때 처음 읽은 필드 값을 그대로 두므로,
@@ -38,10 +38,10 @@ interface ProductFinder {
      *
      * 호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다.
      */
-    fun findForUpdate(id: Long): Product
+    fun findForUpdate(productId: Long): Product
 
     /**
-     * [id] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 주문 확정의 [StockDeductor]가 품목의 상품을 처음 읽을 때 부른다(ADR 0018).
+     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 주문 확정의 [StockDeductor]가 품목의 상품을 처음 읽을 때 부른다(ADR 0018).
      * 차감은 모든 상품을 잠가 읽은 뒤에야 없는 상품을 거절하므로 [findForUpdate]처럼 던지지 않는다.
      *
      * 상품 행만 잠그고 브랜드를 조인하지 않는다. 브랜드 삭제가 그 브랜드의 상품을 함께 삭제하므로(ADR 0017),
@@ -50,10 +50,10 @@ interface ProductFinder {
      *
      * 호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다.
      */
-    fun findForUpdateOrNull(id: Long): Product?
+    fun findForUpdateOrNull(productId: Long): Product?
 
-    /** [id]가 가리키는 상품의 상세. 브랜드 이름과 좋아요 수를 함께 싣는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. */
-    fun findInfo(id: Long): ProductInfo
+    /** [productId]가 가리키는 상품의 상세. 브랜드 이름과 좋아요 수를 함께 싣는다. 없거나 삭제됐으면 `PRODUCT_NOT_FOUND`를 던진다. */
+    fun findInfo(productId: Long): ProductInfo
 
     /** 관리자 목록. 늦게 등록된 상품이 앞서는 한 조각이고 정렬 기준을 고르지 않는다. 총 개수는 세지 않는다(설계 5.5). */
     fun findAll(@Valid request: ProductAdminListRequest): Slice<ProductInfo>
