@@ -46,7 +46,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   - 부분 문자열은 `extractingPath(…).asString().contains(…)`
   - 있기만 하면 되는 값은 `isNotNull()`, 수인지는 `asNumber()`
   - 빈 배열은 `extractingPath(…).asArray().isEmpty()`
-  - 예외: seed에서 센 페이지 전체를 기대값과 견주는 측정 테스트(`ProductQueryPerformanceApiTest`)는 기대 본문을 손으로 적은 JSON으로 만들어 `bodyJson().isStrictlyEqualTo(…)`로 견준다. 항목 스무 개의 필드마다 한 줄을 쓰면 읽을 수 없고, 엄격한 비교는 값과 차례에 더해 빠지거나 더 실린 필드와 JSON 타입까지 잡는다. 기대 본문을 응답 DTO의 직렬화로 만들지 않는다. DTO가 바뀌면 기대값도 함께 바뀌어 아무것도 잡지 못한다.
+  - 예외: seed에서 센 페이지 전체를 기대값과 견주는 측정 테스트(`ProductQueryPerformanceApiTest`)는 기대 본문을 손으로 적은 JSON으로 만들어 `bodyJson().isStrictlyEqualTo(…)`로 견준다. 항목 스무 개의 필드마다 한 줄을 쓰면 읽을 수 없고, 엄격한 비교는 값과 차례에 더해 빠지거나 더 실린 필드와 JSON 타입까지 잡는다. 기대 본문을 응답 DTO의 직렬화로 만들지 않는다. DTO가 바뀌면 기대값도 함께 바뀌어 아무것도 잡지 못한다. 같은 클래스는 과제가 이름 붙인 성질(큰 브랜드의 첫 페이지가 한 가격이고 id 내림차순, 전체 카탈로그에 삭제된 상품·브랜드가 없음)을 엄격한 비교와 따로 `asArray()`의 `containsOnly`·`isSortedAccordingTo`·`doesNotContainAnyElementsOf`로 단언한다. 엄격한 비교가 이미 잡는 것이지만, 테스트가 무엇을 보는지 단언으로 말하게 하려는 것이다.
 
   Hamcrest와 `ResultMatcher`(`andExpect`)는 쓰지 않는다.
 
