@@ -81,6 +81,117 @@ class ProductCacheTest(
     }
 
     /**
+     * 전체 목록과 그 브랜드의 목록을 채운 뒤 상품을 등록하면, 다시 읽은 두 목록 모두 새 상품을 맨 앞에 보인다.
+     * 다른 브랜드의 상품을 하나 두어 두 목록이 서로 다른 키와 다른 결과가 되게 한다.
+     */
+    @Test
+    fun `after a product register commits the whole catalog and its brand's list show the new product`() {
+        val socks = prepareProduct()
+        val ownBrand = brand
+        val otherBrandProduct = prepareProduct(prepareBrand())
+        val wholeCatalog = ProductListRequest()
+        val brandList = ProductListRequest(brandId = ownBrand.id)
+        productFinder.findAll(wholeCatalog)
+        productFinder.findAll(brandList)
+
+        val shirt = prepareProduct(ownBrand)
+
+        assertThat(productFinder.findAll(wholeCatalog).items.map { it.id })
+            .containsExactly(shirt.id, otherBrandProduct.id, socks.id)
+        assertThat(productFinder.findAll(brandList).items.map { it.id }).containsExactly(shirt.id, socks.id)
+    }
+
+    @Test
+    fun `after a product delete commits the cached list no longer shows the product`() {
+        val socks = prepareProduct()
+        val shirt = prepareProduct(brand)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        deleteProduct(shirt)
+
+        assertThat(productFinder.findAll(request).items.map { it.id }).containsExactly(socks.id)
+    }
+
+    /** 고객은 재고를 품절 여부로만 본다. 관리자가 재고를 0으로 맞추면 다시 읽은 목록에 품절로 보인다. */
+    @Test
+    fun `after an admin stock update to zero commits the list shows the product sold out`() {
+        prepareProduct(stock = 5)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        updateProductStock(quantity = 0)
+
+        assertThat(productFinder.findAll(request).items.map { it.soldOut }).containsExactly(true)
+    }
+
+    @Test
+    fun `after an admin restocks a sold out product the list shows it available again`() {
+        prepareProduct(stock = 0)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        updateProductStock(quantity = 5)
+
+        assertThat(productFinder.findAll(request).items.map { it.soldOut }).containsExactly(false)
+    }
+
+    /** 품절이 그대로인 재고 수정은 목록을 바꾸지 않는다. revision을 올리지 않으므로 다음 읽기는 revision 하나만 읽는 hit다. */
+    @Test
+    fun `an admin stock update that leaves sold out unchanged sends no upsert and the next read is a hit`() {
+        prepareProduct(stock = 5)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        val captured = captureSql { updateProductStock(quantity = 3) }
+
+        assertThat(captured.statements).noneMatch { it.startsWith("insert into product_list_revision") }
+        assertNextReadIsHit(request)
+    }
+
+    /** 마지막 하나를 판 주문 확정은 상품을 품절로 바꾼다. 표시는 주문 조각이 아니라 재고를 줄이는 상품 조각이 한다. */
+    @Test
+    fun `after an order confirmation sells the last unit the list shows the product sold out`() {
+        prepareConfirmableOrder(stock = 1, quantity = 1)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        confirmOrder()
+
+        assertThat(productFinder.findAll(request).items.map { it.soldOut }).containsExactly(true)
+    }
+
+    @Test
+    fun `an order confirmation that leaves sold out unchanged sends no upsert and the next read is a hit`() {
+        prepareConfirmableOrder(stock = 5, quantity = 2)
+        val request = ProductListRequest()
+        productFinder.findAll(request)
+
+        val captured = captureSql { confirmOrder() }
+
+        assertThat(captured.statements).noneMatch { it.startsWith("insert into product_list_revision") }
+        assertNextReadIsHit(request)
+    }
+
+    /**
+     * 품절을 만든 확정에서 올리기는 마지막 SQL이다. 주문, 상품, 포인트 계정의 UPDATE가 모두 그 앞에 나가므로,
+     * 잠금의 차례는 주문 → 상품 → 포인트 계정 → revision이다(ADR 0020 규칙 3).
+     */
+    @Test
+    fun `the upsert of a confirmation that sells out is its last statement after the order, product and point account updates`() {
+        prepareConfirmableOrder(stock = 1, quantity = 1)
+
+        val captured = captureSql { confirmOrder() }
+
+        val upsert = captured.statements.last()
+        val updates = captured.statements.dropLast(1)
+        assertThat(upsert).startsWith("insert into product_list_revision")
+        assertThat(updates).anyMatch { it.startsWith("update orders ") }
+        assertThat(updates).anyMatch { it.startsWith("update product ") }
+        assertThat(updates).anyMatch { it.startsWith("update point_account ") }
+    }
+
+    /**
      * 올리기는 트랜잭션의 마지막 SQL이고 상품의 UPDATE 바로 뒤다. 그래서 revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않는다(ADR 0020 규칙 3).
      * UPDATE는 커밋의 flush가 아니라 커밋 앞의 훅이 먼저 flush해 보낸다. 그렇지 않으면 올리기가 UPDATE보다 앞선다.
      */
@@ -127,5 +238,20 @@ class ProductCacheTest(
 
         assertThat(captured.statements).singleElement().asString().startsWith("insert into product_list_revision")
         assertThat(inNewTransaction { productListRevisionRepository.findRevision() }).isOne()
+    }
+
+    /** 재고가 [stock]개인 상품 하나를 [quantity]개 담은 주문을 만들고, 확정할 수 있게 그 합계만큼 충전한다. */
+    private fun prepareConfirmableOrder(stock: Int, quantity: Int) {
+        prepareOrder(products = listOf(prepareProduct(stock = stock)), quantity = quantity)
+        charge(amount = order.totalAmount.amount)
+    }
+
+    /** 다음 읽기가 revision 하나만 읽는 hit인지 본다. */
+    private fun assertNextReadIsHit(request: ProductListRequest) {
+        entityManager.withStatistics { statistics ->
+            productFinder.findAll(request)
+
+            assertThat(statistics.prepareStatementCount).isEqualTo(1L)
+        }
     }
 }
