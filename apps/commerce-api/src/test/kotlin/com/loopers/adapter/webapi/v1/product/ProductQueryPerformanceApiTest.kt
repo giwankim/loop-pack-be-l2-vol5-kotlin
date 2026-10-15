@@ -48,7 +48,7 @@ class ProductQueryPerformanceApiTest(
     companion object {
         private const val ENDPOINT = "/api/v1/products"
 
-        /** 과제 예시의 브랜드 1…100 가운데 하나. 살아 있는 상품이 97개라 첫 페이지 뒤에도 상품이 남는다. */
+        /** 과제 예시의 브랜드 1…100 가운데 하나. 삭제되지 않은 상품이 97개라 첫 페이지 뒤에도 상품이 남는다. */
         private const val BRAND_ID = 7L
 
         private const val PRICE_ASC = "price_asc"
@@ -70,7 +70,7 @@ class ProductQueryPerformanceApiTest(
     }
 
     @Test
-    fun `a brand's price_asc first page lists the seed's live products of that brand cheapest first`() {
+    fun `a brand's price_asc first page lists the seed's active products of that brand cheapest first`() {
         val expected = expectedFirstPageBody(priceAscCandidates(BRAND_ID))
 
         assertThat(requestGetProducts(BRAND_ID, PRICE_ASC)).hasStatusOk().bodyJson().isStrictlyEqualTo(expected)

@@ -29,7 +29,7 @@ class ProductQuerySeedTest {
     }
 
     @Test
-    fun `brand 101 is a live brand whose 2,000 products share 20 prices`() {
+    fun `brand 101 is an active brand whose 2,000 products share 20 prices`() {
         val large = ProductQuerySeed.products.filter { it.brandId == 101L }
 
         assertThat(ProductQuerySeed.brands.single { it.id == 101L }.deletedAt).isNull()

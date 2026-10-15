@@ -20,7 +20,7 @@ class ProductQuerySeedLoadTest(
     private val jdbc: JdbcTemplate,
 ) : BaseCommittingApplicationServiceTest() {
     @Test
-    fun `loading writes every seeded row, and the live counts leave out deleted brands and products`() {
+    fun `loading writes every seeded row, and the active counts leave out deleted brands and products`() {
         val elapsed = measureTime { ProductQuerySeed.load(jdbc) }
         log.info { "ProductQuerySeed loaded in $elapsed" }
 
@@ -30,7 +30,7 @@ class ProductQuerySeedLoadTest(
         assertThat(count("select count(*) from likes")).isEqualTo(ProductQuerySeed.likes.size)
         assertThat(count("select count(*) from brand where deleted_at is null"))
             .isEqualTo(ProductQuerySeed.brands.count { it.deletedAt == null })
-        assertThat(liveProductCountsByBrand())
+        assertThat(activeProductCountsByBrand())
             .isEqualTo(ProductQuerySeed.products.filter { it.deletedAt == null }.groupingBy { it.brandId }.eachCount())
     }
 
@@ -48,9 +48,11 @@ class ProductQuerySeedLoadTest(
         return jdbc.queryForObject(sql, Int::class.java)!!
     }
 
-    private fun liveProductCountsByBrand(): Map<Long, Int> {
-        val rows = jdbc.queryForList("select brand_id, count(*) as live from product where deleted_at is null group by brand_id")
+    private fun activeProductCountsByBrand(): Map<Long, Int> {
+        val rows = jdbc.queryForList(
+            "select brand_id, count(*) as active from product where deleted_at is null group by brand_id",
+        )
 
-        return rows.associate { (it["brand_id"] as Number).toLong() to (it["live"] as Number).toInt() }
+        return rows.associate { (it["brand_id"] as Number).toLong() to (it["active"] as Number).toInt() }
     }
 }

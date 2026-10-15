@@ -781,7 +781,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 8.2 측정 대상
 
-- 요청: `GET /api/v1/products?brandId=7&sort=price_asc`, page 0, size 20. 브랜드 7은 상품 100개 중 3개가 삭제되어 97개가 살아 있다. 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센 첫 페이지(id, 이름, 가격, 품절, 브랜드, 좋아요 수, `hasNext`)이고, 응답이 그것과 정확히 같다.
+- 요청: `GET /api/v1/products?brandId=7&sort=price_asc`, page 0, size 20. 브랜드 7은 상품 100개 중 3개가 삭제되어 97개가 삭제되지 않았다. 기대값은 SQL이 아니라 seed의 행에서 Kotlin으로 센 첫 페이지(id, 이름, 가격, 품절, 브랜드, 좋아요 수, `hasNext`)이고, 응답이 그것과 정확히 같다.
 - 요청당 SQL: 2개. 브랜드를 fetch join한 페이지 쿼리 하나와 그 페이지의 좋아요 수 배치 조회 하나다(5.28의 C). Hibernate 통계로 단언한다.
 - 좋아요 수 배치 조회의 비용: 페이지의 상품 id 20개를 `in (…)`으로 받아 `group by product_id`로 센다. `IDX_LIKES_ON_PRODUCT_ID`의 커버링 인덱스 범위 훑기로 범위 20개에서 165행을 읽어 18그룹을 낸다(좋아요가 없는 두 상품은 `LikeCounter`가 0으로 채운다). 0.135 ms(`EXPLAIN ANALYZE`). 읽는 행은 그 페이지 상품들의 좋아요 합이라 카탈로그의 크기와 무관하다.
 - 계획: 요청이 실제로 보낸 두 문장을 `captureSql`로 잡아 같은 바인드 값(브랜드 7, offset 0, limit 21 / 페이지의 id 20개)으로 `EXPLAIN FORMAT=TREE`와 `EXPLAIN ANALYZE`를 돌린다.
@@ -801,6 +801,6 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 | 브랜드 7 `price_asc` page 0 | `IDX_PRODUCT_ON_BRAND_ID` index lookup(`brand_id=7`) → `deleted_at is null` 필터 → 정렬 → 21행 | Index lookup 100/100, Filter 100/97, Sort 100/21, Limit 21/21 | 모두 1 | 있음: `Sort: p1_0.price, p1_0.id DESC, limit input to 21 row(s) per chunk` | 2 | 50 · 200 | 4.673 / 6.770 / 10.273 / 12.799 / 17.043 ms |
 
 - 값은 과제의 명령(`./gradlew :apps:commerce-api:test --tests '*ProductQuery*Test'`)으로 seed 테스트 둘과 이 클래스만 돈 실행의 출력이다. 같은 날 이 클래스만 돈 다른 실행의 p50은 6.542 ms, 전체 스위트(`check`) 안에서 돈 실행의 p50은 4.178 ms였다. 지연의 절대값은 실행마다 흔들리므로 전후는 한 실행 안에서만 견준다.
-- 페이지 쿼리의 DB 안 시간은 0.369 ms다(`EXPLAIN ANALYZE`의 Limit). 그 브랜드의 상품 100행을 모두 읽고, 그중 살아 있는 97행을 정렬한 뒤 21행을 자른다. 정렬할 행은 브랜드의 상품 수를 따라 는다.
+- 페이지 쿼리의 DB 안 시간은 0.369 ms다(`EXPLAIN ANALYZE`의 Limit). 그 브랜드의 상품 100행을 모두 읽고, 그중 삭제되지 않은 97행을 정렬한 뒤 21행을 자른다. 정렬할 행은 브랜드의 상품 수를 따라 는다.
 - 정렬은 `limit input to 21 row(s) per chunk`라 97행 전체를 정렬하지 않고 앞의 21행만 남긴다. 그래도 브랜드의 상품을 모두 읽어야 정렬을 시작할 수 있다.
 - 브랜드 필터는 조인한 브랜드의 별칭(`b1_0.id = ?`)에 걸리지만, MySQL은 브랜드를 기본 키 상수로 풀고 상품을 `brand_id`로 찾는다.
