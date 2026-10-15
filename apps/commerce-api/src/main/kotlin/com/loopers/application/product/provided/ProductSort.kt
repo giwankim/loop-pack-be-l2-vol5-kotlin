@@ -1,13 +1,13 @@
 package com.loopers.application.product.provided
 
 /**
- * 상품 목록의 정렬 기준. [apiValue]가 API에서 쓰는 유일한 철자이고 상수 이름은 밖으로 나가지 않는다.
+ * 상품 목록의 정렬 기준. [value]가 API에서 쓰는 유일한 철자이고 상수 이름은 밖으로 나가지 않는다.
  * 어느 기준이든 동률은 id 내림차순으로 깬다. 무엇을 읽어 그렇게 만드는지는 저장소가 안다.
  *
  * 고객이 [ProductFinder.findAll]에 고르는 입력의 낱말이라 [ProductListRequest]와 함께 여기 둔다.
  * 쓰는 곳은 application과 그 포트를 구현한 저장소뿐이고 domain에는 없다(설계 5.24).
  */
-enum class ProductSort(val apiValue: String) {
+enum class ProductSort(val value: String) {
     /** 늦게 등록된 상품이 앞선다. 아무것도 고르지 않았을 때의 기준이다. */
     LATEST("latest"),
 
@@ -31,7 +31,7 @@ enum class ProductSort(val apiValue: String) {
          * 여기서 예외를 던지지 않는다([ProductFinder]가 `INVALID_SORT`로 옮긴다).
          */
         fun from(value: String): ProductSort? {
-            return entries.find { it.apiValue == value }
+            return entries.find { it.value == value }
         }
     }
 }
