@@ -20,6 +20,8 @@
 > - Request는 이름 규칙(`<개념><동사>Request`) 그대로 `provided`에 둔다(5.17). `Money`는 `domain/shared`에 남는다.
 > - 다른 조각은 그 조각의 provided 포트로만 부른다. 다른 조각의 Service, `required` 저장소, 구현 클래스를 쓰지 않는다. 이 쓰임은 ArchUnit이 아니라 리뷰가 지킨다.
 > - 저장소는 `required`의 Spring Data 인터페이스이고 Spring Data가 구현한다(5.20). 저장소의 위치가 만든 두 순환은 묻는 쪽이 선언한 포트(`ActiveProductChecker`, `LikeCounter`)로 끊는다(5.16). (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `ActiveProductChecker`는 지웠다. 브랜드 쪽 순환은 이제 브랜드가 선언한 `ProductDeleter`를 상품의 `ProductModifyService`가 직접 구현해 끊는다. `LikeCounter`는 `LikeQueryService`가 직접 구현한다.)
+>
+> 2026-10-16 위 표의 adapter.persistence 줄은 QueryDSL 목록 어댑터만 적었다. 지금은 고객 상품 목록 캐시의 설정(`ProductListCacheConfig`)과 캐시 오류 처리기(`ProductListCacheErrorHandler`)도 이 계층에 있다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.8). 설정은 캐시 이름(`ProductListCacheKeyGenerator.CACHE_NAME`)과 캐시하는 값의 타입(`ProductListInfo`)을 쓰므로, required 포트 말고도 같은 조각의 application 구현 클래스와 provided 타입에 기댄다. `HexagonalArchitectureTest`는 adapter가 application에 기대는 것을 막지 않는다. 다른 조각의 구현 클래스를 쓰지 않는다는 위 규칙은 그대로다.
 
 과제의 "버드뷰"를 C4 컴포넌트 다이어그램으로 그린다. 고객과 관리자, API 서버 안의 네 계층, DB와 요청 방향을 담는다.
 

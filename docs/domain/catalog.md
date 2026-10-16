@@ -75,13 +75,14 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockDeductor.deduct`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 확정은 상품을 읽지 않는다. `deduct`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다.
+주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockDeductor.deduct`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 확정은 상품을 읽지 않는다. `deduct`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 차감한 상품 가운데 하나라도 품절이 되면 `deduct`가 고객 상품 목록이 바뀌었다고 표시한다. 확정은 표시하지 않는다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
 
-- 관리자 등록: `ProductRegister.register` → `BrandFinder.findForShare`가 삭제되지 않은 브랜드를 공유 잠금으로 조회(없으면 `BRAND_NOT_FOUND`) → `Product(brand, name, price, stock)` → 저장. 공유 잠금은 커밋까지 가므로 브랜드의 삭제와 이름 변경은 등록이 끝나기를 기다리고, 같은 브랜드의 등록끼리는 서로 막지 않는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
-- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.findForUpdate`로 삭제되지 않은 상품을 잠가 조회 → `product.updateStock(quantity)` → 저장. 수정과 삭제도 같은 잠금 읽기로 상품을 얻는다. 잠금은 상품 행만 걸고 커밋까지 간다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+- 관리자 등록: `ProductRegister.register` → `BrandFinder.findForShare`가 삭제되지 않은 브랜드를 공유 잠금으로 조회(없으면 `BRAND_NOT_FOUND`) → `Product(brand, name, price, stock)` → 저장 → `ProductListChangeMarker.markChanged()`로 고객 상품 목록이 바뀌었다고 표시. 공유 잠금은 커밋까지 가므로 브랜드의 삭제와 이름 변경은 등록이 끝나기를 기다리고, 같은 브랜드의 등록끼리는 서로 막지 않는다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 새 상품은 전체 목록과 그 브랜드의 목록에 나타나므로 언제나 표시한다.
+- 관리자 재고 변경: `ProductRegister.updateStock` → `ProductFinder.findForUpdate`로 삭제되지 않은 상품을 잠가 조회 → `product.updateStock(quantity)` → 품절이 뒤집혔으면 고객 상품 목록이 바뀌었다고 표시 → 저장. 고객은 재고를 품절 여부로만 보므로 품절이 그대로이면 표시하지 않는다. 뒤집혔는지는 잠가 읽은 행의 앞뒤를 견주어 정하므로 따로 잠글 것이 없다. 수정과 삭제도 같은 잠금 읽기로 상품을 얻고, 값이 그대로여도 언제나 표시한다. 잠금은 상품 행만 걸고 커밋까지 간다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)).
+- 표시한 쓰기는 상품의 INSERT·UPDATE가 모두 나간 뒤, 커밋 바로 앞의 마지막 SQL로 상품 목록 revision을 올린다. 잠금은 상품 → 상품 목록 revision의 차례다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 - 고객 상세: `ProductFinder.findInfo` → `find`로 삭제되지 않은 상품 조회 → 브랜드 이름과 좋아요 수 조회 → `ProductInfo`. 상품 하나를 엔티티로 주는 `find`는 브랜드도 좋아요 수도 읽지 않는다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)). `soldOut`은 `product.isSoldOut()`에서 온다. 고객 DTO가 `stock`을 버리고 `soldOut`을 고른다.
 
 TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되며, `updateStock(-1)`을 거절한 뒤 기존 재고가 그대로인지 확인한다. 재고는 값 객체가 아니라 `Product`의 `Int`다(설계 5.35).
@@ -144,8 +145,8 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 | 유스케이스 | 흐름 |
 | --- | --- |
-| `Liker.like(userId, request)` | 1 미만의 상품 ID는 `LikeRequest`의 제약이 거른다 → `LikeValidator.validateForLike`가 `ProductFinder.find`로 삭제되지 않은 상품 조회 → 관계가 있으면 끝 → 없으면 `Like` 저장 |
-| `Liker.unlike(userId, productId)` | 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다 |
+| `Liker.like(userId, request)` | 1 미만의 상품 ID는 `LikeRequest`의 제약이 거른다 → `LikeValidator.validateForLike`가 `ProductFinder.find`로 삭제되지 않은 상품 조회 → 상품의 `ProductListChangeMarker.markChanged()`로 고객 상품 목록이 바뀌었다고 표시 → 관계가 있으면 끝 → 없으면 `Like` 저장. 관계가 이미 있어도 표시한다 |
+| `Liker.unlike(userId, productId)` | 고객 상품 목록이 바뀌었다고 표시 → 관계를 찾아 있으면 행 삭제 → 없으면 끝. 상품 존재는 보지 않는다. 지울 관계가 없어도 표시한다 |
 | `LikeFinder.findLikedProducts(userId, request)` | 요청자가 누른 삭제되지 않은 상품을 최근에 누른 순으로 한 조각 조회 → 조각의 상품마다 좋아요 수를 한 번에 세어 상품 항목으로 조합 |
 
 ### 저장 약속
@@ -157,7 +158,8 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 ### 협력
 
 - 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. 좋아요 조각의 `LikeQueryService`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
-- 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeQueryService`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28).
+- 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeQueryService`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28). 고객 목록은 캐시에 없을 때만 센다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
+- 목록의 무효화: 좋아요 수가 고객 목록의 항목과 `likes_desc`의 차례에 실리므로 누르기와 취소는 상품의 표시 포트를 직접 부른다. 좋아요의 INSERT·DELETE가 나간 뒤, 커밋 바로 앞의 마지막 SQL로 상품 목록 revision을 올린다. 상품 행을 잠그지 않던 좋아요가 이 행에서 처음 줄을 서고, 3초 안에 차례가 오지 않으면 409 `CONCURRENT_REQUEST`다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 - 내 좋아요 목록: `LikeFinder`가 `ProductFinder.findAllLikedBy`로 상품 조각을 받는다. `ProductFinder`가 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자
