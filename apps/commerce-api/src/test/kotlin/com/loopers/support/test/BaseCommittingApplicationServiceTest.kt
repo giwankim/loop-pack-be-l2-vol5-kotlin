@@ -1,5 +1,9 @@
 package com.loopers.support.test
 
+import com.loopers.application.product.ProductListCacheKeyGenerator
+import com.loopers.application.product.provided.ProductFinder
+import com.loopers.application.product.provided.ProductListRequest
+import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.support.DatabaseCleanUp
 import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
@@ -29,6 +33,8 @@ import kotlin.reflect.KClass
  * - [runConcurrently]는 모든 호출이 start gate에 닿으면 함께 풀고, 넘긴 차례대로 성공 값이나 던진 예외를 돌려준다.
  *   [tally]는 그 결과를 성공·업무 거절·기술 오류로 센다.
  * - [inNewTransaction]은 결과를 새 트랜잭션에서 다시 읽는다. 커밋된 것만 보이고, 앞선 트랜잭션의 영속성 컨텍스트가 답하지 않는다.
+ * - [currentListRevision]과 [currentListCacheKey]는 커밋된 상품 목록 revision과 그것을 품은 고객 목록의 캐시 키를 새 트랜잭션에서
+ *   읽는다. 롤백하는 테스트는 revision을 올리지 않으므로 캐시의 무효화를 보는 테스트가 이 기반을 쓴다(ADR 0020).
  *
  * `prepare`가 돌려준 엔티티는 그 트랜잭션이 끝나 분리되어 있다. 지연 연관(`Product.brand` 등)을 건드리지 않는다.
  */
@@ -53,6 +59,15 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     @Autowired
     private lateinit var transactionManager: PlatformTransactionManager
 
+    @Autowired
+    private lateinit var productFinder: ProductFinder
+
+    @Autowired
+    private lateinit var productListRevisionRepository: ProductListRevisionRepository
+
+    @Autowired
+    private lateinit var productListCacheKeyGenerator: ProductListCacheKeyGenerator
+
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
 
@@ -73,6 +88,21 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
         }
         @Suppress("UNCHECKED_CAST")
         return transaction.execute { block() } as T
+    }
+
+    /** 커밋된 상품 목록 revision. 행이 없으면 0이다. */
+    protected fun currentListRevision(): Long {
+        return inNewTransaction { productListRevisionRepository.findRevision() }
+    }
+
+    /**
+     * 지금 커밋된 revision으로 고객 목록이 [request]에 쓰는 캐시 키. 키 생성기는 revision을 읽는 트랜잭션 안에서만 키를 만든다.
+     * 운영의 키 생성기가 만드므로 테스트는 키의 철자를 적지 않는다.
+     */
+    protected fun currentListCacheKey(request: ProductListRequest): Any {
+        val findAll = ProductFinder::class.java.getMethod("findAll", ProductListRequest::class.java)
+
+        return inNewTransaction { productListCacheKeyGenerator.generate(productFinder, findAll, request) }
     }
 
     /** [block]을 다른 스레드에서 부르고 곧바로 돌아온다. 그 스레드에는 트랜잭션이 없으므로 [block]이 부른 포트가 저마다 커밋한다. */

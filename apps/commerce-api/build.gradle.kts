@@ -18,6 +18,9 @@ dependencies {
     implementation(libs.springBootStarterActuator)
     implementation(libs.springdoc.openapiStarterWebmvcUi)
 
+    // cache: 고객 상품 목록의 Redis 캐시(ADR 0020). 처음 쓰는 곳이라 여기서 들인다(ADR 0008)
+    implementation(libs.springBootStarterCache)
+
     // admin boundary: 통합 테스트 전용(src/test AdminSecurityConfig), 운영 코드에는 Spring Security 없음
     testImplementation(libs.springBootStarterSecurity)
     testImplementation(libs.springBootStarterSecurityTest)

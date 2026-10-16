@@ -19,18 +19,22 @@ class SqlCaptureTest : BaseWebApiAdapterTest() {
         assertThat(captured.result).isEqualTo("second")
     }
 
-    /** 준비한 행을 블록 앞에서 flush해, 조회 전의 자동 flush가 블록 안에서 `insert`를 보내지 않게 한다. */
+    /**
+     * 준비한 행을 블록 앞에서 flush해, 조회 전의 자동 flush가 블록 안에서 `insert`를 보내지 않게 한다.
+     * 캐시가 비어 있어 miss다. 첫 문장은 캐시 키에 넣을 상품 목록 revision이다(ADR 0020).
+     */
     @Test
-    fun `a customer product list request inside the block sends the page query and the like count batch query`() {
+    fun `a customer product list request inside the block sends the revision read, the page query and the like count query`() {
         prepareProduct()
         entityManager.flushAndClear()
 
         val captured = captureSql { mvc.get().uri("/api/v1/products").exchange() }
 
         assertThat(captured.result).hasStatusOk()
-        assertThat(captured.statements).hasSize(2)
-        assertThat(captured.statements[0]).contains("from product ").contains(" limit ")
-        assertThat(captured.statements[1]).contains("from likes ").contains(" group by ")
+        assertThat(captured.statements).hasSize(3)
+        assertThat(captured.statements[0]).contains("from product_list_revision ")
+        assertThat(captured.statements[1]).contains("from product ").contains(" limit ")
+        assertThat(captured.statements[2]).contains("from likes ").contains(" group by ")
     }
 
     @Test

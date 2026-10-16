@@ -20,6 +20,8 @@
 > - Request는 이름 규칙(`<개념><동사>Request`) 그대로 `provided`에 둔다(5.17). `Money`는 `domain/shared`에 남는다.
 > - 다른 조각은 그 조각의 provided 포트로만 부른다. 다른 조각의 Service, `required` 저장소, 구현 클래스를 쓰지 않는다. 이 쓰임은 ArchUnit이 아니라 리뷰가 지킨다.
 > - 저장소는 `required`의 Spring Data 인터페이스이고 Spring Data가 구현한다(5.20). 저장소의 위치가 만든 두 순환은 묻는 쪽이 선언한 포트(`ActiveProductChecker`, `LikeCounter`)로 끊는다(5.16). (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `ActiveProductChecker`는 지웠다. 브랜드 쪽 순환은 이제 브랜드가 선언한 `ProductDeleter`를 상품의 `ProductModifyService`가 직접 구현해 끊는다. `LikeCounter`는 `LikeQueryService`가 직접 구현한다.)
+>
+> 2026-10-16 위 표의 adapter.persistence 줄은 QueryDSL 목록 어댑터만 적었다. 지금은 고객 상품 목록 캐시의 설정(`ProductListCacheConfig`)과 캐시 오류 처리기(`ProductListCacheErrorHandler`)도 이 계층에 있다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.8). 설정은 캐시 이름(`ProductListCacheKeyGenerator.CACHE_NAME`)과 캐시하는 값의 타입(`ProductListInfo`)을 쓰므로, required 포트 말고도 같은 조각의 application 구현 클래스와 provided 타입에 기댄다. `HexagonalArchitectureTest`는 adapter가 application에 기대는 것을 막지 않는다. 다른 조각의 구현 클래스를 쓰지 않는다는 위 규칙은 그대로다.
 
 과제의 "버드뷰"를 C4 컴포넌트 다이어그램으로 그린다. 고객과 관리자, API 서버 안의 네 계층, DB와 요청 방향을 담는다.
 
@@ -283,6 +285,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.7 고객·관리자 응답 모델
 
+> 2026-10-15 고객 목록(`ProductFinder.findAll(ProductListRequest)`)은 이제 `ProductInfo`의 `Slice` 대신 고객이 보는 필드만 담은 `ProductListInfo`를 돌려준다. 항목 `ProductSummaryInfo`는 id, name, price, soldOut, brandId, brandName, likeCount이고, 페이지는 page, size, hasNext다. 아래 "다시 볼 조건"의 자기 조회 모델이지만 계기는 별도 조회가 아니라 캐시다. 목록 캐시([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md))가 이 반환값을 그대로 저장하는데, 품절을 바꾸지 않는 재고 쓰기는 revision을 올리지 않으므로 `stock`·`createdAt`·`updatedAt`을 들고 있으면 캐시된 값이 DB와 어긋난다. 상세, 관리자 목록, 내 좋아요 목록은 그대로 `ProductInfo`이고, 고객 목록의 JSON은 바뀌지 않았다.
+
 - 선택: 고객 상품 응답은 수량 대신 `soldOut`을, 관리자 응답은 수량과 시각을 준다. 같은 `Product`를 읽어 application은 역할을 모르는 하나의 `ProductInfo`(id, brandId, brandName, name, price, stock, soldOut, createdAt, updatedAt, 좋아요 티켓에서 likeCount)를 채우고, adapter.webapi의 역할별 DTO(`ProductAdminResponse`, `ProductResponse`)가 각자 내보낼 필드를 고른다. `soldOut`은 `Product.isSoldOut()`에서 오고 DTO는 계산하지 않는다. `Product`는 어느 응답의 존재도 모른다.
 - 역할 분기를 adapter.webapi에 두는 까닭: 관리자와 고객은 이미 `/api-admin`·`/api` 컨트롤러로 갈라져 있다. Service가 역할별 `Info`를 만들면 같은 지식이 한 층 아래에 한 번 더 생긴다. Service가 아는 것은 얼마나 읽었는가(목록·상세)이지 누가 보는가가 아니다. 과제 템플릿의 `ExampleInfo` → `ExampleV1Dto.ExampleResponse`도 애그리거트당 `Info` 하나, 엔드포인트당 응답 하나다.
 - `Info`를 두는 기준: Service는 연관이 없는 엔티티 하나로 답이 끝나면 그 엔티티를 돌려준다(`BrandFinder` → `Brand`). 연관을 건너 읽거나(`Product` → `Brand`, `@ManyToOne`) 다른 저장소의 값을 더해야 하면(좋아요 수) 트랜잭션 안에서 `Info`로 옮겨 돌려준다. `open-in-view: false`라 트랜잭션 밖의 지연 로딩은 실패하기 때문이다. 필드를 그대로 베끼기만 하는 `Info`는 두지 않는다. (2026-10-08, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 예외가 하나 있다. 주문이 부르는 `ProductFinder.findOrderable`은 좋아요 수가 필요 없어 `ProductInfo` 대신 엔티티를 돌려준다. 브랜드를 fetch join으로 함께 읽으므로 트랜잭션 밖에서 `product.brand`를 건너도 지연 로딩이 없다.) (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 이 기준을 대체했다. 선은 지연 로딩이 아니라 애그리거트에 있다. Finder는 자기 애그리거트를 엔티티 그래프로 통째로 읽어 엔티티로 돌려주고, `Info`는 여러 애그리거트를 합친 응답에만 둔다. 그래서 `ProductInfo`는 남고 `OrderInfo`와 `PointAccountInfo`는 없어졌다. `ProductFinder.find`는 이제 엔티티를 돌려주고, `ProductInfo`를 주는 상세는 `findInfo`, 위의 `findOrderable`은 `findOrderableOrNull`이다.)
@@ -362,6 +366,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)으로 provided 포트는 다른 조각의 required 포트를 상속하지 않는다. Service가 맡는 역할 인터페이스를 모두 직접 구현한다. 위 메모의 "`ProductFinder`가 상속해 구현한다"와 "`LikeCounter`를 like의 `LikeFinder`가 구현한다"는 그때의 모양이다. 지금은 `LikeQueryService`가 `LikeFinder`와 `LikeCounter`를 각자 구현한다. `ProductFinder : ActiveProductChecker`는 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지울 때까지 남는다. 의존 방향은 product → brand, like → product 그대로이고, 계층마다 따로 검사하는 선택(B)도 그대로다.
 >
 > 2026-10-09 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지웠다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)). 브랜드 ↔ 상품 순환은 이제 brand가 선언한 `ProductDeleter`("이 브랜드의 삭제되지 않은 상품을 삭제하라")를 product의 `ProductModifyService`가 `ProductRegister`, `StockDeductor`와 나란히 직접 구현해 끊는다. 묻는 포트가 시키는 포트로 바뀌었을 뿐 타입의 의존은 product → brand 그대로이고, `HexagonalArchitectureTest`는 고치지 않았다. 아래 문제와 다시 볼 조건의 "삭제되지 않은 상품이 있는가"는 그때의 물음이다.
+>
+> 2026-10-15 브랜드 이름 변경이 고객 상품 목록의 캐시를 무효로 만들면서([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)) brand가 선언한 시키는 포트가 하나 더 생겼다. `ProductListMarker`("상품 목록이 바뀌었다고 표시하라")를 product의 `ProductListRevisionMarker`가 product의 `ProductListChangeMarker`와 나란히 직접 구현한다. brand가 product의 표시 포트를 부르면 순환이므로 `ProductDeleter`와 같은 꼴로 끊는다. 브랜드 삭제는 `deleteAllOfBrand` 안에서 표시하므로 새 포트는 이름 변경만 쓴다. 타입의 의존은 product → brand 그대로다.
 
 - 문제: #6의 브랜드 삭제 거절은 `application.brand`가 `domain.product`의 저장소에 묻는 일이다. `domain.product`는 이미 `domain.brand`를 참조한다(5.1). 계층을 가로질러 기능을 한 조각으로 묶으면 `brand → product → brand`가 순환으로 잡힌다.
 - 대안 A: 기능 조각 하나가 네 계층을 가로지른다. `domain.brand`, `application.brand`, `adapter.webapi.v1.brand`를 조각 `brand` 하나로 묶고 조각 사이 순환을 막는다. 기능 하나를 통째로 떼어 낼 수 있음을 보장한다.
@@ -557,6 +563,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 2026-10-08 0으로 채우는 자리가 저장소에서 `LikeCounter`의 구현으로 옮겨졌다([#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)). `LikeRepository`에는 그룹 집계 `findProductLikeCounts`만 남고, 빈 목록을 거르는 일과 좋아요가 없는 상품을 0으로 채우는 일은 `LikeQueryService.countLikes(productIds)`가 한다. 요청한 식별자마다 값이 있다는 것은 저장소가 아니라 상품이 선언한 `LikeCounter`의 약속이기 때문이다. 빈 목록은 여전히 SQL을 보내지 않는다. 다만 Hibernate 7은 빈 `in`을 `1=0`으로 바꿔 보내므로 MySQL이 거절할 일은 없고, 거르는 까닭은 헛된 왕복을 줄이는 것이다. 아래의 `countByProductIds`는 그때의 이름이다.
 >
 > 2026-10-15 4주차 측정(8.4) 뒤에도 좋아요 수는 관계에서 센다(`CONTEXT.md` 좋아요 수). 목록 항목에 수를 싣는 배치 조회는 그 페이지 상품의 좋아요만 읽는다. 브랜드 7 `price_asc`의 첫 페이지는 165행을 읽어 0.116 ms이고, 인기 상품만 모인 전체 카탈로그의 첫 페이지도 17,200행을 읽어 3.2 ms다. 비싼 것은 수를 싣는 일이 아니라 수로 정렬하는 일이다. 전체 카탈로그 `likes_desc`가 91.8 ms이고, 이것이 대안 A를 다시 볼 근거이자 조건이다(5.32의 2026-10-15 메모). 대안 A(비정규화)는 이번 주 과제에서 선택 심화이고 하지 않는다.
+>
+> 2026-10-15 고객 목록 캐시([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.10)에서 C의 값이 하나 더 드러났다. 좋아요 수를 관계에서 세어 목록 항목에 싣고 `likes_desc`의 차례도 그것으로 정하므로, 좋아요의 누르기·취소는 고객 목록을 바꾸는 쓰기다. 그래서 좋아요도 상품 목록 revision을 올리고, 상품 행을 잠그지 않던 좋아요가 처음으로 revision 행에서 줄을 선다. 다른 쓰기가 그 행을 3초 넘게 쥐면 409 `CONCURRENT_REQUEST`다(8.10). 좋아요가 잦아 hit가 드물거나 이 행에서 대기가 관찰되면 좋아요를 이 행에서 떼어 낸다. 좋아요 수를 캐시한 값에서 빼고 hit마다 따로 세거나, 대안 A로 비정규화한다(ADR 0020의 다시 볼 조건).
 
 - 문제: 상품 상세와 목록 항목의 `likeCount`. CONTEXT.md는 관계에서 세어 구하고 따로 저장하지 않는다고 정했다. 남는 것은 어디서 어떻게 세는가다.
 - 대안 A: `Product`에 `likeCount` 컬럼을 두고 누르기·취소가 증감한다. 읽기가 가장 싸다. 그러나 CONTEXT.md와 어긋나고, 상품 행에 쓰기 경합이 생기며, 관계와 수가 어긋날 수 있다.
@@ -601,6 +609,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.31 상품 조각을 ProductInfo로 옮기는 자리
 
+> 2026-10-15 `ProductInfoAssembler`가 고객 목록의 `ProductListInfo`도 만든다(`toListInfo`, 5.7의 2026-10-15 메모). 항목만 `ProductSummaryInfo`이고 조각의 좋아요 수를 한 번에 세는 일(5.28)은 `toInfos`와 같은 private 셈 하나를 쓴다. 관리자 목록과 내 좋아요 목록은 그대로 `toInfos`다.
+
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 조각의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`와 domain의 `LikeRepository.countByProductIds`는 그때의 이름과 자리다. 지금은 `application/like/required`의 `LikeRepository`가 그룹 집계 `findProductLikeCounts`만 갖고, 0을 채우는 일은 `LikeCounter`의 구현이 한다(5.28).
 >
 > 2026-10-09 위 메모의 "좋아요의 `LikeFinder`가 그 물음에 답한다"는 그때의 모양이다. 지금은 `LikeFinder`가 `LikeCounter`를 상속하지 않고, `LikeQueryService`가 `LikeCounter`를 직접 구현해 답한다(5.16의 2026-10-09 메모).
@@ -621,6 +631,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 다시 볼 조건: 브랜드 없는 좋아요 많은순이 자주 불려 위의 비용이 문제가 될 때. 이 측정값이 그 근거다. 4주차 캐시 설계는 어느 조회를 캐시할지 고를 때 이 측정값을 쓴다.
 >
 > 아래 "다시 볼 조건"의 `likes(product_id)` 인덱스는 이미 있다(`Like`의 `IDX_LIKES_ON_PRODUCT_ID`). 측정한 계획은 해시 조인이 아니라 후보 상품마다 그 인덱스를 찾는 중첩 루프 left join이다. 그래서 아래의 "해시 조인", "O(N + L)"은 그때의 계획이다.
+>
+> 2026-10-15 캐시를 들이고 보니([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.10) 위 첫 메모의 "캐시를 들이면 그 무효화 경로도 하나 더 생긴다"는 컬럼을 두지 않아도 마찬가지였다. 좋아요 수를 관계에서 세어도 그 수가 목록 항목과 `likes_desc`의 차례에 실리므로, 누르기·취소가 목록을 바꾸고 revision을 올리는 쓰기가 된다. 좋아요는 이제 revision 행에서 줄을 선다(8.7, 8.10). 컬럼을 두지 않아 아끼는 것은 상품 행의 쓰기 경합이지 무효화 경로가 아니다. 캐시는 전체 카탈로그 `likes_desc`의 hit에서 이 집계를 건너뛴다(8.9). miss는 여전히 이 비용을 낸다.
 
 - 문제: `likes_desc`는 정렬 키가 상품의 컬럼이 아니라 `likes` 관계를 세어 나오는 값이다. 다른 두 기준은 Spring Data의 `Sort` 하나로 끝나지만 이것은 그럴 수 없다. `Like`는 상품을 식별자로만 가리켜(설계 2) 타고 갈 연관도 없다.
 - 대안 A: 정렬도 집계도 한 쿼리가 한다(5.28의 B로 옮긴다). 목록이 조회 한 번이다. 그러나 `ProductRepository`의 반환이 엔티티가 아닌 튜플이 된다.
@@ -638,6 +650,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 다시 볼 조건: `likes(product_id)` 인덱스. 지금은 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회에 인덱스가 없고, 이는 #8의 `countByProductId`·`countByProductIdIn`도 이미 치르고 있다. 좋아요 행이 늘어 해시 조인의 한 번 훑기가 비싸지면 그때 `@Table(indexes = ...)`을 더한다. 마이그레이션 도구가 없어 운영 DDL이 이 저장소에 없다는 것도 함께 본다.
 
 ### 5.33 웹 어댑터 메서드의 꼴
+
+> 2026-10-15 고객 목록 하나는 `PageResponse.from(slice)`를 쓰지 않는다. `ProductFinder.findAll(ProductListRequest)`가 `Slice`가 아니라 `ProductListInfo`를 돌려주기 때문이다(5.7의 2026-10-15 메모). 핸들러는 `products.items.map(ProductResponse::from)`과 `products`의 `page`·`size`·`hasNext`를 이름 붙인 인자로 `PageResponse`에 넣어 지역 변수 `page`에 담고, 빈 줄 뒤에 `ApiResponse.success(page)`로 돌려준다. 나머지 목록은 아래 꼴 그대로다.
 
 - 문제: 템플릿에서 온 Controller는 유스케이스의 반환을 `.let { BrandAdminResponse.from(it) }.let { ApiResponse.success(it) }`처럼 흘려보냈다. 주문 Controller와 몇몇 응답 DTO의 `from`은 식 본문(`= ...`)이었다. 가드 절은 중괄호를 쓴 것과 한 줄 `if (...) throw`가 섞여 있었다.
 - 선택 (2026-10-08): adapter.webapi의 Controller 메서드와 응답 DTO의 `from`은 블록 본문으로 쓴다. Controller는 유스케이스가 돌려준 값을 그 정체를 말하는 지역 변수(`brand`, `brands`, `order`, `pointAccount`, `likedProducts`)에 담고, 빈 줄 하나 뒤에 `return ApiResponse.success(BrandAdminResponse.from(brand))`로 한 번에 감싼다. 목록은 `ApiResponse.success(PageResponse.from(brands.map(BrandAdminResponse::from)))`이다. 가드 절은 한 줄이어도 중괄호를 쓰고, 닫는 중괄호 뒤에 빈 줄을 하나 두어 검사와 그 뒤의 일을 가른다. 가드가 이어지면 가드 사이에도 둔다. 가드는 층을 가리지 않으므로 이 규칙은 domain, application, adapter.persistence에도 적용한다.
@@ -800,6 +814,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 ## 8. 상품 목록 조회의 측정
 
 > 2026-10-15 브랜드 필터 + 가격 낮은순에 `(brand_id, price, id DESC)` 인덱스를 더했다(5.38). 지운 인덱스는 여전히 없다. 아래 8.4는 인덱스를 더하기 전의 기준선이고, 같은 seed에서 인덱스를 숨긴 "전"과 보이는 "후"를 한 실행 안에서 견준 것이 8.5다.
+>
+> 2026-10-15 고객 상품 목록에 Redis 캐시를 더했다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)). 아래 머리말이 약속한 캐시 범위·변경 책임·장애 계약이 8.6–8.8이고, miss와 hit의 측정이 8.9, 비용과 한계가 8.10이다. 8.4와 8.5는 캐시를 들이기 전의 측정이라 요청당 SQL이 2개다. 지금은 키를 만드는 revision 읽기가 첫 문장으로 더해져 miss의 SQL이 3개이고, 같은 테스트는 요청마다 캐시를 비워 DB 경로를 잰다. 좋아요 수는 관계에서 세어 목록 항목과 `likes_desc`의 차례에 실리므로(5.28) 좋아요의 누르기·취소도 목록을 바꾸는 쓰기다. 그래서 좋아요도 revision을 올리고, 잠그지 않던 좋아요가 이제 revision 행에서 줄을 선다(8.7, 8.10).
 
 4주차 과제 1·2절의 기준선이다. 측정 대상은 지금의 조회 계약 그대로이고, 인덱스는 하나도 더하거나 지우지 않았다(과제: "성능 비교를 위해 … 다른 과제의 인덱스를 삭제하지 않습니다"). 수치는 `ProductQueryPerformanceApiTest`가 [`ProductQuerySeed`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/ProductQuerySeed.kt)의 카탈로그 위에서 다시 재고 테스트 로그에만 출력한다. 아래 값은 그 출력을 옮긴 것이다. 캐시 설계가 같은 절에 캐시 범위·변경 책임·장애 계약을 더한다.
 
@@ -870,3 +886,101 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - MockMvc 지연의 p50은 브랜드 7이 6.724 → 5.870 ms, 브랜드 101이 5.369 → 3.380 ms다. 요청 하나에서 페이지 쿼리가 차지하는 몫이 작아(8.4), DB 안에서 1.1 ms를 줄인 브랜드 101에서만 실행 안의 흔들림보다 큰 차이가 보인다. 브랜드 7 "후"의 p95 이상(14.610 / 33.614 / 70.413 ms)은 두 SQL의 DB 안 시간이 합해 0.2 ms 남짓인 요청에서 난 꼬리라 인덱스가 아니라 JVM·컨테이너의 흔들림으로 본다. 같은 날 전체 스위트(`check`, 527개) 안에서 돈 실행에서는 그 꼬리가 없었다. 그 실행의 p50 / p99는 브랜드 7이 4.054 / 6.759 → 3.226 / 5.637 ms, 브랜드 101이 4.240 / 5.397 → 2.662 / 4.834 ms였고, 페이지 쿼리의 DB 안 시간은 0.128 → 0.066 ms와 1.14 → 0.113 ms였다. 시간은 단언하지 않는다.
 - "후"의 Filter 예상 10(브랜드 7)과 200(브랜드 101)은 8.4의 관찰과 같은 10% 짐작이다. "전"의 계획에서는 같은 Filter가 lookup과 같은 행 수로 찍혀 이 짐작이 드러나지 않는다.
 - 브랜드 삭제 연쇄의 잠금 읽기는 이 인덱스가 보이는 상태에서도 계획에 정렬 단계가 없다. `ProductQueryPerformanceApiTest`의 연쇄 가드가 같은 실행에서 통과했다.
+
+### 8.6 캐시 범위
+
+과제 3절은 공통 조회 한 경로에 cache-aside를 붙이라고 한다. 비싼 것은 전체 카탈로그 `likes_desc`의 집계 정렬이다(8.4). 그 요청이 속한 고객 상품 목록 하나를 캐시한다. 결정은 [ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)이다.
+
+- 경로: `GET /api/v1/products`(8.1)다. 포트로는 `ProductFinder.findAll(ProductListRequest)`이고, `ProductQueryService`의 그 메서드에 `@Cacheable`(캐시 이름 `product-list`)을 단다. 필터·정렬·페이지·크기의 모든 조합을 캐시한다.
+  - 검증을 지난 요청은 모두 캐시한다. 빈 페이지, 없거나 삭제된 브랜드의 빈 목록, 마지막 페이지도 그렇다.
+  - 모르는 `sort`(400 `INVALID_SORT`)와 범위를 어긴 `page`·`size`(400 `BAD_REQUEST`)는 지금처럼 거절한다. 예외는 캐시하지 않으므로 매번 거절된다.
+- 키: `product-list::v1:{revision}:{brandId|all}:{sort}:{page}:{size}`. 예를 들어 revision 0에서 전체 카탈로그 `likes_desc`의 첫 페이지는 `product-list::v1:0:all:likes_desc:0:20`이다. `product-list::`는 Spring Cache가 붙이는 캐시 이름이고, 나머지는 `ProductListCacheKeyGenerator`가 짓는다.
+  - `v1`: 캐시하는 값의 모양의 판(과제의 "응답 형식")이다. 값(`ProductListInfo`)의 모양을 바꾸면 올린다. 옛 판의 값은 읽히지 않고 TTL로 사라진다.
+  - `{revision}`: 상품 목록 revision. 그 요청의 트랜잭션이 첫 문장으로 읽은 값이다(8.7).
+  - `{brandId|all}`: 브랜드 필터. 고르지 않으면 `all`이다.
+  - `{sort}`: 요청의 철자다. `ProductSort.from`이 철자가 같은 기준만 받으므로, 값이 들어가는 키는 늘 API 값(`latest`, `price_asc`, `likes_desc`)을 품는다.
+  - `{page}`·`{size}`: 기본값을 채운 값이다. `?page=0`을 보낸 요청과 생략한 요청이 같은 키를 쓴다.
+- 값: `ProductListInfo`의 JSON이다. 항목마다 `id, name, price, soldOut, brandId, brandName, likeCount`가, 페이지에 `page, size, hasNext`가 있다. 고객 응답이 내보내는 필드 그대로이고 웹 어댑터가 지금의 `ApiResponse<PageResponse<ProductResponse>>`로 옮기므로, hit의 응답 JSON이 miss의 것과 같다(`ProductCacheApiTest`).
+  - 뺀 필드: 재고 수량과 등록·수정 시각. 품절을 바꾸지 않는 재고 쓰기는 revision을 올리지 않으므로(8.7), 수량을 캐시하면 캐시된 동안 DB와 어긋난다. 응답이 싣지 않는 값이어도 캐시된 값이 틀린 값을 들고 있게 된다. 그래서 `ProductInfo`가 아니라 이 투영을 캐시한다(5.7의 2026-10-15 메모).
+  - 사용자별 필드는 원래 없다. 목록은 요청자를 받지 않는다(4절). 그래서 키에도 사용자가 없다.
+  - 직렬화는 Boot가 만든 Jackson 3 매퍼 위의 타입 지정 `JacksonJsonRedisSerializer`다. 값에 타입 정보를 싣지 않는다. null은 캐시하지 않는다.
+  - 크기: seed의 20개짜리 페이지(브랜드 7·101의 `price_asc`, 브랜드 7의 `likes_desc`)는 2,268–2,365바이트이고, Redis의 `MEMORY USAGE`로 약 2.6 KB다. 2026-10-15 전체 스위트를 돌리는 동안 테스트 Redis의 `product-list::` 키를 `STRLEN`과 `MEMORY USAGE`로 읽은 값이다. seed의 이름은 짧은 ASCII(`product-1234`, `brand-7`)라서 실제 이름이 길면 그만큼 커진다.
+- TTL: 5분, 지터는 없다. TTL은 옛 revision의 키를 치울 뿐 신선도의 상한이 아니다(8.10, ADR 0020 규칙 5).
+- 캐시하지 않는 조회:
+  - 상품 상세. 기본 키 조회와 좋아요 수 하나라 싸다. 캐시하면 상세의 무효화를 따로 정해야 한다. 이 revision을 같이 쓰면 상세의 hit도 모든 쓰기에 무효가 된다(ADR 0020의 다시 볼 조건).
+  - 관리자 상품 목록. 고객 목록과 같은 쿼리로 고르지만 재고 수량과 시각을 싣는다. 품절을 바꾸지 않는 재고 쓰기가 revision을 올리지 않으므로 이 키로는 맞출 수 없다.
+  - 내 좋아요 목록. 사용자마다 값이 달라 키에 사용자가 들어야 한다.
+
+### 8.7 변경 책임
+
+목록의 응답을 바꾸는 쓰기가 목록을 무효로 만든다. 무효화는 DB의 상품 목록 revision 행 하나가 맡는다(ADR 0020 규칙 1). 쓰기는 키를 지우지 않고 revision을 올린다. 그 쓰기가 커밋한 뒤에 시작한 조회는 새 revision의 키를 읽는다. 커밋 전에 시작한 조회는 옛 revision을 읽는다.
+
+- 쓰기 여덟과 표시 규칙. 쓰기는 목록이 바뀐 것을 안 자리에서 "상품 목록이 바뀌었다"를 표시한다(`ProductListChangeMarker.markChanged()`, 브랜드 수정은 브랜드가 선언한 `ProductListMarker`). 이벤트가 아니라 같은 트랜잭션 안의 직접·동기 호출이다.
+
+  | 쓰기 | 포트 | 표시 |
+  | --- | --- | --- |
+  | 상품 등록 | `ProductRegister.register` | 항상 |
+  | 상품 수정 | `ProductRegister.update` | 항상. 이름과 가격이 그대로여도 |
+  | 재고 수정 | `ProductRegister.updateStock` | 품절이 바뀔 때만 |
+  | 상품 삭제 | `ProductRegister.delete` | 항상 |
+  | 주문 확정의 재고 차감 | `StockDeductor.deduct` | 품목 가운데 하나라도 품절이 될 때만 |
+  | 브랜드 삭제의 연쇄 | `ProductDeleter.deleteAllOfBrand` | 항상. 지울 상품이 없어도 |
+  | 브랜드 수정 | `BrandRegister.update` | 항상. 같은 이름이어도 |
+  | 좋아요 누르기·취소 | `Liker.like`, `Liker.unlike` | 항상. 관계가 이미 그 상태여도 |
+
+  - 고객은 재고를 품절 여부로만 보므로 두 재고 쓰기는 품절이 바뀔 때만 표시한다. 상품 행을 `FOR UPDATE`로 쥔 채 바꾸기 전과 뒤의 `isSoldOut()`을 견주므로 그 판단에 잠금을 더하지 않는다. 차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다.
+  - 좋아요는 수가 항목에 실리고 `likes_desc`의 차례를 정하므로 언제나 표시한다(5.28의 2026-10-15 메모). 이미 그 상태인 누르기·취소를 가려내는 분기는 값어치가 없다.
+  - 표시하지 않는 쓰기: 브랜드 등록, 주문 생성, 포인트 충전. 주문 취소와 재고 복원은 없다.
+  - 표시는 상품 조각의 `ProductListRevisionMarker`가 받는다. 좋아요는 상품 조각의 포트를 직접 부른다. 주문 확정은 표시하지 않고, 차감이 상품 조각 안에서 표시한다. 브랜드는 상품 조각에 기댈 수 없으므로(5.16) 브랜드가 선언한 포트를 상품 조각이 구현한다. [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)의 `ProductDeleter`와 같은 꼴이다.
+- revision: 카탈로그 전체에 행 하나(`product_list_revision`)이고, 행이 없으면 0이다. 올리기는 `insert … on duplicate key update revision = revision + 1` 한 문장이다. 더하기를 문장 안에서 하므로 읽고 더해 쓰지 않고, upsert라서 표를 비운 뒤에도 0행을 고치고 지나가지 않는다. 이 행은 `BaseEntity`를 상속하지 않는 유일한 엔티티다(ADR 0016의 예외).
+- 잠금 순서: 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정 → revision. revision이 마지막이고, 경로마다의 차례는 ADR 0020 규칙 3의 표에 있다. 올리기가 트랜잭션의 마지막 SQL이므로 revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않고 커밋으로 간다. 기다리지 않는 트랜잭션은 교착의 고리에 들 수 없다. revision을 기다리다 3초를 넘기면 409 `CONCURRENT_REQUEST`다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 7, 8).
+- 트랜잭션 경계:
+  - 올리기는 쓰기와 같은 트랜잭션에서 한다. 처음 표시할 때 `TransactionSynchronization` 하나를 등록하고, 그 `beforeCommit`이 영속성 컨텍스트를 flush한 뒤 upsert를 한 번 보낸다. 여러 번 표시해도 한 번 올린다. 트랜잭션 밖에서 표시하면 `IllegalStateException`이다.
+  - flush가 먼저인 까닭: Spring은 `beforeCommit`을 Hibernate가 커밋 안에서 flush하기 전에 부른다. 먼저 flush하지 않으면 upsert가 쓰기의 UPDATE·DELETE보다 앞서 나가, revision을 쥔 채 다른 행의 잠금을 기다릴 수 있다. 좋아요 취소의 DELETE가 그렇다. 그 행은 flush에서 처음 잠긴다. upsert가 마지막 SQL이라는 것은 SQL 로그를 보는 테스트(`ProductCacheTest`, `BrandProductCacheTest`, `LikeProductCacheTest`)가 고정한다.
+  - 훅에서 난 예외는 트랜잭션을 되돌리고 호출자에게 간다. 올리기가 실패하면 쓰기도 반영되지 않는다. 되돌린 쓰기는 revision을 올리지 않고, 커밋하지 않은 revision은 다른 트랜잭션에 보이지 않으므로 되돌린 쓰기의 결과로 채워지는 키가 없다(`ProductCacheRollbackTest`). 커밋 뒤의 훅, `REQUIRES_NEW`, 이벤트 리스너로 옮기지 않는다.
+  - 목록은 revision을 읽기 전용 트랜잭션의 첫 문장으로 읽는다. 잠그지 않는 일반 `SELECT`다. `FOR SHARE`로 읽으면 커밋하지 않은 쓰기 뒤에 줄을 선다. 트랜잭션 advisor가 캐시 advisor를 감싸므로(`JpaConfig`의 `@EnableTransactionManagement(order = LOWEST_PRECEDENCE - 1)`) 키 생성기의 revision 읽기가 트랜잭션 안에서 먼저 나가고, REPEATABLE READ의 스냅샷이 거기서 정해진다. miss의 페이지 쿼리와 좋아요 수 조회는 그 revision과 같은 상태를 보므로 한 키의 값은 한 스냅샷의 결과다. 키 생성기는 트랜잭션이 없으면 실패한다.
+- Redis는 쓰기 경로에 없다. 쓰기는 Redis에 아무것도 보내지 않고 키를 지우지 않는다. revision이 오르면 옛 키는 아무도 읽지 않게 되고 TTL이 치운다. Redis가 멈춰도 쓰기는 성공하고, 커밋 뒤에 실패할 무효화 호출이 없다(8.8).
+
+### 8.8 장애 계약
+
+- Redis의 대기 한도: `modules/redis`의 `redis.yml`이 명령 100 ms, 연결 1 s를 둔다(Lettuce 기본값은 60 s와 10 s). 두 연결 팩터리가 함께 읽는다. 캐시는 `@Primary` 연결 팩터리(REPLICA_PREFERRED)를 쓴다. GET은 replica를 먼저 읽고 SET은 master로 간다. 한 키의 값은 바뀌지 않으므로 replica의 지연은 miss를 늘릴 뿐 옛 값을 돌려주지 않는다.
+- Redis가 실패하면 DB에서 답한다. `ProductListCacheErrorHandler`가 캐시의 get·put 오류를 WARN으로 남기고 삼킨다. 기본인 `SimpleCacheErrorHandler`는 다시 던진다.
+  - 실패하거나 한도를 넘긴 GET은 miss다. 메서드가 DB에서 읽는다. 읽은 값을 역직렬화하지 못한 것도 get 오류로 와서 miss다.
+  - 실패한 SET은 DB의 결과를 그대로 돌려준다. 캐시 쓰기는 `immediateWrites()`로 곧바로 보내고 답을 기다린다. Lettuce의 기본인 비동기 쓰기에서는 쓰기 오류가 처리기에 닿지 않는다.
+  - `transactionAware()`는 켜지 않는다. 켜면 put이 `afterCommit`으로 미뤄져 처리기를 거치지 않고, 그 예외가 이미 커밋한 목록 요청을 실패시킨다.
+  - 그래서 Redis가 멈추거나 걸린 동안의 miss는 GET과 SET이 저마다 한도를 기다려, 약 200 ms에 DB 시간을 더한 만큼 걸린다(8.10). circuit breaker는 두지 않는다. `ProductCacheRedisFailureTest`가 전용 Redis 컨테이너를 멈추고(`docker stop`) 걸리게 해서(`docker pause`), 목록이 2초 안에 DB의 결과로 답하고 실패한 get과 put을 하나씩 WARN으로 남기는지 본다.
+- 복구: 같은 주소의 Redis가 돌아오면 Lettuce가 앱을 다시 띄우지 않고 다시 연결한다. 다시 연결하는 간격을 두 배씩 늘리므로 Redis가 돌아온 뒤에도 잠시 miss가 이어질 수 있다. 다시 연결한 뒤 첫 읽기가 채우고 다음 읽기가 hit다. Redis가 디스크(RDB나 AOF)에서 되살린 값도 저마다 자기 revision의 키에 있으므로 여전히 옳다. 앱을 다시 띄워도 revision이 DB에 있으므로 키가 그대로 이어진다.
+- DB가 실패하면 목록은 500 `INTERNAL_ERROR`다. 페이지가 캐시돼 있어도 그렇다. revision 읽기가 캐시를 보기 전의 첫 문장이고, 그 실패는 캐시 오류가 아니라서 처리기를 거치지 않는다. 캐시가 DB의 확인을 대신하지 않는다(`ProductCacheDatabaseFailureApiTest`).
+- 무효화 실패: 이 설계에는 실패할 무효화 호출이 없다. Redis가 멈춘 동안 상품 수정을 커밋하면 쓰기는 캐시 오류 없이 커밋하고, 멈춘 동안과 다시 띄운 뒤의 목록이 모두 새 가격이다. 다시 띄운 Redis에는 멈추기 전에 채운 옛 revision의 값이 남아 있지만 아무도 그 키를 읽지 않는다(`ProductCacheRedisFailureTest`).
+- 늦은 채움: 먼저 시작한 조회는 자기가 읽은 옛 revision의 키에 쓴다. 변경이 커밋한 뒤에 시작한 조회는 새 revision의 키를 읽으므로 그 값을 보지 않는다. `ProductCacheLateRefillTest`는 옛 조회를 DB를 읽은 뒤 캐시 쓰기 앞에서 멈추고, 가격 수정(5,000 → 1,000)을 커밋한 뒤 옛 조회를 푼다. 옛 결과가 옛 키에 들어간 뒤에도 새 조회는 1,000을 돌려준다.
+
+### 8.9 miss와 hit의 측정
+
+2026-10-15 측정. 환경과 seed는 8.3과 같고, Redis는 같은 Docker의 Testcontainers `redis:8.10`이다(저장 지점 없음). `ProductQueryPerformanceApiTest`가 한 실행 안에서 같은 요청의 miss와 hit를 잰다. miss는 표본마다 캐시를 비우고(비우는 시간은 잰 시간 밖이다), hit는 한 번 채운 같은 키를 거듭 읽는다. 준비·표본 수는 8.4와 같다. 단언하는 것은 요청당 SQL(Hibernate 통계로 miss 3, hit 1이고, hit가 보낸 한 문장은 revision 읽기다)과 두 응답이 seed에서 센 기대값과 엄격하게 같다는 것뿐이다. 시간은 단언하지 않는다.
+
+| 요청 | 경로 | 요청당 SQL | 준비·표본 | 지연 min / p50 / p95 / p99 / max |
+| --- | --- | --- | --- | --- |
+| 브랜드 7 `price_asc` page 0 | 캐시 전의 DB(8.5의 "후") | 2 | 50 · 200 | 3.450 / 5.870 / 14.610 / 33.614 / 70.413 ms |
+| 브랜드 7 `price_asc` page 0 | miss | 3 | 50 · 200 | 3.509 / 4.237 / 5.344 / 6.468 / 7.450 ms |
+| 브랜드 7 `price_asc` page 0 | hit | 1 | 50 · 200 | 2.053 / 2.408 / 2.950 / 3.690 / 5.471 ms |
+| 전체 카탈로그 `likes_desc` page 0 | 캐시 전의 DB(8.4) | 2 | 10 · 50 | 81.608 / 85.210 / 89.700 / 91.636 / 91.636 ms |
+| 전체 카탈로그 `likes_desc` page 0 | miss | 3 | 10 · 50 | 88.791 / 93.084 / 101.709 / 111.833 / 111.833 ms |
+| 전체 카탈로그 `likes_desc` page 0 | hit | 1 | 10 · 50 | 1.693 / 2.136 / 2.695 / 3.364 / 3.364 ms |
+
+- miss와 hit 줄은 과제의 명령(`./gradlew :apps:commerce-api:test --tests '*ProductQuery*Test'`)으로 돈 한 실행의 출력이다. "캐시 전의 DB" 줄은 캐시를 들이기 전의 8.4·8.5 실행이라 그 실행끼리만 견준다. 같은 날 전체 스위트(`check`) 안에서 잇달아 돈 세 실행의 p50(miss / hit)은 브랜드 7 `price_asc`가 3.792 / 2.407, 3.804 / 2.353, 3.911 / 2.281 ms, 전체 카탈로그 `likes_desc`가 88.810 / 2.010, 90.687 / 1.979, 89.370 / 2.061 ms였다.
+- 요청당 SQL: miss는 revision 읽기, 페이지 쿼리, 좋아요 수 배치 조회다. hit는 revision 읽기 하나이고, 잡은 SQL에 페이지 쿼리와 좋아요 수 조회가 없다. hit에 남는 일은 그 기본 키 조회, Redis GET 한 번, 2.3 KB 남짓의 JSON 역직렬화, 그리고 디스패치·검증·응답 직렬화다.
+- 전체 카탈로그 `likes_desc`의 p50은 93.084 → 2.136 ms다. DB 안 91.8 ms의 집계 정렬(8.4)이 hit에서 통째로 빠진다. 브랜드 7 `price_asc`는 4.237 → 2.408 ms다. 인덱스 뒤 그 페이지 쿼리는 DB 안 0.1 ms 남짓이라(8.5) 줄어든 몫이 요청의 나머지보다 작다.
+- miss는 캐시 전의 DB 경로에 revision 읽기 하나와 Redis 왕복 둘(값이 없는 GET, SET)을 더한 것이다. 8.4·8.5와는 실행이 달라 그 몫을 이 표에서 떼어 말하지 않는다.
+
+### 8.10 비용과 한계
+
+- hit에도 SQL 하나가 남는다. revision의 기본 키 조회다(8.9). 과제는 이 확인의 비용을 hit 측정에 넣으라고 한다. revision을 Redis에 두면 없앨 수 있지만 과제가 막고, Redis 세대 번호의 실패 정책이 돌아온다(ADR 0020의 고르지 않은 것).
+- revision 행의 경합: 여덟 쓰기가 모두 이 행 하나에서 줄을 선다. 올리기가 flush 뒤의 마지막 SQL이라 쥐는 시간은 upsert에서 커밋까지로 짧다. 그래도 이 행이 받아 낼 수 있는 쓰기의 수는 커밋의 지연이 정한다.
+- 좋아요의 409: 상품 행을 잠그지 않던 좋아요가 처음으로 잠금을 기다린다. 다른 쓰기가 revision 행을 3초 넘게 쥐면 좋아요는 409 `CONCURRENT_REQUEST`로 끝나고 좋아요 행을 남기지 않는다(`LockFailureApiTest`). 다시 부르면 된다.
+- 어느 쓰기든 모든 키를 무효로 만든다. 다른 브랜드의 키도, 좋아요 하나에도 그렇다. 쓰기가 잦으면, 특히 좋아요가 잦으면 hit가 드물어진다.
+- 쇄도(stampede): revision이 오른 직후에는 모든 키가 miss다. 같은 키를 동시에 읽는 조회들이 저마다 DB를 읽고 같은 값을 쓴다. 값이 같아 틀리지는 않지만, 전체 카탈로그 `likes_desc`처럼 비싼 페이지가 쓰기마다 동시 요청의 수만큼 다시 계산된다. `@Cacheable`의 `sync`, `SET NX` 채우기 잠금, single-flight 같은 완화는 두지 않았다(과제의 선택 심화).
+- 죽은 키의 메모리: 키를 지우지 않으므로 옛 revision의 키가 TTL까지 남는다. miss마다 새 키 하나가 TTL 동안 남으므로, 그 메모리는 miss 비율 × TTL × 항목 크기 이하다. 초당 miss 100이면 5분 동안 키 3만 개이고, seed의 크기(약 2.6 KB, 8.6)로 약 79 MB다.
+- TTL은 신선도의 시간 상한이 아니다. 신선도는 revision이 맡고, 변경이 커밋한 뒤의 조회는 TTL과 상관없이 새 키를 읽는다. 목록을 바꾸는 쓰기가 표시를 잊으면 오류 없이 옛 결과가 남는다. 그 키의 TTL이 끝나야 새 결과로 다시 채워지지만, 이것을 TTL이 지켜 주는 상한으로 여기지 않는다. 쓰기마다의 장면 테스트(`ProductCacheTest`, `BrandProductCacheTest`, `LikeProductCacheTest`)가 표시를 지킨다.
+- revision은 뒤로 가면 안 된다. 표를 비우거나 DB를 백업에서 되살려 revision이 줄면, 같은 revision의 옛 키가 다시 읽힌다. DB를 되살리면 목록 캐시의 키(`product-list::*`)를 지운다. 공유 Redis에 `FLUSHALL`을 보내지 않는다. 테스트는 DB를 비울 때 테스트 Redis도 비운다(`RedisCleanUp`). 운영의 DDL과 복원 절차는 이 저장소에 없다.
+- DB가 멈추면 캐시가 차 있어도 목록이 멈춘다. revision 읽기가 첫 문장이기 때문이다(8.8). 캐시는 DB의 부하를 덜 뿐 DB의 장애를 가리지 않는다.
+- Redis가 걸린 동안에는 hit도 GET이 실패해 miss가 되므로 모든 요청이 DB에 간다. 그 miss마다 GET과 SET이 저마다 명령 한도(100 ms)를 채워 약 200 ms를 더 기다린다. circuit breaker가 없으므로 걸림이 이어지는 동안 모든 요청이 그 값을 치른다.
