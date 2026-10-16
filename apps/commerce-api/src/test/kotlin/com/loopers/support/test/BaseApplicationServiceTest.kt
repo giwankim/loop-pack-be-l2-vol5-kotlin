@@ -48,7 +48,8 @@ import org.springframework.transaction.annotation.Transactional
  * 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾼다.
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
  *
- * 테스트가 끝날 때마다 [RedisCleanUp]으로 테스트 Redis를 비운다. 세 기반이 모두 물려받는다. 고객 목록의 캐시 키는 상품 목록
+ * 테스트가 끝날 때마다 [RedisCleanUp]으로 테스트 Redis를 비운다. 이것을 넓힌 [BaseWebApiAdapterTest]와 [BaseCommittingApplicationServiceTest]도
+ * 물려받는다. Redis를 가져오지 않는 [BaseRepositoryTest]는 비우지 않는다. 고객 목록의 캐시 키는 상품 목록
  * revision을 품는데(ADR 0020), 롤백하는 테스트는 revision을 올리지 않고 커밋하는 테스트는 끝에 revision 표를 비우므로
  * 테스트마다 revision이 0에서 시작한다. Redis를 비우지 않으면 뒤 테스트가 같은 키에서 앞 테스트의 목록을 읽는다.
  * 비우는 것은 JVM마다 띄우는 테스트 컨테이너다. 공유 Redis가 아니다.

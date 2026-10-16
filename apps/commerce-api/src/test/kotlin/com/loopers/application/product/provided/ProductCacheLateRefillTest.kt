@@ -18,10 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 순서는 잠이 아니라 [Pause]로 정한다. 캐시 writer를 spy해 첫 put이 [Pause]에서 멈추게 하고, 멈춘 동안 테스트가 수정을 커밋한 뒤 푼다.
  * 그래서 옛 결과의 put은 언제나 커밋 뒤에 끝난다. writer는 AOP 프록시가 아니므로 spy에 그대로 stub한다.
  * 멈춘 조회는 읽기 전용 트랜잭션을 연 채지만 revision을 잠그지 않고 읽으므로, 수정이 revision 행을 올리며 기다리지 않는다.
+ * 늦은 put이 옛 키에 들어갔는지는 응답에 보이지 않으므로 캐시를 그 키로 직접 읽는다.
  */
 class ProductCacheLateRefillTest(
     private val productFinder: ProductFinder,
-    private val productListCacheKeyGenerator: ProductListCacheKeyGenerator,
     private val cacheManager: CacheManager,
 ) : BaseCommittingApplicationServiceTest() {
     @MockkSpyBean
@@ -37,7 +37,7 @@ class ProductCacheLateRefillTest(
     fun `a list read that stores its old result after an admin price update commits does not hide the new price`() {
         prepareProduct(price = 5_000)
         val request = ProductListRequest()
-        val oldKey = currentKeyOf(request)
+        val oldKey = currentListCacheKey(request)
         pauseFirstPut()
 
         val late = inAnotherThread { productFinder.findAll(request) }
@@ -62,13 +62,6 @@ class ProductCacheLateRefillTest(
             }
             callOriginal()
         }
-    }
-
-    /** 지금 커밋된 revision으로 [request]의 캐시 키를 만든다. 키 생성기는 트랜잭션 안에서 revision을 읽는다. */
-    private fun currentKeyOf(request: ProductListRequest): Any {
-        val findAll = ProductFinder::class.java.getMethod("findAll", ProductListRequest::class.java)
-
-        return inNewTransaction { productListCacheKeyGenerator.generate(productFinder, findAll, request) }
     }
 
     /** 고객 목록 캐시에서 [key]의 값을 읽는다. */

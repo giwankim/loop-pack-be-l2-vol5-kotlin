@@ -1,10 +1,10 @@
 package com.loopers.config.redis
 
+import com.loopers.support.awaitCommandSucceeds
 import com.loopers.support.test.BaseApplicationServiceTest
 import com.loopers.testcontainers.StoppableRedis
 import com.loopers.testcontainers.StoppableRedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
-import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -32,19 +32,13 @@ class RedisTimeoutTest(
     companion object {
         /** 명령 하나가 실패하기까지 기다려 주는 상한. 한도 100 ms보다 넉넉하고 Lettuce 기본값 60 s보다 훨씬 짧다. */
         private val FAILURE_BOUND: Duration = Duration.ofSeconds(1)
-
-        /**
-         * 다시 띄운 Redis에 Lettuce가 다시 연결하기를 기다리는 상한. Lettuce는 끊긴 동안 다시 연결하는 간격을 두 배씩 늘리므로,
-         * 다시 띄운 뒤 첫 명령은 다음 시도 전이라 실패할 수 있다.
-         */
-        private val RECONNECT_BOUND: Duration = Duration.ofSeconds(30)
     }
 
     /** 컨텍스트를 나눠 쓰는 다음 테스트를 위해 Redis를 되살리고, Lettuce가 다시 연결할 때까지 기다린다. */
     @AfterEach
     fun restoreRedis() {
         stoppableRedis.restore()
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
     }
 
     @Test
@@ -96,7 +90,7 @@ class RedisTimeoutTest(
 
     /**
      * 컨텍스트의 연결 팩터리는 처음 받은 주소만 안다. 그러므로 다시 띄운 뒤 같은 컨텍스트로 보낸 명령이 성공하면 Redis가 같은 주소에
-     * 돌아온 것이다. 다시 연결하는 간격 때문에 다시 띄운 직후의 명령은 실패할 수 있어 [RECONNECT_BOUND]까지 기다린다.
+     * 돌아온 것이다. 다시 연결하는 간격 때문에 다시 띄운 직후의 명령은 실패할 수 있어 [awaitCommandSucceeds]로 기다린다.
      */
     @Test
     fun `a command after starting Redis again succeeds on the same context at the same address`() {
@@ -106,15 +100,8 @@ class RedisTimeoutTest(
 
         stoppableRedis.start()
 
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
         redisTemplate.opsForValue().set("key", "again")
         assertThat(redisTemplate.opsForValue().get("key")).isEqualTo("again")
-    }
-
-    private fun awaitCommandSucceeds() {
-        await()
-            .atMost(RECONNECT_BOUND)
-            .ignoreExceptionsInstanceOf(DataAccessException::class.java)
-            .untilAsserted { redisTemplate.opsForValue().get("key") }
     }
 }

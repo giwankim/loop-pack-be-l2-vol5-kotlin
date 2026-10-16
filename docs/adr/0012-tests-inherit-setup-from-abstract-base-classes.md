@@ -59,3 +59,9 @@ date: 2026-10-07
 > 2026-10-15 Redis의 시간 한도를 보는 `RedisTimeoutTest`가 포트 없이 `BaseApplicationServiceTest`를 상속하고, 추가 `@Import`로 `StoppableRedisTestContainersConfig`(redis `testFixtures`)를 더한다. 멈추고 다시 띄우고 걸리게 할 수 있는 Redis 컨테이너를 컨텍스트의 빈으로 띄우고, master와 replica의 주소를 그것으로 바꾼다. 장애 테스트만 가져오므로 그 클래스들의 컨텍스트가 하나 더 뜨고, JVM마다 하나인 Redis는 멈추지 않는다. 두 설정의 `DynamicPropertyRegistrar`가 같은 속성을 쓰면 나중에 등록된 쪽이 이기는데, 하위 클래스의 `@Import`가 기반의 것보다 먼저 처리된다. 그래서 이 설정이 `RedisTestContainersConfig`를 스스로 가져와 그 빈을 자기 빈보다 먼저 등록하게 한다.
 >
 > 2026-10-15 늦은 채움 테스트(`ProductCacheLateRefillTest`, [ADR 0020](./0020-product-list-cache-keyed-by-a-db-revision-locked-last.md))가 `BaseCommittingApplicationServiceTest`의 하위 클래스로 더해졌다. 앞선 목록 조회의 put을 관리자의 수정이 커밋할 때까지 멈추려고, Service나 저장소 대신 `ProductListCacheConfig`의 `RedisCacheWriter` 빈을 `@MockkSpyBean`으로 spy해 첫 put을 `Pause`에서 멈춘다. 이 spy 필드도 "하위 클래스가 더하는 애노테이션"에 들고, 컨텍스트가 하나 더 뜬다. writer는 AOP 프록시도 JDK 프록시도 아니므로 stub은 spy에 바로 건다.
+>
+> 2026-10-16 고객 목록 캐시([ADR 0020](./0020-product-list-cache-keyed-by-a-db-revision-locked-last.md))가 기반에 정리 하나를 더했다. `BaseApplicationServiceTest`가 테스트가 끝날 때마다(`@AfterEach`) `RedisCleanUp`으로 테스트 Redis를 비우고, 이것을 넓힌 `BaseWebApiAdapterTest`와 `BaseCommittingApplicationServiceTest`가 물려받는다. Redis를 가져오지 않는 `BaseRepositoryTest`는 비우지 않는다. 캐시 키가 품는 상품 목록 revision이 테스트마다 0에서 시작하므로, 비우지 않으면 뒤 테스트가 같은 키에서 앞 테스트의 목록을 읽는다.
+>
+> 2026-10-16 `BaseCommittingApplicationServiceTest`가 도우미 둘을 더 준다. 커밋된 상품 목록 revision을 읽는 `currentListRevision()`과, 그 revision을 품은 고객 목록의 캐시 키를 운영의 키 생성기로 만드는 `currentListCacheKey(request)`다. 둘 다 `inNewTransaction` 안에서 읽는다. 캐시의 무효화를 보는 테스트는 롤백하면 revision이 오르지 않아 이 기반을 상속하므로, 클래스 셋이 저마다 두던 같은 읽기를 여기 모았다.
+>
+> 2026-10-16 "하위 클래스가 더하는 애노테이션"에 HTTP 테스트의 `@MockkSpyBean` 필드도 든다. `ProductCacheDatabaseFailureApiTest`가 공유 MySQL을 멈추지 않고 DB 실패를 보려고 revision 저장소를 spy한다. spy가 컨텍스트를 하나 더 띄우므로 그 장면만 클래스로 떼어 냈다.

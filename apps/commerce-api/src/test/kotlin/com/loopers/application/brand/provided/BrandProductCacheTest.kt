@@ -22,15 +22,15 @@ class BrandProductCacheTest(
     @Test
     fun `after a brand rename commits every list read shows the new brand name on that brand's items`() {
         val other = prepareProduct(prepareBrand(name = "무신사"))
-        prepareBrand(name = "루퍼스")
-        val older = prepareProduct(brand)
-        val newer = prepareProduct(brand)
-        val byBrand = ProductListRequest(brandId = brand.id)
+        val renamed = prepareBrand(name = "루퍼스")
+        val older = prepareProduct(renamed)
+        val newer = prepareProduct(renamed)
+        val byBrand = ProductListRequest(brandId = renamed.id)
         val all = ProductListRequest()
         val cachedByBrand = productFinder.findAll(byBrand)
         val cachedAll = productFinder.findAll(all)
 
-        brandRegister.update(brand.id, createBrandAdminUpdateRequest(name = "루퍼스 스토어"))
+        brandRegister.update(renamed.id, createBrandAdminUpdateRequest(name = "루퍼스 스토어"))
 
         val rereadByBrand = productFinder.findAll(byBrand)
         val rereadAll = productFinder.findAll(all)
@@ -68,15 +68,15 @@ class BrandProductCacheTest(
     @Test
     fun `after a brand deletion commits its products are gone from the brand list and the whole catalog`() {
         val other = prepareProduct(prepareBrand())
-        prepareBrand()
-        prepareProduct(brand)
-        prepareProduct(brand)
-        val byBrand = ProductListRequest(brandId = brand.id)
+        val deleted = prepareBrand()
+        prepareProduct(deleted)
+        prepareProduct(deleted)
+        val byBrand = ProductListRequest(brandId = deleted.id)
         val all = ProductListRequest()
         productFinder.findAll(byBrand)
         productFinder.findAll(all)
 
-        brandRegister.delete(brand.id)
+        brandRegister.delete(deleted.id)
 
         assertThat(productFinder.findAll(byBrand).items).isEmpty()
         assertThat(productFinder.findAll(all).items.map { it.id }).containsExactly(other.id)

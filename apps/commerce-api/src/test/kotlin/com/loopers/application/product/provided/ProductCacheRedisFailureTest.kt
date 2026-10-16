@@ -6,18 +6,17 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.loopers.adapter.persistence.product.ProductListCacheErrorHandler
 import com.loopers.application.product.ProductListCacheKeyGenerator
+import com.loopers.support.awaitCommandSucceeds
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.loopers.support.withStatistics
 import com.loopers.testcontainers.StoppableRedis
 import com.loopers.testcontainers.StoppableRedisTestContainersConfig
 import org.assertj.core.api.Assertions.assertThat
-import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Import
-import org.springframework.dao.DataAccessException
 import org.springframework.data.redis.core.RedisTemplate
 import java.time.Duration
 import kotlin.time.measureTimedValue
@@ -36,16 +35,12 @@ import kotlin.time.measureTimedValue
 @Import(StoppableRedisTestContainersConfig::class)
 class ProductCacheRedisFailureTest(
     private val productFinder: ProductFinder,
-    private val productListCacheKeyGenerator: ProductListCacheKeyGenerator,
     private val redisTemplate: RedisTemplate<String, String>,
     private val stoppableRedis: StoppableRedis,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         /** 멈추거나 걸린 Redis 앞에서 목록 하나를 답하기까지의 상한. 읽기와 쓰기가 저마다 한도(100 ms)를 기다리고 DB를 읽어도 넉넉하다. */
         private val ANSWER_BOUND: Duration = Duration.ofSeconds(2)
-
-        /** 다시 띄운 Redis에 Lettuce가 다시 연결하기를 기다리는 상한. 다시 연결하는 간격이 두 배씩 늘기 때문이다. */
-        private val RECONNECT_BOUND: Duration = Duration.ofSeconds(30)
     }
 
     /** 오류 처리기가 남긴 로그. 테스트마다 붙이고 뗀다. */
@@ -59,7 +54,7 @@ class ProductCacheRedisFailureTest(
      */
     @BeforeEach
     fun captureCacheErrorLogs() {
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
         cacheErrorLogs.start()
         cacheErrorLogger.addAppender(cacheErrorLogs)
     }
@@ -69,7 +64,7 @@ class ProductCacheRedisFailureTest(
     fun restoreRedis() {
         cacheErrorLogger.detachAppender(cacheErrorLogs)
         stoppableRedis.restore()
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
     }
 
     /**
@@ -113,12 +108,12 @@ class ProductCacheRedisFailureTest(
      * 과제의 "커밋 뒤의 무효화 실패" 장면. 쓰기는 Redis에 아무것도 보내지 않으므로(ADR 0020 규칙 4) Redis가 멈춰도 커밋하고,
      * 실패할 무효화 호출이 없다. 그래서 쓰기는 캐시 오류를 남기지 않는다.
      * 멈춘 동안과 다시 띄운 뒤의 목록이 모두 새 가격이다. 다시 띄운 Redis에는 멈추기 전에 채운 옛 revision의 값이 남아 있지만,
-     * 커밋한 쓰기가 revision을 올렸으므로 아무도 그 키를 읽지 않는다.
+     * 커밋한 쓰기가 revision을 올렸으므로 아무도 그 키를 읽지 않는다. 남은 값은 응답에 보이지 않으므로 Redis에 직접 묻는다.
      */
     @Test
     fun `a product update committed while Redis is stopped shows in the list during and after the outage`() {
         prepareProduct(price = 8_000)
-        val staleKey = cacheKey(ProductListRequest())
+        val staleKey = redisKeyOf(ProductListRequest())
         productFinder.findAll(ProductListRequest())
         stoppableRedis.stop()
 
@@ -127,7 +122,7 @@ class ProductCacheRedisFailureTest(
         assertThat(cacheErrorLogs.list).isEmpty()
         val duringOutage = productFinder.findAll(ProductListRequest())
         stoppableRedis.start()
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
         val afterRestart = productFinder.findAll(ProductListRequest())
         assertThat(duringOutage.items.single().price).isEqualTo(1_000L)
         assertThat(afterRestart.items.single().price).isEqualTo(1_000L)
@@ -142,7 +137,7 @@ class ProductCacheRedisFailureTest(
         productFinder.findAll(ProductListRequest())
 
         stoppableRedis.start()
-        awaitCommandSucceeds()
+        redisTemplate.awaitCommandSucceeds()
 
         entityManager.withStatistics { statistics ->
             productFinder.findAll(ProductListRequest())
@@ -160,7 +155,7 @@ class ProductCacheRedisFailureTest(
     @Test
     fun `an unreadable cached value is a miss that answers from the database and logs a warning`() {
         prepareProduct()
-        redisTemplate.opsForValue().set(cacheKey(ProductListRequest()), "{not json")
+        redisTemplate.opsForValue().set(redisKeyOf(ProductListRequest()), "{not json")
 
         entityManager.withStatistics { statistics ->
             val list = productFinder.findAll(ProductListRequest())
@@ -174,12 +169,9 @@ class ProductCacheRedisFailureTest(
         })
     }
 
-    /** 지금 커밋된 revision으로 [request]의 목록이 쓰는 Redis 키. 키 생성기가 트랜잭션 안에서만 키를 만든다. */
-    private fun cacheKey(request: ProductListRequest): String {
-        val findAll = ProductFinder::class.java.getMethod("findAll", ProductListRequest::class.java)
-        val key = inNewTransaction { productListCacheKeyGenerator.generate(productFinder, findAll, request) }
-
-        return "${ProductListCacheKeyGenerator.CACHE_NAME}::$key"
+    /** 지금 커밋된 revision으로 [request]의 목록이 쓰는 Redis 키. 캐시 이름 뒤에 캐시 키가 붙는다. */
+    private fun redisKeyOf(request: ProductListRequest): String {
+        return "${ProductListCacheKeyGenerator.CACHE_NAME}::${currentListCacheKey(request)}"
     }
 
     private fun assertFailedGetAndPutLogged() {
@@ -188,12 +180,5 @@ class ProductCacheRedisFailureTest(
             { assertThat(it).contains("failed to get") },
             { assertThat(it).contains("failed to put") },
         )
-    }
-
-    private fun awaitCommandSucceeds() {
-        await()
-            .atMost(RECONNECT_BOUND)
-            .ignoreExceptionsInstanceOf(DataAccessException::class.java)
-            .untilAsserted { redisTemplate.hasKey("ping") }
     }
 }

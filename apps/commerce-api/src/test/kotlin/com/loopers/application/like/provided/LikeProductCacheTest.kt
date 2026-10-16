@@ -78,11 +78,11 @@ class LikeProductCacheTest(
         prepareLike()
         productFinder.findAll(ProductListRequest())
         assertThatTheNextListReadSends(statements = 1L)
-        val before = currentRevision()
+        val before = currentListRevision()
 
         liker.like(userId = user.id, request = createLikeRequest(productId = product.id))
 
-        assertThat(currentRevision()).isEqualTo(before + 1)
+        assertThat(currentListRevision()).isEqualTo(before + 1)
         assertThatTheNextListReadSends(statements = 3L)
     }
 
@@ -93,11 +93,11 @@ class LikeProductCacheTest(
         prepareProduct()
         productFinder.findAll(ProductListRequest())
         assertThatTheNextListReadSends(statements = 1L)
-        val before = currentRevision()
+        val before = currentListRevision()
 
         liker.unlike(userId = user.id, productId = product.id)
 
-        assertThat(currentRevision()).isEqualTo(before + 1)
+        assertThat(currentListRevision()).isEqualTo(before + 1)
         assertThatTheNextListReadSends(statements = 3L)
     }
 
@@ -140,10 +140,6 @@ class LikeProductCacheTest(
         pause.release()
         liking.await()
         assertThat(inNewTransaction { entityManager.countLikes(user.id, product.id) }).isOne()
-    }
-
-    private fun currentRevision(): Long {
-        return inNewTransaction { productListRevisionRepository.findRevision() }
     }
 
     /** hit는 revision 하나, miss는 revision·페이지·좋아요 수의 세 문장이다([com.loopers.application.product.provided.ProductCacheTest]). */

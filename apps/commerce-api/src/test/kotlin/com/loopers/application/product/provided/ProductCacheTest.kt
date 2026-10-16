@@ -2,7 +2,6 @@ package com.loopers.application.product.provided
 
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
-import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.domain.shared.Money
 import com.loopers.support.captureSql
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
@@ -21,7 +20,6 @@ class ProductCacheTest(
     private val productFinder: ProductFinder,
     private val orderFinder: OrderFinder,
     private val productListChangeMarker: ProductListChangeMarker,
-    private val productListRevisionRepository: ProductListRevisionRepository,
     private val productListCacheKeyGenerator: ProductListCacheKeyGenerator,
 ) : BaseCommittingApplicationServiceTest() {
     /**
@@ -36,8 +34,24 @@ class ProductCacheTest(
         prepareLike(product = socks)
         val expected = ProductListInfo(
             items = listOf(
-                ProductSummaryInfo(shirt.id, "티셔츠", 12_000L, soldOut = true, brand.id, "루퍼스", likeCount = 0L),
-                ProductSummaryInfo(socks.id, "양말", 3_000L, soldOut = false, brand.id, "루퍼스", likeCount = 1L),
+                ProductSummaryInfo(
+                    id = shirt.id,
+                    name = "티셔츠",
+                    price = 12_000L,
+                    soldOut = true,
+                    brandId = brand.id,
+                    brandName = "루퍼스",
+                    likeCount = 0L,
+                ),
+                ProductSummaryInfo(
+                    id = socks.id,
+                    name = "양말",
+                    price = 3_000L,
+                    soldOut = false,
+                    brandId = brand.id,
+                    brandName = "루퍼스",
+                    likeCount = 1L,
+                ),
             ),
             page = 0,
             size = ProductListRequest.DEFAULT_SIZE,
@@ -56,6 +70,31 @@ class ProductCacheTest(
             assertThat(hit.result).isEqualTo(expected)
             assertThat(statistics.prepareStatementCount).isEqualTo(1L)
             assertThat(hit.statements).singleElement().asString().contains("from product_list_revision")
+        }
+    }
+
+    /**
+     * 검증을 지난 요청은 결과가 비어도 캐시한다. 모르는 브랜드, 삭제된 브랜드, 끝을 지난 쪽은 빈 목록이고 두 번째 읽기는
+     * revision 하나만 읽는 hit다. 마지막 쪽(`hasNext`가 거짓)이 캐시되는 것은 위 테스트가 본다.
+     * 브랜드의 삭제도 revision을 올리므로 캐시는 준비를 마친 뒤에 채운다.
+     */
+    @Test
+    fun `an unknown brand, a deleted brand and a page past the end are cached as empty lists`() {
+        prepareProduct()
+        val deletedBrand = prepareBrand()
+        deleteBrand(deletedBrand)
+        val requests = listOf(
+            ProductListRequest(brandId = 999L),
+            ProductListRequest(brandId = deletedBrand.id),
+            ProductListRequest(page = 1),
+        )
+
+        requests.forEach { request ->
+            val miss = productFinder.findAll(request)
+
+            assertThat(miss.items).isEmpty()
+            assertThat(miss.hasNext).isFalse()
+            assertNextReadIsHit(request)
         }
     }
 
@@ -86,8 +125,8 @@ class ProductCacheTest(
      */
     @Test
     fun `after a product register commits the whole catalog and its brand's list show the new product`() {
-        val socks = prepareProduct()
-        val ownBrand = brand
+        val ownBrand = prepareBrand()
+        val socks = prepareProduct(ownBrand)
         val otherBrandProduct = prepareProduct(prepareBrand())
         val wholeCatalog = ProductListRequest()
         val brandList = ProductListRequest(brandId = ownBrand.id)
@@ -237,7 +276,7 @@ class ProductCacheTest(
         }
 
         assertThat(captured.statements).singleElement().asString().startsWith("insert into product_list_revision")
-        assertThat(inNewTransaction { productListRevisionRepository.findRevision() }).isOne()
+        assertThat(currentListRevision()).isOne()
     }
 
     /** 재고가 [stock]개인 상품 하나를 [quantity]개 담은 주문을 만들고, 확정할 수 있게 그 합계만큼 충전한다. */

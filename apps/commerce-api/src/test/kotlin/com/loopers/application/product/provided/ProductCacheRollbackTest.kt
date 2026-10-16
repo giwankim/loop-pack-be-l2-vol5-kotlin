@@ -2,7 +2,6 @@ package com.loopers.application.product.provided
 
 import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.required.OrderRepository
-import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.loopers.support.withStatistics
@@ -26,7 +25,6 @@ class ProductCacheRollbackTest(
     private val orderConfirmer: OrderConfirmer,
     private val productFinder: ProductFinder,
     private val productRegister: ProductRegister,
-    private val productListRevisionRepository: ProductListRevisionRepository,
 ) : BaseCommittingApplicationServiceTest() {
     @MockkSpyBean
     private lateinit var orderRepository: OrderRepository
@@ -42,14 +40,14 @@ class ProductCacheRollbackTest(
         val request = ProductListRequest()
         val cached = productFinder.findAll(request)
         assertThat(cached.items.map { it.soldOut }).containsExactly(false)
-        val revision = inNewTransaction { productListRevisionRepository.findRevision() }
+        val revision = currentListRevision()
         val failure = DataAccessResourceFailureException("주문을 저장하다 실패했다")
         failSavingOrderAfterFlush(failure)
 
         val exception = assertThrows<DataAccessResourceFailureException> { orderConfirmer.confirm(user.id, order.id) }
 
         assertThat(exception).isSameAs(failure)
-        assertThat(inNewTransaction { productListRevisionRepository.findRevision() }).isEqualTo(revision)
+        assertThat(currentListRevision()).isEqualTo(revision)
         assertListIsHitWith(request, cached)
     }
 
@@ -60,14 +58,14 @@ class ProductCacheRollbackTest(
         val request = ProductListRequest()
         val cached = productFinder.findAll(request)
         assertThat(cached.items.map { it.id }).containsExactly(product.id)
-        val revision = inNewTransaction { productListRevisionRepository.findRevision() }
+        val revision = currentListRevision()
         val failure = DataAccessResourceFailureException("상품을 저장하다 실패했다")
         failSavingProductAfterFlush(failure)
 
         val exception = assertThrows<DataAccessResourceFailureException> { productRegister.delete(product.id) }
 
         assertThat(exception).isSameAs(failure)
-        assertThat(inNewTransaction { productListRevisionRepository.findRevision() }).isEqualTo(revision)
+        assertThat(currentListRevision()).isEqualTo(revision)
         assertListIsHitWith(request, cached)
     }
 
