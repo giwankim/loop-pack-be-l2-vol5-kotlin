@@ -154,7 +154,7 @@ class BrandRegisterRollbackTest(
     }
 
     private fun Order.detail(): OrderDetail {
-        val itemDetails = items.map { LineItemDetail(it.productName, it.unitPrice, it.quantity) }
+        val itemDetails = lineItems.map { LineItemDetail(it.productName, it.unitPrice, it.quantity) }
 
         return OrderDetail(status, itemDetails, totalAmount, paidAmount, confirmedAt)
     }

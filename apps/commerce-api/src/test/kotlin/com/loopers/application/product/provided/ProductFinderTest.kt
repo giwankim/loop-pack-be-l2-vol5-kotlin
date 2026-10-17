@@ -44,14 +44,48 @@ class ProductFinderTest(
         prepareLike(product = liked)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest())
+        val list = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.content.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+        assertThat(list.items.map { it.id to it.likeCount }).containsExactly(unliked.id to 0L, liked.id to 2L)
+    }
+
+    /**
+     * 고객 목록의 결과는 고객이 보는 필드와 조각의 위치만 싣는다. 재고 수량과 등록·수정 시각은 싣지 않는다.
+     * 품절을 바꾸지 않는 재고 쓰기는 목록을 바꾸지 않으므로(ADR 0020), 그 값을 들고 있으면 캐시한 결과가 DB와 어긋난다.
+     * 값 전체를 견주므로 결과에 필드가 늘면 이 기대값부터 고쳐야 한다.
+     */
+    @Test
+    fun `the customer list carries only what a customer sees and where the slice sits`() {
+        prepareBrand(name = "루퍼스")
+        prepareProduct(brand, name = "티셔츠", price = 12_000, stock = 0)
+        prepareLike(product = product)
+        entityManager.flushAndClear()
+
+        val list = productFinder.findAll(ProductListRequest())
+
+        assertThat(list).isEqualTo(
+            ProductListInfo(
+                items = listOf(
+                    ProductSummaryInfo(
+                        id = product.id,
+                        name = "티셔츠",
+                        price = 12_000L,
+                        soldOut = true,
+                        brandId = brand.id,
+                        brandName = "루퍼스",
+                        likeCount = 1L,
+                    ),
+                ),
+                page = ProductListRequest.DEFAULT_PAGE,
+                size = ProductListRequest.DEFAULT_SIZE,
+                hasNext = false,
+            ),
+        )
     }
 
     /**
      * 목록의 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다(설계 5.28). 항목마다 세면 조각 크기만큼 SQL이 늘어난다.
-     * 조각 조회 하나와 집계 하나, 둘이어야 한다.
+     * 조각 조회 하나와 집계 하나, 둘이어야 한다. 셋째는 캐시 키에 넣을 상품 목록 revision의 읽기다(ADR 0020). 캐시는 비어 있다.
      */
     @Test
     fun `listing counts the likes of the whole slice in one query`() {
@@ -62,11 +96,11 @@ class ProductFinderTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            val slice = productFinder.findAll(ProductListRequest())
+            val list = productFinder.findAll(ProductListRequest())
 
-            assertThat(slice.content).hasSize(3)
-            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
-            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+            assertThat(list.items).hasSize(3)
+            assertThat(list.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
     }
 
@@ -103,15 +137,15 @@ class ProductFinderTest(
         val exception = assertThrows<CoreException> { productFinder.findInfo(deleted.id) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.PRODUCT_NOT_FOUND)
-        assertThat(productFinder.findAll(ProductListRequest()).content.map { it.id }).containsExactly(kept.id)
+        assertThat(productFinder.findAll(ProductListRequest()).items.map { it.id }).containsExactly(kept.id)
     }
 
     @Test
-    fun `the orderable lookup gives a product of a brand that is not deleted`() {
+    fun `the nullable lookup gives the product`() {
         prepareProduct(name = "티셔츠", price = 12_000)
         entityManager.flushAndClear()
 
-        val found = productFinder.findOrderableOrNull(product.id)
+        val found = productFinder.findOrNull(product.id)
 
         assertThat(found?.id).isEqualTo(product.id)
         assertThat(found?.name).isEqualTo("티셔츠")
@@ -120,20 +154,20 @@ class ProductFinderTest(
 
     /**
      * 주문은 없음을 오류가 아니라 정상 결과로 받아 자기 오류로 옮긴다. 그래서 세 경우 모두 던지지 않고 null이다.
-     * 삭제된 브랜드의 상품은 상품 행이 남아 있어도 주문할 수 없다.
+     * 브랜드 삭제가 함께 삭제한 상품은 직접 삭제한 상품과 같은 까닭으로 null이다(ADR 0017).
      */
     @Test
-    fun `the orderable lookup gives null for an unknown or deleted product and for a product of a deleted brand`() {
+    fun `the nullable lookup gives null for an unknown or deleted product and for a product deleted with its brand`() {
         val deleted = prepareProduct()
         deleteProduct(deleted)
-        val closedBrand = prepareBrand()
-        val ofClosedBrand = prepareProduct(closedBrand)
-        deleteBrandKeepingProducts(closedBrand)
+        val deletedBrand = prepareBrand()
+        val ofDeletedBrand = prepareProduct(deletedBrand)
+        deleteBrand(deletedBrand)
         entityManager.flushAndClear()
 
-        assertThat(productFinder.findOrderableOrNull(Long.MAX_VALUE)).isNull()
-        assertThat(productFinder.findOrderableOrNull(deleted.id)).isNull()
-        assertThat(productFinder.findOrderableOrNull(ofClosedBrand.id)).isNull()
+        assertThat(productFinder.findOrNull(Long.MAX_VALUE)).isNull()
+        assertThat(productFinder.findOrNull(deleted.id)).isNull()
+        assertThat(productFinder.findOrNull(ofDeletedBrand.id)).isNull()
     }
 
     /**
@@ -167,12 +201,12 @@ class ProductFinderTest(
         val second = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest())
+        val list = productFinder.findAll(ProductListRequest())
 
-        assertThat(slice.number).isEqualTo(ProductListRequest.DEFAULT_PAGE)
-        assertThat(slice.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
-        assertThat(slice.content.map { it.id }).containsExactly(second.id, first.id)
-        assertThat(slice.content.map { it.brandName }).containsOnly("루퍼스")
+        assertThat(list.page).isEqualTo(ProductListRequest.DEFAULT_PAGE)
+        assertThat(list.size).isEqualTo(ProductListRequest.DEFAULT_SIZE)
+        assertThat(list.items.map { it.id }).containsExactly(second.id, first.id)
+        assertThat(list.items.map { it.brandName }).containsOnly("루퍼스")
     }
 
     @Test
@@ -182,9 +216,9 @@ class ProductFinderTest(
         val dear = prepareProduct(brand, price = 30_000)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest(sort = "price_asc"))
+        val list = productFinder.findAll(ProductListRequest(sort = "price_asc"))
 
-        assertThat(slice.content.map { it.id }).containsExactly(cheap.id, dear.id)
+        assertThat(list.items.map { it.id }).containsExactly(cheap.id, dear.id)
     }
 
     /**
@@ -204,15 +238,15 @@ class ProductFinderTest(
         prepareLike(secondUser, mostLiked)
         entityManager.flushAndClear()
 
-        val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
+        val list = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-        assertThat(slice.content.map { it.id to it.likeCount })
+        assertThat(list.items.map { it.id to it.likeCount })
             .containsExactly(mostLiked.id to 2L, liked.id to 1L, unliked.id to 0L)
     }
 
     /**
-     * 좋아요 많은순도 조각 조회 하나와 집계 하나, 둘이어야 한다. 기본 정렬을 세는 위쪽 테스트와 겹쳐 보이지만
-     * 겹치지 않는다. 이 기준만 `group by`가 붙어(설계 5.32) 총 개수를 세고 싶은 유혹이 생기는 자리이고,
+     * 좋아요 많은순도 조각 조회 하나와 집계 하나, 둘이어야 한다. 셋째는 위처럼 revision의 읽기다.
+     * 기본 정렬을 세는 위쪽 테스트와 겹쳐 보이지만 겹치지 않는다. 이 기준만 `group by`가 붙어(설계 5.32) 총 개수를 세고 싶은 유혹이 생기는 자리이고,
      * 조각을 뜨는 방법이 기준마다 갈리므로 세는 자리도 기준마다 있어야 한다(설계 5.5).
      */
     @Test
@@ -224,11 +258,11 @@ class ProductFinderTest(
         entityManager.flushAndClear()
 
         entityManager.withStatistics { statistics ->
-            val slice = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
+            val list = productFinder.findAll(ProductListRequest(sort = "likes_desc"))
 
-            assertThat(slice.content).hasSize(3)
-            assertThat(slice.content.map { it.likeCount }).containsOnly(1L)
-            assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+            assertThat(list.items).hasSize(3)
+            assertThat(list.items.map { it.likeCount }).containsOnly(1L)
+            assertThat(statistics.prepareStatementCount).isEqualTo(3L)
         }
     }
 

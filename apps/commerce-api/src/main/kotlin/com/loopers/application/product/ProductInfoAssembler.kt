@@ -1,6 +1,8 @@
 package com.loopers.application.product
 
 import com.loopers.application.product.provided.ProductInfo
+import com.loopers.application.product.provided.ProductListInfo
+import com.loopers.application.product.provided.ProductSummaryInfo
 import com.loopers.application.product.required.LikeCounter
 import com.loopers.domain.product.Product
 import org.springframework.data.domain.Slice
@@ -8,7 +10,8 @@ import org.springframework.stereotype.Component
 
 /**
  * [ProductInfo]를 만드는 자리. 상품을 읽는 유스케이스가 둘로 갈렸고(상품 목록, 내 좋아요 목록) 옮기는 규칙은 하나라
- * 서비스마다 적지 않고 여기 모은다(설계 5.31).
+ * 서비스마다 적지 않고 여기 모은다(설계 5.31). 고객 목록의 [ProductListInfo]도 여기서 만든다. 항목의 필드만 다르고
+ * 조각의 좋아요 수를 한 번에 세는 규칙은 같으므로 그 셈을 [countLikes] 하나가 맡는다.
  *
  * 도메인 서비스가 아니다. 돌려주는 [ProductInfo]는 층을 건너라고 있는 응답 모델이고, 조각의 좋아요 수를 한 번에
  * 세는 것은 읽는 쪽의 사정이다(설계 5.28). 좋아요 수는 상품이 선언한 [LikeCounter]에 묻고, 좋아요 조각이 답한다.
@@ -28,7 +31,17 @@ class ProductInfoAssembler(
      * 조각 하나. 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다. 항목마다 세면 조각 크기만큼 조회가 붙는다(설계 5.28).
      */
     fun toInfos(slice: Slice<Product>): Slice<ProductInfo> {
-        val likeCounts = likeCounter.countLikes(slice.content.map { it.id })
+        val likeCounts = countLikes(slice)
         return slice.map { ProductInfo.from(it, likeCounts.getValue(it.id)) }
+    }
+
+    /** 고객 목록의 조각 하나. 좋아요 수는 [toInfos]처럼 조각의 식별자 목록에 대해 한 번에 센다. */
+    fun toListInfo(slice: Slice<Product>): ProductListInfo {
+        val likeCounts = countLikes(slice)
+        return ProductListInfo.from(slice.map { ProductSummaryInfo.from(it, likeCounts.getValue(it.id)) })
+    }
+
+    private fun countLikes(slice: Slice<Product>): Map<Long, Long> {
+        return likeCounter.countLikes(slice.content.map { it.id })
     }
 }

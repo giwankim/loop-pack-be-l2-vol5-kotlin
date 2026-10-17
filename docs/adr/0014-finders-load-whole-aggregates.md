@@ -21,9 +21,11 @@ date: 2026-10-08
 
 조각마다 이렇게 바뀐다.
 
-- **주문.** `OrderRepository`의 조회는 `findWithLineItemsByIdAndUserId`와 `findWithLineItemsById`다. 둘 다 `@EntityGraph(attributePaths = ["lineItems"])`로 품목을 함께 읽는다. 품목 없는 주문을 원하는 호출자가 없어서 지연 짝은 두지 않는다. `OrderFinder`, `OrderCreator`, `OrderConfirmer`가 `Order`를 돌려주고 `OrderInfo`는 지운다. 목록은 `QuerydslOrderListRepository`가 이미 품목까지 읽는다. `OrderModifyService.confirm`은 `OrderFinder.find`로 주문을 얻는다.
-- **포인트.** `PointAccount.user` 연관은 스칼라 `userId`가 되고, `FK_POINT_ACCOUNT_USER`는 같은 이름으로 스크립트로 옮긴다. `PointAccountFinder.findByUser(userId): PointAccount`가 `findBalance`를 대신한다. `PointCharger.charge`는 `PointAccount`를 돌려주고 `PointAccountInfo`는 지운다. `PointModifyService`는 `findByUser`로 계정을 얻는다.
+- **주문.** `OrderRepository`의 조회는 `findWithLineItemsByIdAndUserId`와 `findWithLineItemsById`다. 둘 다 `@EntityGraph(attributePaths = ["_lineItems"])`로 품목을 함께 읽는다. 품목 없는 주문을 원하는 호출자가 없어서 지연 짝은 두지 않는다. `OrderFinder`, `OrderCreator`, `OrderConfirmer`가 `Order`를 돌려주고 `OrderInfo`는 지운다. 목록은 `QuerydslOrderListRepository`가 이미 품목까지 읽는다. `OrderModifyService.confirm`은 `OrderFinder.find`로 주문을 얻는다.
+- **포인트.** `PointAccount.user` 연관은 스칼라 `userId`가 되고, `FK_POINT_ACCOUNT_ON_USER_ID`는 같은 이름으로 스크립트로 옮긴다. `PointAccountFinder.findByUser(userId): PointAccount`가 `findBalance`를 대신한다. `PointCharger.charge`는 `PointAccount`를 돌려주고 `PointAccountInfo`는 지운다. `PointModifyService`는 `findByUser`로 계정을 얻는다.
 - **상품.** `ProductFinder.find(id): Product`는 브랜드를 지연으로 둔 채 상품만 읽는다. `ProductInfo`를 주는 상세는 `findInfo(id)`가 되고, 주문이 부르는 `findOrderable`은 `findOrderableOrNull`이 된다. `ProductModifyService`는 `find`로 상품을 얻는다.
+
+  > 2026-10-12 `findOrderableOrNull`은 `findOrNull`이 되었다. 브랜드를 조인하지 않고 상품만 읽는다([ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md) 규칙 4의 메모). 그래서 아래 대가에서 브랜드를 건너는 읽기는 `findInfo`와 목록들이다.
 - **좋아요.** `LikeValidator.validateForLike(productId)`를 `LikeValidationService`가 `ProductFinder.find`로 구현한다. 그래서 좋아요 누르기의 쿼리가 둘 준다. `Like`는 스칼라 식별자를 그대로 쓴다.
 - **브랜드.** `BrandValidator`의 `validateForRegister`, `validateForUpdate`, `validateForDelete`를 `BrandValidationService`가 구현한다. 이름 중복은 `BrandRepository`에, 남은 상품은 `ActiveProductChecker`에 묻는다. `BrandModifyService`에는 단계의 차례만 남는다. 어느 거절이 먼저인지는 바뀌지 않는다.
 

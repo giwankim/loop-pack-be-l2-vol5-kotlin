@@ -5,14 +5,14 @@ date: 2026-10-09
 
 # 주문 행과 포인트 계정 행도 처음 읽을 때 잠그고, 잠금 순서는 주문에서 시작한다
 
-[ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)은 브랜드와 상품 행의 몫만 정하고, 같은 주문의 동시 확정과 포인트 계정의 잠금을 범위 밖에 남겼다. 지금 충전과 확정의 결제는 `PointAccountFinder.findByUser`로 계정을 잠그지 않고 읽는다. REPEATABLE READ의 일반 `SELECT`는 첫 읽기의 스냅샷을 보고 Hibernate는 잔액을 절댓값(`balance = ?`)으로 쓰므로, 충전과 결제가 겹치면 나중에 커밋한 쪽이 앞의 변경을 덮는다. 확정의 첫 읽기인 `OrderFinder.find`도 잠그지 않는다. 같은 주문의 두 확정이 모두 DRAFT를 읽고 `validateConfirmable()`을 통과하며, 뒤진 쪽은 상품 잠금을 기다린 뒤 재고를 한 번 더 차감한다([포인트·주문 설계 18.2](../design/points-orders.md)).
+[ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)은 브랜드와 상품 행의 몫만 정하고, 같은 주문의 동시 확정과 포인트 계정의 잠금을 범위 밖에 남겼다. 지금 충전과 확정의 결제는 `PointAccountFinder.findByUser`로 계정을 잠그지 않고 읽는다. REPEATABLE READ의 일반 `SELECT`는 첫 읽기의 스냅샷을 보고 Hibernate는 잔액을 절댓값(`balance = ?`)으로 쓰므로, 충전과 결제가 겹치면 나중에 커밋한 쪽이 앞의 변경을 덮는다. 확정의 첫 읽기인 `OrderFinder.find`도 잠그지 않는다. 같은 주문의 두 확정이 모두 DRAFT를 읽고 `ensureDraft()`를 통과하며, 뒤진 쪽은 상품 잠금을 기다린 뒤 재고를 한 번 더 차감한다([포인트·주문 설계 18.2](../design/points-orders.md)).
 
 과제는 주문의 상태 검사와 확정을 보호하고, 같은 포인트 행을 바꾸는 충전·결제가 고른 규칙을 우회하지 않게 하며, 주문·포인트·재고의 보호 순서를 다른 변경 경로와 맞추라고 한다. 이미 확정된 주문은 기존 상태 오류로 답하고 새 요청 키를 들이지 않는다([ADR 0005](./0005-no-request-idempotency-until-a-retrying-caller.md)). 잔액 10,000원에서 4,000원 주문 셋이 함께 확정되면 둘이 성공하고 하나가 잔액 부족으로 거절되며 2,000원이 남아야 한다. 10,000원에서 2,000원 충전과 7,000원 확정이 겹치면 둘 다 성공하고 5,000원이 남아야 한다.
 
 1. **포인트 계정을 바꾸는 트랜잭션은 계정을 처음 읽을 때 `FOR UPDATE`로 잠근다.** 충전과 확정의 결제(`PointDeductor.deduct`)가 모두 `PointAccountFinder.findForUpdate(userId)`로 읽는다. 저장소 포트는 `findForUpdateByUserId`에 `@Lock(PESSIMISTIC_WRITE)`를 단다. `user_id`의 유일 인덱스를 따라 계정 행 하나만 잠근다. 잔액 조회는 잠그지 않는다.
 2. **확정은 주문을 처음 읽을 때 잠근다.** 확정에서 `OrderFinder.findForUpdate(userId, orderId)`가 `find`를 대신한다. 저장소 포트는 `findForUpdateWithLineItemsByIdAndUserId`에 `@Lock(PESSIMISTIC_WRITE)`와 지금의 `@EntityGraph`를 단다.
    - 잠금은 주문을 읽는 바로 그 문장에 걸려야 한다(`for update of` 주문 별칭). Hibernate가 읽은 뒤 따로 잠그면(follow-on locking) 메모리의 주문이 잠금 전 스냅샷의 DRAFT로 남아 0018의 규칙 2가 깨진다. 첫 작업이 SQL 로그로 확인한다.
-   - 기다린 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된 주문을 읽는다. CONFIRMED이면 `validateConfirmable()`이 409 `ORDER_ALREADY_CONFIRMED`로 거절하고, 상품과 계정은 읽지도 않는다.
+   - 기다린 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된 주문을 읽는다. CONFIRMED이면 `ensureDraft()`가 409 `ORDER_ALREADY_CONFIRMED`로 거절하고, 상품과 계정은 읽지도 않는다.
    - 주문 행을 잠그는 곳은 확정뿐이다. 주문 생성은 새 행을 넣고, 고객과 관리자의 조회는 잠그지 않는다.
 3. **잠금 순서는 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정이다.** 0018 규칙 3의 앞에 주문을 둔다. 경로마다 이 순서의 일부만 잡는다.
 
@@ -26,6 +26,8 @@ date: 2026-10-09
    | 관리자의 상품 수정·재고 수정·삭제 | 상품 |
 
    주문을 잠그는 곳이 확정 하나이고 그 첫 문장에서 잠그므로, 주문 잠금을 기다리는 트랜잭션은 다른 잠금을 쥐고 있지 않다. 확정의 세 행이 모두 첫 읽기에서 잠기므로 커밋의 flush(주문 → 포인트 계정 → 상품)는 새 잠금을 얻지 않는다. 0018 규칙 3이 "flush에서 처음 잠기는 행"으로 남겨 둔 주문과 포인트 계정도 이제 먼저 잠긴다.
+
+   > 2026-10-15 [ADR 0020](./0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)이 이 순서의 맨 끝에 상품 목록 revision 행을 두었다. 잠금 순서는 이제 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정 → 상품 목록 revision이다. 위 표의 경로는 충전을 빼고 모두 끝에 revision을 잠근다. 주문 확정과 관리자의 재고 수정은 품절이 바뀔 때만이고, 상품 등록은 새 상품 행 뒤에 잠근다. 좋아요 누르기와 취소가 좋아요 행 → revision으로 표에 새로 든다. 경로마다의 차례는 ADR 0020의 표에 있다. revision은 커밋 바로 앞의 훅이 영속성 컨텍스트를 flush한 뒤 마지막 SQL로 올리므로, revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않는다.
 4. **주문 잠금은 포인트 계정 잠금보다 늦게 들어가지 않는다.** 계정만 잠그면 같은 주문의 뒤진 확정이 계정 잠금을 기다린 뒤 가장 최근 잔액에서 한 번 더 결제한다. 지금은 두 확정이 같은 스냅샷에서 같은 절댓값을 써서 잔액이 우연히 한 번만 줄어든다. 그 우연이 사라지는 순간 이중 결제가 된다.
 5. **0018의 규칙 5, 7, 8을 그대로 따른다.** 저장소 포트는 파생 이름에 `@Lock`을 달고 `@Query`를 쓰지 않는다. Finder의 잠금 메서드에는 "호출자의 쓰기 트랜잭션 안에서만 부른다. 잠금은 그 트랜잭션이 끝날 때 풀린다."를 적는다. 잠금 대기는 3초이고, 실패는 409 `CONCURRENT_REQUEST`다.
 

@@ -80,8 +80,8 @@ class OrderFixturesTest : BaseRepositoryTest() {
             assertThat(order.id).isZero()
             assertThat(order.userId).isEqualTo(1)
             assertThat(order.status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(order.items).hasSizeBetween(1, 5)
-            assertThat(order.items.map { it.productId }).doesNotHaveDuplicates()
+            assertThat(order.lineItems).hasSizeBetween(1, 5)
+            assertThat(order.lineItems.map { it.productId }).doesNotHaveDuplicates()
             assertThat(order.totalAmount.amount).isBetween(1, 50_000_000_000)
         }
     }
@@ -92,7 +92,7 @@ class OrderFixturesTest : BaseRepositoryTest() {
 
         val order = createOrder(userId = 1, products = listOf(line))
 
-        assertThat(order.items).singleElement().satisfies({ item ->
+        assertThat(order.lineItems).singleElement().satisfies({ item ->
             assertThat(item.productId).isEqualTo(7)
             assertThat(item.productName).isEqualTo("운동화")
             assertThat(item.unitPrice).isEqualTo(Money(39_000))

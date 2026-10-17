@@ -21,8 +21,8 @@ fun EntityManager.countLikes(): Long {
     return countRows("select count(*) from likes")
 }
 
-fun EntityManager.likeRowExists(id: Long): Boolean {
-    return countRows("select count(*) from likes where id = :id", "id" to id) > 0
+fun EntityManager.likeRowExists(likeId: Long): Boolean {
+    return countRows("select count(*) from likes where id = :id", "id" to likeId) > 0
 }
 
 private fun EntityManager.countRows(sql: String, vararg params: Pair<String, Any>): Long {

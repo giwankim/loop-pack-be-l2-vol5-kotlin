@@ -162,6 +162,12 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 - Q14에서 `productId` 식별자 참조를 선택했다. Product 객체 연관을 두지 않으며, 현재 상품이 필요한 생성·확정에서만 application이 상품을 조회한다. Q21에 따라 이 식별자 참조에 물리 DB 외래 키도 적용한다.
 - 브랜드 정보는 기본 주문 조회에 포함하지 않는다.
 
+> 2026-10-12 품목 금액을 저장하지 않기로 했다. `order_line_item.line_amount` 열과 그 양수 CHECK를 지우고, `OrderLineItem.lineAmount`는 읽을 때 `unitPrice × quantity`로 계산한다. 단가와 수량이 같은 행에 있고 셋 모두 생성 뒤 바뀌지 않으므로, 저장한 값은 계산한 값과 어긋날 수만 있었고 둘이 같은지 보는 제약도 없었다. 생성 당시 가격의 보존(5.1, ADR 0002)은 단가가 맡는다. 넘침은 주문이 총액을 셀 때 생성에서 거절되며, `line amount overflow is rejected with no partial order`가 그대로 붙든다.
+>
+> 총액은 저장한다. 여러 품목 행의 합이라 한 행의 CHECK가 품목에서 계산할 수 없는데, `paid_amount = total_amount` CHECK가 결제액을 이 값에 묶는다. 품목별 할인·세금처럼 품목 금액이 단가 × 수량에서 벗어나면, 그때는 기록할 사실이므로 열을 다시 둔다. 이름은 `lineAmount`를 지킨다. 다른 금액 필드(`totalAmount`·`paidAmount`·`chargeAmount`)와 같은 `<qualifier>Amount` 모양이고, [CONTEXT.md](../../CONTEXT.md)에 품목 금액으로 올렸다.
+>
+> 2026-10-12 위 둘째 문단을 뒤집어 총액도 저장하지 않는다. `orders.total_amount` 열과 `CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE`를 지우고, `CK_ORDERS_ON_PAYMENT_STATE`에서 `paid_amount = total_amount`를 뺐다. `Order.totalAmount`는 읽을 때 품목 금액을 더한다. 까닭은 품목 금액과 같다. 총액은 생성 뒤 바뀌지 않는 품목에서 나오는데, 저장한 총액이 품목의 합과 같은지는 여러 행에 걸친 일이라 어느 CHECK도 보지 못했다. 그러니 `paid_amount = total_amount`가 결제액을 묶던 값도 검사되지 않은 사본이었다. 총액을 읽는 곳은 모두 품목을 함께 읽으므로([ADR 0014](../adr/0014-finders-load-whole-aggregates.md), 목록 조회의 fetch join) 조회가 늘지 않는다. 결제액이 총액과 같다는 것은 이제 `Order.confirm` 한 곳이 지킨다. 총액의 양수 조건과 결제액 = 총액이 함께 막던 0원 결제는 결제액의 양수 조건(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`)이 막는다. 넘침은 생성자가 총액을 한 번 세어 여전히 생성에서 거절한다. 주문 단위 할인처럼 총액이 품목 금액의 합에서 벗어나면, 그때 벗어나게 한 사실(할인액 같은 것)을 열로 둔다.
+
 ### 5.7 DRAFT 생성과 범위 — Q12, Q13
 
 - 재고가 0이거나 포인트 잔액이 주문 금액보다 작아도 DRAFT를 만들 수 있다. 상품 유효성·양수 수량·금액 범위 조건은 그대로 검사한다.
@@ -379,6 +385,10 @@ classDiagram
 > 2026-09-28 `point_history` 행, 그 두 FK, append-only 규칙을 18절에서 철회했다.
 >
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 논리 삭제를 모든 애그리거트 루트의 기본으로 넓혔다. 주문·계정을 지우는 유스케이스는 여전히 없지만 `PointAccount`와 `Order`도 `@SQLRestriction`으로 삭제된 행을 숨긴다. 아래 "카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다"는 철회했다.
+>
+> 2026-10-12 `order_line_item.line_amount` 열과 품목 금액의 양수 조건을 5.6의 메모에서 철회했다. 품목 금액은 단가 × 수량으로 계산한다.
+>
+> 2026-10-12 `orders.total_amount` 열, 총액의 양수 조건, 결제액 = 총액 조건을 5.6의 메모에서 철회했다. 총액은 품목 금액의 합으로 계산하고, 결제액의 양수 조건을 더했다.
 
 아래는 실행 가능한 migration이 아니라 모델과 필요한 제약의 초안이다. BaseEntity의 ID·시간 필드를 재사용하되 주문·계정·이력을 삭제하는 유스케이스는 이번 범위에 없다. 카탈로그의 논리 삭제 정책을 새 엔티티에 자동 확장하지 않는다.
 
@@ -409,7 +419,7 @@ Q21에 따라 적용할 FK:
 
 ### 8.2 Q21 — 식별자 참조와 물리 FK
 
-> 2026-10-08 아래 끝 문단의 걱정을 실제 DB에서 확인했다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md), [#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). `scalar-foreign-keys.sql`(옛 `order-foreign-keys.sql`)에 `FK_LIKES_USER`, `FK_LIKES_PRODUCT`를 더한 뒤 local 프로필로 compose MySQL에 두 번 연달아 띄웠다. 첫 시작은 빈 스키마라 Hibernate가 아직 없는 표의 자기 외래 키 셋을 지우려다 경고 셋을 남겼다. 사용자·계정·브랜드·상품·좋아요 행을 넣은 뒤의 두 번째 시작은 DDL 경고 없이 떴고, 일곱 외래 키가 모두 다시 생기고 행은 비었다. 이 문단이 확인한 대로 Hibernate는 매핑에 없는 외래 키를 먼저 지우지 않는다. 그런데도 되는 까닭은 표를 지우는 차례다. 자기 외래 키 셋을 지운 뒤 `brand`, `likes`, `order_line_item`, `orders`, `point_account`, `product`, `users`의 이름 차례로 표를 지우는데, 스크립트의 외래 키를 가진 표(`likes`, `order_line_item`, `orders`)가 모두 가리키는 표(`product`, `users`)보다 앞선다. 자식 표가 먼저 사라지면 그 외래 키도 함께 사라진다. 그러니 이름이 가리키는 표보다 뒤에 오는 표에 스칼라 외래 키를 더하면(`review → product` 같은 것) 두 번째 시작에서 MySQL이 부모 표의 drop을 거절한다(오류 3730). 그때는 스크립트 앞에 그 외래 키를 지우는 문장을 둘지, migration 도구를 들일지(Q23) 다시 본다. `OrderApiTest`의 스키마 재생성 테스트가 같은 차례를 테스트 DB에서 붙들어 둔다.
+> 2026-10-08 아래 끝 문단의 걱정을 실제 DB에서 확인했다([ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md), [#95](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/95)). `scalar-foreign-keys.sql`(옛 `order-foreign-keys.sql`)에 `FK_LIKES_ON_USER_ID`, `FK_LIKES_ON_PRODUCT_ID`를 더한 뒤 local 프로필로 compose MySQL에 두 번 연달아 띄웠다. 첫 시작은 빈 스키마라 Hibernate가 아직 없는 표의 자기 외래 키 셋을 지우려다 경고 셋을 남겼다. 사용자·계정·브랜드·상품·좋아요 행을 넣은 뒤의 두 번째 시작은 DDL 경고 없이 떴고, 일곱 외래 키가 모두 다시 생기고 행은 비었다. 이 문단이 확인한 대로 Hibernate는 매핑에 없는 외래 키를 먼저 지우지 않는다. 그런데도 되는 까닭은 표를 지우는 차례다. 자기 외래 키 셋을 지운 뒤 `brand`, `likes`, `order_line_item`, `orders`, `point_account`, `product`, `users`의 이름 차례로 표를 지우는데, 스크립트의 외래 키를 가진 표(`likes`, `order_line_item`, `orders`)가 모두 가리키는 표(`product`, `users`)보다 앞선다. 자식 표가 먼저 사라지면 그 외래 키도 함께 사라진다. 그러니 이름이 가리키는 표보다 뒤에 오는 표에 스칼라 외래 키를 더하면(`review → product` 같은 것) 두 번째 시작에서 MySQL이 부모 표의 drop을 거절한다(오류 3730). 그때는 스크립트 앞에 그 외래 키를 지우는 문장을 둘지, migration 도구를 들일지(Q23) 다시 본다. `OrderApiTest`의 스키마 재생성 테스트가 같은 차례를 테스트 DB에서 붙들어 둔다.
 
 **확정: 스칼라 식별자 참조와 물리 FK를 함께 사용한다.** OrderLineItem이 Product 객체를 가지지 않아도 명시적 스키마에 FK를 둘 수 있다. Q21에서 사용자는 FK 제약 적용을 선택했다.
 
@@ -547,7 +557,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 > 2026-09-28 `PointHistory.account`와 `fk_point_history_point_account`는 18절에서 지웠다.
 >
-> 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `PointAccount.user` 연관을 스칼라 `userId` 열로 바꿨다. 다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 두는데, 계정을 읽는 쪽은 사용자를 건너 읽지 않는다. 아래 첫 근거("연관뿐이다")는 8.2의 2026-10-08 메모가 뒤집었다. 스크립트의 외래 키는 반복 `create`에서도 표를 지우는 차례에 함께 사라지고, `point_account`는 `users`보다 먼저 지워진다. 그래서 `FK_POINT_ACCOUNT_USER`는 같은 이름으로 `scalar-foreign-keys.sql`에 있고, `UK_POINT_ACCOUNT_USER_ID`는 `@Table`의 유일 제약 그대로다. `findByUserId`는 이제 이름 규칙으로 만들어지고 JPQL은 없다. 사용자를 읽지 않는다는 `Hibernate.isInitialized` 테스트는 읽을 연관이 없어 지웠다. 외래 키와 `information_schema`의 저장소 테스트는 그대로다.
+> 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `PointAccount.user` 연관을 스칼라 `userId` 열로 바꿨다. 다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 두는데, 계정을 읽는 쪽은 사용자를 건너 읽지 않는다. 아래 첫 근거("연관뿐이다")는 8.2의 2026-10-08 메모가 뒤집었다. 스크립트의 외래 키는 반복 `create`에서도 표를 지우는 차례에 함께 사라지고, `point_account`는 `users`보다 먼저 지워진다. 그래서 `FK_POINT_ACCOUNT_ON_USER_ID`는 같은 이름으로 `scalar-foreign-keys.sql`에 있고, `UK_POINT_ACCOUNT_ON_USER_ID`는 `@Table`의 유일 제약 그대로다. `findByUserId`는 이제 이름 규칙으로 만들어지고 JPQL은 없다. 사용자를 읽지 않는다는 `Hibernate.isInitialized` 테스트는 읽을 연관이 없어 지웠다. 외래 키와 `information_schema`의 저장소 테스트는 그대로다.
 >
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에 `@SQLRestriction`이 붙었다. 아래 다시 볼 조건의 앞 절반이 일어났지만, 계정은 위 메모대로 이미 스칼라 `userId`라 사용자의 필터가 계정 조회에 닿지 않는다. 둘째 근거의 "`User`에는 삭제 상태가 없어"도 이제 사실이 아니다.
 
@@ -556,7 +566,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - Q21의 물리 FK와 Q23의 migration 보류를 함께 만족하는 길은 연관뿐이다. `ddl-auto=create`는 연관에서만 외래 키를 만들고, 스칼라 열에 FK를 덧붙일 JPA 애노테이션은 없다. 8.2에서 본 대로 `import.sql`의 `alter table`은 반복 `create`에서 drop 순서를 깨뜨린다.
 - 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
 - `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
-- 만들어진 제약은 `FK_POINT_ACCOUNT_USER`, `UK_POINT_ACCOUNT_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다. 2026-10-08에 그때 빠진 주문의 두 인덱스 이름도 `IDX_ORDERS_USER_CREATED`, `IDX_ORDERS_CREATED`로 맞췄다. 살아 있는 제약과 인덱스의 이름은 모두 대문자다.)
+- 만들어진 제약은 `FK_POINT_ACCOUNT_ON_USER_ID`, `UK_POINT_ACCOUNT_ON_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다. 2026-10-08에 그때 빠진 주문의 두 인덱스 이름도 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`, `IDX_ORDERS_ON_CREATED_AT_AND_ID`로 맞췄다. 살아 있는 제약과 인덱스의 이름은 모두 대문자다.)
 - 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
 
 다시 볼 조건: 사용자에 삭제 상태가 생겨 `@SQLRestriction`이 붙으면, 계정 조회가 삭제된 사용자의 계정을 숨기게 되므로 스칼라 `userId` + 명시적 schema로 옮길지 정한다. OrderLineItem→Product의 FK(#13)는 이 방식으로는 만들 수 없어 그때 초기화 방법을 다시 정한다.
@@ -729,7 +739,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 [Issue #15](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/15)는 `GET /api/v1/orders`를 구현한다. 저장된 스냅샷만 읽으므로 확정 엔드포인트가 없어도 두 상태를 모두 확인할 수 있다. 관리자 목록과 포인트 이력 조회는 후속 티켓에 남는다.
 
 - 목록의 항목은 상세와 같은 `OrderResponse`다. 봉투는 다른 목록과 같은 `PageResponse`이고 총 개수는 주지 않는다(카탈로그 설계 5.5). 입력은 `OrderListRequest`로 바로 받으며 `page`·`size`의 범위와 메시지는 `LikeListRequest`와 같다(5.17, 5.18, 5.22). 정렬 기준은 받지 않는다. 주문 목록의 차례는 하나뿐이다(설계 6).
-- 차례는 `createdAt` 내림차순, 같으면 `id` 내림차순이다. 필터가 사용자 하나고 차례가 주문의 컬럼 둘이라 QueryDSL이 아니라 메서드 이름으로 짠 파생 쿼리다. 상품 목록이 QueryDSL을 쓰는 까닭(브랜드 필터와 세 정렬 기준)이 여기에는 없다(카탈로그 설계 5.32). `Order`에 이미 있는 `IDX_ORDERS_USER_CREATED`가 이 차례 그대로다.
+- 차례는 `createdAt` 내림차순, 같으면 `id` 내림차순이다. 필터가 사용자 하나고 차례가 주문의 컬럼 둘이라 QueryDSL이 아니라 메서드 이름으로 짠 파생 쿼리다. 상품 목록이 QueryDSL을 쓰는 까닭(브랜드 필터와 세 정렬 기준)이 여기에는 없다(카탈로그 설계 5.32). `Order`에 이미 있는 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`가 이 차례 그대로다.
 - `Slice`의 위치·크기·`hasNext`를 `PageSlice`로 옮기는 두 줄이 `ProductRepositoryImpl`에도 똑같이 있었다. 옮기는 규칙이 하나이므로 자리도 하나여야 해서 `infrastructure/shared`의 `Slice<T>.toPageSlice()`로 모았다. domain이 아니라 infrastructure인 까닭은 `Slice`가 Spring Data의 타입이고 domain은 그것을 모르기 때문이다. `PageRequest`에는 조각의 위치와 크기만 싣는다. 정렬을 함께 실으면 그 기준이 쿼리 이름의 것을 덮는다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): `PageSlice`와 `toPageSlice`는 #81에서 없어졌고 `infrastructure/shared`는 `adapter/persistence/shared`가 되었다. 거기 남은 `fetchSlice`(16.1)가 Spring Data의 `Slice`를 돌려준다.)
 
 ### 14.1 조각은 주문만 센다
@@ -763,7 +773,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ## 15. 주문 확정 구현 — #14
 
-> 2026-09-28 확정·생성·충전의 성공 재생을 17절에서 철회했다. 재확정은 `Order.validateConfirmable`이 먼저 거절한다(17.2).
+> 2026-09-28 확정·생성·충전의 성공 재생을 17절에서 철회했다. 재확정은 `Order.ensureDraft`가 먼저 거절한다(17.2).
 >
 > 2026-09-28 PAYMENT 이력, `uk_point_history_order_id`, 이력 저장 경계에 넣던 늦은 실패를 18절에서 철회했다. 늦은 실패는 커밋의 마지막 UPDATE에 넣는다(18.2).
 >
@@ -812,7 +822,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 조각을 만드는 세 줄(`offset(page * size)`, `limit(size + 1)`, `hasNext = rows.size > size`)은 `ProductRepositoryImpl.findAll`과 글자까지 같았다. `size + 1`을 읽어 다음 조각의 존재를 정한다는 규칙은 `PageSlice`의 KDoc 한 자리에 적혀 있는데 구현은 두 자리에 있었던 것이다. #15가 `Slice`를 옮기는 두 줄을 `infrastructure/shared`로 모았으므로, QueryDSL 쪽도 같은 파일의 `JPAQuery<T>.fetchSlice(page, size)`로 모았다. 상품 목록과 주문 목록이 그 하나를 쓴다. (2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 그 파일은 `adapter/persistence/shared/Slices.kt`이고, #81 뒤로는 `fetchSlice(pageable)`이 Spring Data의 `Slice`를 돌려준다.)
 
-`QOrder.lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order.lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
+`QOrder._lineItems`가 생성되므로 두 쿼리가 한 자리에 있다. `Order._lineItems`는 `private`이지만 kapt의 querydsl-apt는 매핑된 필드를 가시성과 무관하게 경로로 만든다. JPA 저장소에 `@EntityGraph` 조회를 하나 더 두어 나눌 필요가 없었다.
 
 ### 16.2 저장소와 application의 자리
 
@@ -877,7 +887,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q30 | 새 계약의 고정 | 같은 충전액을 두 번 충전하면 두 번 늘고, 같은 품목을 두 번 생성하면 DRAFT가 둘이라는 것을 서비스 테스트로 고정한다. 키를 되살리는 변경이 이 계약을 모르고 바꾸지 않게 한다. |
 | Q31 | 기록 방식 | 이 절을 덧붙이고 철회한 행과 절에 한 줄 표시를 단다. 인터뷰 기록을 고쳐 쓰지 않는다. [도메인 문서](../domain/points-orders.md)와 [CONTEXT.md](../../CONTEXT.md)는 지금 모습으로 고친다. |
 | Q32 | 재확정의 status와 code | 409 `ORDER_ALREADY_CONFIRMED`. `INSUFFICIENT_STOCK`·`INSUFFICIENT_POINTS`처럼 전용 예외와 advice 처리기를 둔다. 취소는 범위 밖이라(Q1) 아직 없는 상태를 내다본 이름(`ORDER_NOT_CONFIRMABLE`)을 쓰지 않는다. |
-| Q33 | 확정할 수 있는지 보는 자리 | `Order.validateConfirmable()`을 application이 소유권 확인 직후에 부른다. `Order.confirm()`은 차감 뒤 마지막에 두고 같은 검사를 다시 쓴다. |
+| Q33 | 확정할 수 있는지 보는 자리 | `Order.ensureDraft()`를 application이 소유권 확인 직후에 부른다. `Order.confirm()`은 차감 뒤 마지막에 두고 같은 검사를 다시 쓴다. |
 
 ### 17.2 확정 재요청의 검사 차례
 
@@ -885,14 +895,14 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 재생을 지우는 것만으로는 모자랐다. `OrderService.confirm`의 이른 반환을 지우면 재요청이 `availableProduct` → `deductStock` → `PointAccount.pay`를 차례로 지난 뒤에야 `Order.confirm()`의 거절에 닿는다. 그사이 상품이 삭제됐으면 `ORDER_PRODUCT_NOT_AVAILABLE`, 잔액을 썼으면 `INSUFFICIENT_POINTS`가 먼저 나온다. 거절에 닿더라도 당시의 `InvalidOrderException`은 `RuleViolationException`이라 범용 400이었다.
 
-그래서 거절 차례를 정했다. 401 요청자 → 404 없거나 남의 주문 → **409 이미 확정된 주문** → 15절의 차례(판매 불가 404가 재고 부족 409보다 앞섬) → 포인트 부족 409. 이미 확정된 주문은 전용 `OrderAlreadyConfirmedException`이며 `validateConfirmable()`과 `confirm()`이 같은 검사를 쓴다. 규칙은 `Order` 한 곳에 있다.
+그래서 거절 차례를 정했다. 401 요청자 → 404 없거나 남의 주문 → **409 이미 확정된 주문** → 15절의 차례(판매 불가 404가 재고 부족 409보다 앞섬) → 포인트 부족 409. 이미 확정된 주문은 전용 `OrderAlreadyConfirmedException`이며 `ensureDraft()`와 `confirm()`이 같은 검사를 쓴다. 규칙은 `Order` 한 곳에 있다.
 
 고르지 않은 대안은 둘이다.
 
 - `order.confirm()`을 차감보다 먼저 부른다. 호출이 하나로 줄지만 트랜잭션 안에서 결제보다 확정 표시가 앞선다. 밖에서는 보이지 않아도 "차감한 뒤 확정한다"는 읽는 차례를 지키려고 고르지 않았다.
 - application이 `order.status`를 직접 보고 `CoreException`을 던진다. 규칙이 서비스와 애그리거트 두 곳에 적힌다.
 
-`validateConfirmable()` 호출을 지운 구현으로 세 HTTP 테스트가 실제로 실패하는 것을 확인했다. 잔액을 쓰고 상품·브랜드를 지운 뒤의 재확정은 404, 나머지 둘은 `INSUFFICIENT_POINTS`가 나왔다. 이 차례를 붙드는 것은 `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`이다.
+`ensureDraft()` 호출을 지운 구현으로 세 HTTP 테스트가 실제로 실패하는 것을 확인했다. 잔액을 쓰고 상품·브랜드를 지운 뒤의 재확정은 404, 나머지 둘은 `INSUFFICIENT_POINTS`가 나왔다. 이 차례를 붙드는 것은 `re-confirming is rejected as already confirmed even after later spending and product and brand deletion`이다.
 
 동시 확정은 여전히 범위 밖이다. 두 요청이 모두 DRAFT를 읽으면 하나가 커밋 때 `uk_point_history_order_id`에 막혀 500이 된다. 3주차 잠금 과제의 몫이다(ADR 0003).
 
@@ -902,7 +912,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 돌려받은 CHARGE 이력 저장. 잔액 변경과 이력은 한 트랜잭션이다.
 - DRAFT 생성: 요청자 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽음 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둠 → 저장. (처음에는 상품 확인 앞에서 입력을 정규화했다(상품별 수량 합산·정렬). 2026-10-03(#55)에 합산을 지웠다(5.2).) 주문과 품목은 한 트랜잭션이다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → 포인트 결제 → `confirm()` → PAYMENT 이력 저장. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `ensureDraft()` → 모든 품목의 판매 가능 확인 → 재고 차감 → 포인트 결제 → `confirm()` → PAYMENT 이력 저장. 확정 결과는 GET으로 읽는다.
 
 ### 17.4 테스트가 바뀐 자리
 
@@ -926,7 +936,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q36 | 기록 방식 | 17절과 같다. 이 절을 덧붙이고 철회한 행과 절에 한 줄 표시를 단다. 도메인 문서와 CONTEXT.md는 지금 모습으로 고치고 ADR 0003에는 범위 메모를 단다. [카탈로그 설계](./catalog.md)에서 저장소 구현 수를 세던 결정에도 한 줄 표시를 단다. |
 | Q37 | 기술 글 | `docs/blog`의 글은 이번에 고치지 않는다. 이력을 예로 든 두 논지(루트 중심 저장소의 예외, 같은 트랜잭션 안의 도메인 이벤트)를 다시 쓰는 일은 17절로 낡은 곳과 함께 따로 한다. |
 | Q38 | 늦은 실패 테스트의 자리 | 충전의 늦은 실패 테스트는 지운다. 충전은 `point_account` 한 행만 바꿔 함께 되돌릴 쓰기가 없다. 커밋되는지만 보는 테스트는 남긴다. 확정의 늦은 실패는 커밋의 마지막 UPDATE를 임시 CHECK로 거절한다(18.2). `@SpykBean`과 커밋 전 콜백은 스위트에 없는 장치라 대안으로만 두고, 테스트를 위해 main에 `save` 호출을 더하지 않는다. **커밋만 보는 테스트는 ADR 0012에서 지웠다(#84).** |
-| Q39 | `PointAccount`의 모양 | `charge(amount)`와 `pay(amount)`는 아무것도 돌려주지 않고 `pay`는 주문을 받지 않는다. `domain.point`가 `domain.order`를 들여오지 않게 된다. 결제액과 주문을 잇는 것은 `Order`의 CHECK(`paid_amount = total_amount`)다. |
+| Q39 | `PointAccount`의 모양 | `charge(amount)`와 `pay(amount)`는 아무것도 돌려주지 않고 `pay`는 주문을 받지 않는다. `domain.point`가 `domain.order`를 들여오지 않게 된다. 결제액과 주문을 잇는 것은 `Order`의 CHECK(`paid_amount = total_amount`)다. **2026-10-12 총액 열과 함께 이 CHECK를 지웠다. 결제액은 `Order.confirm`이 총액에서 정한다(5.6).** |
 | Q40 | ADR과 다시 들이는 조건 | ADR 0006. 고객의 충전·사용 내역 조회, 관리자 감사, 환불·취소처럼 원장이 필요한 흐름이 생기면 다시 연다. 그때는 잔액과 이력을 함께 둘지, 이력을 잔액의 원천으로 삼을지부터 고른다. ADR 0003은 대체하지 않고 범위 메모만 단다. |
 | Q41 | 충전의 흔적 | 받아들인다. 충전은 잔액 말고 흔적을 남기지 않는다. 결제는 확정된 주문으로 답할 수 있지만 누가 언제 얼마를 충전했는지는 답할 수 없고, 이력을 다시 들여도 그 사이의 충전은 되살아나지 않는다. 운영 데이터는 없다. local/test가 `ddl-auto=create`이고 migration 도구가 없어 지금 지우는 비용이 없다(Q23, Q27). |
 | Q42 | 결제의 기록을 부르는 말 | CONTEXT.md의 확정된 주문이 결제의 기록이라고 적고 `결제 이력`·`결제 내역`을 피할 말로 둔다. 개념이 사라진 충전 키와 달리 결제의 기록은 자리만 옮겼다. |
@@ -953,7 +963,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 저장. `point_account` 한 행만 바뀐다.
 - DRAFT 생성: 17.3과 같다.
-- 확정: 요청자 확인 → 본인 주문 조회 → `validateConfirmable()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
+- 확정: 요청자 확인 → 본인 주문 조회 → `ensureDraft()` → 모든 품목의 판매 가능 확인 → 재고 차감 → `PointAccount.pay(amount)` → `confirm()` → 저장. 재고·잔액·주문의 UPDATE는 커밋에서 함께 나간다. 확정 결과는 GET으로 읽는다.
 
 ### 18.4 테스트가 바뀐 자리
 
@@ -989,8 +999,10 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 - 충전: 요청자 확인 → 계정을 잠가 읽음(`PointAccountFinder.findForUpdate`) → `PointAccount.charge(amount)` → 저장. 같은 계정의 다른 충전이나 결제와 겹치면 계정 행에서 기다리고, 뒤에 온 쪽은 앞선 쪽이 커밋한 잔액에 더한다.
 - DRAFT 생성: 17.3과 같다. 새 행을 넣을 뿐 잠그지 않는다.
-- 확정: 요청자 확인 → 본인 주문을 품목과 함께 잠가 읽음(`OrderFinder.findForUpdate`) → `validateConfirmable()` → 모든 품목의 상품 행을 잠가 읽어 판매 가능 확인 → 재고 차감 → 계정을 잠가 읽어 `PointAccount.pay(amount)` → `confirm()` → 저장. 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 앞선 상품의 재고 UPDATE는 다음 상품을 다시 잠가 읽을 때의 자동 flush로 먼저 나가고, 나머지는 커밋의 flush에서 나간다. 어느 flush도 새 잠금을 얻지 않는다.
+- 확정: 요청자 확인 → 본인 주문을 품목과 함께 잠가 읽음(`OrderFinder.findForUpdate`) → `ensureDraft()` → 모든 품목의 상품 행을 잠가 읽어 판매 가능 확인 → 재고 차감 → 계정을 잠가 읽어 `PointAccount.pay(amount)` → `confirm()` → 저장. 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 앞선 상품의 재고 UPDATE는 다음 상품을 다시 잠가 읽을 때의 자동 flush로 먼저 나가고, 나머지는 커밋의 flush에서 나간다. 어느 flush도 새 잠금을 얻지 않는다.
 - 잔액 조회와 고객·관리자의 주문 조회는 잠그지 않는다.
+
+> 2026-10-12 DRAFT 생성의 상품 확인은 확정처럼 상품 행만 보고 브랜드는 보지 않는다. 17.3의 "상품·브랜드 확인"은 그때의 것이다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 4의 메모).
 
 ### 19.3 주문 잠금이 한 문장인지
 

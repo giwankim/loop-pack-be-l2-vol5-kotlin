@@ -1,6 +1,8 @@
 package com.loopers.config.redis
 
+import io.lettuce.core.ClientOptions
 import io.lettuce.core.ReadFrom
+import io.lettuce.core.SocketOptions
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -25,8 +27,7 @@ class RedisConfig(
     @Primary
     @Bean
     fun defaultRedisConnectionFactory(): LettuceConnectionFactory {
-        val (database, master, replicas) = redisProperties
-        return lettuceConnectionFactory(database, master, replicas) {
+        return lettuceConnectionFactory(redisProperties) {
             readFrom(ReadFrom.REPLICA_PREFERRED)
         }
     }
@@ -34,8 +35,7 @@ class RedisConfig(
     @Qualifier(CONNECTION_MASTER)
     @Bean
     fun masterRedisConnectionFactory(): LettuceConnectionFactory {
-        val (database, master, replicas) = redisProperties
-        return lettuceConnectionFactory(database, master, replicas) {
+        return lettuceConnectionFactory(redisProperties) {
             readFrom(ReadFrom.MASTER)
         }
     }
@@ -59,12 +59,19 @@ class RedisConfig(
     }
 
     private fun lettuceConnectionFactory(
-        database: Int,
-        master: RedisNodeInfo,
-        replicas: List<RedisNodeInfo>,
+        properties: RedisProperties,
         customizer: LettuceClientConfiguration.LettuceClientConfigurationBuilder.() -> Unit = {},
     ): LettuceConnectionFactory {
+        val (database, master, replicas) = properties
+        val socketOptions = SocketOptions.builder()
+            .connectTimeout(properties.connectTimeout)
+            .build()
+        val clientOptions = ClientOptions.builder()
+            .socketOptions(socketOptions)
+            .build()
         val lettuceClientConfiguration = LettuceClientConfiguration.builder()
+            .commandTimeout(properties.commandTimeout)
+            .clientOptions(clientOptions)
             .apply(customizer)
             .build()
         val masterReplicaConfig = RedisStaticMasterReplicaConfiguration(master.host, master.port)

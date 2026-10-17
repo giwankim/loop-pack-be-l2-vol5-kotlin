@@ -22,10 +22,10 @@
 
   ```kotlin
   entityManager.withStatistics { statistics ->
-      val slice = productFinder.findAll(ProductListRequest())
+      val list = productFinder.findAll(ProductListRequest())
 
-      assertThat(slice.content).hasSize(3)
-      assertThat(statistics.prepareStatementCount).isEqualTo(2L)
+      assertThat(list.items).hasSize(3)
+      assertThat(statistics.prepareStatementCount).isEqualTo(3L)
   }
   ```
 - 컨텍스트 속성(`hibernate.generate_statistics`)으로 켜지 않는다. 속성이 다르면 컨텍스트 캐시 키가 갈려 Spring 컨텍스트가 하나 더 뜬다.
@@ -46,6 +46,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   - 부분 문자열은 `extractingPath(…).asString().contains(…)`
   - 있기만 하면 되는 값은 `isNotNull()`, 수인지는 `asNumber()`
   - 빈 배열은 `extractingPath(…).asArray().isEmpty()`
+  - 예외: seed에서 센 페이지 전체를 기대값과 견주는 측정 테스트(`ProductQueryPerformanceApiTest`)는 기대 본문을 손으로 적은 JSON으로 만들어 `bodyJson().isStrictlyEqualTo(…)`로 견준다. 항목 스무 개의 필드마다 한 줄을 쓰면 읽을 수 없고, 엄격한 비교는 값과 차례에 더해 빠지거나 더 실린 필드와 JSON 타입까지 잡는다. 기대 본문을 응답 DTO의 직렬화로 만들지 않는다. DTO가 바뀌면 기대값도 함께 바뀌어 아무것도 잡지 못한다. 같은 클래스는 과제가 이름 붙인 성질(큰 브랜드의 첫 페이지가 한 가격이고 id 내림차순, 전체 카탈로그에 삭제된 상품·브랜드가 없음)을 엄격한 비교와 따로 `asArray()`의 `containsOnly`·`isSortedAccordingTo`·`doesNotContainAnyElementsOf`로 단언한다. 엄격한 비교가 이미 잡는 것이지만, 테스트가 무엇을 보는지 단언으로 말하게 하려는 것이다.
 
   Hamcrest와 `ResultMatcher`(`andExpect`)는 쓰지 않는다.
 
@@ -75,13 +76,14 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   - Testcontainers 설정(`com.loopers.testcontainers`).
 - 테스트 기반 클래스는 `com.loopers.support.test`에 둔다. 까닭과 고르지 않은 대안은 [ADR 0012](docs/adr/0012-tests-inherit-setup-from-abstract-base-classes.md)에 있다. 서비스·MockMvc·저장소 테스트는 모두 자기 종류의 기반 클래스를 상속한다.
   - 서비스(provided 포트) 테스트: `BaseApplicationServiceTest`
+  - Redis 장애 테스트: Redis의 시간 한도를 보는 `RedisTimeoutTest`도 포트 없이 `BaseApplicationServiceTest`를 상속한다. 컨텍스트를 쓰려고서다. Redis를 멈추고 걸리게 하는 장애 테스트는 redis `testFixtures`의 `StoppableRedisTestContainersConfig`를 `@Import`로 더해 자기만의 컨텍스트와 Redis를 쓴다. 그 설정이 `RedisTestContainersConfig`를 가져와 자기 주소가 남게 하므로 기반의 `@Import`와 함께 써도 된다. 멈추거나 걸리게 한 테스트는 `@AfterEach`에서 `StoppableRedis.restore()`로 되살리고, `com.loopers.support`의 `awaitCommandSucceeds()`로 Lettuce가 다시 연결할 때까지 기다린다. 시간은 넉넉한 상한으로만 단언한다. JVM마다 하나인 테스트 Redis는 멈추지 않는다. 고객 목록이 Redis 장애를 넘기는지 보는 `ProductCacheRedisFailureTest`는 쓰기가 revision을 올리는 장면이 있어 `BaseCommittingApplicationServiceTest`를 상속하고 같은 설정을 가져온다. 캐시 오류 처리기가 남긴 WARN은 그 처리기의 logback 로거에 `ListAppender`를 테스트마다 붙여 읽는다.
   - MockMvc 테스트: `BaseWebApiAdapterTest`. `BaseApplicationServiceTest`를 넓혀 MockMvc와 관리자 보안 설정을 더한다.
   - 저장소(required 포트) 테스트: `BaseRepositoryTest`
-  - 커밋해야 하는 provided 포트 테스트(잠금을 쥔 트랜잭션 곁에서 다른 트랜잭션이 기다리는지 보는 멈춤 테스트, 변경 SQL이 나간 뒤 실패해 되돌아가는지 보는 중간 실패 테스트 등): `BaseCommittingApplicationServiceTest`. `BaseApplicationServiceTest`를 넓혀 테스트 트랜잭션에서 빠지고 테스트마다 표를 비운다. 다른 스레드의 호출(`inAnotherThread`), start gate에서 함께 풀리는 호출들(`runConcurrently`), 그 결과를 성공·업무 거절·기술 오류로 세는 집계(`tally`), 새 트랜잭션의 다시 읽기(`inNewTransaction`)를 준다. `tally`는 넘긴 업무 거절의 예외 타입과 정확히 같은 예외만 업무 거절로 세고, 잠금 실패까지 나머지는 모두 기술 오류로 센다. 잠그지 않은 read-then-write가 차감을 잃는 것을 SQL로 재현하는 대조군(`LostUpdateControlTest`)은 검증하는 포트가 없어도 이 기반을 상속한다. 커밋한 준비, 다른 스레드의 호출, 그 호출을 기다린 뒤의 정리를 쓰려고서다(points-orders 설계 19.1의 Q47). 잠금을 쥔 쪽은 Service의 단계를 `@MockkSpyBean`으로 spy해 `com.loopers.support`의 `Pause`에서 멈추고, 다른 쪽이 기반의 `LOCK_WAIT_PROBE` 안에 끝나지 않으면 기다리는 것으로 본다. Service는 CGLIB 프록시이므로 `AopTestUtils.getUltimateTargetObject`로 얻은 spy에 stub한다. 중간 실패 테스트는 저장소를 `@MockkSpyBean`으로 spy해, 저장 단계가 영속성 컨텍스트를 flush한 뒤 던지게 한다. Spring Data 저장소는 JDK 프록시이므로 stub은 spy에 바로 걸고, spy는 Kotlin·Spring 컨벤션이 테스트 JVM에 거는 `--add-opens java.base/java.lang.reflect=ALL-UNNAMED`가 있어야 만들어진다. 기반의 `prepare`도 그 저장소를 거치므로 stub은 준비를 마친 뒤에 건다. spy 필드가 있는 클래스는 컨텍스트를 하나 더 띄운다.
+  - 커밋해야 하는 provided 포트 테스트(잠금을 쥔 트랜잭션 곁에서 다른 트랜잭션이 기다리는지 보는 멈춤 테스트, 변경 SQL이 나간 뒤 실패해 되돌아가는지 보는 중간 실패 테스트 등): `BaseCommittingApplicationServiceTest`. `BaseApplicationServiceTest`를 넓혀 테스트 트랜잭션에서 빠지고 테스트마다 표를 비운다. 다른 스레드의 호출(`inAnotherThread`), start gate에서 함께 풀리는 호출들(`runConcurrently`), 그 결과를 성공·업무 거절·기술 오류로 세는 집계(`tally`), 새 트랜잭션의 다시 읽기(`inNewTransaction`), 커밋된 상품 목록 revision(`currentListRevision`)과 그것을 품은 고객 목록의 캐시 키(`currentListCacheKey`)를 준다. 캐시 키는 운영의 키 생성기가 만들므로 테스트는 키의 철자를 적지 않는다. `tally`는 넘긴 업무 거절의 예외 타입과 정확히 같은 예외만 업무 거절로 세고, 잠금 실패까지 나머지는 모두 기술 오류로 센다. 잠그지 않은 read-then-write가 차감을 잃는 것을 SQL로 재현하는 대조군(`LostUpdateControlTest`)은 검증하는 포트가 없어도 이 기반을 상속한다. 커밋한 준비, 다른 스레드의 호출, 그 호출을 기다린 뒤의 정리를 쓰려고서다(points-orders 설계 19.1의 Q47). 측정용 카탈로그를 넣는 `ProductQuerySeed`를 확인하는 `ProductQuerySeedLoadTest`도 포트 없이 이 기반을 상속한다. 넣은 뒤의 `ANALYZE TABLE`이 암묵으로 커밋해 롤백으로 정리할 수 없으므로, 테스트 트랜잭션에서 빠지는 표시와 표를 비우는 정리를 쓰려고서다. seed는 측정에 쓰는 수만 행이라 `prepare`가 아니라 JDBC 배치로 넣는다. 잠금을 쥔 쪽은 Service의 단계를 `@MockkSpyBean`으로 spy해 `com.loopers.support`의 `Pause`에서 멈추고, 다른 쪽이 기반의 `LOCK_WAIT_PROBE` 안에 끝나지 않으면 기다리는 것으로 본다. Service는 CGLIB 프록시이므로 `AopTestUtils.getUltimateTargetObject`로 얻은 spy에 stub한다. 상품 목록 revision 행처럼 Service의 단계가 아니라 커밋 앞의 훅에서 잡히는 잠금은 spy해 멈출 자리가 없으므로, 쥔 쪽이 다른 스레드의 `inNewTransaction`에서 저장소를 직접 불러 잠그고 `Pause`에서 멈춘다(ADR 0020). 중간 실패 테스트는 저장소를 `@MockkSpyBean`으로 spy해, 저장 단계가 영속성 컨텍스트를 flush한 뒤 던지게 한다. 늦은 채움 테스트(`ProductCacheLateRefillTest`)는 `RedisCacheWriter` 빈을 `@MockkSpyBean`으로 spy해 첫 put을 `Pause`에서 멈춘다. writer는 AOP 프록시가 아니므로 stub은 spy에 바로 건다. Spring Data 저장소는 JDK 프록시이므로 stub은 spy에 바로 걸고, spy는 Kotlin·Spring 컨벤션이 테스트 JVM에 거는 `--add-opens java.base/java.lang.reflect=ALL-UNNAMED`가 있어야 만들어진다. 기반의 `prepare`도 그 저장소를 거치므로 stub은 준비를 마친 뒤에 건다. spy 필드가 있는 클래스는 컨텍스트를 하나 더 띄운다.
   - domain 테스트와 컨텍스트 적재 테스트(`CommerceApiContextTest`)는 상속하지 않는다. 다만 저장한 엔티티가 있어야 하는 fixture 계약 테스트(`OrderFixturesTest`)는 domain 패키지에 있어도 `@DataJpaTest`이므로 `BaseRepositoryTest`를 상속한다.
-- 테스트 설정 애노테이션(`@SpringBootTest`, `@DataJpaTest`, `@AutoConfigureMockMvc`, `@AutoConfigureTestDatabase`, `@Transactional`, 공통 `@Import`)은 기반 클래스만 진다. 하위 클래스가 더하는 애노테이션은 추가 `@Import`(QueryDSL 설정과 그 어댑터), 트랜잭션에서 빠지는 표시, `BaseCommittingApplicationServiceTest`의 하위 클래스가 Service(멈춤 테스트)나 저장소(중간 실패 테스트)를 spy하는 `@MockkSpyBean` 필드뿐이다. 하위 클래스의 `@Import`는 기반의 것과 합쳐진다.
-- `entityManager`와 `mvc`는 기반 클래스의 `protected` 필드로 쓴다. 준비만을 위해 포트나 저장소를 주입받지 않는다. 생성자로 받는 것은 검증하는 포트와 단언·정리에 쓰는 의존이다. 포트로도 저장소로도 만들 수 없는 상태(정해 둔 시각, 표현 범위를 넘는 가격 등)를 준비한 데이터 위에 SQL로 덮어쓰는 클래스는 `JdbcTemplate`도 받는다. 검증하는 포트 없이 동작 자체를 SQL로 짓는 대조군(`LostUpdateControlTest`)은 `JdbcTemplate`과, 트랜잭션을 스스로 여는 데 쓰는 `PlatformTransactionManager`를 받는다.
-- 기반 클래스는 테스트마다 롤백되는 테스트 트랜잭션을 건다. 요청마다 커밋된 결과를 다음 요청이 읽어야 하거나, 요청이 다른 스레드의 트랜잭션과 엇갈려야 하는(`LockFailureApiTest`) 클래스는 클래스에 `@Transactional(propagation = Propagation.NOT_SUPPORTED)`를 달아 빠지고, 그 까닭을 클래스 KDoc에 적는다. 메서드마다 빠지지 않는다. 빠진 클래스는 `DatabaseCleanUp`으로 정리한다. 다시 읽은 엔티티가 분리되어 있으므로 지연 연관(`Product.brand` 등)을 건드리지 않는다. 커밋해야 하는 provided 포트 테스트는 스스로 빠지지 않고 `BaseCommittingApplicationServiceTest`를 상속한다. 빠지는 표시와 정리는 그 기반이 진다.
+- 테스트 설정 애노테이션(`@SpringBootTest`, `@DataJpaTest`, `@AutoConfigureMockMvc`, `@AutoConfigureTestDatabase`, `@Transactional`, 공통 `@Import`)은 기반 클래스만 진다. 하위 클래스가 더하는 애노테이션은 추가 `@Import`(QueryDSL 설정과 그 어댑터, Redis 장애 테스트의 `StoppableRedisTestContainersConfig`), 트랜잭션에서 빠지는 표시, `BaseCommittingApplicationServiceTest`의 하위 클래스가 Service(멈춤 테스트), 저장소(중간 실패 테스트), 캐시 writer(늦은 채움 테스트)를 spy하는 `@MockkSpyBean` 필드, 공유 MySQL을 멈추지 않고 DB 실패를 보려고 저장소를 spy하는 HTTP 테스트의 `@MockkSpyBean` 필드(`ProductCacheDatabaseFailureApiTest`의 revision 저장소. spy가 컨텍스트를 하나 더 띄우므로 그 장면만 클래스로 떼어 낸다), 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`뿐이다. 하위 클래스의 `@Import`는 기반의 것과 합쳐진다.
+- `entityManager`와 `mvc`는 기반 클래스의 `protected` 필드로 쓴다. 준비만을 위해 포트나 저장소를 주입받지 않는다. 생성자로 받는 것은 검증하는 포트와 단언·정리에 쓰는 의존이다. 포트로도 저장소로도 만들 수 없는 상태(정해 둔 시각, 표현 범위를 넘는 가격 등)를 준비한 데이터 위에 SQL로 덮어쓰는 클래스는 `JdbcTemplate`도 받는다. 검증하는 포트 없이 동작 자체를 SQL로 짓는 대조군(`LostUpdateControlTest`)은 `JdbcTemplate`과, 트랜잭션을 스스로 여는 데 쓰는 `PlatformTransactionManager`를 받는다. 측정용 seed를 넣고 잡은 SQL을 EXPLAIN하는 클래스(`ProductQuerySeedLoadTest`, `ProductQueryPerformanceApiTest`)도 `JdbcTemplate`을 받는다. `ProductQueryPerformanceApiTest`는 브랜드 삭제의 연쇄를 롤백할 바깥 트랜잭션을 열려고 `PlatformTransactionManager`도 받고, 요청마다 고객 목록의 캐시를 비워 DB 경로를 재려고 `RedisCleanUp`도 받는다. Redis 장애 테스트(`RedisTimeoutTest`, `ProductCacheRedisFailureTest`)는 명령을 보내는 `RedisTemplate`과, 컨테이너를 멈추고 되살리는 `StoppableRedis`를 받는다.
+- 기반 클래스는 테스트마다 롤백되는 테스트 트랜잭션을 건다. `BaseApplicationServiceTest`와 그것을 넓힌 `BaseWebApiAdapterTest`·`BaseCommittingApplicationServiceTest`는 테스트가 끝날 때마다 `RedisCleanUp`으로 테스트 Redis를 비운다. Redis를 가져오지 않는 `BaseRepositoryTest`는 비우지 않는다. 고객 목록의 캐시 키가 상품 목록 revision을 품는데, 테스트마다 revision이 0에서 시작하므로 비우지 않으면 뒤 테스트가 앞 테스트의 목록을 읽는다([ADR 0020](docs/adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)). 롤백하는 테스트는 revision을 올리지 않으므로 캐시의 무효화를 보는 테스트는 `BaseCommittingApplicationServiceTest`를 상속한다. 요청마다 커밋된 결과를 다음 요청이 읽어야 하거나, 요청이 다른 스레드의 트랜잭션과 엇갈려야 하는(`LockFailureApiTest`) 클래스는 클래스에 `@Transactional(propagation = Propagation.NOT_SUPPORTED)`를 달아 빠지고, 그 까닭을 클래스 KDoc에 적는다. 메서드마다 빠지지 않는다. 빠진 클래스는 `DatabaseCleanUp`으로 정리한다. 상품 목록을 재는 `ProductQueryPerformanceApiTest`도 빠진다. seed 뒤의 `ANALYZE TABLE`과 인덱스의 전후를 견주는 `ALTER INDEX … INVISIBLE`·`VISIBLE`이 암묵으로 커밋하기 때문이다. 숨긴 인덱스는 테스트가 실패해도 `finally`에서 다시 보이게 한다. 스키마가 같은 컨텍스트의 다음 클래스에도 남기 때문이다. 수만 행의 seed를 테스트마다 다시 넣지 않으려고 이 클래스만 `@TestInstance(PER_CLASS)`를 더해 `@BeforeAll`에서 한 번 넣고 `@AfterAll`에서 표를 비운다. 다시 읽은 엔티티가 분리되어 있으므로 지연 연관(`Product.brand` 등)을 건드리지 않는다. 커밋해야 하는 provided 포트 테스트는 스스로 빠지지 않고 `BaseCommittingApplicationServiceTest`를 상속한다. 빠지는 표시와 정리는 그 기반이 진다.
 
 ### Fixture
 
@@ -94,7 +96,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - MockMvc 요청의 JSON 본문은 손으로 적는다. 필드 이름과 JSON 타입까지 HTTP 계약이다.
 - 서비스·MockMvc·저장소 테스트는 자기 조각이든 다른 조각이든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 그리고 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`)뿐이다. 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다.
 - `prepare`가 데이터를 만드는 길은 기반마다 다르다.
-  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 조각의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`deleteBrandKeepingProducts`).
+  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 조각의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`BaseRepositoryTest`의 `deleteBrandKeepingProducts`).
   - `BaseRepositoryTest`는 같은 이름으로 저장소에 엔티티를 저장한다. 저장소 테스트의 컨텍스트에는 포트가 없다.
 - `prepare`가 다른 애그리거트를 받는 파라미터의 기본값은 `prepare`로 저장한 엔티티다(`prepareProduct(brand: Brand = prepareBrand())`). 그 밖의 파라미터는 nullable이고 기본값 `null`을 fixture에 그대로 넘긴다.
 - `prepare`는 마지막으로 준비한 엔티티를 타입마다 `protected` 필드(`brand`, `product`)에 둔다. 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾸며, 나중 것이 남는다. 테스트는 기본값으로 만든 것까지 세어 그 타입의 엔티티를 하나만 준비했을 때만 필드를 읽고, 그렇지 않으면 반환값을 쓴다.
@@ -121,3 +123,20 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 규칙이 걸린 필드는 fixture가 그 자리에서 `gen()`으로 범위를 정해 `set`한다(이름 2..100자, 가격 1..1,000,000,000원). 따로 두는 값 생성기 함수는 없다. 값 객체(`Money`)는 Instancio에 맡기지 않고 뽑은 값으로 fixture가 만든다. 맡기면 값 객체의 검사도 건너뛰어 음수 금액이 나온다. 기본값은 동작을 바꾸는 경계를 피한다(재고는 100..1,000개라 품절이 나오지 않는다).
 - Request의 상한 없는 `@Positive`·`@Min` 필드도 fixture가 범위를 정한다. `instancio.properties`로 켠 Bean Validation 연동은 fixture가 빠뜨린 제약 필드를 채우는데, 상한 없는 필드에는 큰 값이 나와 기본값끼리 더하면 넘칠 수 있다.
 - 값을 뽑는 fixture 파일마다 같은 패키지에 계약 테스트가 있다. Instancio가 생성자를 건너뛰므로 범위는 여기서 지킨다. 기본값을 1,000개 뽑아 엔티티 fixture의 값은 진짜 생성자에 다시 넣어 예외가 없는지와 저장하지 않은 상태(`id` 0, `deletedAt` `null`)를 확인하고, Request fixture의 값은 그 Request의 제약으로 검증한다. 기본값이 피하는 경계(품절 등)도 확인한다. fixture마다 인자를 넘겨 그 값이 그대로 쓰이는지 하나씩 확인한다. fixture를 더하거나 범위를 바꾸면 계약 테스트도 함께 바꾼다. 계약 테스트 없이 값을 뽑는 fixture를 두지 않는다. 기반 클래스의 `prepare`는 값을 뽑지 않고 fixture를 부르므로 계약 테스트를 따로 두지 않는다.
+
+## 스키마
+
+### 제약과 인덱스의 이름
+
+- 이름은 `<접두사>_<테이블>_ON_<대상>`이며 모두 대문자다. `_ON_` 앞이 테이블 이름이다. 예: `UK_ORDER_LINE_ITEM_ON_ORDER_ID_AND_PRODUCT_ID`.
+- 접두사는 유일 키 `UK_`, 외래 키 `FK_`, 인덱스 `IDX_`, CHECK `CK_`다.
+- 테이블은 DB의 테이블 이름 그대로다(`orders`, `likes`).
+- 유일 키·외래 키·인덱스의 대상은 컬럼 이름을 선언한 차례대로 `_AND_`로 잇는다. 컬럼 이름은 줄이지 않고(`USER_ID`, `CREATED_AT`), 정렬 방향은 넣지 않으며, 같은 값을 가르는 `id`도 넣는다. 예: `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`.
+- 외래 키는 자기 컬럼으로 이름 짓고 가리키는 테이블은 넣지 않는다. 예: `FK_LIKES_ON_USER_ID`. 두 컬럼이 같은 테이블을 가리켜도 이름이 겹치지 않는다.
+- CHECK 하나에는 규칙 하나를 둔다. 대상은 컬럼 하나의 규칙이면 `<컬럼>_<조건>`(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`), 여러 컬럼에 걸친 규칙이면 그 규칙의 이름(`CK_ORDERS_ON_PAYMENT_STATE`)이다.
+- 유일 키·외래 키·인덱스·CHECK에는 모두 이름을 준다. Hibernate(`FK<hash>`)나 MySQL(`<테이블>_chk_<n>`)이 짓게 두지 않는다. 테스트가 잠시 걸었다 지우는 CHECK만 예외다.
+
+### 외래 키
+
+- 외래 키 컬럼은 코드에 선언한 유일 키나 인덱스의 첫 컬럼이다. 그런 것이 없으면 `IDX_<테이블>_ON_<컬럼>`을 선언한다. MySQL이 외래 키 이름으로 몰래 만드는 인덱스에 기대지 않는다.
+- 연관의 외래 키는 `@JoinColumn(foreignKey = ForeignKey(name = …))`에, 연관 없는 식별자 컬럼의 외래 키는 `scalar-foreign-keys.sql`에 둔다(ADR 0014).

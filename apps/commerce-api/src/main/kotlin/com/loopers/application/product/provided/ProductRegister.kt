@@ -11,11 +11,11 @@ interface ProductRegister {
     fun register(@Valid request: ProductAdminRegisterRequest): ProductInfo
 
     /** 없는 상품이면 `PRODUCT_NOT_FOUND`를 던진다. 브랜드는 바뀌지 않는다. */
-    fun update(id: Long, @Valid request: ProductAdminUpdateRequest): ProductInfo
+    fun update(productId: Long, @Valid request: ProductAdminUpdateRequest): ProductInfo
 
     /** 없는 상품이면 `PRODUCT_NOT_FOUND`를 던진다. 재고를 최종 수량으로 맞춘다. */
-    fun updateStock(id: Long, @Valid request: ProductAdminStockUpdateRequest): ProductInfo
+    fun updateStock(productId: Long, @Valid request: ProductAdminStockUpdateRequest): ProductInfo
 
     /** 없는 상품이면 `PRODUCT_NOT_FOUND`를 던진다. 이미 삭제된 상품도 없는 상품이다. */
-    fun delete(id: Long)
+    fun delete(productId: Long)
 }

@@ -1,13 +1,15 @@
 package com.loopers
 
+import com.loopers.support.SqlCaptureConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 
+/** [SqlCaptureConfig]는 쓰지 않지만 `BaseApplicationServiceTest`와 같은 `@Import`를 두어 같은 컨텍스트를 나눠 쓴다. */
 @SpringBootTest
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class)
+@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, SqlCaptureConfig::class)
 class CommerceApiContextTest {
     @Test
     fun contextLoads() {

@@ -3,10 +3,12 @@ package com.loopers.adapter.webapi
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.product.provided.ProductFinder
+import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.Pause
+import com.loopers.support.countLikes
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -24,8 +26,10 @@ import java.time.Duration
 import kotlin.concurrent.thread
 
 /**
- * 행 잠금을 3초 안에 얻지 못한 요청의 응답을 고정한다(ADR 0018 규칙 7, 8). 두 경우 모두 쓰기가 행을 처음 읽는 잠금 조회에서 기다린다.
- * 관리자의 상품 쓰기는 첫 문장에서, 확정은 앞선 잠금을 쥔 채 결제의 계정 잠금에서다(ADR 0019). 둘 다 409로 끝나고 아무것도 바꾸지 않아야 한다.
+ * 행 잠금을 3초 안에 얻지 못한 요청의 응답을 고정한다(ADR 0018 규칙 7, 8). 관리자의 상품 쓰기와 확정은 행을 처음 읽는 잠금 조회에서 기다린다.
+ * 관리자의 상품 쓰기는 첫 문장에서, 확정은 앞선 잠금을 쥔 채 결제의 계정 잠금에서다(ADR 0019).
+ * 좋아요는 행을 잠가 읽지 않고, 커밋 바로 앞에 상품 목록 revision을 올리는 마지막 문장에서 그 행을 기다린다(ADR 0020).
+ * 모두 409로 끝나고 아무것도 바꾸지 않아야 한다.
  *
  * 다른 스레드의 트랜잭션이 포트로 행을 잠근 채 [Pause]에서 멈춘 동안 같은 행이 필요한 요청을 보낸다.
  * 준비한 데이터를 그 스레드가 읽어야 하고 요청이 그 트랜잭션의 잠금을 기다려야 하므로, 클래스는 테스트 트랜잭션에서 빠지고
@@ -36,6 +40,7 @@ class LockFailureApiTest(
     private val productFinder: ProductFinder,
     private val orderFinder: OrderFinder,
     private val pointAccountFinder: PointAccountFinder,
+    private val productListRevisionRepository: ProductListRevisionRepository,
     private val databaseCleanUp: DatabaseCleanUp,
     transactionManager: PlatformTransactionManager,
 ) : BaseWebApiAdapterTest() {
@@ -104,6 +109,27 @@ class LockFailureApiTest(
     }
 
     /**
+     * 좋아요의 INSERT는 식별자가 `IDENTITY`라 저장에서 곧바로 나가고, 커밋 앞의 올리기가 revision 행을 기다린다.
+     * 409는 트랜잭션 전체를 되돌린 결과이므로 그 INSERT도 남지 않는다. 쥔 쪽은 목록을 바꾸는 쓰기 대신 revision을 직접 올린다.
+     */
+    @Test
+    fun `a like that cannot lock the product list revision within the lock wait returns 409 and leaves no like`() {
+        prepareUser()
+        prepareProduct()
+        holdInAnotherTransaction { productListRevisionRepository.raise() }
+
+        val body = assertThat(requestLike(product.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("CONCURRENT_REQUEST")
+        body.extractingPath("$.meta.message").isEqualTo("다른 요청과 겹쳐 처리하지 못했습니다. 다시 시도해 주세요.")
+
+        releaseHolder()
+        transaction.executeWithoutResult {
+            assertThat(entityManager.countLikes(user.id, product.id)).isZero()
+        }
+    }
+
+    /**
      * 다른 스레드에서 트랜잭션을 열어 [lock]으로 행을 잠그고, 그 트랜잭션이 잠금을 쥔 채 멈출 때까지 기다린다.
      * [lock]의 변경은 [releaseHolder] 뒤에 커밋된다.
      */
@@ -136,6 +162,14 @@ class LockFailureApiTest(
     private fun requestConfirm(orderId: Long): MvcTestResult {
         return mvc.post().uri("/api/v1/orders/$orderId/confirm")
             .header(UserIdHeader.NAME, user.id)
+            .exchange()
+    }
+
+    private fun requestLike(productId: Long): MvcTestResult {
+        return mvc.post().uri("/api/v1/likes")
+            .header(UserIdHeader.NAME, user.id)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"productId":$productId}""")
             .exchange()
     }
 }

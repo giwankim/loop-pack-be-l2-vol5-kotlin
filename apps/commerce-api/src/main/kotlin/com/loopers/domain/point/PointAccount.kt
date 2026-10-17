@@ -15,7 +15,7 @@ import org.hibernate.annotations.SQLRestriction
  * 사용자 fixture를 준비할 때 함께 만들고, 조회나 충전이 없는 계정을 만들어 주지 않는다(설계 5.9).
  *
  * 사용자를 식별자로만 가리킨다. 계정을 읽는 쪽이 사용자를 건너 읽지 않으므로 연관을 두지 않고, 외래 키
- * `FK_POINT_ACCOUNT_USER`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014, 설계 12.1).
+ * `FK_POINT_ACCOUNT_ON_USER_ID`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014, 설계 12.1).
  *
  * 잔액은 0 이상인 [Money]이며 상품 가격의 상한을 따르지 않는다. `Long` 범위만 지킨다(설계 5.7).
  *
@@ -23,7 +23,7 @@ import org.hibernate.annotations.SQLRestriction
  */
 @Entity
 @Table(
-    uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_USER_ID", columnNames = ["user_id"])],
+    uniqueConstraints = [UniqueConstraint(name = "UK_POINT_ACCOUNT_ON_USER_ID", columnNames = ["user_id"])],
 )
 @SQLRestriction("deleted_at is null")
 class PointAccount(
