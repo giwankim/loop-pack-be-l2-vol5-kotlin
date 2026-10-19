@@ -388,7 +388,7 @@ class OrderApiTest(
             schema.dropMappedObjects(false)
             val remaining = jdbc.queryForList(
                 "select table_name from information_schema.tables where table_schema = database() " +
-                    "and table_name in ('orders', 'order_line_item', 'product', 'users')",
+                    "and table_name in ('orders', 'order_line_item', 'payment', 'product', 'users')",
                 String::class.java,
             )
             assertThat(remaining).isEmpty()
@@ -398,13 +398,14 @@ class OrderApiTest(
         assertNoOrders()
         val constraints = jdbc.queryForList(
             "select constraint_name from information_schema.referential_constraints where constraint_schema = database() " +
-                "and table_name in ('orders', 'order_line_item')",
+                "and table_name in ('orders', 'order_line_item', 'payment')",
             String::class.java,
         )
         assertThat(constraints).containsExactlyInAnyOrder(
             "FK_ORDERS_ON_USER_ID",
             "FK_ORDER_LINE_ITEM_ON_ORDER_ID",
             "FK_ORDER_LINE_ITEM_ON_PRODUCT_ID",
+            "FK_PAYMENT_ON_ORDER_ID",
         )
         owner = prepareUser()
         assertThat(requestCreate(item(prepareProduct().id))).hasStatus(HttpStatus.CREATED)

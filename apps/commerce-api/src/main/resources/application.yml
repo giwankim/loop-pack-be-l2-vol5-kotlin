@@ -50,6 +50,10 @@ spring:
     properties:
       hibernate:
         hbm2ddl.import_files: scalar-foreign-keys.sql
+      # 표를 지우기 전에, 가리키는 표보다 이름 차례가 뒤인 표의 스칼라 외래 키를 먼저 지운다(포인트·주문 설계 8.2).
+      jakarta.persistence.schema-generation:
+        drop-source: script-then-metadata
+        drop-script-source: scalar-foreign-keys-drop.sql
 
 # 로컬에서는 PG가 떠 있지 않다. 테스트에서는 테스트 PG(@EnableTestPg)가 base-url을 자기 주소로 덮는다.
 pg:
