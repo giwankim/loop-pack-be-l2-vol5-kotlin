@@ -280,5 +280,5 @@ For the query-encoding check: `RestClient`'s default `DefaultUriBuilderFactory` 
 - **Not run:** the JDK resend behaviour is from reading source; a two-request fixture test should confirm it. Lookup-count expectations assume the GET retry described in §5b.
 - Jetty `HttpClient` retry behaviour was not researched; it is not on the classpath.
 - `mockwebserver3-junit5` on JUnit 6.0.3 is inferred to work, not tested.
-- WireMock's h2c default and whether its faults fire after reading the body are undocumented on the pages read.
-- A WireMock 3.x + Boot 4.1.1 Jetty mix was not tried. The EE10/EE11 split above is the reason to expect trouble.
+- WireMock's h2c default and whether its faults fire after reading the body are undocumented on the pages read. The [spike](./wiremock-spring-boot-spike.md) (2026-10-19) observed both: WireMock binds `0.0.0.0` and advertises h2c, and `Fault.EMPTY_RESPONSE` fires after the request body was read (its §3 scene b, §7 item 5).
+- A WireMock 3.x + Boot 4.1.1 Jetty mix was tried in the [spike](./wiremock-spring-boot-spike.md) on 2026-10-19. `wiremock-spring-boot` 4.4.3 runs with Jetty EE10 12.1.6 next to Boot's Jetty core 12.1.12, one `jetty-ee10-bom` import aligns them, and the 574 existing tests stay green either way. The EE10/EE11 split above did not cause trouble.
