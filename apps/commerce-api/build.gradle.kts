@@ -21,6 +21,9 @@ dependencies {
     // cache: 고객 상품 목록의 Redis 캐시(ADR 0020). 처음 쓰는 곳이라 여기서 들인다(ADR 0008)
     implementation(libs.springBootStarterCache)
 
+    // PG client: 로컬 테스트 PG 어댑터의 HTTP client(ADR 0022). 처음 쓰는 곳이라 여기서 들인다(ADR 0008)
+    implementation(libs.httpclient5)
+
     // admin boundary: 통합 테스트 전용(src/test AdminSecurityConfig), 운영 코드에는 Spring Security 없음
     testImplementation(libs.springBootStarterSecurity)
     testImplementation(libs.springBootStarterSecurityTest)
@@ -33,4 +36,21 @@ dependencies {
 
     // architecture test
     testImplementation(libs.archunit.junit6)
+
+    // test PG: 테스트 JVM 안에 띄우는 WireMock(ADR 0022, wiremock-spring-boot 탐침 보고서)
+    testImplementation(libs.wiremock.springBoot)
+}
+
+// wiremock-spring-boot 는 Jetty EE10 jar 를 12.1.6 으로 요구하는데, Boot BOM 은 Jetty core 와 EE11 만 jetty.version 으로 관리한다.
+// 그대로 두면 EE10 만 12.1.6 으로 풀려 Boot 의 Jetty core 옆에 놓인다. EE10 BOM 을 Boot 의 jetty.version 과 같은 판으로 가져와 맞춘다.
+// 판을 Boot 에서 읽지 않고 카탈로그에 적는다. importedProperties 를 읽는 순간 그때까지의 BOM 으로 관리 버전이 정해져, 뒤에 더한 import 가 무시된다.
+// 대신 check 가 Boot 의 jetty.version 과 견준다. Boot 를 올려 Jetty 판이 바뀌면 빌드가 여기서 멈춘다. EE10 BOM 은 jetty.version 을 정의하지 않는다.
+val jettyEe10Bom = libs.jettyEe10Bom.get()
+dependencyManagement {
+    imports {
+        mavenBom("${jettyEe10Bom.group}:${jettyEe10Bom.name}:${jettyEe10Bom.version}")
+    }
+}
+check(dependencyManagement.importedProperties["jetty.version"] == jettyEe10Bom.version) {
+    "Boot 의 jetty.version(${dependencyManagement.importedProperties["jetty.version"]})이 카탈로그의 jettyEe10(${jettyEe10Bom.version})과 다르다."
 }

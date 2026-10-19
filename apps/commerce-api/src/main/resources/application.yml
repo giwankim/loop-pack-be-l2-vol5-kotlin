@@ -29,6 +29,18 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# 로컬 테스트 PG 어댑터(ADR 0022). 알림 주소(callback-url)는 설정에서만 온다.
+pg:
+  base-url: ${PG_BASE_URL}
+  callback-url: ${PG_CALLBACK_URL}
+  # PG 계약이 정한 합성 계정. 모든 요청의 X-USER-ID 헤더다.
+  user-id: 135135
+  # 느린 PG에 요청이 쌓이지 않게 한다. 풀은 전체와 경로당 모두 20개다. 응답 한도는 읽기마다의 한도이고 호출 전체의 기한이 아니다.
+  max-connections: 20
+  connection-request-timeout: 200ms
+  connect-timeout: 500ms
+  response-timeout: 1s
+
 ---
 spring:
   config:
@@ -38,6 +50,21 @@ spring:
     properties:
       hibernate:
         hbm2ddl.import_files: scalar-foreign-keys.sql
+
+# 로컬에서는 PG가 떠 있지 않다. 테스트에서는 테스트 PG(@EnableTestPg)가 base-url을 자기 주소로 덮는다.
+pg:
+  base-url: http://127.0.0.1:8082
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+# 시간 초과 장면이 오래 걸리지 않게 줄인다. 게이트웨이의 계약 테스트(PaymentGatewayTest)만 운영의 1 s로 돈다(ADR 0022 규칙 6).
+pg:
+  response-timeout: 200ms
 
 ---
 spring:

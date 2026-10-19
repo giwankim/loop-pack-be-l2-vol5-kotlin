@@ -30,7 +30,7 @@ Boot 4와 Framework 7이 더한 기능은 지금 유지하는 코드를 대신�
 | API 버전 관리(`spring.mvc.apiversion.*`) | 두 번째 API 버전이 생길 때. 지금 `/api/v1`은 경로 문자열일 뿐이고 고를 버전이 없다. |
 | Redis 정적 master/replica 자동 구성 | 앱 코드가 Redis를 처음 쓸 때. 지금은 `RedisConfig.kt` 말고 Redis를 쓰는 코드가 없다. 자동 구성은 연결 팩토리를 하나만 만들어서 master 전용 팩토리는 어차피 손으로 남고, 속성도 `datasource.redis.*`에서 `spring.data.redis.*`로 옮겨야 한다. |
 | `@Retryable`·`@ConcurrencyLimit` | 재시도할 일이 생길 때. 3주차에 낙관적 락을 고르면 그 재시도가 첫 쓰임이다. |
-| HTTP Service Clients | 처음으로 밖의 HTTP API를 부를 때 |
+| HTTP Service Clients | 처음으로 밖의 HTTP API를 부를 때. (2026-10-19: 로컬 테스트 PG가 첫 쓰임이었지만 들이지 않았다. HTTP client 스타터 없이 `RestClient`를 직접 만들어, 숨은 재전송을 끈 Apache HttpClient 5에 얹는다([ADR 0022](./0022-only-the-pre-create-rejection-proves-no-pg-transaction.md) 규칙 5).) |
 | `@RedisListener`, Redis 관측 | 앱 코드가 Redis를 처음 쓸 때 |
 
 이 저장소에서 할 일이 없는 것도 있다.
