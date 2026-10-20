@@ -286,3 +286,50 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 - **The timeout is tested on the list lookup, the drop on the key lookup.** Both go through the same catch shape.
 - **Step 3's lookup retry will change the dropped-GET count.** Today's `lookupCount() == 1` is the no-retry baseline. The retry belongs to lookups only (ADR 0022 rule 7); create stays at one POST.
 - **Any 404 on the key path is `Found([])`,** including one from a misrouted base URL or a proxy. ADR 0022 rule 3 accepts this, because reconcile changes nothing on none.
+
+## Issue 144: the payments design doc explains step 1's choices
+
+Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/144#issuecomment-6281842860) of [issue 144](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/144). The doc is [`docs/design/payments.md`](../design/payments.md).
+
+### Landed
+
+[`ee53b58`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ee53b58) on `feat/pg-adapter` (pushed).
+
+### Acceptance criteria
+
+- [x] **The payments design doc covers each item the issue lists and links ADRs 0021 and 0022.**
+  - Scope: §1.1 (the three steps) and §1.2 (what tickets 139–143 delivered).
+  - Payment model: §2.2 (state diagram and table), §2.3 (`reconcile` table), §2.4 (`reject` table), §2.5 (`ReconcileResult` and the latest-conflict rule).
+  - PG contract → result mapping: §3.1 (contract), §3.2 (port), §3.3 (create, key lookup, list lookup), §3.4 (why only the exact 422 is `Rejected`, ADR 0022).
+  - Client settings: §4.1 (values), §4.2 (HttpClient 5 without a starter, retries and redirects off, timeouts on the real request factory, `exchange` instead of `retrieve()`), §4.3 (the strict mapper and why it is separate from Boot's).
+  - Accepted limits: §5.1–§5.4, one per bullet of the issue.
+  - Test PG: §6.1 (wiremock-spring-boot, `@EnableTestPg`), §6.2 (`TestPg` scenes and counters), §6.3 (why the gateway tests run at the production 1 s).
+  - Naming: §7.1. The five names from the issue, plus `REJECTED_NO_EFFECT` → `PgRejection`/`Rejected`, which `CONTEXT.md` lists under _Avoid_.
+  - ADRs 0021 and 0022 are linked at the top and cited by rule number throughout.
+- [x] **The step 1 commands are listed, and the assignment's command mismatch is explained.**
+  - §7.2 lists the commands with their per-class counts: `--tests '*PaymentGatewayTest'` gives `PaymentGatewayTest` 82 + `ExhaustedPoolPaymentGatewayTest` 1. `--tests '*PaymentTest' --tests '*PaymentRepositoryTest'` gives 47 + 9.
+  - **The issue and [spec 138](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138) were wrong about Gradle's output.** `./gradlew :apps:commerce-api:test --tests '*PaymentProviderContractTest'` does not report "No tests found". It runs `HexagonalArchitectureTest`'s 7 rules and ends `BUILD SUCCESSFUL`, without running a gateway test. A filter that matches nothing (`--tests '*NoSuchClassAnywhere'`) behaves the same.
+    - Every filtered run includes those 7 rules too.
+    - The likely cause is that ArchUnit's engine reports rules as fields, which Gradle's name filter cannot exclude. That cause was not verified, and the doc says so.
+    - §7.2 states the false green, so the PR body should not copy the "No tests found" line.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes, and the test counts are recorded.**
+  - Exit 0. 67 classes, **719 tests run, 0 failed, 0 skipped** (0 errors).
+  - That equals [issue 143](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/143)'s tree, as expected for a docs-only change.
+
+### Decisions made while writing
+
+- **Glossary terms.** The doc writes PG 거래, never a bare 거래 (`CONTEXT.md` _Avoid_). The new order states are named by the assignment's identifiers (`PAYMENT_PENDING`, `PAYMENT_FAILED`), because 결제 대기 is the avoided word for 처리 중.
+- **Why HttpClient 5 and not the JDK client** (§4.2). The research ranked the JDK client first. It has no pool or pool-wait bound, its GET retry after an early close cannot be switched off, and its retry flags are JVM-wide. HttpClient 5 has all three switches per client.
+- **Test configuration.** §6.1 states the `@TestConfiguration` rule as a rule for future PG test configs. Step 1's two gateway tests load the production `LocalPgGatewayConfig` and have no test config class. The 368 failures were the spike's.
+- **Test counts in §7.2 are dated 2026-10-20.** Steps 2 and 3 update them when they add tests.
+
+### For steps 2 and 3
+
+§8 of the doc collects the open points:
+
+- a payment failed by a rejection that later hears a matching `PENDING` or `FAILED` transaction is `Unchanged` ([issue 141](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/141)'s open question);
+- the `idempotency_key` column compares case-insensitively;
+- `pg_order_id` and `transaction_key` have no index;
+- the "one dropped GET" count is the baseline that step 3's lookup retry will change.
+
+Each step appends its own section to the doc.
