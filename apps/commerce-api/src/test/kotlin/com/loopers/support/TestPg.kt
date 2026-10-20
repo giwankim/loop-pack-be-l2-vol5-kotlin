@@ -8,18 +8,27 @@ import com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.anyUrl
 import com.github.tomakehurst.wiremock.client.WireMock.equalTo
 import com.github.tomakehurst.wiremock.client.WireMock.equalToJson
+import com.github.tomakehurst.wiremock.client.WireMock.get
+import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
+import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
+import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.http.Fault
+import com.github.tomakehurst.wiremock.verification.LoggedRequest
 import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.PgTransaction
 
 /**
  * 테스트 PG([EnableTestPg])의 장면에 이름을 붙이고, PG가 받은 요청을 센다.
  *
- * 모든 스텁은 `X-USER-ID`와 정확한 JSON 본문을 맞춘다. 헤더, 필드, JSON 타입이 하나라도 틀린 요청은 스텁을 찾지 못해 WireMock의 404를 받고,
- * 어댑터는 그것을 결과 미확인으로 돌려주므로 테스트가 실패한다. JSON은 손으로 적는다. 필드 이름과 JSON 타입(금액은 숫자)까지 PG 계약이다.
- * 무작위 지연은 쓰지 않는다. 금액은 PG가 보는 그대로 원화 정수다.
+ * 모든 스텁은 `X-USER-ID`를 맞추고, 생성은 정확한 JSON 본문을, 거래 키 조회는 경로의 거래 키를, 목록 조회는 query의 `orderId`를 정확히
+ * 맞춘다. 하나라도 틀린 요청은 스텁을 찾지 못해 WireMock의 404를 받는다. 생성은 그 404를 결과 미확인으로 돌려주므로 테스트가 실패한다.
+ * 조회는 그렇지 않다. 거래 키 조회는 404를 찾은 것 없음으로, 목록 조회는 조회 불가로 읽으므로, 테스트가 기대한 결과와 같을 수 있다.
+ * 그래서 [unmatchedRequests]가 스텁과 맞지 않은 요청을 돌려주고, 조회를 쓰는 테스트는 그것이 비었는지 본다.
+ *
+ * JSON은 손으로 적는다. 필드 이름과 JSON 타입(금액은 숫자)까지 PG 계약이다. 무작위 지연은 쓰지 않는다. 금액은 PG가 보는 그대로 원화 정수다.
  *
  * [callbackUrl]은 생성 요청에 실려 와야 하는 알림 주소다. 어댑터는 그것을 요청이 아니라 설정 `pg.callback-url`에서 읽는다.
  * 기본값은 test 프로필의 값이다. 설정을 바꾼 테스트는 바꾼 값을 넘긴다.
@@ -43,7 +52,10 @@ class TestPg(
         /** [redirectsCreate]가 가리키는 경로. 어댑터가 리다이렉트를 따라가면 PG가 이 경로로 요청을 하나 더 받는다. */
         private const val REDIRECT_PATH = "/api/v1/payments/redirected"
 
-        /** [stalls]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
+        /** 두 조회의 경로. 거래 키 조회는 `/api/v1/payments/{거래 키}`, 목록 조회는 query만 다른 `/api/v1/payments`다. */
+        private const val LOOKUP_PATHS = "$PAYMENTS_PATH(/[^/]+)?"
+
+        /** [stalls]와 [stallsLookup]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
         private const val STALL_MILLIS = 1_500
     }
 
@@ -99,13 +111,7 @@ class TestPg(
 
     /** 생성에 HTTP 상태 [httpStatus]로 답한다. [body]가 있으면 JSON으로 그대로 싣고, 없으면 본문 없이 답한다. */
     fun answersCreate(pgOrderId: String, amount: Long, card: Card, httpStatus: Int, body: String? = null) {
-        val response = if (body == null) {
-            aResponse().withStatus(httpStatus)
-        } else {
-            json(httpStatus, body)
-        }
-
-        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(response))
+        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(response(httpStatus, body)))
     }
 
     /** PG가 받은 생성 요청 수. 헤더와 본문이 무엇이든 센다. */
@@ -118,8 +124,94 @@ class TestPg(
         return server.findAll(anyRequestedFor(anyUrl())).size
     }
 
+    /** 거래 키 조회에 200과 PG 거래 [transaction]을 돌려준다. 조회하는 거래 키는 그 거래의 것이다. */
+    fun hasTransaction(transaction: PgTransaction) {
+        server.stubFor(retrieveRequest(transaction.transactionKey).willReturn(json(200, transactionJson(transaction))))
+    }
+
+    /** PG 주문 번호 [pgOrderId]의 목록 조회에 200과 PG 거래 [transactions]의 JSON 배열을 돌려준다. 거래가 없으면 빈 배열이다. */
+    fun hasTransactions(pgOrderId: String, vararg transactions: PgTransaction) {
+        val body = transactions.joinToString(separator = ",", prefix = "[", postfix = "]") { transactionJson(it) }
+
+        server.stubFor(listRequest(pgOrderId).willReturn(json(200, body)))
+    }
+
+    /** 거래 키 조회에 HTTP 상태 [httpStatus]로 답한다. [body]가 있으면 JSON으로 그대로 싣고, 없으면 본문 없이 답한다. */
+    fun answersRetrieve(transactionKey: String, httpStatus: Int, body: String? = null) {
+        server.stubFor(retrieveRequest(transactionKey).willReturn(response(httpStatus, body)))
+    }
+
+    /** PG 주문 번호 [pgOrderId]의 목록 조회에 HTTP 상태 [httpStatus]로 답한다. [body]는 [answersRetrieve]와 같다. */
+    fun answersList(pgOrderId: String, httpStatus: Int, body: String? = null) {
+        server.stubFor(listRequest(pgOrderId).willReturn(response(httpStatus, body)))
+    }
+
+    /**
+     * 모든 조회를 받고 [STALL_MILLIS] 뒤에야 본문 없는 503으로 답한다. 운영의 응답 한도 1 s 안에 답을 기다리는 클라이언트에게
+     * 그 답은 닿지 않는다. 한도가 더 긴 클라이언트에게도 두 조회 모두 조회 불가다. 404였다면 거래 키 조회가 찾은 것 없음이라는 사실로 읽었을 것이다.
+     */
+    fun stallsLookup() {
+        server.stubFor(anyLookup().willReturn(aResponse().withStatus(503).withFixedDelay(STALL_MILLIS)))
+    }
+
+    /** 모든 조회를 받은 뒤 아무것도 답하지 않고 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청을 다 읽은 뒤에 끊는다. */
+    fun losesLookupResponse() {
+        server.stubFor(anyLookup().willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    }
+
+    /** PG가 받은 조회 수. 거래 키 조회와 목록 조회를 함께 세며, 헤더와 query가 무엇이든 센다. */
+    fun lookupCount(): Int {
+        return server.findAll(getRequestedFor(urlPathMatching(LOOKUP_PATHS))).size
+    }
+
+    /** PG가 받은 요청 가운데 어느 장면의 스텁과도 맞지 않은 것. 그 요청들은 WireMock의 404를 받았다. */
+    fun unmatchedRequests(): List<LoggedRequest> {
+        return server.findAllUnmatchedRequests()
+    }
+
+    /** 거래 키나 query가 무엇이든 두 조회 모두. */
+    private fun anyLookup(): MappingBuilder {
+        return get(urlPathMatching(LOOKUP_PATHS))
+            .withHeader("X-USER-ID", equalTo(USER_ID))
+    }
+
+    private fun retrieveRequest(transactionKey: String): MappingBuilder {
+        return get(urlPathEqualTo("$PAYMENTS_PATH/$transactionKey"))
+            .withHeader("X-USER-ID", equalTo(USER_ID))
+    }
+
+    /** 목록 조회. query의 `orderId`가 [pgOrderId]와 정확히 같아야 맞는다. WireMock은 query 값을 디코딩해 견준다. */
+    private fun listRequest(pgOrderId: String): MappingBuilder {
+        return get(urlPathEqualTo(PAYMENTS_PATH))
+            .withQueryParam("orderId", equalTo(pgOrderId))
+            .withHeader("X-USER-ID", equalTo(USER_ID))
+    }
+
     private fun accepted(pgOrderId: String, amount: Long, transactionKey: String, pgStatus: String): ResponseDefinitionBuilder {
-        return json(202, """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","amount":$amount,"status":"$pgStatus"}""")
+        return json(202, transactionJson(transactionKey, pgOrderId, amount, pgStatus))
+    }
+
+    private fun transactionJson(transaction: PgTransaction): String {
+        return transactionJson(
+            transactionKey = transaction.transactionKey,
+            pgOrderId = transaction.pgOrderId,
+            amount = transaction.amount.amount,
+            pgStatus = transaction.status.name,
+        )
+    }
+
+    /** PG 거래의 JSON. 생성의 202와 두 조회가 같은 모양을 싣는다. 필드 이름과 JSON 타입(금액은 숫자, PG 상태는 문자열)까지 PG 계약이다. */
+    private fun transactionJson(transactionKey: String, pgOrderId: String, amount: Long, pgStatus: String): String {
+        return """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","amount":$amount,"status":"$pgStatus"}"""
+    }
+
+    /** [body]가 있으면 JSON으로 싣고, 없으면 본문 없이 HTTP 상태 [httpStatus]만 답한다. */
+    private fun response(httpStatus: Int, body: String?): ResponseDefinitionBuilder {
+        if (body == null) {
+            return aResponse().withStatus(httpStatus)
+        }
+
+        return json(httpStatus, body)
     }
 
     private fun json(httpStatus: Int, body: String): ResponseDefinitionBuilder {
