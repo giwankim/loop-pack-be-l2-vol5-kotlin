@@ -225,3 +225,64 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 - **Act on the payment reaching a final state, not on `is Changed`.** `Changed(UNKNOWN, PENDING)` is also a `Changed`. Step 2 touches the order and the reservation only when `to.isFinished`.
 - **Logging stays in step 2.** The entity does not log `Conflicted`; the applying service writes the WARN line with the reason.
 - **For the [issue 144](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/144) design doc:** the rule order is written out in `Payment.reconcile`'s KDoc, and `PaymentTest` is the row-by-row table.
+
+## Issue 143: a lookup returns the PG's transactions, possibly none, and every other answer is unavailable
+
+Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/143#issuecomment-6281515808) of [issue 143](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/143). The code is [`LocalPgGateway`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt), [`TransactionLookupResult`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/required/TransactionLookupResult.kt), [`PaymentGatewayTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt) and [`TestPg`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPg.kt).
+
+### Landed
+
+[`858cf3b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/858cf3b) on `feat/pg-adapter` (pushed), rebased onto 142 and 141.
+
+### Acceptance criteria
+
+- [x] **A key lookup returns the transaction on 200 and none on 404.**
+  - `hasTransaction(PgTransaction("TEST-TX-0042", "LP-ORD-0000000042", 7000, SUCCESS))` comes back `Found([that transaction])` after one GET.
+  - A 404 comes back `Found([])`. 201, 204, 400, 500 and 503 come back `Unavailable("HTTP <status>")`.
+- [x] **A list lookup returns every transaction in the array, including none.**
+  - An empty array gives `Found([])`, one gives `Found([it])`, and two (`FAILED` then `SUCCESS`) give both, in the PG's order.
+  - 404 is `Unavailable` on this path, as are 201, 204, 400, 500 and 503.
+  - The order number goes in as the URI template variable `?orderId={pgOrderId}`. `LP-ORD+42&orderId=43` reaches the stub's exact `orderId` match. Mutation run: with a literal `queryParam("orderId", value)`, `+` and `&` went out unencoded, no stub matched, and the test failed.
+- [x] **Every malformed or failed answer comes back as `Unavailable` and is never thrown.**
+  - Key lookup (9 bodies): truncated JSON, `amount` as `"7000"`, `transactionKey` or `amount` missing, the unknown status `CANCELLED`, a blank (`""` or `"   "`) key, an empty body, and an array where an object is promised.
+  - List lookup (10 bodies): each of those transactions inside an array, a single object where an array is promised, `[null]` and `null`.
+  - A dropped connection gives `Unavailable("NoHttpResponseException")`. A stall gives `Unavailable("SocketTimeoutException")` after about 1 s.
+  - **`[null]` was thrown before the fix.** It escaped the port as a `NullPointerException`, outside the single `catch`. See the decisions below.
+- [x] **A dropped GET reaches the PG exactly once.**
+  - `losesLookupResponse` (`Fault.EMPTY_RESPONSE`) leaves `lookupCount() == 1`. The class runs at the production 1 s response timeout.
+  - Mutation run: without `disableAutomaticRetries()`, the same test saw 2 GETs (the spike's control). Every other test stayed green, so this is the only guard for lookups.
+- [x] **`./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'` passes, and `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes.**
+  - The filter runs `PaymentGatewayTest` (82: 40 create, 42 lookup) and `ExhaustedPoolPaymentGatewayTest` (1).
+  - `ktlintCheck check` on the rebased tree: 67 classes, 719 tests, 0 failures, 0 skips. That is 675 (606 + 31 from 142 + 38 from 141) plus 44 here: 36 lookup tests, and 8 cases from the shared malformed list (6 on the lookups, 2 on create's 202).
+
+### Decisions made while implementing
+
+- **A `null` array element is rejected by the adapter, not the mapper.**
+  - The list is read through `ParameterizedTypeReference<List<…>>`. A top-level type argument carries no Kotlin nullability, so the Kotlin module's null checks, which work on constructor parameters, never see it. `[null]` then read as a list holding `null`.
+  - The old `StrictNullChecks` is already on in Jackson 3's Kotlin module. Turning on `NewStrictNullChecks` as well fails at startup ("Enabling both … is not permitted").
+  - The adapter reads `List<PgTransactionResponse?>` and treats a `null` element as unreadable.
+- **WireMock's own 404 can pass a lookup test.**
+  - A request that matches no stub gets WireMock's 404. A key lookup reads that 404 as `Found([])`, and a list lookup reads it as `Unavailable`. Either can equal the expected result.
+  - `PaymentGatewayTest` asserts `TestPg.unmatchedRequests()` is empty in `@AfterEach`, for every test, create included.
+  - Mutation run: in the 404 test, stubbing a different key than the one looked up left the main assertion green. Only the guard failed, and it printed the unmatched request.
+  - `CODING_STANDARDS.md` › 단언 now requires the same of any test that sends lookups to the test PG.
+- **`stallsLookup` answers a late 503, not a late 404.** A client with a timeout above 1.5 s would otherwise read the stall as "none found", which is a fact, on the key lookup. A 503 is `Unavailable` on both lookups. (Changed after the spec review.)
+- **Unreadable bodies are asserted only as `Unavailable`.** The observed causes were `MismatchedInputException`, `KotlinInvalidNullException` and the adapter's `UnreadablePgResponseException`. Those are Jackson internals. Statuses, the drop and the timeout assert the exact cause.
+- **The log line uses the path template.**
+  - `PG GET /api/v1/payments/{transactionKey} Found 1 (HTTP 200) in 1 ms, pgOrderId=LP-ORD-0000000042, transactionKey=TEST-TX-0042`
+  - `PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderId=LP-ORD-0000000042, transactionKeys=[TEST-TX-0041, TEST-TX-0042]`
+  - A key lookup that finds none logs `Found 0 (HTTP 404)`. `Unavailable` logs at WARN.
+- **Folded with 142 at the rebase.**
+  - `TestPg` has one stall delay (`STALL_MILLIS`), one JSON response helper (`json`), one optional-body helper (`response`) and one hand-written transaction JSON. Create's `accepted` and both lookup scenes use them.
+  - `PaymentGatewayTest` has one `MALFORMED_TRANSACTIONS` list, fed to create's 202 and to both lookups. Create gained the missing key and missing amount. The lookups gained truncated JSON and the blank keys.
+- **Docs.**
+  - ADR 0022's cost line notes the lookup timeout scene, next to 142's note.
+  - The `PaymentGateway`, `LocalPgGateway` and `UnreadablePgResponseException` KDocs cover both create and lookups.
+
+### For 144 and step 3
+
+- **`lookupCount()` counts both lookups together.** Split it if step 3's bounded retry needs per-lookup counts.
+- **`stallsLookup` and `losesLookupResponse` match any lookup** (any key or `orderId`, header pinned). `hasTransaction` stubs the transaction's own key. A "key X answers a transaction with key Y" scene needs `answersRetrieve` with a hand-written body.
+- **The timeout is tested on the list lookup, the drop on the key lookup.** Both go through the same catch shape.
+- **Step 3's lookup retry will change the dropped-GET count.** Today's `lookupCount() == 1` is the no-retry baseline. The retry belongs to lookups only (ADR 0022 rule 7); create stays at one POST.
+- **Any 404 on the key path is `Found([])`,** including one from a misrouted base URL or a proxy. ADR 0022 rule 3 accepts this, because reconcile changes nothing on none.
