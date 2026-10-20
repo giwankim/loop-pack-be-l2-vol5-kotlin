@@ -54,7 +54,7 @@
 | `conflictReason`, `conflictedAt` | `conflict_reason`, `conflicted_at` | 충돌 | 마지막 충돌만 남는다(2.5). 시각은 마이크로초로 자른다. |
 
 - 앞의 넷은 생성 뒤에 바뀌지 않는다(`updatable = false`). 생성의 규칙을 어기면 `InvalidPaymentException`이다.
-- 카드는 담지 않는다. PG에 넘기기만 한다. `PaymentRepositoryTest`가 `information_schema.columns`로 열 목록 전체를 본다. 이름에 "card"가 든 열만 찾으면 `@Embedded Card`가 만들 `type`, `number`를 놓치기 때문이다.
+- 카드는 담지 않는다. PG에 넘기기만 한다. `PaymentRepositoryTest`가 `information_schema.columns`로 열 목록 전체를 본다. 이름에 "card"가 든 열만 찾으면 `@Embedded CreditCard`가 만들 `type`, `number`를 놓치기 때문이다.
 - PG 주문 번호는 `String.format`을 쓰지 않는다. `%d`는 JVM 기본 로캘의 숫자를 따라 `th-TH-u-nu-thai`에서 `LP-ORD-๐๐๐๐๐๐๐๐๔๒`가 됐다. `padStart`로 만들고, 테스트가 그 로캘에서 ASCII 숫자를 확인한다.
 - 표는 `payment`다. 이 저장소는 예약어를 피할 때만 표 이름을 적는다. `BaseEntity`를 상속하고, 애그리거트 루트라 `@SQLRestriction("deleted_at is null")`로 논리 삭제한다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)). 지우는 기능은 없다.
 - `payment`는 가리키는 `orders`보다 이름 차례가 뒤라, 스키마를 다시 만들 때 `scalar-foreign-keys-drop.sql`이 그 외래 키를 먼저 지운다([포인트·주문 설계](./points-orders.md) 8.2의 2026-10-19 메모). migration 도구는 [issue 145](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/145)에서 다시 본다.
@@ -204,7 +204,7 @@ PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderI
 ```
 
 - 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. `cause`는 예외 사슬의 맨 안쪽 타입 이름이다.
-- `Card`의 문자열 형태는 `Card(type=TEST, number=****)`다. 카드가 실수로 로그에 찍혀도 번호는 새지 않는다.
+- 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
 - observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 
 ## 4. 클라이언트 설정
