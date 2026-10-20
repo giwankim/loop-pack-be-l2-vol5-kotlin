@@ -108,3 +108,53 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 - **The column list in `PaymentRepositoryTest` is exact.** 141 adds the transaction key and the conflict fields, so it updates the list too.
 - `pg_order_id` has no index or unique key yet. The step that adds a lookup by PG order number adds one (spec: "거래 키나 PG 주문 번호로 찾는 것은 그것을 쓰는 단계가 더한다").
 - There is no CHECK on `amount > 0`. Orders have one; products and point accounts do not.
+
+## Issue 142: only the exact pre-create rejection is Rejected, and every other create failure stays unknown
+
+Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142#issuecomment-6281361683) of [issue 142](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142). The code is [`LocalPgGateway`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt), [`PaymentGatewayTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt), [`ExhaustedPoolPaymentGatewayTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/ExhaustedPoolPaymentGatewayTest.kt) and [`TestPg`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPg.kt).
+
+### Landed
+
+[`9af0c32`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9af0c32) on `feat/pg-adapter` (pushed).
+
+### Acceptance criteria
+
+- [x] **Only the exact 422 comes back as `Rejected`, carrying the echoed PG order number and amount.**
+  - `rejectsBeforeCreate` answers the assignment's body `{"code":"TEST_PG_REJECTED_BEFORE_CREATE","orderId":…,"amount":…,"transactionCreated":false}` and comes back `Rejected(PgRejection("LP-ORD-0000000042", 7000))` after one POST.
+  - A 422 echoing `LP-ORD-0000000043` and 7001 for a request of `…42` and 7000 comes back `Rejected` with the echoed values. The adapter does not compare them; `Payment.reject` does.
+  - Mutation run: without the `transactionCreated` check, the `true` variant came back `Rejected`.
+- [x] **Every variant listed comes back as `Unknown` and is never thrown.**
+  - 422 (11 bodies): no body, another code, `transactionCreated` `true`, `"false"`, `null` or missing, `orderId` missing, `amount` missing, `code` missing, `amount` as `"7000"`, truncated JSON.
+  - 400, 404, 409, 429, 500, 502, 503 and 504 come back `Unknown("HTTP <status>")`, and 200 and 201 do too even with a well-formed transaction.
+  - 202 (5 bodies): truncated JSON, `amount` as `"7000"`, the unknown status `CANCELLED`, and a blank (`""` or `"   "`) `transactionKey`.
+  - A dropped connection (`NoHttpResponseException`), a stall past the response timeout (`SocketTimeoutException` at about 1.1 s) and a starved pool (`ConnectionRequestTimeoutException` at about 225 ms) are `Unknown` too.
+- [x] **A 503, a 307, a dropped connection and a timeout each reach the PG as exactly one POST.**
+  - Every status above asserts `createCount() == 1`. The class runs at the production 1 s response timeout.
+  - The 307 asserts `requestCount() == 1`, which counts every request the PG received, unmatched ones included, so a followed redirect would show.
+  - Mutation runs: without `disableAutomaticRetries()` the 429 and 503 cases saw 2 POSTs. Without `disableRedirectHandling()` the 307 was followed and came back `HTTP 404` from the unstubbed target.
+- [x] **A create that cannot get a pooled connection comes back as `Unknown` without reaching the PG.**
+  - `ExhaustedPoolPaymentGatewayTest` is the one extra context (`pg.max-connections=1`, `pg.response-timeout=1s`).
+  - A stalled create holds the only connection. The second create, stubbed to be accepted, comes back `Unknown` after the 200 ms pool wait, and `createCount()` stays 1.
+  - Mutation run: without the pool wait the second create waited for the connection and came back `Accepted`.
+- [x] **`./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'` passes, and `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes.**
+  - The filter also matches `ExhaustedPoolPaymentGatewayTest`, so the command runs both classes: 38 + 1 tests.
+  - `ktlintCheck check`: 67 classes, 637 tests, 0 failures, 0 skips. That is the previous 606 plus 30 in `PaymentGatewayTest` (8 → 38; the tracer's single 500 test is folded into the status test) and 1 in `ExhaustedPoolPaymentGatewayTest`.
+  - One earlier full run failed once in `LockFailureApiTest`: its per-test Redis cleanup could not connect within the 100 ms client timeout. The test's own assertions passed, nothing here touches Redis, and the rerun was clean.
+
+### Decisions made while implementing
+
+- **The 422 body is flat**, read from the assignment's §2 example. It is read with the strict PG mapper into a private `PgRejectionResponse`; `isExact()` checks the code and the boolean `false`.
+- **A missing or `null` `transactionCreated` has two guards.** A mutation run without `FAIL_ON_NULL_FOR_PRIMITIVES` still gave `Unknown`, because the Kotlin module refuses a non-null `Boolean` without a default. Giving that field a default would remove both, and the variants would catch it.
+- **`Unknown.cause` for a 422.** A body that reads but is not exact gives `HTTP 422`. A body that cannot be read goes through the single catch and gives the exception's simple name, as on the 202 path. Tests on body variants assert only `Unknown`, since exception names are Jackson's internals.
+- **A blank `transactionKey` on a 202 is now unreadable** (140's open point). No lookup could use that key, so `Accepted` would have moved the payment to processing with a key nothing can follow.
+- **The pool scene needs the production response timeout.** At the test profile's 200 ms the stalled create would let go of the connection exactly when the second create's 200 ms pool wait ends.
+  - The test waits with Awaitility until the PG has received the stalled POST. WireMock records a request before its fixed delay, so at that point the connection is held.
+  - The spare time is about 800 ms.
+- **`TestPg`** gained `rejectsBeforeCreate`, `losesCreateResponse` (`Fault.EMPTY_RESPONSE`), `stalls` (fixed 1.5 s), `redirectsCreate`, an optional JSON body on `answersCreate`, `requestCount()`, and the public `REJECTED_BEFORE_CREATE`.
+- **Docs.** ADR 0022's costs have a dated note for the second slow scene. `CODING_STANDARDS.md` names the new class beside `PaymentGatewayTest`. The `PaymentGateway` KDoc names the pool wait and the inexact 422.
+
+### For 143 and step 2
+
+- **The transaction reader is shared.** If the lookups reuse `PgTransactionResponse`, a blank key there is unreadable too, and the lookup comes back `Unavailable`.
+- **143 was built in parallel from `4116bcc`.** Rebasing onto `9af0c32` overlaps here: the ADR 0022 cost line, the `PaymentGateway` KDoc, and `TestPg`'s stall constant and JSON response helper (`STALL_MILLIS`, `json(httpStatus, body)`). Fold them into one name each.
+- **Step 2 treats every `Unknown` the same**, whatever its cause. The cause is for the log line and tests only.
