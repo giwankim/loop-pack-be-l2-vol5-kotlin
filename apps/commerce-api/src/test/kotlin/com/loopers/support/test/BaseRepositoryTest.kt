@@ -15,6 +15,7 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.createOrder
 import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.payment.Payment
+import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.payment.createPayment
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.product.Product
@@ -179,6 +180,12 @@ abstract class BaseRepositoryTest {
     /** [deleteUser]와 같다. */
     protected fun deletePayment(payment: Payment = this.payment) {
         paymentRepository.save(payment.apply { delete() })
+    }
+
+    /** 결제를 PG 거래와 대사하고 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    protected fun reconcile(transactions: List<PgTransaction>, payment: Payment = this.payment) {
+        payment.reconcile(transactions)
+        paymentRepository.save(payment)
     }
 
     /** 좋아요 행을 지운다. 취소는 논리 삭제를 쓰지 않는다(ADR 0001). */

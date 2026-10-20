@@ -40,4 +40,37 @@ class PaymentFixturesTest {
         assertThat(payment.idempotencyKey).isEqualTo("checkout-42")
         assertThat(payment.amount).isEqualTo(Money(15_000))
     }
+
+    /** 거래 키가 겹치면, 거래 키가 다른 두 거래를 기본값으로 만드는 테스트가 가끔 같은 키를 얻는다. */
+    @Test
+    fun `createPgTransaction builds transactions matching the payment with unique keys and every status`() {
+        val payment = createPayment(orderId = 42)
+
+        val transactions = List(SAMPLES) { createPgTransaction(payment) }
+
+        assertThat(transactions.map { it.transactionKey }).doesNotHaveDuplicates()
+        assertThat(transactions.map { it.status }).containsOnly(*PgStatus.entries.toTypedArray())
+        assertThat(transactions).allSatisfy { transaction ->
+            assertThat(transaction.pgOrderId).isEqualTo(payment.pgOrderId)
+            assertThat(transaction.amount).isEqualTo(payment.amount)
+        }
+    }
+
+    @Test
+    fun `createPgTransaction uses every argument it is given`() {
+        val payment = createPayment(orderId = 42, amount = Money(15_000))
+
+        val transaction = createPgTransaction(
+            payment,
+            transactionKey = "TEST-TX-0042",
+            pgOrderId = "LP-ORD-0000000043",
+            amount = Money(15_001),
+            status = PgStatus.FAILED,
+        )
+
+        assertThat(transaction.transactionKey).isEqualTo("TEST-TX-0042")
+        assertThat(transaction.pgOrderId).isEqualTo("LP-ORD-0000000043")
+        assertThat(transaction.amount).isEqualTo(Money(15_001))
+        assertThat(transaction.status).isEqualTo(PgStatus.FAILED)
+    }
 }

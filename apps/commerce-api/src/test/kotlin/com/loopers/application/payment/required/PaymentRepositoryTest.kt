@@ -1,7 +1,11 @@
 package com.loopers.application.payment.required
 
+import com.loopers.domain.payment.ConflictReason
 import com.loopers.domain.payment.PaymentStatus
+import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.createPayment
+import com.loopers.domain.payment.createPgTransaction
+import com.loopers.domain.shared.Money
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
@@ -38,6 +42,24 @@ class PaymentRepositoryTest(
         assertThat(byOrderId?.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(byOrderId?.createdAt).isNotNull()
         assertThat(byIdempotencyKey?.id).isEqualTo(payment.id)
+    }
+
+    /** 충돌 시각은 마이크로초로 잘려 있어 `datetime(6)`을 거친 뒤에도 처음 값과 같다. */
+    @Test
+    fun `a payment that adopted a transaction key and then recorded a conflict reads back with both`() {
+        preparePayment()
+        val transaction = createPgTransaction(payment, status = PgStatus.PENDING)
+        reconcile(listOf(transaction))
+        reconcile(listOf(createPgTransaction(payment, amount = payment.amount + Money(1))))
+        entityManager.flushAndClear()
+
+        val found = paymentRepository.findByOrderId(order.id)
+
+        assertThat(found).isNotNull().isNotSameAs(payment)
+        assertThat(found?.status).isEqualTo(PaymentStatus.PENDING)
+        assertThat(found?.transactionKey).isEqualTo(transaction.transactionKey)
+        assertThat(found?.conflictReason).isEqualTo(ConflictReason.AMOUNT_MISMATCH)
+        assertThat(found?.conflictedAt).isEqualTo(payment.conflictedAt)
     }
 
     @Test
@@ -104,6 +126,9 @@ class PaymentRepositoryTest(
             "pg_order_id",
             "amount",
             "status",
+            "transaction_key",
+            "conflict_reason",
+            "conflicted_at",
             "created_at",
             "updated_at",
             "deleted_at",
