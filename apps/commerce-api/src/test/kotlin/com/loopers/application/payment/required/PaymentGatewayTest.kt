@@ -1,6 +1,7 @@
 package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
+import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection
@@ -33,7 +34,7 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  * [PaymentGateway]를 실제 HTTP로 테스트 PG에 보낸다(ADR 0022 규칙 6). 포트의 인터페이스만 부르고, 포트가 돌려준 값이나 던진 예외와
  * 테스트 PG가 받은 요청만 본다.
  *
- * 컨텍스트에는 어댑터의 설정만 있고 MySQL과 Redis는 없다. 설정 값은 `application.yml`을 test 프로필로 읽고 둘만 바꾼다.
+ * 컨텍스트에는 어댑터만 있고 MySQL과 Redis는 없다. 설정 값은 `application.yml`을 test 프로필로 읽고 둘만 바꾼다.
  * - 응답 한도는 운영의 1 s다. PG가 받은 요청 수로 숨은 재전송이 꺼졌음을 보는 테스트는 운영의 시간 한도로 돈다(ADR 0022 규칙 6).
  *   HttpClient는 응답 한도가 재시도 간격 1 s보다 짧으면 503 재시도를 스스로 건너뛰므로, test 프로필의 200 ms에서는 재시도를 끄는 스위치를
  *   지워도 요청 수가 그대로다(탐침 보고서 §3).
@@ -43,7 +44,10 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  * 테스트 PG가 받은 요청이 모두 장면의 스텁과 맞았는지 본다([everyRequestMatchedAScene]).
  * 연결 풀을 얻지 못한 생성은 풀의 연결 수가 다른 컨텍스트가 필요해 [ExhaustedPoolPaymentGatewayTest]에 있다.
  */
-@SpringJUnitConfig(classes = [LocalPgGatewayConfig::class], initializers = [ConfigDataApplicationContextInitializer::class])
+@SpringJUnitConfig(
+    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class],
+    initializers = [ConfigDataApplicationContextInitializer::class],
+)
 @TestPropertySource(properties = ["pg.response-timeout=1s", "pg.callback-url=$CALLBACK_URL"])
 @EnableTestPg
 @ExtendWith(OutputCaptureExtension::class)

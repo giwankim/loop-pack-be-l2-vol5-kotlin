@@ -1,6 +1,5 @@
 package com.loopers.adapter.integration.pg
 
-import com.loopers.application.payment.required.PaymentGateway
 import io.micrometer.observation.ObservationRegistry
 import org.apache.hc.client5.http.config.ConnectionConfig
 import org.apache.hc.client5.http.config.RequestConfig
@@ -20,8 +19,9 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.module.kotlin.jacksonMapperBuilder
 
 /**
- * 로컬 테스트 PG 어댑터(ADR 0021, ADR 0022). Boot의 HTTP client 스타터 없이 Apache HttpClient 5와 `RestClient`를 직접 만든다.
- * 스타터와 Boot의 HTTP client 설정은 재시도와 풀 대기를 다루지 않는다.
+ * 로컬 테스트 PG 어댑터의 HTTP 설정(ADR 0021, ADR 0022). Boot의 HTTP client 스타터 없이 Apache HttpClient 5와 `RestClient`를 직접 만든다.
+ * 스타터와 Boot의 HTTP client 설정은 재시도와 풀 대기를 다루지 않는다. 게이트웨이 [LocalPgGateway]는 컴포넌트 스캔으로 등록되고
+ * 이 설정의 `RestClient`를 받는다.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(PgProperties::class)
@@ -66,15 +66,15 @@ class LocalPgGatewayConfig {
     }
 
     /**
-     * 기본 헤더 `X-USER-ID`와 PG만의 매퍼를 단 `RestClient`로 게이트웨이를 만든다. observation registry가 있으면 다른 HTTP client 호출처럼
-     * PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 registry가 없고, `ObservedPaymentGatewayTest`가 하나를 더해 기록을 본다.
+     * 게이트웨이가 받는 `RestClient`. 기본 헤더 `X-USER-ID`와 PG만의 매퍼를 단다. observation registry가 있으면 다른 HTTP client 호출처럼
+     * PG 호출도 기록한다. 어댑터만 담은 테스트 컨텍스트에는 registry가 없고, `ObservedPaymentGatewayTest`가 하나를 더해 기록을 본다.
      */
     @Bean
-    fun localPgGateway(
+    fun pgRestClient(
         properties: PgProperties,
         pgRequestFactory: HttpComponentsClientHttpRequestFactory,
         observationRegistry: ObjectProvider<ObservationRegistry>,
-    ): PaymentGateway {
+    ): RestClient {
         val builder = RestClient.builder()
             .baseUrl(properties.baseUrl)
             .defaultHeader(USER_ID_HEADER, properties.userId)
@@ -82,7 +82,7 @@ class LocalPgGatewayConfig {
             .configureMessageConverters { it.withJsonConverter(JacksonJsonHttpMessageConverter(pgJsonMapper())) }
         observationRegistry.ifAvailable { builder.observationRegistry(it) }
 
-        return LocalPgGateway(builder.build(), properties.callbackUrl)
+        return builder.build()
     }
 
     /**

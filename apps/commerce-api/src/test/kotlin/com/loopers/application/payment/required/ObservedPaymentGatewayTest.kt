@@ -1,6 +1,7 @@
 package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
+import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
@@ -30,7 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * 다른 게이트웨이 테스트처럼 운영의 응답 한도 1 s로 돈다.
  */
 @SpringJUnitConfig(
-    classes = [LocalPgGatewayConfig::class, ObservedPaymentGatewayTest.ObservationConfig::class],
+    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class, ObservedPaymentGatewayTest.ObservationConfig::class],
     initializers = [ConfigDataApplicationContextInitializer::class],
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s"])

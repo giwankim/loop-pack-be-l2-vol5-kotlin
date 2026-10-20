@@ -14,6 +14,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse
 import org.springframework.web.client.RestClientException
@@ -33,11 +34,16 @@ private val log = KotlinLogging.logger {}
  *
  * 호출마다 로그 한 줄을 쓴다. 메서드, 경로, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않는다.
  * 결과 미확인과 조회 불가는 WARN이다.
+ *
+ * 컴포넌트 스캔으로 등록된다. `RestClient`는 [LocalPgGatewayConfig]가 만들고, 알림 주소는 설정에서만 읽는다.
  */
+@Component
 class LocalPgGateway(
     private val restClient: RestClient,
-    private val callbackUrl: String,
+    properties: PgProperties,
 ) : PaymentGateway {
+    private val callbackUrl = properties.callbackUrl
+
     companion object {
         private const val PAYMENTS_PATH = "/api/v1/payments"
 
@@ -216,7 +222,7 @@ class LocalPgGateway(
             throw PgUnavailableException("HTTP $status")
         }
 
-        val transactions = response.bodyTo(PG_TRANSACTION_LIST_TYPE)
+        val transactions = response.bodyTo(object : ParameterizedTypeReference<List<PgTransactionResponse?>>() {})
             ?: throw UnreadablePgResponseException("200에 본문이 없다.")
         if (null in transactions) {
             throw UnreadablePgResponseException("배열에 null 원소가 있다.")
@@ -225,13 +231,6 @@ class LocalPgGateway(
         return transactions.filterNotNull().map { it.toPgTransaction() }
     }
 }
-
-/**
- * 목록 조회의 본문 타입. 배열만 읽는다. 매퍼가 단일 값을 배열로 읽지 않으므로 객체 하나는 해석 실패다.
- * 원소는 nullable로 읽고 어댑터가 null을 거절한다. 최상위 타입의 타입 인자에는 Kotlin의 null 정보가 없어서, Kotlin 모듈의 null 검사는
- * 생성자 파라미터에만 걸리고 `[null]`은 null 원소를 담은 목록으로 읽힌다.
- */
-private val PG_TRANSACTION_LIST_TYPE = object : ParameterizedTypeReference<List<PgTransactionResponse?>>() {}
 
 /** 실패의 종류. 예외 사슬의 맨 안쪽 타입이다. 메시지는 응답 본문의 조각을 담을 수 있어 쓰지 않는다. */
 private fun RestClientException.failureKind(): String {

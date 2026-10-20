@@ -1,6 +1,7 @@
 package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
+import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.shared.Money
@@ -25,7 +26,10 @@ import java.util.concurrent.TimeUnit
  * 풀 대기는 운영의 200 ms이고 응답 한도도 운영의 1 s다. 멈춘 생성은 응답 한도까지 연결을 쥐므로, 두 번째 생성의 풀 대기가 그 안에 끝난다.
  * test 프로필의 응답 한도 200 ms에서는 두 한도가 같아 두 번째 생성이 연결을 얻을 수도 있다.
  */
-@SpringJUnitConfig(classes = [LocalPgGatewayConfig::class], initializers = [ConfigDataApplicationContextInitializer::class])
+@SpringJUnitConfig(
+    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class],
+    initializers = [ConfigDataApplicationContextInitializer::class],
+)
 @TestPropertySource(properties = ["pg.max-connections=1", "pg.response-timeout=1s"])
 @EnableTestPg
 class ExhaustedPoolPaymentGatewayTest(
