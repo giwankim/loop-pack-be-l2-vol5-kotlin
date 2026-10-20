@@ -41,7 +41,7 @@ class PaymentFixturesTest {
         assertThat(payment.amount).isEqualTo(Money(15_000))
     }
 
-    /** 거래 키가 겹치면, 거래 키가 다른 두 거래를 기본값으로 만드는 테스트가 가끔 같은 키를 얻는다. */
+    /** 거래 키가 겹치면, 거래 키가 다른 두 PG 거래를 기본값으로 만드는 테스트가 가끔 같은 키를 얻는다. */
     @Test
     fun `createPgTransaction builds transactions matching the payment with unique keys and every status`() {
         val payment = createPayment(orderId = 42)

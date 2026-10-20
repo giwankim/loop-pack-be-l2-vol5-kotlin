@@ -284,7 +284,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | 생성 수락 | `acceptsCreate(pgOrderId, amount, card, transactionKey, pgStatus)` | 202와 PG 거래. PG 상태의 기본값은 `PENDING`이다. |
 | 생성 전 거절 | `rejectsBeforeCreate(pgOrderId, amount, card)` | 정확한 422. 받은 PG 주문 번호와 금액을 되돌려 준다. |
 | 저장 뒤 응답 유실 | `losesCreateResponse(pgOrderId, amount, card)` | 본문을 다 읽은 뒤 응답 없이 끊는다(`Fault.EMPTY_RESPONSE`). |
-| 멈춤 | `stalls(pgOrderId, amount, card, transactionKey)` | 1.5 s 고정 지연 뒤 202. 운영의 응답 한도 1 s를 넘는다. |
+| 멈춤 | `stallsCreate(pgOrderId, amount, card, transactionKey)` | 1.5 s 고정 지연 뒤 202. 운영의 응답 한도 1 s를 넘는다. |
 | 리다이렉트 | `redirectsCreate(pgOrderId, amount, card)` | 307로 `/api/v1/payments/redirected`를 가리킨다. |
 | 그 밖의 생성 응답 | `answersCreate(…, httpStatus, body)` | 주어진 상태와 본문 |
 | PG 거래 하나 | `hasTransaction(transaction)` | 그 거래 키의 조회에 200과 PG 거래 |

@@ -5,7 +5,7 @@ import com.loopers.domain.payment.PgTransaction
 
 /** [PaymentGateway.requestPayment]의 결과. PG에게서 답을 얻지 못한 것도 예외가 아니라 이 값이다(ADR 0022 규칙 4). */
 sealed interface PaymentRequestResult {
-    /** PG가 생성을 받아들였다. 거래의 PG 상태가 무엇이든 그렇다. */
+    /** PG가 생성을 받아들였다. PG 거래의 PG 상태가 무엇이든 그렇다. */
     data class Accepted(val transaction: PgTransaction) : PaymentRequestResult
 
     /** 정확한 생성 전 거절. PG 거래가 없다는 유일한 증거다(ADR 0022 규칙 2). */

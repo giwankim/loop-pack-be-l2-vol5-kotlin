@@ -37,7 +37,7 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  *   지워도 요청 수가 그대로다(탐침 보고서 §3).
  * - 알림 주소는 [CALLBACK_URL]이다.
  *
- * 테스트 PG를 쓰는 다른 테스트와 달리 기반 클래스를 상속하지 않는다. 호출마다의 로그 줄은 출력 캡처로 읽는다. 테스트가 끝날 때마다
+ * 이 저장소의 다른 Spring 테스트와 달리 기반 클래스를 상속하지 않는다. 호출마다의 로그 줄은 출력 캡처로 읽는다. 테스트가 끝날 때마다
  * 테스트 PG가 받은 요청이 모두 장면의 스텁과 맞았는지 본다([everyRequestMatchedAScene]).
  * 연결 풀을 얻지 못한 생성은 풀의 연결 수가 다른 컨텍스트가 필요해 [ExhaustedPoolPaymentGatewayTest]에 있다.
  */
@@ -51,6 +51,7 @@ class PaymentGatewayTest(
     companion object {
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
+        private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = Card(type = "TEST", number = "0000-0000-0000-0000")
 
         /**
@@ -76,19 +77,19 @@ class PaymentGatewayTest(
 
         /** 계약대로 읽을 수 있는 PG 거래 하나. 아래 모양들이 이것과 한 군데씩 다르다. */
         private const val WELL_FORMED_TRANSACTION =
-            """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}"""
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}"""
 
         /**
          * 계약대로 읽을 수 없는 PG 거래. 생성의 202에도 두 조회의 200에도 같은 것들을 싣는다. 잘린 JSON, 문자열 금액, 빠진 거래 키나 금액,
-         * 모르는 PG 상태, 빈 거래 키다. 빠진 금액은 원시 타입이라 너그러운 매퍼라면 0원으로 읽어 잘 짜인 거래가 된다. 거래 키가 빈 거래는
-         * 나중에 그 키로 조회할 수 없으므로 잘 짜인 거래가 아니다.
+         * 모르는 PG 상태, 빈 거래 키다. 빠진 금액은 원시 타입이라 너그러운 매퍼라면 0원으로 읽어 잘 짜인 PG 거래가 된다. 거래 키가 빈 PG 거래는
+         * 나중에 그 키로 조회할 수 없으므로 잘 짜인 PG 거래가 아니다.
          */
         private val MALFORMED_TRANSACTIONS = listOf(
-            """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID",""",
-            """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":"$AMOUNT","status":"SUCCESS"}""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID",""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":"$AMOUNT","status":"SUCCESS"}""",
             """{"orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
-            """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","status":"SUCCESS"}""",
-            """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"CANCELLED"}""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","status":"SUCCESS"}""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"CANCELLED"}""",
             """{"transactionKey":"","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
             """{"transactionKey":"   ","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
         )
@@ -99,13 +100,13 @@ class PaymentGatewayTest(
             return MALFORMED_TRANSACTIONS
         }
 
-        /** 거래 키 조회의 200에 실려 와도 PG 거래로 읽지 않는 본문. 읽을 수 없는 거래, 빈 본문, 객체 대신 배열이다. */
+        /** 거래 키 조회의 200에 실려 와도 PG 거래로 읽지 않는 본문. 읽을 수 없는 PG 거래, 빈 본문, 객체 대신 배열이다. */
         @JvmStatic
         fun unreadableTransactionBodies(): List<String> {
             return MALFORMED_TRANSACTIONS + listOf("", "[$WELL_FORMED_TRANSACTION]")
         }
 
-        /** 목록 조회의 200에 실려 와도 PG 거래의 배열로 읽지 않는 본문. 읽을 수 없는 거래를 담은 배열, 배열 대신 객체, null 원소, null이다. */
+        /** 목록 조회의 200에 실려 와도 PG 거래의 배열로 읽지 않는 본문. 읽을 수 없는 PG 거래를 담은 배열, 배열 대신 객체, null 원소, null이다. */
         @JvmStatic
         fun unreadableListBodies(): List<String> {
             return MALFORMED_TRANSACTIONS.map { "[$it]" } + listOf(WELL_FORMED_TRANSACTION, "[null]", "null")
@@ -135,12 +136,19 @@ class PaymentGatewayTest(
 
     @Test
     fun `an accepted create returns the PG's transaction and reaches the PG as one POST`() {
-        pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
+        pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
         assertThat(result).isEqualTo(
-            PaymentRequestResult.Accepted(PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.PENDING)),
+            PaymentRequestResult.Accepted(
+                PgTransaction(
+                    transactionKey = TRANSACTION_KEY,
+                    pgOrderId = PG_ORDER_ID,
+                    amount = Money(AMOUNT),
+                    status = PgStatus.PENDING,
+                ),
+            ),
         )
         assertThat(pg.createCount()).isEqualTo(1)
     }
@@ -152,14 +160,16 @@ class PaymentGatewayTest(
             pgOrderId = PG_ORDER_ID,
             amount = AMOUNT,
             card = CARD,
-            transactionKey = "TEST-TX-0042",
+            transactionKey = TRANSACTION_KEY,
             pgStatus = status.name,
         )
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
         assertThat(result).isEqualTo(
-            PaymentRequestResult.Accepted(PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), status)),
+            PaymentRequestResult.Accepted(
+                PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT), status = status),
+            ),
         )
     }
 
@@ -169,7 +179,7 @@ class PaymentGatewayTest(
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection(PG_ORDER_ID, Money(AMOUNT))))
+        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection(pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT))))
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
@@ -188,7 +198,9 @@ class PaymentGatewayTest(
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection("LP-ORD-0000000043", Money(7_001))))
+        assertThat(result).isEqualTo(
+            PaymentRequestResult.Rejected(PgRejection(pgOrderId = "LP-ORD-0000000043", amount = Money(7_001))),
+        )
     }
 
     @ParameterizedTest
@@ -225,7 +237,7 @@ class PaymentGatewayTest(
             amount = AMOUNT,
             card = CARD,
             httpStatus = httpStatus,
-            body = """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
+            body = WELL_FORMED_TRANSACTION,
         )
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
@@ -266,10 +278,10 @@ class PaymentGatewayTest(
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
-    /** 이 클래스의 하나뿐인 느린 장면이다. 테스트 PG는 1.5 s 멈추고 어댑터는 응답 한도 1 s에서 그만 기다린다. */
+    /** 테스트 PG는 1.5 s 멈추고 어댑터는 응답 한도 1 s에서 그만 기다린다. 이 클래스의 느린 장면은 이것과 조회의 시간 초과 둘이다. */
     @Test
     fun `a create stalled past the response timeout comes back as Unknown after one POST`() {
-        pg.stalls(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
+        pg.stallsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
@@ -279,12 +291,12 @@ class PaymentGatewayTest(
 
     @Test
     fun `an accepted create writes one log line with the call and no body or card number`(output: CapturedOutput) {
-        pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
+        pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
         paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
         assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("POST /api/v1/payments", "HTTP 202", PG_ORDER_ID, "TEST-TX-0042")
+            .contains("POST /api/v1/payments", "HTTP 202", PG_ORDER_ID, TRANSACTION_KEY)
             .containsPattern("in \\d+ ms")
             .doesNotContain(CARD.number, "cardNo", "callbackUrl")
     }
@@ -303,10 +315,15 @@ class PaymentGatewayTest(
 
     @Test
     fun `a key lookup answered 200 returns that one transaction and reaches the PG as one GET`() {
-        val transaction = PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.SUCCESS)
+        val transaction = PgTransaction(
+            transactionKey = TRANSACTION_KEY,
+            pgOrderId = PG_ORDER_ID,
+            amount = Money(AMOUNT),
+            status = PgStatus.SUCCESS,
+        )
         pg.hasTransaction(transaction)
 
-        val result = paymentGateway.retrieveTransaction("TEST-TX-0042")
+        val result = paymentGateway.retrieveTransaction(transaction.transactionKey)
 
         assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(transaction)))
         assertThat(pg.lookupCount()).isEqualTo(1)
@@ -314,9 +331,9 @@ class PaymentGatewayTest(
 
     @Test
     fun `a key lookup answered 404 returns no transaction instead of being unavailable`() {
-        pg.answersRetrieve(transactionKey = "TEST-TX-0042", httpStatus = 404)
+        pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 404)
 
-        val result = paymentGateway.retrieveTransaction("TEST-TX-0042")
+        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(result).isEqualTo(TransactionLookupResult.Found(emptyList()))
         assertThat(pg.lookupCount()).isEqualTo(1)
@@ -334,7 +351,12 @@ class PaymentGatewayTest(
 
     @Test
     fun `a list lookup answered with one transaction returns that transaction`() {
-        val transaction = PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.PENDING)
+        val transaction = PgTransaction(
+            transactionKey = TRANSACTION_KEY,
+            pgOrderId = PG_ORDER_ID,
+            amount = Money(AMOUNT),
+            status = PgStatus.PENDING,
+        )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, transaction)
 
         val result = paymentGateway.listTransactions(PG_ORDER_ID)
@@ -344,8 +366,18 @@ class PaymentGatewayTest(
 
     @Test
     fun `a list lookup answered with two transactions returns both and reaches the PG as one GET`() {
-        val failed = PgTransaction("TEST-TX-0041", PG_ORDER_ID, Money(AMOUNT), PgStatus.FAILED)
-        val succeeded = PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.SUCCESS)
+        val failed = PgTransaction(
+            transactionKey = "TEST-TX-0041",
+            pgOrderId = PG_ORDER_ID,
+            amount = Money(AMOUNT),
+            status = PgStatus.FAILED,
+        )
+        val succeeded = PgTransaction(
+            transactionKey = TRANSACTION_KEY,
+            pgOrderId = PG_ORDER_ID,
+            amount = Money(AMOUNT),
+            status = PgStatus.SUCCESS,
+        )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, failed, succeeded)
 
         val result = paymentGateway.listTransactions(PG_ORDER_ID)
@@ -394,7 +426,7 @@ class PaymentGatewayTest(
     fun `a lookup whose connection drops comes back as Unavailable after exactly one GET`() {
         pg.losesLookupResponse()
 
-        val result = paymentGateway.retrieveTransaction("TEST-TX-0042")
+        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("NoHttpResponseException"))
         assertThat(pg.lookupCount()).isEqualTo(1)
@@ -415,9 +447,9 @@ class PaymentGatewayTest(
     fun `a key lookup answered with a status other than 200 or 404 comes back as Unavailable instead of being thrown`(
         httpStatus: Int,
     ) {
-        pg.answersRetrieve(transactionKey = "TEST-TX-0042", httpStatus = httpStatus)
+        pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = httpStatus)
 
-        val result = paymentGateway.retrieveTransaction("TEST-TX-0042")
+        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("HTTP $httpStatus"))
     }
@@ -434,18 +466,18 @@ class PaymentGatewayTest(
 
     @ParameterizedTest
     @MethodSource("unreadableTransactionBodies")
-    fun `a key lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(json: String) {
-        pg.answersRetrieve(transactionKey = "TEST-TX-0042", httpStatus = 200, body = json)
+    fun `a key lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(body: String) {
+        pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 200, body = body)
 
-        val result = paymentGateway.retrieveTransaction("TEST-TX-0042")
+        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(result).isInstanceOf(TransactionLookupResult.Unavailable::class.java)
     }
 
     @ParameterizedTest
     @MethodSource("unreadableListBodies")
-    fun `a list lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(json: String) {
-        pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 200, body = json)
+    fun `a list lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(body: String) {
+        pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 200, body = body)
 
         val result = paymentGateway.listTransactions(PG_ORDER_ID)
 
@@ -454,38 +486,55 @@ class PaymentGatewayTest(
 
     @Test
     fun `a key lookup writes one log line with the call, the status and the transaction`(output: CapturedOutput) {
-        pg.hasTransaction(PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.SUCCESS))
+        pg.hasTransaction(
+            PgTransaction(
+                transactionKey = TRANSACTION_KEY,
+                pgOrderId = PG_ORDER_ID,
+                amount = Money(AMOUNT),
+                status = PgStatus.SUCCESS,
+            ),
+        )
 
-        paymentGateway.retrieveTransaction("TEST-TX-0042")
+        paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments/{transactionKey}", "Found 1", "HTTP 200", PG_ORDER_ID, "TEST-TX-0042")
+            .contains("GET /api/v1/payments/{transactionKey}", "Found 1", "HTTP 200", PG_ORDER_ID, TRANSACTION_KEY)
             .containsPattern("in \\d+ ms")
     }
 
     @Test
     fun `a key lookup that finds none writes one log line with HTTP 404`(output: CapturedOutput) {
-        pg.answersRetrieve(transactionKey = "TEST-TX-0042", httpStatus = 404)
+        pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 404)
 
-        paymentGateway.retrieveTransaction("TEST-TX-0042")
+        paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
         assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments/{transactionKey}", "Found 0", "HTTP 404", "TEST-TX-0042")
+            .contains("GET /api/v1/payments/{transactionKey}", "Found 0", "HTTP 404", TRANSACTION_KEY)
     }
 
     @Test
     fun `a list lookup writes one log line with the call and every transaction key`(output: CapturedOutput) {
         pg.hasTransactions(
             pgOrderId = PG_ORDER_ID,
-            PgTransaction("TEST-TX-0041", PG_ORDER_ID, Money(AMOUNT), PgStatus.FAILED),
-            PgTransaction("TEST-TX-0042", PG_ORDER_ID, Money(AMOUNT), PgStatus.SUCCESS),
+            PgTransaction(
+                transactionKey = "TEST-TX-0041",
+                pgOrderId = PG_ORDER_ID,
+                amount = Money(AMOUNT),
+                status = PgStatus.FAILED,
+            ),
+            PgTransaction(
+                transactionKey = TRANSACTION_KEY,
+                pgOrderId = PG_ORDER_ID,
+                amount = Money(AMOUNT),
+                status = PgStatus.SUCCESS,
+            ),
         )
 
         paymentGateway.listTransactions(PG_ORDER_ID)
 
         assertThat(output.gatewayLines()).singleElement().asString()
             .contains("GET /api/v1/payments?orderId={pgOrderId}", "Found 2", "HTTP 200", PG_ORDER_ID)
-            .contains("TEST-TX-0041", "TEST-TX-0042")
+            .contains("TEST-TX-0041", TRANSACTION_KEY)
             .containsPattern("in \\d+ ms")
     }
 

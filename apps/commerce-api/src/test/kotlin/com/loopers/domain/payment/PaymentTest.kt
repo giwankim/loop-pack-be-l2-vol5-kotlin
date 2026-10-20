@@ -165,7 +165,7 @@ class PaymentTest {
         assertThat(payment.conflictReason).isNull()
     }
 
-    /** PG 주문 번호 하나에 거래가 둘 이상이면 어느 것이 이 결제인지 모르므로 고르지 않는다. */
+    /** PG 주문 번호 하나에 PG 거래가 둘 이상이면 어느 것이 이 결제인지 모르므로 고르지 않는다. */
     @Test
     fun `two transactions record a multiple transactions conflict and leave the payment unknown`() {
         val payment = createPayment(orderId = 42)
@@ -211,7 +211,7 @@ class PaymentTest {
     }
 
     /**
-     * 처음 맞은 PG 거래가 거래 키를 정하고, 그 뒤의 다른 키는 다른 거래다. 성공을 말해도 처리 중 결제를 끝내지 않고,
+     * 처음 맞은 PG 거래가 거래 키를 정하고, 그 뒤의 다른 키는 다른 PG 거래다. 성공을 말해도 처리 중 결제를 끝내지 않고,
      * 끝난 결제에는 결과보다 키의 충돌이 먼저다.
      */
     @ParameterizedTest
@@ -251,7 +251,7 @@ class PaymentTest {
 
     /**
      * 표의 위에서부터 처음 맞는 줄을 따른다. 여러 규칙을 어긴 답은 그 가운데 맨 위의 충돌이다. 성공한 결제에 성공을 말하는
-     * 거래라 아래 줄로 내려가면 `Unchanged`로 묻힐 답이다.
+     * PG 거래라 아래 줄로 내려가면 `Unchanged`로 묻힐 답이다.
      */
     @ParameterizedTest
     @CsvSource(
@@ -324,7 +324,7 @@ class PaymentTest {
         assertThat(payment.conflictReason).isNull()
     }
 
-    /** 맞는 생성 전 거절은 PG 거래가 없다는 증거라 결과 미확인 결제를 실패로 끝낸다(ADR 0022). 없는 거래의 키는 없다. */
+    /** 맞는 생성 전 거절은 PG 거래가 없다는 증거라 결과 미확인 결제를 실패로 끝낸다(ADR 0022). 없는 PG 거래의 거래 키는 없다. */
     @Test
     fun `a matching rejection fails an unknown payment without a transaction key`() {
         val payment = createPayment(orderId = 42)
@@ -410,7 +410,7 @@ class PaymentTest {
         assertThat(payment.conflictReason).isNull()
     }
 
-    /** 처리 중과 성공은 PG 거래가 있다는 것을 안다. "거래가 없다"는 거절은 그것을 되돌리지 않고 충돌로 남는다. */
+    /** 처리 중과 성공은 PG 거래가 있다는 것을 안다. "PG 거래가 없다"는 거절은 그것을 되돌리지 않고 충돌로 남는다. */
     @ParameterizedTest
     @EnumSource(PaymentStatus::class, names = ["PENDING", "SUCCESS"])
     fun `a rejection for a payment with a known transaction records a result conflict and keeps status and key`(

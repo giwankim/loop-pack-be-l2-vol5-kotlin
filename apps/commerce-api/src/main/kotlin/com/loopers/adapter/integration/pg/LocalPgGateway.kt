@@ -119,7 +119,7 @@ class LocalPgGateway(
     }
 
     override fun retrieveTransaction(transactionKey: String): TransactionLookupResult {
-        val (result, elapsed) = measureTimedValue { getTransaction(transactionKey) }
+        val (result, elapsed) = measureTimedValue { retrieve(transactionKey) }
 
         val pgOrderId = (result as? TransactionLookupResult.Found)?.transactions?.singleOrNull()?.pgOrderId
         logLookup(result) {
@@ -130,7 +130,7 @@ class LocalPgGateway(
         return result
     }
 
-    private fun getTransaction(transactionKey: String): TransactionLookupResult {
+    private fun retrieve(transactionKey: String): TransactionLookupResult {
         return try {
             restClient.get()
                 .uri(TRANSACTION_PATH, transactionKey)
@@ -141,7 +141,7 @@ class LocalPgGateway(
     }
 
     /**
-     * 200과 잘 짜인 PG 거래는 그 거래 하나를 찾은 것이고, 404는 하나도 찾지 못한 것이다(ADR 0022 규칙 3). 그 밖의 상태 코드는 모두
+     * 200과 잘 짜인 PG 거래는 그 PG 거래 하나를 찾은 것이고, 404는 하나도 찾지 못한 것이다(ADR 0022 규칙 3). 그 밖의 상태 코드는 모두
      * 조회 불가다. 404의 본문은 읽지 않는다.
      */
     private fun readRetrieveResponse(response: ConvertibleClientHttpResponse): TransactionLookupResult {
@@ -161,7 +161,7 @@ class LocalPgGateway(
     }
 
     override fun listTransactions(pgOrderId: String): TransactionLookupResult {
-        val (result, elapsed) = measureTimedValue { getTransactions(pgOrderId) }
+        val (result, elapsed) = measureTimedValue { list(pgOrderId) }
 
         val transactionKeys = (result as? TransactionLookupResult.Found)?.transactions?.map { it.transactionKey }
         logLookup(result) {
@@ -172,7 +172,7 @@ class LocalPgGateway(
         return result
     }
 
-    private fun getTransactions(pgOrderId: String): TransactionLookupResult {
+    private fun list(pgOrderId: String): TransactionLookupResult {
         return try {
             restClient.get()
                 .uri(LIST_PATH, pgOrderId)
@@ -228,7 +228,7 @@ private fun PaymentRequestResult.summary(): String {
 }
 
 /**
- * 로그에 쓰는 거래 키 조회의 결과와 HTTP 상태나 실패의 종류. 찾은 결과의 상태 코드는 거래 수로 정해져 있다. 하나면 200, 없으면 404다.
+ * 로그에 쓰는 거래 키 조회의 결과와 HTTP 상태나 실패의 종류. 찾은 결과의 상태 코드는 PG 거래 수로 정해져 있다. 하나면 200, 없으면 404다.
  * 조회 불가의 [TransactionLookupResult.Unavailable.cause]는 받은 상태 코드나 실패의 종류다.
  */
 private fun TransactionLookupResult.retrieveSummary(): String {
@@ -242,7 +242,7 @@ private fun TransactionLookupResult.retrieveSummary(): String {
     }
 }
 
-/** 로그에 쓰는 목록 조회의 결과와 HTTP 상태나 실패의 종류. 찾은 결과는 거래 수가 무엇이든 200이다. */
+/** 로그에 쓰는 목록 조회의 결과와 HTTP 상태나 실패의 종류. 찾은 결과는 PG 거래 수가 무엇이든 200이다. */
 private fun TransactionLookupResult.listSummary(): String {
     return when (this) {
         is TransactionLookupResult.Found -> "Found ${transactions.size} (HTTP ${HttpStatus.OK.value()})"
@@ -276,7 +276,7 @@ private data class PgPaymentCreateRequest(
 
 /**
  * PG 거래의 JSON. PG 상태는 문자열로 읽어 어댑터가 옮긴다. 모르는 값은 해석 실패다.
- * 빈 거래 키도 해석 실패다. 그 키로는 거래를 다시 조회할 수 없다.
+ * 빈 거래 키도 해석 실패다. 그 키로는 PG 거래를 다시 조회할 수 없다.
  */
 private data class PgTransactionResponse(
     val transactionKey: String,

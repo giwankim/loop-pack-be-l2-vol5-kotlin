@@ -57,7 +57,7 @@ class TestPg(
         /** 두 조회의 경로. 거래 키 조회는 `/api/v1/payments/{거래 키}`, 목록 조회는 query만 다른 `/api/v1/payments`다. */
         private const val LOOKUP_PATHS = "$PAYMENTS_PATH(/[^/]+)?"
 
-        /** [stalls]와 [stallsLookup]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
+        /** [stallsCreate]와 [stallsLookup]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
         private const val STALL_MILLIS = 1_500
     }
 
@@ -74,9 +74,9 @@ class TestPg(
 
     /**
      * 생성을 받아들이지만 [STALL_MILLIS] 동안 답하지 않는다. 운영의 응답 한도에서는 어댑터가 먼저 기다리기를 그만두므로,
-     * PG에는 거래가 생겼는데 어댑터는 그 답을 받지 못한다. 지연은 고정이다.
+     * PG에는 PG 거래가 생겼는데 어댑터는 그 답을 받지 못한다. 지연은 고정이다.
      */
-    fun stalls(pgOrderId: String, amount: Long, card: Card, transactionKey: String) {
+    fun stallsCreate(pgOrderId: String, amount: Long, card: Card, transactionKey: String) {
         server.stubFor(
             createRequest(pgOrderId, amount, card).willReturn(
                 accepted(pgOrderId, amount, transactionKey, pgStatus = "PENDING").withFixedDelay(STALL_MILLIS),
@@ -85,7 +85,7 @@ class TestPg(
     }
 
     /**
-     * 생성을 받아 거래를 저장한 뒤 응답 없이 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청 본문을 다 읽은 뒤 끊는다
+     * 생성을 받아 PG 거래를 저장한 뒤 응답 없이 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청 본문을 다 읽은 뒤 끊는다
      * (wiremock-spring-boot 탐침 보고서 §3의 b).
      */
     fun losesCreateResponse(pgOrderId: String, amount: Long, card: Card) {
@@ -126,12 +126,12 @@ class TestPg(
         return server.findAll(anyRequestedFor(anyUrl())).size
     }
 
-    /** 거래 키 조회에 200과 PG 거래 [transaction]을 돌려준다. 조회하는 거래 키는 그 거래의 것이다. */
+    /** 거래 키 조회에 200과 PG 거래 [transaction]을 돌려준다. 조회하는 거래 키는 그 PG 거래의 것이다. */
     fun hasTransaction(transaction: PgTransaction) {
         server.stubFor(retrieveRequest(transaction.transactionKey).willReturn(json(200, transactionJson(transaction))))
     }
 
-    /** PG 주문 번호 [pgOrderId]의 목록 조회에 200과 PG 거래 [transactions]의 JSON 배열을 돌려준다. 거래가 없으면 빈 배열이다. */
+    /** PG 주문 번호 [pgOrderId]의 목록 조회에 200과 PG 거래 [transactions]의 JSON 배열을 돌려준다. PG 거래가 없으면 빈 배열이다. */
     fun hasTransactions(pgOrderId: String, vararg transactions: PgTransaction) {
         val body = transactions.joinToString(separator = ",", prefix = "[", postfix = "]") { transactionJson(it) }
 

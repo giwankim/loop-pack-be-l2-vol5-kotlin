@@ -137,7 +137,7 @@ _Avoid_: 거래 ID, 결제 키, paymentKey
 _Avoid_: 주문 ID, orderId, providerOrderId
 
 **PG 상태 (PG status)**:
-PG 거래의 상태. 처리 중(PENDING), 성공(SUCCESS), 실패(FAILED) 중 하나다. PG가 거래 생성을 받아들인 것은 성공이 아니다.
+PG 거래의 상태. 처리 중(PENDING), 성공(SUCCESS), 실패(FAILED) 중 하나다. PG가 PG 거래의 생성을 받아들인 것은 성공이 아니다.
 _Avoid_: 결제 상태
 
 **멱등 키 (idempotencyKey)**:

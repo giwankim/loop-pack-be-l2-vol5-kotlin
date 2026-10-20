@@ -51,7 +51,7 @@ class ExhaustedPoolPaymentGatewayTest(
 
     @Test
     fun `a create that cannot get a pooled connection comes back as Unknown without reaching the PG`() {
-        pg.stalls(pgOrderId = STALLED_PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0041")
+        pg.stallsCreate(pgOrderId = STALLED_PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0041")
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
         val stalled = CompletableFuture.supplyAsync {
             paymentGateway.requestPayment(STALLED_PG_ORDER_ID, Money(AMOUNT), CARD)
