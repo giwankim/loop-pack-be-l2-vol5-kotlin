@@ -328,7 +328,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ### 7.2 1단계의 명령
 
 ```bash
-# PaymentGatewayTest(83), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
+# PaymentGatewayTest(89), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
 
 # PaymentTest(50)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.

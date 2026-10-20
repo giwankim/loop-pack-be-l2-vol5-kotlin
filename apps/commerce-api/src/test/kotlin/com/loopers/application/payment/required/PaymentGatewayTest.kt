@@ -81,8 +81,9 @@ class PaymentGatewayTest(
 
         /**
          * 계약대로 읽을 수 없는 PG 거래. 생성의 202에도 두 조회의 200에도 같은 것들을 싣는다. 잘린 JSON, 문자열 금액, 빠진 거래 키나 금액,
-         * 모르는 PG 상태, 빈 거래 키다. 빠진 금액은 원시 타입이라 너그러운 매퍼라면 0원으로 읽어 잘 짜인 PG 거래가 된다. 거래 키가 빈 PG 거래는
-         * 나중에 그 키로 조회할 수 없으므로 잘 짜인 PG 거래가 아니다.
+         * 모르는 PG 상태, 빈 거래 키, 음수 금액, 소수 금액이다. 빠진 금액은 원시 타입이라 너그러운 매퍼라면 0원으로 읽어 잘 짜인 PG 거래가 된다.
+         * 거래 키가 빈 PG 거래는 나중에 그 키로 조회할 수 없으므로 잘 짜인 PG 거래가 아니다. 음수 금액은 `Money`가 거절하는데, 그 예외도 포트
+         * 밖으로 던지지 않고 해석 실패가 되어야 한다. 소수 금액은 원화 정수가 아니어서 정수로 잘라 읽지 않는다.
          */
         private val MALFORMED_TRANSACTIONS = listOf(
             """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID",""",
@@ -92,6 +93,8 @@ class PaymentGatewayTest(
             """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"CANCELLED"}""",
             """{"transactionKey":"","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
             """{"transactionKey":"   ","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":-$AMOUNT,"status":"SUCCESS"}""",
+            """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID","amount":$AMOUNT.5,"status":"SUCCESS"}""",
         )
 
         /** 202에 실렸지만 잘 짜인 PG 거래가 아닌 본문. */
