@@ -14,10 +14,16 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse
 import org.springframework.web.client.RestClientException
+import tools.jackson.databind.DeserializationFeature
+import tools.jackson.databind.MapperFeature
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.module.kotlin.jacksonMapperBuilder
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
@@ -35,16 +41,20 @@ private val log = KotlinLogging.logger {}
  * 호출마다 로그 한 줄을 쓴다. 메서드, 경로, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않는다.
  * 결과 미확인과 조회 불가는 WARN이다.
  *
- * 컴포넌트 스캔으로 등록된다. `RestClient`는 [LocalPgGatewayConfig]가 만들고, 알림 주소는 설정에서만 읽는다.
+ * 컴포넌트 스캔으로 등록된다. `RestClient`는 Boot가 미리 설정한 `RestClient.Builder`로 만든다. 그 builder에는 observation
+ * registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록하는 설정이 이미 있다. 그 위에 base URL, 기본 헤더 `X-USER-ID`,
+ * [LocalPgGatewayConfig]의 request factory, PG만의 엄격한 매퍼를 얹는다. 알림 주소는 설정에서만 읽는다.
  */
 @Component
 class LocalPgGateway(
-    private val restClient: RestClient,
+    restClientBuilder: RestClient.Builder,
+    pgRequestFactory: HttpComponentsClientHttpRequestFactory,
     properties: PgProperties,
 ) : PaymentGateway {
-    private val callbackUrl = properties.callbackUrl
-
     companion object {
+        /** PG 계약이 정한 합성 계정을 싣는 헤더. 모든 요청에 보낸다. */
+        private const val USER_ID_HEADER = "X-USER-ID"
+
         private const val PAYMENTS_PATH = "/api/v1/payments"
 
         /** 거래 키 조회의 경로. 거래 키는 경로 변수라 URI builder가 인코딩한다. */
@@ -53,6 +63,22 @@ class LocalPgGateway(
         /** PG 주문 번호 목록 조회의 경로. PG 주문 번호는 query 변수라 URI builder가 `&`와 `+`까지 인코딩한다. */
         private const val LIST_PATH = "$PAYMENTS_PATH?orderId={pgOrderId}"
     }
+
+    /**
+     * Boot의 컨버터 설정이 builder에 `registerDefaults()`와 Boot의 매퍼를 단 JSON 컨버터를 이미 넣어 두었다. 이 설정은 그 뒤에 돈다.
+     * `disableDefaults()`가 클래스 경로에서 찾는 컨버터(YAML, XML 등)를 끄고, JSON 컨버터는 한 자리라 `withJsonConverter`가 Boot의 것을
+     * PG만의 매퍼로 바꾼다. 남는 것은 Boot의 String 컨버터, form 컨버터와 이 JSON 컨버터이고, PG의 본문 타입은 이 JSON 컨버터만 읽고 쓴다.
+     */
+    private val restClient = restClientBuilder
+        .baseUrl(properties.baseUrl)
+        .defaultHeader(USER_ID_HEADER, properties.userId)
+        .requestFactory(pgRequestFactory)
+        .configureMessageConverters {
+            it.disableDefaults().withJsonConverter(JacksonJsonHttpMessageConverter(pgJsonMapper()))
+        }
+        .build()
+
+    private val callbackUrl = properties.callbackUrl
 
     override fun createTransaction(pgOrderId: String, amount: Money, card: CreditCard): PgTransaction {
         val started = TimeSource.Monotonic.markNow()
@@ -230,6 +256,28 @@ class LocalPgGateway(
 
         return transactions.filterNotNull().map { it.toPgTransaction() }
     }
+}
+
+/**
+ * PG의 JSON만 읽고 쓰는 엄격한 매퍼. Boot의 매퍼(`supports/jackson`)는 우리 API를 부르는 클라이언트를 너그럽게 받는다.
+ * 그 너그러움이 남의 계약을 읽는 데 새지 않게 따로 둔다.
+ *
+ * - 단일 값을 배열로, 빈 문자열을 null로 읽지 않는다.
+ * - 원시 타입의 null과 빠진 값을 거절한다. null이 될 수 없는 Kotlin 타입은 Kotlin 모듈이 거절한다.
+ * - 스칼라를 바꿔 읽지 않는다. `"7000"`은 숫자가, `"false"`는 boolean이 아니다. 금액은 원화 정수라 `7000.5`도 정수로 읽지 않는다.
+ * - 모르는 속성은 무시한다. PG가 필드를 더해도 계약의 필드만 읽는다.
+ */
+private fun pgJsonMapper(): JsonMapper {
+    return jacksonMapperBuilder()
+        .disable(
+            DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY,
+            DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT,
+            DeserializationFeature.ACCEPT_FLOAT_AS_INT,
+            DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,
+        )
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+        .build()
 }
 
 /** 실패의 종류. 예외 사슬의 맨 안쪽 타입이다. 메시지는 응답 본문의 조각을 담을 수 있어 쓰지 않는다. */

@@ -22,6 +22,8 @@ dependencies {
     implementation(libs.springBootStarterCache)
 
     // PG client: 로컬 테스트 PG 어댑터의 HTTP client(ADR 0022). 처음 쓰는 곳이라 여기서 들인다(ADR 0008)
+    // 스타터는 Boot가 미리 설정한 RestClient.Builder를 주고, request factory는 어댑터가 숨은 재전송을 끈 HttpClient 5로 바꾼다
+    implementation(libs.springBootStarterRestclient)
     implementation(libs.httpclient5)
 
     // admin boundary: 통합 테스트 전용(src/test AdminSecurityConfig), 운영 코드에는 Spring Security 없음

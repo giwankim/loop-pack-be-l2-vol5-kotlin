@@ -51,6 +51,9 @@ class TestPg(
 
         private const val PAYMENTS_PATH = "/api/v1/payments"
 
+        /** PG 계약의 본문 형식. 장면은 따로 정하지 않으면 모두 이것으로 싣는다. */
+        private const val JSON_CONTENT_TYPE = "application/json"
+
         /** [redirectsCreate]가 가리키는 경로. 어댑터가 리다이렉트를 따라가면 PG가 이 경로로 요청을 하나 더 받는다. */
         private const val REDIRECT_PATH = "/api/v1/payments/redirected"
 
@@ -111,9 +114,19 @@ class TestPg(
         server.stubFor(createRequest(pgOrderId, amount, card).willReturn(json(422, body)))
     }
 
-    /** 생성에 HTTP 상태 [httpStatus]로 답한다. [body]가 있으면 JSON으로 그대로 싣고, 없으면 본문 없이 답한다. */
-    fun answersCreate(pgOrderId: String, amount: Long, card: CreditCard, httpStatus: Int, body: String? = null) {
-        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(response(httpStatus, body)))
+    /**
+     * 생성에 HTTP 상태 [httpStatus]로 답한다. [body]가 있으면 [contentType]으로 그대로 싣고, 없으면 본문 없이 답한다.
+     * [contentType]의 기본값은 JSON이다.
+     */
+    fun answersCreate(
+        pgOrderId: String,
+        amount: Long,
+        card: CreditCard,
+        httpStatus: Int,
+        body: String? = null,
+        contentType: String = JSON_CONTENT_TYPE,
+    ) {
+        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(response(httpStatus, body, contentType)))
     }
 
     /** PG가 받은 생성 요청 수. 헤더와 본문이 무엇이든 센다. */
@@ -208,20 +221,20 @@ class TestPg(
         return """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","amount":$amount,"status":"$pgStatus"}"""
     }
 
-    /** [body]가 있으면 JSON으로 싣고, 없으면 본문 없이 HTTP 상태 [httpStatus]만 답한다. */
-    private fun response(httpStatus: Int, body: String?): ResponseDefinitionBuilder {
+    /** [body]가 있으면 [contentType]으로 싣고, 없으면 본문 없이 HTTP 상태 [httpStatus]만 답한다. */
+    private fun response(httpStatus: Int, body: String?, contentType: String = JSON_CONTENT_TYPE): ResponseDefinitionBuilder {
         if (body == null) {
             return aResponse().withStatus(httpStatus)
         }
 
-        return json(httpStatus, body)
+        return aResponse()
+            .withStatus(httpStatus)
+            .withHeader("Content-Type", contentType)
+            .withBody(body)
     }
 
     private fun json(httpStatus: Int, body: String): ResponseDefinitionBuilder {
-        return aResponse()
-            .withStatus(httpStatus)
-            .withHeader("Content-Type", "application/json")
-            .withBody(body)
+        return response(httpStatus, body)
     }
 
     private fun createRequest(pgOrderId: String, amount: Long, card: CreditCard): MappingBuilder {

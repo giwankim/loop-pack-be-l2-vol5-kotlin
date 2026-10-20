@@ -49,6 +49,7 @@ springBootStarterKafka = { module = "org.springframework.boot:spring-boot-starte
 springBootStarterKafkaTest = { module = "org.springframework.boot:spring-boot-starter-kafka-test" }
 springBootStarterDataRedis = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
 springBootStarterCache = { module = "org.springframework.boot:spring-boot-starter-cache" }
+springBootStarterRestclient = { module = "org.springframework.boot:spring-boot-starter-restclient" }
 springBootJackson = { module = "org.springframework.boot:spring-boot-jackson" }
 springBootMicrometerTracingBrave = { module = "org.springframework.boot:spring-boot-micrometer-tracing-brave" }
 springWeb = { module = "org.springframework:spring-web" }

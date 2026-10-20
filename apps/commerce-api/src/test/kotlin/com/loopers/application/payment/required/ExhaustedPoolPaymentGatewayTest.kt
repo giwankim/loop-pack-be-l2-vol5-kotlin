@@ -3,6 +3,7 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
@@ -11,6 +12,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
+import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig
@@ -27,8 +32,13 @@ import java.util.concurrent.TimeUnit
  * test 프로필의 응답 한도 200 ms에서는 두 한도가 같아 두 번째 생성이 연결을 얻을 수도 있다.
  */
 @SpringJUnitConfig(
-    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class],
+    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class, JacksonConfig::class],
     initializers = [ConfigDataApplicationContextInitializer::class],
+)
+@ImportAutoConfiguration(
+    JacksonAutoConfiguration::class,
+    HttpMessageConvertersAutoConfiguration::class,
+    RestClientAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.max-connections=1", "pg.response-timeout=1s"])
 @EnableTestPg

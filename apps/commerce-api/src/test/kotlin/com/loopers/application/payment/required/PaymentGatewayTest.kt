@@ -3,6 +3,7 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
@@ -20,6 +21,10 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.MethodSource
 import org.junit.jupiter.params.provider.ValueSource
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
+import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
@@ -34,7 +39,9 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  * [PaymentGateway]를 실제 HTTP로 테스트 PG에 보낸다(ADR 0022 규칙 6). 포트의 인터페이스만 부르고, 포트가 돌려준 값이나 던진 예외와
  * 테스트 PG가 받은 요청만 본다.
  *
- * 컨텍스트에는 어댑터만 있고 MySQL과 Redis는 없다. 설정 값은 `application.yml`을 test 프로필로 읽고 둘만 바꾼다.
+ * 컨텍스트에는 어댑터와 그 `RestClient.Builder`를 만드는 Boot의 자동 설정만 있고 MySQL과 Redis는 없다. Boot의 매퍼와 컨버터 설정,
+ * `supports/jackson`의 너그러운 설정([JacksonConfig])도 운영처럼 둔다. 그래서 JSON 해석의 테스트는 PG만의 매퍼가 builder에 먼저 들어간
+ * 너그러운 매퍼를 밀어내는지를 운영과 같은 조건에서 본다. 설정 값은 `application.yml`을 test 프로필로 읽고 둘만 바꾼다.
  * - 응답 한도는 운영의 1 s다. PG가 받은 요청 수로 숨은 재전송이 꺼졌음을 보는 테스트는 운영의 시간 한도로 돈다(ADR 0022 규칙 6).
  *   HttpClient는 응답 한도가 재시도 간격 1 s보다 짧으면 503 재시도를 스스로 건너뛰므로, test 프로필의 200 ms에서는 재시도를 끄는 스위치를
  *   지워도 요청 수가 그대로다(탐침 보고서 §3).
@@ -45,8 +52,13 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  * 연결 풀을 얻지 못한 생성은 풀의 연결 수가 다른 컨텍스트가 필요해 [ExhaustedPoolPaymentGatewayTest]에 있다.
  */
 @SpringJUnitConfig(
-    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class],
+    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class, JacksonConfig::class],
     initializers = [ConfigDataApplicationContextInitializer::class],
+)
+@ImportAutoConfiguration(
+    JacksonAutoConfiguration::class,
+    HttpMessageConvertersAutoConfiguration::class,
+    RestClientAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s", "pg.callback-url=$CALLBACK_URL"])
 @EnableTestPg
@@ -264,6 +276,26 @@ class PaymentGatewayTest(
         }
 
         assertThat(exception.cause).isNull()
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    /**
+     * PG 계약의 본문은 JSON뿐이다. JSON 문서는 YAML 문서이기도 해서, Boot의 builder가 클래스 경로에서 찾은 YAML 컨버터(Jackson 2)를
+     * 두면 그것이 이 본문을 맡는다. 그 컨버터는 PG 거래를 만들지 못해 `RestClientException`이 아닌 `HttpMessageConversionException`을
+     * 던졌고, 그 예외가 포트 밖으로 샜다. 게이트웨이의 `RestClient`에는 PG만의 JSON 컨버터 말고 PG의 본문을 읽는 컨버터가 없다(결제 설계 4.3).
+     */
+    @Test
+    fun `a 202 with a well-formed transaction labeled as YAML throws PgOutcomeUnknownException`() {
+        pg.answersCreate(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            card = CARD,
+            httpStatus = 202,
+            body = WELL_FORMED_TRANSACTION,
+            contentType = "application/yaml",
+        )
+
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
         assertThat(pg.createCount()).isEqualTo(1)
     }
 

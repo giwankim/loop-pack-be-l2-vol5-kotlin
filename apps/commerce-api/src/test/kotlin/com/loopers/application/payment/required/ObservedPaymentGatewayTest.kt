@@ -3,6 +3,7 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -15,6 +16,11 @@ import io.micrometer.observation.ObservationRegistry
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
+import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
+import org.springframework.boot.restclient.autoconfigure.RestClientObservationAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
@@ -26,13 +32,25 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * observation registry가 있으면 PG 호출도 다른 HTTP client 호출처럼 `http.client.requests`로 기록된다. 운영의 컨텍스트에는 Boot가 만든
  * registry가 있고, [PaymentGatewayTest]의 가벼운 컨텍스트에는 없다. registry를 더하면 컨텍스트가 하나 더 뜨므로 이 장면만 클래스로 떼어 낸다.
+ * 운영처럼 Boot의 `RestClientObservationAutoConfiguration`이 그 registry를 게이트웨이가 받는 `RestClient.Builder`에 단다.
  *
  * registry에는 멈춘 observation을 모으는 handler 하나만 단다. 기록되는지와 그 낮은 카디널리티 값만 보고, 측정값을 내보내는 쪽은 보지 않는다.
  * 다른 게이트웨이 테스트처럼 운영의 응답 한도 1 s로 돈다.
  */
 @SpringJUnitConfig(
-    classes = [LocalPgGatewayConfig::class, LocalPgGateway::class, ObservedPaymentGatewayTest.ObservationConfig::class],
+    classes = [
+        LocalPgGatewayConfig::class,
+        LocalPgGateway::class,
+        JacksonConfig::class,
+        ObservedPaymentGatewayTest.ObservationConfig::class,
+    ],
     initializers = [ConfigDataApplicationContextInitializer::class],
+)
+@ImportAutoConfiguration(
+    JacksonAutoConfiguration::class,
+    HttpMessageConvertersAutoConfiguration::class,
+    RestClientAutoConfiguration::class,
+    RestClientObservationAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s"])
 @EnableTestPg
