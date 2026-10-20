@@ -1,6 +1,6 @@
 # Week 5 PG adapter: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket's closing comment. The rules behind it are in [ADR 0021](../adr/0021-payment-is-its-own-aggregate-and-slice.md) and [ADR 0022](../adr/0022-only-the-pre-create-rejection-proves-no-pg-transaction.md).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket's closing comment, and the last from the spec's review comment. The rules behind it are in [ADR 0021](../adr/0021-payment-is-its-own-aggregate-and-slice.md) and [ADR 0022](../adr/0022-only-the-pre-create-rejection-proves-no-pg-transaction.md).
 
 ## Issue 140: an accepted create crosses the payment gateway to the test PG
 
@@ -333,3 +333,87 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 - the "one dropped GET" count is the baseline that step 3's lookup retry will change.
 
 Each step appends its own section to the doc.
+
+## Spec 138: the step 1 spec review
+
+Recorded 2026-10-20 from the [spec review comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138#issuecomment-6282434408) of [spec 138](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138). The review ran both axes of a code review over the whole branch, after all six tickets had closed.
+
+Spec review on 2026-10-20: `feat/pg-adapter` (HEAD `757635e` at review time) against `week5` (`6bb6e6c`, the branch's merge-base), on two axes: this spec and the coding standards. Tickets 139–144 are all closed.
+
+### Result: 52 of 52 stories met
+
+The review found 51 met, 1 partial and 0 missing. The partial story was fixed in [`1edd322`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/1edd322).
+
+- **Story 43** ("PG calls recorded through the observation registry") was wired (`observationRegistry.ifAvailable`), but neither gateway test context had a registry, so no test showed it. `ObservedPaymentGatewayTest` adds one. A create and a key lookup are each recorded as `http.client.requests`, and the lookup's `uri` tag is the template `/api/v1/payments/{transactionKey}`, not the key.
+  - Mutation check: without the `ifAvailable` line both tests fail with `List is empty`.
+
+Two Implementation Decisions with no story of their own had no test either. They are tested now:
+- **The key as a path variable** (`1edd322`): a key with a space and a `?` reaches the PG as one encoded path segment. Concatenating the key into the path turns the test red. `TestPg`'s key-lookup stub now encodes the key the way a URI builder does, because WireMock compares the raw path.
+- **Negative and fractional amounts** ([`723d45c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/723d45c)) are unreadable on create and both lookups. Without the `pgMoney` wrapper, `InvalidMoneyException` escapes the port, against story 39. With `ACCEPT_FLOAT_AS_INT` back on, `7000.5` comes back `Accepted` or `Found`. Each mutation turns exactly the three matching cases red.
+
+### Decided in this review
+
+- **141's open question is settled** ([`fbe0c22`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/fbe0c22)). A payment failed by a matching pre-create rejection has no transaction key. If it later hears a matching PG transaction, the answer is now `Conflicted(TRANSACTION_AFTER_REJECTION)`, whatever the PG status. Before, only `SUCCESS` was a conflict (`RESULT_MISMATCH`), and `PENDING` and `FAILED` came back `Unchanged`. ADR 0022 says the rejection proves no PG transaction exists, so any later one contradicts it.
+  - The new test ran red first: `PENDING` and `FAILED` came back `Unchanged`, `SUCCESS` came back `RESULT_MISMATCH`.
+  - This spec's reconcile table, design doc 2.3, the `CONTEXT.md` conflict entry and ADR 0022 rule 2 carry the new row. The open point in design doc §8 is gone. `ConflictReason` has six values.
+- **The week 4 Redis reading list left the branch** ([`5c4500e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/5c4500e)). It came in with `7a8a431` and nothing linked to it. It is a personal study guide, so it moved to the gitignored `.notes/`.
+
+### Fixed in this review
+
+[`84d7f33`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/84d7f33) (standards):
+- **Glossary:** bare 거래 became PG 거래 in 25 KDoc lines, and in `CONTEXT.md`'s PG status entry, which `PgStatus` had copied. 거래 키 stays, because it is its own term.
+- **Named arguments:** `PaymentGatewayTest` passes `PgTransaction` and `PgRejection` by name (`CODING_STANDARDS.md`, Fixture). Two adjacent `String`s could have swapped silently. The key it spelled 32 times is now `TRANSACTION_KEY`, and the 2xx test reuses `WELL_FORMED_TRANSACTION`.
+- **Names:**
+  - stubbed PG bodies are `body`, since `json` names request JSON (`CODING_STANDARDS.md`, HTTP tests);
+  - `LocalPgGateway`'s private lookups are `retrieve` and `list`, to mirror the private `create`;
+  - `TestPg.stalls` is `stallsCreate`, next to `stallsLookup`.
+- **Stale comments:**
+  - `PaymentGatewayTest` claimed "the only slow scene" and "unlike the other test-PG tests";
+  - `application.yml` said only `PaymentGatewayTest` runs at 1 s (`1edd322`).
+
+### Spec text amended
+
+Dated "2026-10-20" notes in this issue's body:
+- **Reconcile table:** the rejection row above.
+- **Testing Decisions, "이름":** the assignment's command does not fail with "No tests found". It runs only `HexagonalArchitectureTest`'s 7 rules and ends `BUILD SUCCESSFUL`, so the PR quotes design doc 7.2 instead.
+- **Seam 1:** there are three slow scenes, not one, and a third gateway test class.
+- **Further Notes:**
+  - the spike report moved in `ca18a76`;
+  - the values decided during implementation (blank key, negative or fractional amount, `null` array element, the Jetty pin).
+
+### Recorded deviations and open points
+
+- **`idempotency_key` compares case-insensitively** (`utf8mb4_general_ci`), so keys that differ only in case collide. That narrows story 22's "the key identifies exactly one payment". Step 2 decides it together with the key's request shape (design doc §8).
+- **The table is `payment`.** This is already in the spec's storage note.
+- **Jetty EE10 is pinned in the catalog,** with a configuration-time check against Boot's `jetty.version`. This is the fallback the spec allowed.
+- **`docs/research/week5-pg-adapter-writing-material.md`** is drafted material, not the write-up that Out of Scope excludes.
+- **143's step 3 leftovers** stay in design doc §8: the shared `lookupCount()`, and stall and drop scenes that match any lookup.
+
+### Declined review suggestions
+
+- **Duplication in `LocalPgGateway`:**
+  - three `try`/`catch` → `failureKind()` blocks;
+  - two `?: throw` lines;
+  - three log summaries;
+  - the create path's inline log branch.
+
+  Each maps to a different result type or works out the HTTP status differently. A shared helper would cover three-line uses of different shapes.
+- **Message chains** at the two `as?` reads in `LocalPgGateway`: they only feed the log line.
+- **The 200 ms test-profile timeout:** story 41 asks for it. Step 2 and step 3 business tests will use it.
+- **`TestPg`'s default `callbackUrl` copying `application.yml`:** the create stubs match the exact JSON body, so any drift fails every create test.
+- **The create scenes' `(pgOrderId, amount, card)` and the string `pgStatus`:** step 2's tests will hold a `Payment`, so the scene signatures are step 2's to shape.
+- **No CHECK constraints on `payment`** (positive amount, conflict reason and time set together): the storage decision names exactly the keys, and the entity guards both.
+- **`InvalidPaymentException` next to `domain.point.InvalidPaymentAmountException`:** the older name belongs to point payment, which step 2 reworks. Rename it there.
+- **A scalar FK needing edits in three places:** [issue 145](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/145) looks at a migration tool.
+
+### Verification
+
+- `./gradlew cleanTest check` from the root at `723d45c`, which includes every module's `ktlintCheck`, ended `BUILD SUCCESSFUL`.
+  - commerce-api: 731 tests in 68 classes, with 0 failures, 0 errors and 0 skips. That is 719 from issue 144, plus 3 for the rejection rule, 1 for the path encoding, 2 for the observations and 6 for the amounts. The extra class is `ObservedPaymentGatewayTest`.
+  - commerce-batch: 3 tests. supports/jackson: 2 tests.
+- **Payment classes:**
+  - `PaymentGatewayTest` 89, `ExhaustedPoolPaymentGatewayTest` 1, `ObservedPaymentGatewayTest` 2;
+  - `PaymentTest` 50, `PaymentRepositoryTest` 9, `PaymentFixturesTest` 4, `CardTest` 1;
+  - `HexagonalArchitectureTest` 7.
+
+  Design doc 7.2 carries the new per-class counts.
