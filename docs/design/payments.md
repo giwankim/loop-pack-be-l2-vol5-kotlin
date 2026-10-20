@@ -208,7 +208,7 @@ PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderI
 
 - 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
-- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
+- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 - 포트의 예외는 `exchange` 안에서도 던지므로 observation의 `exception`에 그 이름이 남는다. 422의 생성 전 거절, 202가 아닌 생성 응답, 200·404가 아닌 조회 응답이 그렇다. 받아들여진 생성과 찾은 조회(404 포함)만 오류가 없다(ADR 0023의 대가). 테스트는 이 값을 보지 않는다.
 
 ## 4. 클라이언트 설정
@@ -233,6 +233,7 @@ dev·qa·prd에서 환경 변수가 빠지면 시작이 아니라 첫 호출에�
 - **HttpClient 5인 까닭.** 조사([RestClient 시간 한도와 숨은 재시도](../research/rest-client-timeouts-and-http-fixtures.md) §7)는 JDK client를 먼저 꼽았다. 그러나 JDK client에는 풀 크기와 풀 대기의 한도가 없고, 응답 전에 닫힌 연결에 GET을 다시 보내는 것을 끌 스위치가 없으며, 재시도 플래그는 JVM 전체의 시스템 속성이다. HttpClient 5는 풀, 풀 대기, 재전송의 스위치를 클라이언트마다 가진다. 대가는 기본값이 재전송한다는 것이고, 위의 두 스위치와 계약 테스트의 요청 수가 그것을 막는다.
 - **시간 한도는 실제 request factory가 쓰는 HttpClient에 둔다.** 연결 한도는 연결 풀의 `ConnectionConfig`가, 풀 대기와 응답 한도는 `RequestConfig`가 맡는다. factory에는 한도를 주지 않으므로 HttpClient의 설정이 그대로 쓰인다. factory는 빈이라 컨텍스트가 닫힐 때 HttpClient와 풀도 닫힌다.
 - **스타터를 들이지 않는다.** Boot의 HTTP client 설정은 재시도와 풀 대기를 다루지 않는다. HTTP Service Clients도 들이지 않았다([ADR 0008](../adr/0008-upgrade-to-spring-boot-4-1-ahead-of-the-template.md)의 2026-10-19 메모). `RestClient.builder()`에 request factory를 직접 준다. factory를 주지 않으면 클래스 경로에 따라 client가 바뀐다. 테스트 클래스 경로에는 WireMock이 HttpClient 5와 Jetty client를 들이므로, 운영과 테스트가 다른 client로 돌 수 있었다(탐침 §7의 2).
+- **게이트웨이는 컴포넌트 스캔으로 등록한다.** `LocalPgGateway`는 `@Component`이고, `LocalPgGatewayConfig`는 request factory와 PG만의 `RestClient`(`pgRestClient`)를 빈으로 만든다. 게이트웨이는 그 `RestClient`와 `PgProperties`를 받아 알림 주소를 읽는다. `adapter.persistence`의 구현처럼 어댑터 클래스가 스스로 등록된다. kotlin-spring 플러그인은 `@Component` 클래스를 열고 `@Bean`으로만 등록한 클래스는 `final`로 두므로, 3단계가 이 빈에 프록시를 씌우게 되어도 막히지 않는다([Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)). (2026-10-20, 그 전에는 설정의 `@Bean` 메서드가 게이트웨이를 만들었다.)
 - **`retrieve()`가 아니라 `exchange`로 받는다.** `retrieve()`는 4xx·5xx에 던지는 상태 처리기를 더하므로, catch 하나가 결과 미확인을 실패로 바꾸기 쉽다. `exchange`는 상태 처리기를 거치지 않아 상태 코드를 값으로 다룬다. 호출마다 `catch (RestClientException)` 하나가 전송 예외(`ResourceAccessException`), Jackson의 해석 오류, 어댑터의 `UnreadablePgResponseException`을 결과 미확인이나 조회 불가로 옮긴다.
 
 ### 4.3 엄격한 JSON 매퍼
@@ -278,7 +279,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **`@EnableTestPg`**가 `@EnableWireMock(ConfigureWireMock(name = "pg", baseUrlProperties = ["pg.base-url"], configurationCustomizers = [TestPgConfigurationCustomizer::class]))`를 감싼다. customizer는 서버를 `127.0.0.1`에 묶고 h2c를 끈다. WireMock의 기본값은 `0.0.0.0`에 묶고 h2c를 알린다. PG를 쓰는 테스트는 모두 이 애노테이션을 달아, 같은 설정끼리 컨텍스트와 서버를 나눠 쓴다.
 - 서버는 `@InjectWireMock("pg") lateinit var` 필드로 받아 `TestPg`로 감싼다. 생성자 주입의 하나뿐인 예외다. `spring.test.constructor.autowire.mode=all`이면 생성자 파라미터를 `SpringExtension`과 WireMock의 resolver가 함께 맡으려다 실패한다.
 - 스텁과 요청 기록은 테스트 메서드마다 지워진다(라이브러리 기본값).
-- 1단계의 두 게이트웨이 테스트는 운영의 `LocalPgGatewayConfig`를 그대로 읽고, 테스트만의 설정 클래스가 없다. 2·3단계가 PG 테스트에 설정 클래스를 더하면 `@TestConfiguration`으로 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
+- 1단계의 두 게이트웨이 테스트는 운영의 `LocalPgGatewayConfig`와 `LocalPgGateway`를 그대로 읽고, 테스트만의 설정 클래스가 없다. 2·3단계가 PG 테스트에 설정 클래스를 더하면 `@TestConfiguration`으로 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
 - **Jetty 판.** wiremock-spring-boot는 Jetty EE10을 12.1.6에 묶고, Boot는 Jetty core 12.1.12를 관리한다. 카탈로그가 `jettyEe10 = "12.1.12"`를 고정해 EE10 BOM을 가져오고, 설정 시점의 검사가 Boot의 `jetty.version`과 다르면 빌드를 멈춘다. Boot의 판을 읽어 쓰지 못한 것은 dependency-management 플러그인의 가져온 속성을 읽으면 그 뒤의 가져오기가 조용히 무시되기 때문이다([issue 140](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/140)).
 
 ### 6.2 장면(`TestPg`)
@@ -306,7 +307,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ### 6.3 계약 테스트가 운영의 시간 한도로 도는 까닭
 
-`PaymentGatewayTest`는 어댑터의 설정만 담은 가벼운 컨텍스트(`@SpringJUnitConfig(LocalPgGatewayConfig)`, MySQL과 Redis 없음)에 `@EnableTestPg`를 단다. `application.yml`을 test 프로필로 읽고 둘만 바꾼다. 응답 한도를 운영의 1 s로, 알림 주소를 test 프로필과 다른 값으로 둔다. 다른 알림 주소가 정확한 본문의 스텁에 맞으면, 어댑터가 그 주소를 설정에서 읽은 것이다.
+`PaymentGatewayTest`는 어댑터만 담은 가벼운 컨텍스트(`@SpringJUnitConfig(LocalPgGatewayConfig, LocalPgGateway)`, MySQL과 Redis 없음)에 `@EnableTestPg`를 단다. `application.yml`을 test 프로필로 읽고 둘만 바꾼다. 응답 한도를 운영의 1 s로, 알림 주소를 test 프로필과 다른 값으로 둔다. 다른 알림 주소가 정확한 본문의 스텁에 맞으면, 어댑터가 그 주소를 설정에서 읽은 것이다.
 
 응답 한도를 1 s로 두는 것은 재전송을 지키는 테스트가 헛돌지 않게 하기 위해서다. HttpClient 5는 응답 한도가 재시도 간격 1초보다 짧으면 상태 코드의 재시도를 스스로 건너뛴다. 탐침의 대조군에서, 재시도를 켠 client가 503에 응답 한도 200 ms에서는 POST를 1번, 2 s에서는 1025 ms 뒤 2번 보냈다. test 프로필의 200 ms에서는 `disableAutomaticRetries()`를 지워도 "503에 POST 1번"이 통과한다(ADR 0022 규칙 6).
 
