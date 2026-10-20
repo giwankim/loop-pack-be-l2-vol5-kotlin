@@ -355,6 +355,26 @@ class PaymentGatewayTest(
     }
 
     /**
+     * 거래 키는 URI builder의 경로 변수라 공백과 `?`까지 인코딩된다. 값을 경로에 그대로 이어 붙이면 공백은 URI가 되지 못하고, `?` 뒤는
+     * query가 되어 스텁이 정확히 맞추는 경로와 다르다.
+     */
+    @Test
+    fun `a key lookup sends the transaction key as one encoded path segment even with reserved characters`() {
+        val transaction = PgTransaction(
+            transactionKey = "TEST TX?0042",
+            pgOrderId = PG_ORDER_ID,
+            amount = Money(AMOUNT),
+            status = PgStatus.SUCCESS,
+        )
+        pg.hasTransaction(transaction)
+
+        val result = paymentGateway.retrieveTransaction(transaction.transactionKey)
+
+        assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(transaction)))
+        assertThat(pg.lookupCount()).isEqualTo(1)
+    }
+
+    /**
      * PG 주문 번호는 URI builder의 query 변수라 `+`와 `&`까지 인코딩된다. 값을 query에 그대로 이어 붙이면 `&`가 query를 둘로 가르고,
      * PG는 `+`를 공백으로 읽는다. 어느 쪽이든 스텁이 정확히 맞추는 `orderId`와 다르다.
      */

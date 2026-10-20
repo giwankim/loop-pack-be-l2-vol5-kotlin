@@ -205,7 +205,7 @@ PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderI
 
 - 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. `cause`는 예외 사슬의 맨 안쪽 타입 이름이다.
 - `Card`의 문자열 형태는 `Card(type=TEST, number=****)`다. 카드가 실수로 로그에 찍혀도 번호는 새지 않는다.
-- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다.
+- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 
 ## 4. 클라이언트 설정
 
@@ -328,10 +328,10 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ### 7.2 1단계의 명령
 
 ```bash
-# PaymentGatewayTest(82)와 ExhaustedPoolPaymentGatewayTest(1). 필터가 둘 다 맞는다.
+# PaymentGatewayTest(83), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
 
-# PaymentTest(47)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
+# PaymentTest(50)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentTest' --tests '*PaymentRepositoryTest'
 
 # 끝의 전체 확인

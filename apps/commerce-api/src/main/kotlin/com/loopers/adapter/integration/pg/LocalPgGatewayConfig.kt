@@ -67,7 +67,7 @@ class LocalPgGatewayConfig {
 
     /**
      * 기본 헤더 `X-USER-ID`와 PG만의 매퍼를 단 `RestClient`로 게이트웨이를 만든다. observation registry가 있으면 다른 HTTP client 호출처럼
-     * PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 registry가 없다.
+     * PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 registry가 없고, `ObservedPaymentGatewayTest`가 하나를 더해 기록을 본다.
      */
     @Bean
     fun localPgGateway(

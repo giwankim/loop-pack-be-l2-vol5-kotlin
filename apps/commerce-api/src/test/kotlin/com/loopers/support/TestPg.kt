@@ -19,6 +19,8 @@ import com.github.tomakehurst.wiremock.http.Fault
 import com.github.tomakehurst.wiremock.verification.LoggedRequest
 import com.loopers.domain.payment.Card
 import com.loopers.domain.payment.PgTransaction
+import org.springframework.web.util.UriUtils
+import java.nio.charset.StandardCharsets
 
 /**
  * 테스트 PG([EnableTestPg])의 장면에 이름을 붙이고, PG가 받은 요청을 센다.
@@ -175,8 +177,9 @@ class TestPg(
             .withHeader("X-USER-ID", equalTo(USER_ID))
     }
 
+    /** 거래 키 조회. WireMock은 경로를 디코딩하지 않고 견주므로, 경로의 거래 키를 URI builder처럼 인코딩해 맞춘다. */
     private fun retrieveRequest(transactionKey: String): MappingBuilder {
-        return get(urlPathEqualTo("$PAYMENTS_PATH/$transactionKey"))
+        return get(urlPathEqualTo("$PAYMENTS_PATH/${UriUtils.encodePathSegment(transactionKey, StandardCharsets.UTF_8)}"))
             .withHeader("X-USER-ID", equalTo(USER_ID))
     }
 

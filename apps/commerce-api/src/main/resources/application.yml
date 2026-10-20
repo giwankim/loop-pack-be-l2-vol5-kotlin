@@ -66,7 +66,7 @@ spring:
     activate:
       on-profile: test
 
-# 시간 초과 장면이 오래 걸리지 않게 줄인다. 게이트웨이의 계약 테스트(PaymentGatewayTest)만 운영의 1 s로 돈다(ADR 0022 규칙 6).
+# 시간 초과 장면이 오래 걸리지 않게 줄인다. 게이트웨이 테스트(*PaymentGatewayTest)는 이것을 덮어 운영의 1 s로 돈다(ADR 0022 규칙 6).
 pg:
   response-timeout: 200ms
 
