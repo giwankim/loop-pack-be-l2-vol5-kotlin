@@ -169,7 +169,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 ### 3.3 응답에서 결과로
 
-아래 표의 "잘 짜인 PG 거래"는 이렇다. 네 필드가 모두 있다. `transactionKey`는 공백뿐이지 않다. 그 키로는 PG 거래를 다시 조회할 수 없기 때문이다. `amount`는 0 이상의 JSON 정수다(문자열도 소수도 아니다). `status`는 `PENDING`, `SUCCESS`, `FAILED` 중 하나다. 모르는 속성은 무시한다.
+아래 표의 "잘 짜인 PG 거래"는 이렇다. 본문은 JSON(`Content-Type: application/json`)이다(4.3). 네 필드가 모두 있다. `transactionKey`는 공백뿐이지 않다. 그 키로는 PG 거래를 다시 조회할 수 없기 때문이다. `amount`는 0 이상의 JSON 정수다(문자열도 소수도 아니다). `status`는 `PENDING`, `SUCCESS`, `FAILED` 중 하나다. 모르는 속성은 무시한다.
 
 | 호출 | 응답 | 결과 |
 | --- | --- | --- |
@@ -208,7 +208,7 @@ PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderI
 
 - 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
-- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
+- observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. Boot의 `RestClientObservationAutoConfiguration`이 게이트웨이가 받는 `RestClient.Builder`에 registry를 단다(2026-10-20, 그 전에는 설정이 `ObjectProvider`로 직접 달았다). 어댑터만 담은 테스트 컨텍스트에는 registry가 없다. `ObservedPaymentGatewayTest`가 registry와 그 자동 설정을 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 - 포트의 예외는 `exchange` 안에서도 던지므로 observation의 `exception`에 그 이름이 남는다. 422의 생성 전 거절, 202가 아닌 생성 응답, 200·404가 아닌 조회 응답이 그렇다. 받아들여진 생성과 찾은 조회(404 포함)만 오류가 없다(ADR 0023의 대가). 테스트는 이 값을 보지 않는다.
 
 ## 4. 클라이언트 설정
@@ -227,18 +227,18 @@ PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderI
 
 dev·qa·prd에서 환경 변수가 빠지면 시작이 아니라 첫 호출에서 실패한다. `redis.yml`과 같은 모양이다.
 
-### 4.2 Apache HttpClient 5, 스타터 없이
+### 4.2 Apache HttpClient 5와 Boot의 `RestClient.Builder`
 
 - **숨은 재전송을 모두 끈다.** HttpClient 5의 기본값은 429·503에 POST를 1초 뒤 한 번 더 보내고, 307·308에는 본문까지 복사해 따라가고, `IOException`에 GET을 한 번 더 보낸다. Spring의 Jackson 본문은 다시 쓸 수 있는 본문이라 막히지 않는다. `disableAutomaticRetries()`와 `disableRedirectHandling()`을 켠다(ADR 0022 규칙 5). 변이 실행에서 둘을 하나씩 빼면 429·503에 POST가 2번, 끊긴 GET이 2번 갔고, 307은 따라갔다.
 - **HttpClient 5인 까닭.** 조사([RestClient 시간 한도와 숨은 재시도](../research/rest-client-timeouts-and-http-fixtures.md) §7)는 JDK client를 먼저 꼽았다. 그러나 JDK client에는 풀 크기와 풀 대기의 한도가 없고, 응답 전에 닫힌 연결에 GET을 다시 보내는 것을 끌 스위치가 없으며, 재시도 플래그는 JVM 전체의 시스템 속성이다. HttpClient 5는 풀, 풀 대기, 재전송의 스위치를 클라이언트마다 가진다. 대가는 기본값이 재전송한다는 것이고, 위의 두 스위치와 계약 테스트의 요청 수가 그것을 막는다.
 - **시간 한도는 실제 request factory가 쓰는 HttpClient에 둔다.** 연결 한도는 연결 풀의 `ConnectionConfig`가, 풀 대기와 응답 한도는 `RequestConfig`가 맡는다. factory에는 한도를 주지 않으므로 HttpClient의 설정이 그대로 쓰인다. factory는 빈이라 컨텍스트가 닫힐 때 HttpClient와 풀도 닫힌다.
-- **스타터를 들이지 않는다.** Boot의 HTTP client 설정은 재시도와 풀 대기를 다루지 않는다. HTTP Service Clients도 들이지 않았다([ADR 0008](../adr/0008-upgrade-to-spring-boot-4-1-ahead-of-the-template.md)의 2026-10-19 메모). `RestClient.builder()`에 request factory를 직접 준다. factory를 주지 않으면 클래스 경로에 따라 client가 바뀐다. 테스트 클래스 경로에는 WireMock이 HttpClient 5와 Jetty client를 들이므로, 운영과 테스트가 다른 client로 돌 수 있었다(탐침 §7의 2).
-- **게이트웨이는 컴포넌트 스캔으로 등록한다.** `LocalPgGateway`는 `@Component`이고, `LocalPgGatewayConfig`는 request factory와 PG만의 `RestClient`(`pgRestClient`)를 빈으로 만든다. 게이트웨이는 그 `RestClient`와 `PgProperties`를 받아 알림 주소를 읽는다. `adapter.persistence`의 구현처럼 어댑터 클래스가 스스로 등록된다. kotlin-spring 플러그인은 `@Component` 클래스를 열고 `@Bean`으로만 등록한 클래스는 `final`로 두므로, 3단계가 이 빈에 프록시를 씌우게 되어도 막히지 않는다([Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)). (2026-10-20, 그 전에는 설정의 `@Bean` 메서드가 게이트웨이를 만들었다.)
+- **Boot의 `RestClient.Builder`에 request factory를 직접 준다.** `spring-boot-starter-restclient`를 들여, 게이트웨이가 Boot가 미리 설정한 `RestClient.Builder`(prototype)를 받는다(2026-10-20, 그 전에는 스타터 없이 `RestClient.builder()`로 만들었다). observation과 `RestClientCustomizer`가 그 builder로 온다. Boot의 HTTP client 설정(`spring.http.clients.*`)은 재시도와 풀 대기를 다루지 않으므로 쓰지 않고, builder의 request factory를 `pgRequestFactory`로 바꾼다. factory를 바꾸지 않으면 클래스 경로에 따라 client가 바뀐다. 테스트 클래스 경로에는 WireMock이 HttpClient 5와 Jetty client를 들이므로, 운영과 테스트가 다른 client로 돌 수 있었다(탐침 §7의 2). Boot는 builder를 줄 때마다 자기 request factory를 먼저 만들어 두므로, 쓰이지 않는 HttpClient가 하나 생긴다. 그것으로는 연결을 열지 않는다. HTTP Service Clients는 들이지 않았다([ADR 0008](../adr/0008-upgrade-to-spring-boot-4-1-ahead-of-the-template.md)의 2026-10-19 메모).
+- **게이트웨이는 컴포넌트 스캔으로 등록한다.** `LocalPgGateway`는 `@Component`이고, Boot의 `RestClient.Builder`, `pgRequestFactory`, `PgProperties`를 받아 `RestClient`를 스스로 만든다. `LocalPgGatewayConfig`에는 request factory 빈과 `PgProperties`의 등록만 남는다. builder를 받아 컴포넌트가 만드는 것은 [Boot 문서](https://docs.spring.io/spring-boot/reference/io/rest-client.html#io.rest-client.restclient)의 모양이고, `adapter.persistence`의 구현처럼 어댑터 클래스가 스스로 등록된다. kotlin-spring 플러그인은 `@Component` 클래스를 열고 `@Bean`으로만 등록한 클래스는 `final`로 두므로, 3단계가 이 빈에 프록시를 씌우게 되어도 막히지 않는다([Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)). (2026-10-20, 그 전에는 설정의 `@Bean` 메서드가 게이트웨이를, 이어서 `RestClient`를 만들었다.)
 - **`retrieve()`가 아니라 `exchange`로 받는다.** `retrieve()`는 4xx·5xx에 던지는 상태 처리기를 더하므로, catch 하나가 결과 미확인을 실패로 바꾸기 쉽다. `exchange`는 상태 처리기를 거치지 않아 상태 코드를 값으로 다룬다. 호출마다 `catch (RestClientException)` 하나가 전송 예외(`ResourceAccessException`), Jackson의 해석 오류, 어댑터의 `UnreadablePgResponseException`을 결과 미확인이나 조회 불가로 옮긴다.
 
 ### 4.3 엄격한 JSON 매퍼
 
-어댑터는 PG의 JSON만 읽고 쓰는 `JsonMapper`를 따로 가진다. `RestClient`에 컨버터를 직접 정하면 기본 컨버터를 더하지 않으므로 이것이 유일한 컨버터다.
+어댑터는 PG의 JSON만 읽고 쓰는 `JsonMapper`를 따로 가진다.
 
 - 단일 값을 배열로 읽지 않는다(`ACCEPT_SINGLE_VALUE_AS_ARRAY` 끔).
 - 빈 문자열을 null로 읽지 않는다(`ACCEPT_EMPTY_STRING_AS_NULL_OBJECT` 끔).
@@ -248,6 +248,12 @@ dev·qa·prd에서 환경 변수가 빠지면 시작이 아니라 첫 호출에�
 - 모르는 속성은 무시한다(`FAIL_ON_UNKNOWN_PROPERTIES` 끔). PG가 필드를 더해도 계약의 필드만 읽는다.
 
 **Boot의 매퍼와 따로 둔 까닭.** Boot의 매퍼(`supports/jackson`)는 우리 API를 부르는 클라이언트를 너그럽게 받으려고 `ACCEPT_SINGLE_VALUE_AS_ARRAY`와 `ACCEPT_EMPTY_STRING_AS_NULL_OBJECT`를 켠다. 그 너그러움이 남의 계약을 읽는 데 새면, 계약에 없는 JSON을 조용히 읽는다. `"transactionCreated": "false"`를 `false`로 읽으면 증거가 아닌 422가 거절이 된다. Boot의 매퍼와 `supports/jackson`은 바꾸지 않았다.
+
+**PG의 본문을 읽는 컨버터는 이 매퍼의 것 하나다.** Boot의 컨버터 설정은 builder에 `registerDefaults()`와 Boot의 매퍼를 단 JSON 컨버터를 넣어 둔다. 게이트웨이의 설정은 그 뒤에 돌아, `disableDefaults()`로 클래스 경로에서 찾는 컨버터를 끄고 한 자리인 JSON 컨버터를 이 매퍼의 것으로 바꾼다. 남는 것은 Boot의 String 컨버터, form 컨버터와 이 JSON 컨버터이고, PG의 본문 타입을 읽고 쓰는 것은 이 JSON 컨버터뿐이다(2026-10-20 전체 컨텍스트에서 확인).
+
+- `disableDefaults()`가 없으면 클래스 경로의 Jackson 2 YAML 컨버터와 JAXB 컨버터가 들어온다. JSON 문서는 YAML 문서이기도 해서, `Content-Type: application/yaml`의 202는 YAML 컨버터가 맡았다. 그 컨버터는 PG 거래를 만들지 못해 `HttpMessageConversionException`을 던졌고, 그 예외는 `RestClientException`이 아니라서 포트 밖으로 샜다. `PaymentGatewayTest`가 이 장면을 지킨다.
+- Boot의 컨버터 설정은 `HttpMessageConverter` 빈을 모두 맞춤 컨버터로 넣고, 맞춤 컨버터는 JSON 컨버터보다 앞선다. `disableDefaults()`는 그것을 막지 않는다. 지금 그런 빈은 없다. JSON을 읽는 컨버터 빈을 더하면 PG의 응답도 그것이 먼저 읽는다.
+- 게이트웨이 테스트의 컨텍스트에는 Boot의 매퍼, 컨버터 설정, `JacksonConfig`를 운영처럼 둔다(6.1). 엄격한 매퍼를 빼는 변이 실행에서 JSON 해석의 테스트 9개가 실패했다.
 
 매퍼가 보지 못하는 것은 어댑터가 본다. 공백뿐인 거래 키, 모르는 PG 상태, 음수 금액, 배열의 `null` 원소다. 마지막은 Kotlin 모듈의 null 검사가 생성자 파라미터에만 걸리고 최상위 `ParameterizedTypeReference`의 타입 인자는 보지 못해서다. [issue 143](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/143)에서 고치기 전에는 `[null]`이 `NullPointerException`으로 포트 밖에 나갔다.
 
@@ -279,7 +285,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **`@EnableTestPg`**가 `@EnableWireMock(ConfigureWireMock(name = "pg", baseUrlProperties = ["pg.base-url"], configurationCustomizers = [TestPgConfigurationCustomizer::class]))`를 감싼다. customizer는 서버를 `127.0.0.1`에 묶고 h2c를 끈다. WireMock의 기본값은 `0.0.0.0`에 묶고 h2c를 알린다. PG를 쓰는 테스트는 모두 이 애노테이션을 달아, 같은 설정끼리 컨텍스트와 서버를 나눠 쓴다.
 - 서버는 `@InjectWireMock("pg") lateinit var` 필드로 받아 `TestPg`로 감싼다. 생성자 주입의 하나뿐인 예외다. `spring.test.constructor.autowire.mode=all`이면 생성자 파라미터를 `SpringExtension`과 WireMock의 resolver가 함께 맡으려다 실패한다.
 - 스텁과 요청 기록은 테스트 메서드마다 지워진다(라이브러리 기본값).
-- 1단계의 두 게이트웨이 테스트는 운영의 `LocalPgGatewayConfig`와 `LocalPgGateway`를 그대로 읽고, 테스트만의 설정 클래스가 없다. 2·3단계가 PG 테스트에 설정 클래스를 더하면 `@TestConfiguration`으로 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
+- 1단계의 세 게이트웨이 테스트(`PaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `ObservedPaymentGatewayTest`)는 운영의 `LocalPgGatewayConfig`, `LocalPgGateway`와 `supports/jackson`의 `JacksonConfig`를 그대로 읽는다. Boot의 자동 설정은 `@ImportAutoConfiguration`으로 게이트웨이의 builder를 만드는 것만 고른다. Jackson, 컨버터, `RestClient.Builder`이고, `ObservedPaymentGatewayTest`는 RestClient의 observation을 더한다. 테스트만의 설정 클래스는 `ObservedPaymentGatewayTest`의 registry 하나이고 `@TestConfiguration`이다. PG 테스트에 설정 클래스를 더하면 그렇게 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
 - **Jetty 판.** wiremock-spring-boot는 Jetty EE10을 12.1.6에 묶고, Boot는 Jetty core 12.1.12를 관리한다. 카탈로그가 `jettyEe10 = "12.1.12"`를 고정해 EE10 BOM을 가져오고, 설정 시점의 검사가 Boot의 `jetty.version`과 다르면 빌드를 멈춘다. Boot의 판을 읽어 쓰지 못한 것은 dependency-management 플러그인의 가져온 속성을 읽으면 그 뒤의 가져오기가 조용히 무시되기 때문이다([issue 140](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/140)).
 
 ### 6.2 장면(`TestPg`)
@@ -291,7 +297,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | 저장 뒤 응답 유실 | `losesCreateResponse(pgOrderId, amount, card)` | 본문을 다 읽은 뒤 응답 없이 끊는다(`Fault.EMPTY_RESPONSE`). |
 | 멈춤 | `stallsCreate(pgOrderId, amount, card, transactionKey)` | 1.5 s 고정 지연 뒤 202. 운영의 응답 한도 1 s를 넘는다. |
 | 리다이렉트 | `redirectsCreate(pgOrderId, amount, card)` | 307로 `/api/v1/payments/redirected`를 가리킨다. |
-| 그 밖의 생성 응답 | `answersCreate(…, httpStatus, body)` | 주어진 상태와 본문 |
+| 그 밖의 생성 응답 | `answersCreate(…, httpStatus, body, contentType)` | 주어진 상태와 본문. 본문 형식의 기본값은 JSON이다. |
 | PG 거래 하나 | `hasTransaction(transaction)` | 그 거래 키의 조회에 200과 PG 거래 |
 | PG 거래 목록 | `hasTransactions(pgOrderId, vararg transactions)` | 목록 조회에 200과 배열. PG 거래가 없으면 빈 배열이다. |
 | 그 밖의 조회 응답 | `answersRetrieve(…)`, `answersList(…)` | 주어진 상태와 본문 |
@@ -307,7 +313,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ### 6.3 계약 테스트가 운영의 시간 한도로 도는 까닭
 
-`PaymentGatewayTest`는 어댑터만 담은 가벼운 컨텍스트(`@SpringJUnitConfig(LocalPgGatewayConfig, LocalPgGateway)`, MySQL과 Redis 없음)에 `@EnableTestPg`를 단다. `application.yml`을 test 프로필로 읽고 둘만 바꾼다. 응답 한도를 운영의 1 s로, 알림 주소를 test 프로필과 다른 값으로 둔다. 다른 알림 주소가 정확한 본문의 스텁에 맞으면, 어댑터가 그 주소를 설정에서 읽은 것이다.
+`PaymentGatewayTest`는 어댑터와 그 builder를 만드는 자동 설정만 담은 가벼운 컨텍스트(6.1, MySQL과 Redis 없음)에 `@EnableTestPg`를 단다. `application.yml`을 test 프로필로 읽고 둘만 바꾼다. 응답 한도를 운영의 1 s로, 알림 주소를 test 프로필과 다른 값으로 둔다. 다른 알림 주소가 정확한 본문의 스텁에 맞으면, 어댑터가 그 주소를 설정에서 읽은 것이다.
 
 응답 한도를 1 s로 두는 것은 재전송을 지키는 테스트가 헛돌지 않게 하기 위해서다. HttpClient 5는 응답 한도가 재시도 간격 1초보다 짧으면 상태 코드의 재시도를 스스로 건너뛴다. 탐침의 대조군에서, 재시도를 켠 client가 503에 응답 한도 200 ms에서는 POST를 1번, 2 s에서는 1025 ms 뒤 2번 보냈다. test 프로필의 200 ms에서는 `disableAutomaticRetries()`를 지워도 "503에 POST 1번"이 통과한다(ADR 0022 규칙 6).
 
@@ -333,7 +339,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ### 7.2 1단계의 명령
 
 ```bash
-# PaymentGatewayTest(89), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
+# PaymentGatewayTest(90), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
 
 # PaymentTest(50)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
