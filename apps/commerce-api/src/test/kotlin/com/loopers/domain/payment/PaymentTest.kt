@@ -377,6 +377,27 @@ class PaymentTest {
         assertThat(payment.conflictReason).isNull()
     }
 
+    /**
+     * 맞는 생성 전 거절은 PG 거래가 없다는 증거다(ADR 0022). 그 뒤에 맞는 PG 거래가 오면 PG 상태가 무엇이든 그 증거와 모순이라,
+     * 실패를 바꾸지도 거래 키를 받지도 않고 충돌로 남긴다. 실패를 말하는 PG 거래도 결과는 같지만 PG가 약속을 어긴 것이다.
+     */
+    @ParameterizedTest
+    @EnumSource(PgStatus::class)
+    fun `a matching transaction after a matching rejection records a conflict and keeps the payment failed without a key`(
+        pgStatus: PgStatus,
+    ) {
+        val payment = createPayment(orderId = 42)
+        payment.reject(PgRejection(pgOrderId = payment.pgOrderId, amount = payment.amount))
+
+        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+
+        assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_AFTER_REJECTION))
+        assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
+        assertThat(payment.transactionKey).isNull()
+        assertThat(payment.conflictReason).isEqualTo(ConflictReason.TRANSACTION_AFTER_REJECTION)
+        assertThat(payment.conflictedAt).isNotNull()
+    }
+
     @Test
     fun `a rejection leaves a payment failed by a transaction unchanged and keeps its key`() {
         val payment = paymentIn(PaymentStatus.FAILED)

@@ -102,9 +102,10 @@ class Payment(
      * 1. 0건이면 아는 것이 늘지 않아 그대로다. 찾지 못한 것은 실패가 아니다.
      * 2. 2건 이상이면 어느 것이 이 결제인지 모르므로 충돌이다.
      * 3. PG 주문 번호, 금액, 이미 아는 거래 키가 다르면 충돌이다.
-     * 4. 끝난 결제에 반대의 결과면 충돌이고, 같은 결과나 처리 중이면 그대로다.
-     * 5. 처리 중 결제에 처리 중이면 그대로다.
-     * 6. 그 밖에는 거래 키를 받고 PG 상태를 따라 앞으로 간다.
+     * 4. 생성 전 거절로 실패한 결제에는 PG 상태가 무엇이든 충돌이다. 거절은 PG 거래가 없다는 증거였다(ADR 0022).
+     * 5. 끝난 결제에 반대의 결과면 충돌이고, 같은 결과나 처리 중이면 그대로다.
+     * 6. 처리 중 결제에 처리 중이면 그대로다.
+     * 7. 그 밖에는 거래 키를 받고 PG 상태를 따라 앞으로 간다.
      */
     fun reconcile(transactions: List<PgTransaction>): ReconcileResult {
         if (transactions.isEmpty()) {
@@ -123,6 +124,11 @@ class Payment(
 
         if (transactionKey != null && transaction.transactionKey != transactionKey) {
             return conflict(ConflictReason.TRANSACTION_KEY_MISMATCH)
+        }
+
+        // 대사는 끝내기 전에 거래 키를 받으므로, 거래 키 없이 실패한 결제는 생성 전 거절로 실패한 결제다.
+        if (status == PaymentStatus.FAILED && transactionKey == null) {
+            return conflict(ConflictReason.TRANSACTION_AFTER_REJECTION)
         }
 
         val reported = transaction.status.toPaymentStatus()

@@ -92,6 +92,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | 1건, PG 주문 번호가 다름 | `Conflicted(PG_ORDER_ID_MISMATCH)` |
 | 1건, 금액이 다름 | `Conflicted(AMOUNT_MISMATCH)` |
 | 1건, 이미 아는 거래 키와 다름 | `Conflicted(TRANSACTION_KEY_MISMATCH)` |
+| 1건, 생성 전 거절로 실패한 결제(거래 키 없음) | `Conflicted(TRANSACTION_AFTER_REJECTION)` |
 | 1건, 끝난 결제에 반대의 최종 상태 | `Conflicted(RESULT_MISMATCH)` |
 | 1건, 끝난 결제에 같은 최종 상태나 `PENDING` | `Unchanged` |
 | 1건, `UNKNOWN` 결제에 `PENDING` | 거래 키를 받고 `Changed(UNKNOWN, PENDING)` |
@@ -100,6 +101,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 - 줄의 차례가 규칙이다. 한 `SUCCESS` 결제가 여러 규칙을 함께 어긴 `SUCCESS`를 들으면 가장 위의 까닭을 말한다. 아래 줄에서는 같은 답이 `Unchanged`이므로, 검사의 차례가 바뀌면 충돌이 소리 없이 사라진다. `PaymentTest`의 한 테스트가 그 차례를 지킨다. 줄마다의 테스트도 `PaymentTest`에 있다.
 - 0건은 결과 미확인과 처리 중을 포함한 네 상태 모두에서 `Unchanged`다(5.4).
+- 거절로 실패한 결제의 줄은 2026-10-20 명세 리뷰에서 더했다. 맞는 생성 전 거절은 PG 거래가 없다는 증거이므로(ADR 0022 규칙 2), 그 뒤에 맞는 PG 거래가 오면 PG 상태가 무엇이든 모순이다. 그 전에는 `SUCCESS`만 `RESULT_MISMATCH`였고 `PENDING`과 `FAILED`는 아래의 "같은 최종 상태나 `PENDING`" 줄을 따라 소리 없이 `Unchanged`였다. 대사는 결제를 끝내기 전에 거래 키를 받으므로, 거래 키 없이 실패한 결제가 곧 거절로 실패한 결제다.
 
 ### 2.4 생성 전 거절(`reject`)
 
@@ -128,7 +130,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | `Conflicted(reason)` | 결제와 맞지 않는 답이다. 상태와 거래 키는 그대로다. |
 
 - 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다.
-- `Conflicted`는 결제의 마지막 충돌 까닭(`ConflictReason`, 다섯 값)과 시각을 덮어쓴다. 과제의 "충돌을 남긴다"가 재시작 뒤에도 보이게 하기 위해서다. 뒤에 맞는 답이 와도 지우지 않는다. 지우면 PG가 한때 결제와 어긋났다는 것을 사람이 볼 수 없다.
+- `Conflicted`는 결제의 마지막 충돌 까닭(`ConflictReason`, 여섯 값)과 시각을 덮어쓴다. 과제의 "충돌을 남긴다"가 재시작 뒤에도 보이게 하기 위해서다. 뒤에 맞는 답이 와도 지우지 않는다. 지우면 PG가 한때 결제와 어긋났다는 것을 사람이 볼 수 없다.
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다.
 - PG에게서 답을 얻지 못한 것(`Unknown`, `Unavailable`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것).
 
@@ -342,7 +344,6 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ## 8. 다음 단계로 넘기는 것
 
-- **거절로 실패한 결제에 뒤늦은 PG 거래.** 생성 전 거절로 실패한 결제가 뒤에 맞는 `PENDING`이나 `FAILED` PG 거래를 들으면 `Unchanged`다(2.3 표의 "끝난 결제에 같은 최종 상태나 `PENDING`" 줄 그대로). 그러나 ADR 0022로는 그런 PG 거래가 있을 수 없다. `SUCCESS`는 이미 `RESULT_MISMATCH`다. 둘도 충돌로 볼지 2단계가 정한다. 그렇게 하면 규칙은 "거절로 실패한 결제는 거래 키가 없고, 맞는 PG 거래는 모두 충돌이다"가 된다.
 - **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다).
 - **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2(모든 `Unknown`과 `Unavailable`을 같게)에 있다.
 - **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다.

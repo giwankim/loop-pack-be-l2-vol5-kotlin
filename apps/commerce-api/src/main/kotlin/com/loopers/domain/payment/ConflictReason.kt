@@ -16,4 +16,7 @@ enum class ConflictReason {
 
     /** 답이 결제가 아는 결과와 반대다. 끝난 결제에 반대의 결과이거나, PG 거래가 있는 결제에 생성 전 거절이다. */
     RESULT_MISMATCH,
+
+    /** 생성 전 거절로 실패한 결제에 맞는 PG 거래가 왔다. 거절은 PG 거래가 없다는 증거였으므로(ADR 0022) PG 상태가 무엇이든 모순이다. */
+    TRANSACTION_AFTER_REJECTION,
 }
