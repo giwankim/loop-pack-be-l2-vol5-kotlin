@@ -158,3 +158,70 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 - **The transaction reader is shared.** If the lookups reuse `PgTransactionResponse`, a blank key there is unreadable too, and the lookup comes back `Unavailable`.
 - **143 was built in parallel from `4116bcc`.** Rebasing onto `9af0c32` overlaps here: the ADR 0022 cost line, the `PaymentGateway` KDoc, and `TestPg`'s stall constant and JSON response helper (`STALL_MILLIS`, `json(httpStatus, body)`). Fold them into one name each.
 - **Step 2 treats every `Unknown` the same**, whatever its cause. The cause is for the log line and tests only.
+
+## Issue 141: a payment reconciles PG transactions and rejections, and keeps only the latest conflict
+
+Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/141#issuecomment-6281409260) of [issue 141](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/141). The code is [`Payment`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/Payment.kt), [`ReconcileResult`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/ReconcileResult.kt), [`ConflictReason`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/ConflictReason.kt), [`PaymentTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/payment/PaymentTest.kt) and [`PaymentRepositoryTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentRepositoryTest.kt).
+
+### Landed
+
+[`d6f4685`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/d6f4685) on `feat/pg-adapter` (pushed). It is rebased onto [issue 142](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142)'s `9af0c32` and its writing-material commit `d44dd3b`.
+
+### Acceptance criteria
+
+- [x] **Every row of the `reconcile` and `reject` tables returns the stated result.**
+  - `PaymentTest` has a test for each row of both tables (47 tests, 35 new).
+  - The checks run in table order, and one test pins that order. A `SUCCESS` payment hears `SUCCESS` while breaking one or more rules. It reports the topmost broken rule: `MULTIPLE_TRANSACTIONS`, then `PG_ORDER_ID_MISMATCH`, `AMOUNT_MISMATCH`, `TRANSACTION_KEY_MISMATCH`. Lower in the table the same answer would be `Unchanged`, so a reordered check would hide the conflict instead of failing loudly.
+  - `reject`:
+    - A matching rejection fails an `UNKNOWN` payment, and the transaction key stays null.
+    - A repeated rejection is `Unchanged`. So is a rejection that reaches a payment already failed by a `FAILED` transaction; that payment keeps its key.
+    - On `PENDING` and `SUCCESS` it is `RESULT_MISMATCH`.
+    - A different PG order number or amount gives the same conflict as `reconcile`. When both differ, the PG order number wins.
+- [x] **Finished payments never change state; `PENDING` never returns to `UNKNOWN`.**
+  - A finished payment keeps its status when it hears:
+    - its own result again;
+    - a late `PENDING`;
+    - the opposite result;
+    - another transaction key;
+    - a rejection.
+  - Zero transactions leave a payment unchanged in each of the four statuses, `PENDING` included.
+  - No path leads back to `UNKNOWN`: `PgStatus` has no such value, and `reject` only moves to `FAILED`.
+- [x] **A conflict records only the latest reason and time and leaves status and transaction key unchanged.**
+  - Every conflict test asserts that status and key stayed as they were.
+  - The overwrite test waits for the clock to pass the first conflict's microsecond. Then it asserts the second reason and a strictly later time. A mutation that kept the first time (`conflictedAt ?: now`) turned it red.
+- [x] **The transaction key and conflict fields survive a save and reload.**
+  - In `PaymentRepositoryTest`, a payment adopts a key from a `PENDING` transaction and then records `AMOUNT_MISMATCH`. After flush and clear it reads back with `PENDING`, the key, the reason and the exact `conflictedAt`.
+  - The exact column list now includes `transaction_key`, `conflict_reason` and `conflicted_at`.
+- [x] **`./gradlew :apps:commerce-api:test --tests '*PaymentTest' --tests '*PaymentRepositoryTest'` passes, and `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes.**
+  - Both exit 0 on the rebase onto `9af0c32`. `d6f4685` differs from that tree only by [issue 142](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142)'s writing-material doc.
+  - `ktlintCheck check`: 67 classes, 675 tests, 0 failures, 0 skips. That is [issue 142](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142)'s 637 plus 35 in `PaymentTest`, 1 in `PaymentRepositoryTest` and 2 in `PaymentFixturesTest`.
+
+### Decisions made while implementing
+
+- **Types.** All in `domain.payment`:
+  - `ReconcileResult`, a sealed interface of `Changed(from, to)`, `data object Unchanged` and `Conflicted(reason)`;
+  - `ConflictReason`, with the five reasons;
+  - `PaymentStatus.isFinished`.
+- **Columns.** All three are nullable:
+  - `transaction_key` has the default length and no index. The step that looks payments up by key adds one (spec: "거래 키나 PG 주문 번호로 찾는 것은 그것을 쓰는 단계가 더한다").
+  - `conflict_reason` stores the enum name in 32 characters. The longest name, `TRANSACTION_KEY_MISMATCH`, has 24.
+  - `conflicted_at` is truncated to microseconds in the entity, as `Order.confirmedAt` is.
+  - There is no CHECK that pairs the reason with its time. `CK_ORDERS_ON_PAYMENT_STATE` is the precedent if one is wanted.
+- **A later matching answer does not clear the last conflict.** The spec keeps "the latest conflict", and clearing it would hide from a human that the PG once contradicted the payment.
+- **One shared check for the PG order number and the amount.** `reconcile` and `reject` call the same private `conflictReasonFor(pgOrderId, amount)`, so the two paths report the same conflict in the same order. It is not named "mismatch", because `CONTEXT.md` lists 불일치 under _Avoid_ for 충돌. The enum values keep `*_MISMATCH`, as the spec names them.
+- **Fixtures.**
+  - `createPgTransaction(payment, transactionKey?, pgOrderId?, amount?, status?)` defaults to the payment's PG order number and amount. The key is a UUID, and the status is drawn from all three.
+  - Every test whose outcome depends on the status passes it explicitly. The contract test checks that the keys are unique, that every status is drawn, and that each argument is used.
+  - `PgRejection` has nothing to draw, so tests call its constructor.
+  - `CODING_STANDARDS.md` Fixture now covers value-type fixtures.
+  - `BaseRepositoryTest.reconcile(transactions, payment)` saves explicitly, like `charge`.
+
+### For step 2 and 144
+
+- **Open: a payment failed by a rejection, then a matching `PENDING` or `FAILED` transaction, is `Unchanged`.**
+  - This follows the table's row "1, the same final status, or `PENDING`, for a finished payment → `Unchanged`".
+  - But ADR 0022 says a matching pre-create rejection proves that no PG transaction exists. Any later transaction for that PG order number contradicts that proof. A `SUCCESS` already gives `RESULT_MISMATCH`.
+  - If the other two should conflict as well, the rule would be "a payment failed by a rejection has no key, and any matching transaction conflicts".
+- **Act on the payment reaching a final state, not on `is Changed`.** `Changed(UNKNOWN, PENDING)` is also a `Changed`. Step 2 touches the order and the reservation only when `to.isFinished`.
+- **Logging stays in step 2.** The entity does not log `Conflicted`; the applying service writes the WARN line with the reason.
+- **For the [issue 144](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/144) design doc:** the rule order is written out in `Payment.reconcile`'s KDoc, and `PaymentTest` is the row-by-row table.
