@@ -132,7 +132,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 - 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다.
 - `Conflicted`는 결제의 마지막 충돌 까닭(`ConflictReason`, 여섯 값)과 시각을 덮어쓴다. 과제의 "충돌을 남긴다"가 재시작 뒤에도 보이게 하기 위해서다. 뒤에 맞는 답이 와도 지우지 않는다. 지우면 PG가 한때 결제와 어긋났다는 것을 사람이 볼 수 없다.
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다.
-- PG에게서 답을 얻지 못한 것(`Unknown`, `Unavailable`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것).
+- PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것).
 
 ## 3. PG 계약과 결과
 
@@ -154,14 +154,17 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 `application.payment.required.PaymentGateway`는 결제 슬라이스의 required 포트다. 구현은 `adapter.integration.pg.LocalPgGateway`다.
 
-| 메서드 | 결과 |
-| --- | --- |
-| `requestPayment(pgOrderId, amount, card)` | `Accepted(transaction)`, `Rejected(rejection)`, `Unknown(cause)` |
-| `retrieveTransaction(transactionKey)` | `Found(transactions)`, `Unavailable(cause)` |
-| `listTransactions(pgOrderId)` | `Found(transactions)`, `Unavailable(cause)` |
+| 메서드 | 돌려주는 것 | 던지는 것 |
+| --- | --- | --- |
+| `createTransaction(pgOrderId, amount, card)` | 받아들여진 생성의 `PgTransaction`. 성공이 아니다. | `PgRejectedException(rejection)`, `PgOutcomeUnknownException` |
+| `retrieveTransaction(transactionKey)` | `PgTransaction?`. PG가 모르는 키(404)면 `null`. | `PgUnavailableException` |
+| `listTransactions(pgOrderId)` | `List<PgTransaction>`. 비어 있을 수 있다. | `PgUnavailableException` |
 
-- 포트는 PG의 결과를 던지지 않는다(ADR 0022 규칙 4). 설정 누락이나 요청을 직렬화하지 못한 것 같은 프로그래밍 오류만 던진다.
-- `cause`는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 로그와 테스트의 단언에만 쓴다. 호출자는 모든 `Unknown`과 `Unavailable`을 같게 다룬다.
+- 생성의 이름은 `createTransaction`이다(2026-10-20, `requestPayment`에서 바꿨다). 이 호출이 PG 거래를 만들고, 거래 키는 그 응답에서 처음 생긴다. Stripe의 PaymentIntent와 Toss의 결제 승인에서 `confirm`은 PG가 먼저 만든 객체를 그 키로 승인하는 일이다. 그 두 단계는 생성과 승인 사이에 고객이 인증하는 단계가 있어서 생긴다. 테스트 PG에는 그 단계가 없어 한 번의 호출로 거래를 만든다. Toss의 키인 결제(`POST /v1/payments/key-in`), Square의 `POST /v2/payments`와 같은 모양이다. `confirm`은 고객의 요청인 주문을 확정하다의 이름으로 남긴다.
+- 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다.
+- 세 예외에는 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡지 못하게 하려는 것이다. 설정 누락이나 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다.
+- 예외의 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 로그와 테스트의 단언에만 쓴다. 원인 예외는 잇지 않는다(3.5). 호출자는 모든 결과 미확인과 모든 조회 불가를 각각 같게 다룬다.
+- 호출자는 PG 호출을 트랜잭션 안에 두지 않고, `Exception`이나 `RuntimeException`을 잡는 catch로 감싸지 않는다. 결과 미확인의 예외가 결제를 저장한 트랜잭션을 지나면 그 저장이 되돌아간다(ADR 0023 규칙 4).
 - 포트 하나가 생성과 조회를 함께 가진다. 그래서 대사가 생성을 부르지 않는다는 것을 타입이 막지 않고, ADR 0022 규칙 6·7의 테스트가 PG가 받은 생성 수로 지킨다.
 
 ### 3.3 응답에서 결과로
@@ -170,15 +173,15 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 | 호출 | 응답 | 결과 |
 | --- | --- | --- |
-| 생성 | 202, 잘 짜인 PG 거래. PG 상태가 무엇이든 그렇다. | `Accepted(그 PG 거래)` |
-| 생성 | 422, 정확한 `code`, `transactionCreated`가 JSON `false`, `orderId`·`amount` 있음 | `Rejected(PgRejection(되돌려 받은 PG 주문 번호, 금액))` |
-| 생성 | 정확하지 않은 422: 본문 없음, 다른 `code`, `transactionCreated`가 `true`·`"false"`·`null`·빠짐, `code`·`orderId`·`amount` 빠짐, 문자열 금액, 잘린 JSON | `Unknown` |
-| 생성 | 202가 아닌 2xx(200, 201. 잘 짜인 PG 거래를 실어도), 다른 4xx, 5xx | `Unknown("HTTP <상태>")` |
-| 생성 | 잘 짜이지 않은 202, 연결 끊김, 응답 시간 초과, 풀 대기 초과 | `Unknown` |
-| 거래 키 조회 | 200, 잘 짜인 PG 거래 | `Found([그 PG 거래])` |
-| 거래 키 조회 | 404 | `Found([])` |
-| 목록 조회 | 200, 잘 짜인 PG 거래의 배열 | `Found(배열)`. 0건도, 2건 이상도 PG의 차례 그대로다. |
-| 두 조회 | 그 밖의 모든 상태(목록 조회의 404 포함), 잘 짜이지 않은 본문, 연결 끊김, 응답 시간 초과 | `Unavailable` |
+| 생성 | 202, 잘 짜인 PG 거래. PG 상태가 무엇이든 그렇다. | 그 PG 거래를 돌려준다 |
+| 생성 | 422, 정확한 `code`, `transactionCreated`가 JSON `false`, `orderId`·`amount` 있음 | `PgRejectedException(PgRejection(되돌려 받은 PG 주문 번호, 금액))` |
+| 생성 | 정확하지 않은 422: 본문 없음, 다른 `code`, `transactionCreated`가 `true`·`"false"`·`null`·빠짐, `code`·`orderId`·`amount` 빠짐, 문자열 금액, 잘린 JSON | `PgOutcomeUnknownException` |
+| 생성 | 202가 아닌 2xx(200, 201. 잘 짜인 PG 거래를 실어도), 다른 4xx, 5xx | `PgOutcomeUnknownException("HTTP <상태>")` |
+| 생성 | 잘 짜이지 않은 202, 연결 끊김, 응답 시간 초과, 풀 대기 초과 | `PgOutcomeUnknownException` |
+| 거래 키 조회 | 200, 잘 짜인 PG 거래 | 그 PG 거래를 돌려준다 |
+| 거래 키 조회 | 404 | `null`을 돌려준다 |
+| 목록 조회 | 200, 잘 짜인 PG 거래의 배열 | 그 PG 거래들을 돌려준다. 0건도, 2건 이상도 PG의 차례 그대로다. |
+| 두 조회 | 그 밖의 모든 상태(목록 조회의 404 포함), 잘 짜이지 않은 본문, 연결 끊김, 응답 시간 초과 | `PgUnavailableException` |
 
 - **목록:** JSON 배열만 받는다. 객체 하나, `null`, `null` 원소는 잘 짜이지 않은 본문이다.
 - **404:** PG 계약이 404를 말하는 곳은 거래 키 조회뿐이다. 목록의 "없음"은 빈 배열이다. 그래서 목록 조회의 404는 조회 불가다.
@@ -187,7 +190,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 결과 미확인을 실패로 바꾸는 길은 코드 곳곳의 작은 분기에 있다. 예외 하나를 실패로 옮기는 catch, 기본값으로 켜진 클라이언트의 재전송, 0건을 "없음"으로 읽는 조회가 모두 이중 결제가 된다(ADR 0022).
 
-- **증거는 하나다.** PG가 "만들지 않았고 앞으로도 만들지 않는다"고 명시하는 것은 생성 전 거절뿐이다. 422, 정확한 `code`, boolean `false`를 모두 확인할 때만 `Rejected`다. `transactionCreated` 검사를 뺀 변이 실행에서는 `true` 본문이 `Rejected`로 나왔다.
+- **증거는 하나다.** PG가 "만들지 않았고 앞으로도 만들지 않는다"고 명시하는 것은 생성 전 거절뿐이다. 422, 정확한 `code`, boolean `false`를 모두 확인할 때만 거절(`PgRejectedException`)이다. `transactionCreated` 검사를 뺀 변이 실행에서는 `true` 본문이 거절로 나왔다(그때의 이름은 값 `Rejected`였다).
 - **시간 초과와 5xx는 실패가 아니다.** PG가 저장한 뒤 응답을 잃은 PG 거래가 나중에 성공하면, 예약을 돌려준 주문에서 돈이 빠져나간다. 고객이 다시 결제하면 두 번 낸다.
 - **생성은 다시 보내지 않는다.** 테스트 PG는 같은 PG 주문 번호의 생성을 하나로 합친다고 약속하지 않고, 과제도 금한다. 결과는 조회와 대사로만 알아낸다.
 - **풀을 얻지 못한 생성도 결과 미확인이다.** 보내지 않은 것은 확실하다. 그러나 그 증거는 HttpClient의 예외 타입과 Spring이 그것을 감싸는 방식에 달려 있어, 라이브러리를 올리면 조용히 틀어질 수 있다. 증거에 두 번째 길을 들이지 않는다.
@@ -195,7 +198,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 ### 3.5 로그와 관측
 
-호출마다 로그 한 줄을 쓴다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키다. 본문과 카드 번호는 쓰지 않는다. `Unknown`과 `Unavailable`은 WARN이다.
+호출마다 로그 한 줄을 쓴다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키다. 본문과 카드 번호는 쓰지 않는다. 결과 미확인과 조회 불가는 WARN이다. 결과의 낱말(`Accepted`, `Rejected`, `Unknown`, `Found n`, `Unavailable`)은 결과를 값으로 돌려주던 때의 이름을 그대로 쓴다.
 
 ```text
 PG POST /api/v1/payments Accepted (HTTP 202) in 43 ms, pgOrderId=LP-ORD-0000000042, transactionKey=TEST-TX-0042
@@ -203,9 +206,10 @@ PG GET /api/v1/payments/{transactionKey} Found 1 (HTTP 200) in 1 ms, pgOrderId=L
 PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderId=LP-ORD-0000000042, transactionKeys=[TEST-TX-0041, TEST-TX-0042]
 ```
 
-- 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. `cause`는 예외 사슬의 맨 안쪽 타입 이름이다.
+- 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
 - observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. 어댑터의 설정만 담은 테스트 컨텍스트에는 없으므로 쓰지 않는다. `ObservedPaymentGatewayTest`가 registry를 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
+- 포트의 예외는 `exchange` 안에서도 던지므로 observation의 `exception`에 그 이름이 남는다. 422의 생성 전 거절, 202가 아닌 생성 응답, 200·404가 아닌 조회 응답이 그렇다. 받아들여진 생성과 찾은 조회(404 포함)만 오류가 없다(ADR 0023의 대가). 테스트는 이 값을 보지 않는다.
 
 ## 4. 클라이언트 설정
 
@@ -254,7 +258,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ### 5.2 풀에서 연결을 얻지 못한 생성도 결과 미확인이다
 
-풀 대기 200 ms가 지나면 생성은 `Unknown`이다. PG는 그 생성을 받지 못했다(`ExhaustedPoolPaymentGatewayTest`에서 생성 수 1 그대로). 그래도 실패로 보지 않는 까닭은 3.4에 있다. 그 결제는 다음 5.3의 처지가 된다.
+풀 대기 200 ms가 지나면 생성은 `PgOutcomeUnknownException`이다. PG는 그 생성을 받지 못했다(`ExhaustedPoolPaymentGatewayTest`에서 생성 수 1 그대로). 그래도 실패로 보지 않는 까닭은 3.4에 있다. 그 결제는 다음 5.3의 처지가 된다.
 
 ### 5.3 PG가 받지 못한 결제는 사람이 끝낼 때까지 결과 미확인이다
 
@@ -262,7 +266,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ### 5.4 0건은 PG 거래가 없다는 증거가 아니다
 
-거래 키 조회의 404와 목록의 빈 배열은 `Found([])`이고, 대사에서 `Unchanged`다. PG 거래가 아직 보이지 않거나 생성 요청이 아직 오는 중일 수 있다. 잘못된 base URL이나 PG 앞의 무엇이 돌려준 404도 거래 키 조회에서는 `Found([])`로 읽힌다. 대사가 0건에 아무것도 바꾸지 않으므로 받아들인다(ADR 0022 규칙 3).
+거래 키 조회의 404는 `null`, 목록의 빈 배열은 빈 목록이고, 대사에서 `Unchanged`다. PG 거래가 아직 보이지 않거나 생성 요청이 아직 오는 중일 수 있다. 잘못된 base URL이나 PG 앞의 무엇이 돌려준 404도 거래 키 조회에서는 `null`로 읽힌다. 대사가 0건에 아무것도 바꾸지 않으므로 받아들인다(ADR 0022 규칙 3).
 
 조회도 다시 보내지 않는다. 끊긴 GET은 PG에 한 번만 간다. 제한된 재조회는 3단계가 조회에만 씌운다(ADR 0022 규칙 7).
 
@@ -295,7 +299,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 - 수: `createCount()`(생성), `lookupCount()`(두 조회를 함께), `requestCount()`(스텁과 맞지 않은 것까지 모든 요청), `unmatchedRequests()`(스텁과 맞지 않은 요청).
 - 모든 스텁은 `X-USER-ID`를 맞춘다. 생성은 정확한 JSON 본문을(`equalToJson`, 금액은 JSON 숫자), 거래 키 조회는 경로의 키를, 목록 조회는 query의 `orderId`를 정확히 맞춘다. 틀린 요청은 스텁을 찾지 못해 WireMock의 404를 받는다.
-- 생성은 그 404를 `Unknown`으로 돌려주므로 테스트가 실패한다. 조회는 그렇지 않다. 거래 키 조회는 404를 `Found([])`로 읽어, 기대한 결과와 같을 수 있다. 그래서 조회를 쓰는 테스트는 `unmatchedRequests()`가 비었는지 본다([`CODING_STANDARDS.md`](../../CODING_STANDARDS.md)의 단언). `PaymentGatewayTest`는 `@AfterEach`에서 본다.
+- 생성은 그 404에 `PgOutcomeUnknownException`을 던지므로 테스트가 실패한다. 조회는 그렇지 않다. 거래 키 조회는 404를 `null`로 읽어, 기대한 결과와 같을 수 있다. 그래서 조회를 쓰는 테스트는 `unmatchedRequests()`가 비었는지 본다([`CODING_STANDARDS.md`](../../CODING_STANDARDS.md)의 단언). `PaymentGatewayTest`는 `@AfterEach`에서 본다.
 - `stallsLookup`이 404가 아니라 503인 것도 같은 까닭이다. 한도가 1.5 s보다 긴 클라이언트에게 늦은 404는 "없음"이라는 사실로 읽힌다.
 - JSON은 손으로 적는다. 필드 이름과 JSON 타입까지 PG 계약이기 때문이다. 무작위 지연은 쓰지 않는다.
 - 2·3단계의 업무 테스트가 같은 장면을 쓴다. 3단계의 재시작 장면은 같은 컨텍스트 안에서 서비스와 클라이언트를 다시 만든다. 컨텍스트 자체를 다시 띄워야 하면 그때 `wiremock-standalone`으로 바꾼다(탐침 §5).
@@ -322,7 +326,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | PG 관찰(observation) | 대사하다 `reconcile` | 결제를 PG 거래와 견주어 맞으면 옮기고 아니면 충돌로 남기는 일이다. `CONTEXT.md`는 관찰하다를 피한다. |
 | `paymentAttemptKey` | 멱등 키 `idempotencyKey` | 같은 키의 재요청이 같은 결제를 가리킨다. Stripe와 Toss의 `Idempotency-Key`다. |
 | `providerOrderId` | PG 주문 번호 `pgOrderId` | 이 맥락은 "제공자"가 아니라 PG라고 부른다. |
-| `REJECTED_NO_EFFECT` | 생성 전 거절 `PgRejection`, 결과 `Rejected` | `CONTEXT.md`의 생성 전 거절이 피하는 이름이다. |
+| `REJECTED_NO_EFFECT` | 생성 전 거절 `PgRejection`, 예외 `PgRejectedException` | `CONTEXT.md`의 생성 전 거절이 피하는 이름이다. |
 | `*PaymentProviderContractTest` | `PaymentGatewayTest` | 시험하는 포트(`PaymentGateway`)의 이름이고, 그 포트의 패키지 `application.payment.required`에 있다. |
 
 ### 7.2 1단계의 명령
@@ -345,6 +349,6 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ## 8. 다음 단계로 넘기는 것
 
 - **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다).
-- **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2(모든 `Unknown`과 `Unavailable`을 같게)에 있다.
+- **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2에 있다. 모든 결과 미확인과 조회 불가를 각각 같게 다루고, PG 호출을 트랜잭션 밖에 두며, PG 예외를 넓은 catch로 잡지 않는다. 생성이 결과 미확인일 때 결제가 결과 미확인으로 남는지를 호출자마다 장면 테스트로 본다(ADR 0023 규칙 4).
 - **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다.
 - **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 시간 초과는 목록 조회로, 끊김은 거래 키 조회로만 시험했다. 둘은 같은 catch를 지난다.

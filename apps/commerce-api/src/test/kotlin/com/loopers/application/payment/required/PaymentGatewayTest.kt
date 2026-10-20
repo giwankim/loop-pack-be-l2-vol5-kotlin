@@ -13,6 +13,7 @@ import com.loopers.support.TestPg.Companion.REJECTED_BEFORE_CREATE
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
@@ -29,7 +30,8 @@ import org.wiremock.spring.InjectWireMock
 private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback"
 
 /**
- * [PaymentGateway]를 실제 HTTP로 테스트 PG에 보낸다(ADR 0022 규칙 6). 포트의 인터페이스만 부르고, 포트가 돌려준 값과 테스트 PG가 받은 요청만 본다.
+ * [PaymentGateway]를 실제 HTTP로 테스트 PG에 보낸다(ADR 0022 규칙 6). 포트의 인터페이스만 부르고, 포트가 돌려준 값이나 던진 예외와
+ * 테스트 PG가 받은 요청만 본다.
  *
  * 컨텍스트에는 어댑터의 설정만 있고 MySQL과 Redis는 없다. 설정 값은 `application.yml`을 test 프로필로 읽고 둘만 바꾼다.
  * - 응답 한도는 운영의 1 s다. PG가 받은 요청 수로 숨은 재전송이 꺼졌음을 보는 테스트는 운영의 시간 한도로 돈다(ADR 0022 규칙 6).
@@ -82,8 +84,8 @@ class PaymentGatewayTest(
         /**
          * 계약대로 읽을 수 없는 PG 거래. 생성의 202에도 두 조회의 200에도 같은 것들을 싣는다. 잘린 JSON, 문자열 금액, 빠진 거래 키나 금액,
          * 모르는 PG 상태, 빈 거래 키, 음수 금액, 소수 금액이다. 빠진 금액은 원시 타입이라 너그러운 매퍼라면 0원으로 읽어 잘 짜인 PG 거래가 된다.
-         * 거래 키가 빈 PG 거래는 나중에 그 키로 조회할 수 없으므로 잘 짜인 PG 거래가 아니다. 음수 금액은 `Money`가 거절하는데, 그 예외도 포트
-         * 밖으로 던지지 않고 해석 실패가 되어야 한다. 소수 금액은 원화 정수가 아니어서 정수로 잘라 읽지 않는다.
+         * 거래 키가 빈 PG 거래는 나중에 그 키로 조회할 수 없으므로 잘 짜인 PG 거래가 아니다. 음수 금액은 `Money`가 거절하는데, 그 예외가 그대로
+         * 포트 밖으로 나가지 않고 해석 실패가 되어야 한다. 소수 금액은 원화 정수가 아니어서 정수로 잘라 읽지 않는다.
          */
         private val MALFORMED_TRANSACTIONS = listOf(
             """{"transactionKey":"$TRANSACTION_KEY","orderId":"$PG_ORDER_ID",""",
@@ -141,16 +143,14 @@ class PaymentGatewayTest(
     fun `an accepted create returns the PG's transaction and reaches the PG as one POST`() {
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val transaction = paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
 
-        assertThat(result).isEqualTo(
-            PaymentRequestResult.Accepted(
-                PgTransaction(
-                    transactionKey = TRANSACTION_KEY,
-                    pgOrderId = PG_ORDER_ID,
-                    amount = Money(AMOUNT),
-                    status = PgStatus.PENDING,
-                ),
+        assertThat(transaction).isEqualTo(
+            PgTransaction(
+                transactionKey = TRANSACTION_KEY,
+                pgOrderId = PG_ORDER_ID,
+                amount = Money(AMOUNT),
+                status = PgStatus.PENDING,
             ),
         )
         assertThat(pg.createCount()).isEqualTo(1)
@@ -158,7 +158,7 @@ class PaymentGatewayTest(
 
     @ParameterizedTest
     @EnumSource(PgStatus::class)
-    fun `a 202 comes back as Accepted whatever PG status the transaction carries`(status: PgStatus) {
+    fun `a 202 returns the transaction whatever PG status it carries`(status: PgStatus) {
         pg.acceptsCreate(
             pgOrderId = PG_ORDER_ID,
             amount = AMOUNT,
@@ -167,22 +167,20 @@ class PaymentGatewayTest(
             pgStatus = status.name,
         )
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val transaction = paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
 
-        assertThat(result).isEqualTo(
-            PaymentRequestResult.Accepted(
-                PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT), status = status),
-            ),
+        assertThat(transaction).isEqualTo(
+            PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT), status = status),
         )
     }
 
     @Test
-    fun `an exact pre-create rejection comes back as Rejected and reaches the PG as one POST`() {
+    fun `an exact pre-create rejection throws PgRejectedException and reaches the PG as one POST`() {
         pg.rejectsBeforeCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection(pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT))))
+        assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT)))
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
@@ -199,21 +197,18 @@ class PaymentGatewayTest(
             """,
         )
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
-        assertThat(result).isEqualTo(
-            PaymentRequestResult.Rejected(PgRejection(pgOrderId = "LP-ORD-0000000043", amount = Money(7_001))),
-        )
+        assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = "LP-ORD-0000000043", amount = Money(7_001)))
     }
 
     @ParameterizedTest
     @MethodSource("inexactRejections")
-    fun `a 422 that is not the exact pre-create rejection comes back as Unknown`(body: String?) {
+    fun `a 422 that is not the exact pre-create rejection throws PgOutcomeUnknownException`(body: String?) {
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 422, body = body)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
-        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
@@ -223,18 +218,20 @@ class PaymentGatewayTest(
      */
     @ParameterizedTest
     @ValueSource(ints = [400, 404, 409, 429, 500, 502, 503, 504])
-    fun `any other 4xx or 5xx comes back as Unknown instead of being thrown and reaches the PG as one POST`(httpStatus: Int) {
+    fun `any other 4xx or 5xx throws PgOutcomeUnknownException with the status and reaches the PG as one POST`(httpStatus: Int) {
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = httpStatus)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgOutcomeUnknownException> {
+            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        }
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP $httpStatus"))
+        assertThat(exception.message).isEqualTo("HTTP $httpStatus")
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
     @ParameterizedTest
     @ValueSource(ints = [200, 201])
-    fun `a 2xx other than 202 comes back as Unknown even with a well-formed transaction`(httpStatus: Int) {
+    fun `a 2xx other than 202 throws PgOutcomeUnknownException even with a well-formed transaction`(httpStatus: Int) {
         pg.answersCreate(
             pgOrderId = PG_ORDER_ID,
             amount = AMOUNT,
@@ -243,52 +240,59 @@ class PaymentGatewayTest(
             body = WELL_FORMED_TRANSACTION,
         )
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgOutcomeUnknownException> {
+            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        }
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP $httpStatus"))
+        assertThat(exception.message).isEqualTo("HTTP $httpStatus")
     }
 
+    /** 해석 오류의 메시지는 응답 본문의 조각을 담을 수 있어, 포트의 예외는 그 오류를 원인으로 잇지 않는다(결제 설계 3.5). */
     @ParameterizedTest
     @MethodSource("unreadableTransactions")
-    fun `a 202 whose body is not a well-formed transaction comes back as Unknown`(body: String) {
+    fun `a 202 whose body is not a well-formed transaction throws PgOutcomeUnknownException without the parse error`(
+        body: String,
+    ) {
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 202, body = body)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgOutcomeUnknownException> {
+            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        }
 
-        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
+        assertThat(exception.cause).isNull()
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
     /** HttpClient의 기본값은 307에 본문까지 복사해 리다이렉트를 따라간다(ADR 0022 규칙 5). */
     @Test
-    fun `a 307 comes back as Unknown and the PG receives one POST and nothing at the redirect target`() {
+    fun `a 307 throws PgOutcomeUnknownException and the PG receives one POST and nothing at the redirect target`() {
         pg.redirectsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val exception = assertThrows<PgOutcomeUnknownException> {
+            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        }
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP 307"))
+        assertThat(exception.message).isEqualTo("HTTP 307")
         assertThat(pg.createCount()).isEqualTo(1)
         assertThat(pg.requestCount()).isEqualTo(1)
     }
 
     @Test
-    fun `a connection dropped after the PG stored the transaction comes back as Unknown after one POST`() {
+    fun `a connection dropped after the PG stored the transaction throws PgOutcomeUnknownException after one POST`() {
         pg.losesCreateResponse(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
-        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
     /** 테스트 PG는 1.5 s 멈추고 어댑터는 응답 한도 1 s에서 그만 기다린다. 이 클래스의 느린 장면은 이것과 조회의 시간 초과 둘이다. */
     @Test
-    fun `a create stalled past the response timeout comes back as Unknown after one POST`() {
+    fun `a create stalled past the response timeout throws PgOutcomeUnknownException after one POST`() {
         pg.stallsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
-        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
@@ -296,7 +300,7 @@ class PaymentGatewayTest(
     fun `an accepted create writes one log line with the call and no body or card number`(output: CapturedOutput) {
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
 
         assertThat(output.gatewayLines()).singleElement().asString()
             .contains("POST /api/v1/payments", "HTTP 202", PG_ORDER_ID, TRANSACTION_KEY)
@@ -308,7 +312,7 @@ class PaymentGatewayTest(
     fun `an unknown create writes one log line with the HTTP status and no card number`(output: CapturedOutput) {
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 500)
 
-        paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
 
         assertThat(output.gatewayLines()).singleElement().asString()
             .contains("POST /api/v1/payments", "HTTP 500", PG_ORDER_ID)
@@ -326,29 +330,29 @@ class PaymentGatewayTest(
         )
         pg.hasTransaction(transaction)
 
-        val result = paymentGateway.retrieveTransaction(transaction.transactionKey)
+        val found = paymentGateway.retrieveTransaction(transaction.transactionKey)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(transaction)))
+        assertThat(found).isEqualTo(transaction)
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     @Test
-    fun `a key lookup answered 404 returns no transaction instead of being unavailable`() {
+    fun `a key lookup answered 404 returns null instead of throwing PgUnavailableException`() {
         pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 404)
 
-        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
+        val found = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(emptyList()))
+        assertThat(found).isNull()
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     @Test
-    fun `a list lookup answered with an empty array returns no transaction instead of being unavailable`() {
+    fun `a list lookup answered with an empty array returns an empty list instead of throwing PgUnavailableException`() {
         pg.hasTransactions(pgOrderId = PG_ORDER_ID)
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(emptyList()))
+        assertThat(transactions).isEmpty()
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
@@ -362,9 +366,9 @@ class PaymentGatewayTest(
         )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, transaction)
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(transaction)))
+        assertThat(transactions).containsExactly(transaction)
     }
 
     @Test
@@ -383,9 +387,9 @@ class PaymentGatewayTest(
         )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, failed, succeeded)
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(failed, succeeded)))
+        assertThat(transactions).containsExactly(failed, succeeded)
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
@@ -403,9 +407,9 @@ class PaymentGatewayTest(
         )
         pg.hasTransaction(transaction)
 
-        val result = paymentGateway.retrieveTransaction(transaction.transactionKey)
+        val found = paymentGateway.retrieveTransaction(transaction.transactionKey)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(listOf(transaction)))
+        assertThat(found).isEqualTo(transaction)
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
@@ -418,73 +422,73 @@ class PaymentGatewayTest(
         val pgOrderId = "LP-ORD+42&orderId=43"
         pg.hasTransactions(pgOrderId = pgOrderId)
 
-        val result = paymentGateway.listTransactions(pgOrderId)
+        val transactions = paymentGateway.listTransactions(pgOrderId)
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Found(emptyList()))
+        assertThat(transactions).isEmpty()
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     /** HttpClient의 기본 재시도는 끊긴 GET을 한 번 더 보낸다(탐침 보고서 §3). 조회의 재시도는 3단계가 명시적으로 정한다. */
     @Test
-    fun `a lookup whose connection drops comes back as Unavailable after exactly one GET`() {
+    fun `a lookup whose connection drops throws PgUnavailableException after exactly one GET`() {
         pg.losesLookupResponse()
 
-        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransaction(TRANSACTION_KEY) }
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("NoHttpResponseException"))
+        assertThat(exception.message).isEqualTo("NoHttpResponseException")
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     @Test
-    fun `a lookup that outlasts the response timeout comes back as Unavailable after exactly one GET`() {
+    fun `a lookup that outlasts the response timeout throws PgUnavailableException after exactly one GET`() {
         pg.stallsLookup()
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("SocketTimeoutException"))
+        assertThat(exception.message).isEqualTo("SocketTimeoutException")
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     @ParameterizedTest
     @ValueSource(ints = [201, 204, 400, 500, 503])
-    fun `a key lookup answered with a status other than 200 or 404 comes back as Unavailable instead of being thrown`(
+    fun `a key lookup answered with a status other than 200 or 404 throws PgUnavailableException with the status`(
         httpStatus: Int,
     ) {
         pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = httpStatus)
 
-        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransaction(TRANSACTION_KEY) }
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("HTTP $httpStatus"))
+        assertThat(exception.message).isEqualTo("HTTP $httpStatus")
     }
 
     @ParameterizedTest
     @ValueSource(ints = [201, 204, 400, 404, 500, 503])
-    fun `a list lookup answered with a status other than 200, 404 included, comes back as Unavailable`(httpStatus: Int) {
+    fun `a list lookup answered with a status other than 200, 404 included, throws PgUnavailableException`(httpStatus: Int) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = httpStatus)
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
 
-        assertThat(result).isEqualTo(TransactionLookupResult.Unavailable("HTTP $httpStatus"))
+        assertThat(exception.message).isEqualTo("HTTP $httpStatus")
     }
 
     @ParameterizedTest
     @MethodSource("unreadableTransactionBodies")
-    fun `a key lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(body: String) {
+    fun `a key lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(body: String) {
         pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 200, body = body)
 
-        val result = paymentGateway.retrieveTransaction(TRANSACTION_KEY)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransaction(TRANSACTION_KEY) }
 
-        assertThat(result).isInstanceOf(TransactionLookupResult.Unavailable::class.java)
+        assertThat(exception.cause).isNull()
     }
 
     @ParameterizedTest
     @MethodSource("unreadableListBodies")
-    fun `a list lookup answered 200 with an unreadable body comes back as Unavailable instead of being thrown`(body: String) {
+    fun `a list lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(body: String) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 200, body = body)
 
-        val result = paymentGateway.listTransactions(PG_ORDER_ID)
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
 
-        assertThat(result).isInstanceOf(TransactionLookupResult.Unavailable::class.java)
+        assertThat(exception.cause).isNull()
     }
 
     @Test
@@ -545,7 +549,7 @@ class PaymentGatewayTest(
     fun `an unavailable lookup writes one log line with the HTTP status`(output: CapturedOutput) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 500)
 
-        paymentGateway.listTransactions(PG_ORDER_ID)
+        assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
 
         assertThat(output.gatewayLines()).singleElement().asString()
             .contains("GET /api/v1/payments?orderId={pgOrderId}", "Unavailable", "HTTP 500", PG_ORDER_ID)

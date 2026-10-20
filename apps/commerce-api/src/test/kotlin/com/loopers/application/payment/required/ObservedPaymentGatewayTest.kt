@@ -68,7 +68,7 @@ class ObservedPaymentGatewayTest(
     fun `a create is recorded as an HTTP client observation with its method, URI template and status`() {
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+        paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
 
         val observation = observations.stopped().single()
         assertThat(observation.name).isEqualTo("http.client.requests")
