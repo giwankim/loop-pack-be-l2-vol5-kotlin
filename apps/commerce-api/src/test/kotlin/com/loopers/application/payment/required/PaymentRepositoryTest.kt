@@ -107,7 +107,7 @@ class PaymentRepositoryTest(
     }
 
     /**
-     * 열을 모두 적는다. 카드를 실수로 담는 가장 쉬운 길은 [com.loopers.domain.payment.Card]를 `@Embedded`로 두는 것인데,
+     * 열을 모두 적는다. 카드를 실수로 담는 가장 쉬운 길은 [com.loopers.domain.payment.CreditCard]를 `@Embedded`로 두는 것인데,
      * 그러면 열 이름이 `type`과 `number`라 "card"가 든 이름을 찾는 검사로는 걸리지 않는다. 열이 늘면 이 목록도 함께 고친다.
      */
     @Test

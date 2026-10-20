@@ -2,7 +2,7 @@ package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -52,7 +52,7 @@ class PaymentGatewayTest(
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
-        private val CARD = Card(type = "TEST", number = "0000-0000-0000-0000")
+        private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
 
         /**
          * 생성 전 거절을 닮았지만 정확하지 않은 422의 본문. `null`은 본문 없는 422다. 어느 것도 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3).

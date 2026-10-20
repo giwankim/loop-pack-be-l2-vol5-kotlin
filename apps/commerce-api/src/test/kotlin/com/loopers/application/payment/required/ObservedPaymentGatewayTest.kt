@@ -2,7 +2,7 @@ package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.shared.Money
@@ -43,7 +43,7 @@ class ObservedPaymentGatewayTest(
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
-        private val CARD = Card(type = "TEST", number = "0000-0000-0000-0000")
+        private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
     }
 
     /** [PaymentGatewayTest]의 같은 필드와 같은 까닭으로 생성자가 아니라 필드로 받는다. */

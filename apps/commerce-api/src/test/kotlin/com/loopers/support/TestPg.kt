@@ -17,7 +17,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.http.Fault
 import com.github.tomakehurst.wiremock.verification.LoggedRequest
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
 import org.springframework.web.util.UriUtils
 import java.nio.charset.StandardCharsets
@@ -65,7 +65,7 @@ class TestPg(
     fun acceptsCreate(
         pgOrderId: String,
         amount: Long,
-        card: Card,
+        card: CreditCard,
         transactionKey: String,
         pgStatus: String = "PENDING",
     ) {
@@ -76,7 +76,7 @@ class TestPg(
      * 생성을 받아들이지만 [STALL_MILLIS] 동안 답하지 않는다. 운영의 응답 한도에서는 어댑터가 먼저 기다리기를 그만두므로,
      * PG에는 PG 거래가 생겼는데 어댑터는 그 답을 받지 못한다. 지연은 고정이다.
      */
-    fun stallsCreate(pgOrderId: String, amount: Long, card: Card, transactionKey: String) {
+    fun stallsCreate(pgOrderId: String, amount: Long, card: CreditCard, transactionKey: String) {
         server.stubFor(
             createRequest(pgOrderId, amount, card).willReturn(
                 accepted(pgOrderId, amount, transactionKey, pgStatus = "PENDING").withFixedDelay(STALL_MILLIS),
@@ -88,12 +88,12 @@ class TestPg(
      * 생성을 받아 PG 거래를 저장한 뒤 응답 없이 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청 본문을 다 읽은 뒤 끊는다
      * (wiremock-spring-boot 탐침 보고서 §3의 b).
      */
-    fun losesCreateResponse(pgOrderId: String, amount: Long, card: Card) {
+    fun losesCreateResponse(pgOrderId: String, amount: Long, card: CreditCard) {
         server.stubFor(createRequest(pgOrderId, amount, card).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
     }
 
     /** 생성에 307로 답해 [REDIRECT_PATH]로 돌려보낸다. 따라간 요청은 [requestCount]에 더해진다. */
-    fun redirectsCreate(pgOrderId: String, amount: Long, card: Card) {
+    fun redirectsCreate(pgOrderId: String, amount: Long, card: CreditCard) {
         server.stubFor(
             createRequest(pgOrderId, amount, card).willReturn(
                 aResponse().withStatus(307).withHeader("Location", REDIRECT_PATH),
@@ -105,14 +105,14 @@ class TestPg(
      * 생성 전 거절. PG 거래를 만들기 전에 끝내고 이 요청으로 앞으로도 만들지 않는다는 422다(ADR 0022 규칙 2).
      * 본문은 받은 PG 주문 번호와 금액을 되돌려 준다.
      */
-    fun rejectsBeforeCreate(pgOrderId: String, amount: Long, card: Card) {
+    fun rejectsBeforeCreate(pgOrderId: String, amount: Long, card: CreditCard) {
         val body = """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$pgOrderId","amount":$amount,"transactionCreated":false}"""
 
         server.stubFor(createRequest(pgOrderId, amount, card).willReturn(json(422, body)))
     }
 
     /** 생성에 HTTP 상태 [httpStatus]로 답한다. [body]가 있으면 JSON으로 그대로 싣고, 없으면 본문 없이 답한다. */
-    fun answersCreate(pgOrderId: String, amount: Long, card: Card, httpStatus: Int, body: String? = null) {
+    fun answersCreate(pgOrderId: String, amount: Long, card: CreditCard, httpStatus: Int, body: String? = null) {
         server.stubFor(createRequest(pgOrderId, amount, card).willReturn(response(httpStatus, body)))
     }
 
@@ -224,7 +224,7 @@ class TestPg(
             .withBody(body)
     }
 
-    private fun createRequest(pgOrderId: String, amount: Long, card: Card): MappingBuilder {
+    private fun createRequest(pgOrderId: String, amount: Long, card: CreditCard): MappingBuilder {
         val json = """
             {
               "orderId": "$pgOrderId",

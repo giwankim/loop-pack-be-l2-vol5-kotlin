@@ -3,7 +3,7 @@ package com.loopers.adapter.integration.pg
 import com.loopers.application.payment.required.PaymentGateway
 import com.loopers.application.payment.required.PaymentRequestResult
 import com.loopers.application.payment.required.TransactionLookupResult
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -44,7 +44,7 @@ class LocalPgGateway(
         private const val LIST_PATH = "$PAYMENTS_PATH?orderId={pgOrderId}"
     }
 
-    override fun requestPayment(pgOrderId: String, amount: Money, card: Card): PaymentRequestResult {
+    override fun requestPayment(pgOrderId: String, amount: Money, card: CreditCard): PaymentRequestResult {
         val (result, elapsed) = measureTimedValue { create(pgOrderId, amount, card) }
 
         val transactionKey = (result as? PaymentRequestResult.Accepted)?.transaction?.transactionKey
@@ -61,7 +61,7 @@ class LocalPgGateway(
         return result
     }
 
-    private fun create(pgOrderId: String, amount: Money, card: Card): PaymentRequestResult {
+    private fun create(pgOrderId: String, amount: Money, card: CreditCard): PaymentRequestResult {
         val request = PgPaymentCreateRequest(
             orderId = pgOrderId,
             cardType = card.type,

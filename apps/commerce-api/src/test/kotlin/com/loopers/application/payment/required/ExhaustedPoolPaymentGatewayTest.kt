@@ -2,7 +2,7 @@ package com.loopers.application.payment.required
 
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
@@ -34,7 +34,7 @@ class ExhaustedPoolPaymentGatewayTest(
         private const val STALLED_PG_ORDER_ID = "LP-ORD-0000000041"
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
-        private val CARD = Card(type = "TEST", number = "0000-0000-0000-0000")
+        private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
 
         /** 멈춘 생성이 PG에 닿기를 기다리는 한도. 그 생성이 연결을 쥐는 응답 한도 1 s보다 짧다. */
         private val REACH_LIMIT: Duration = Duration.ofMillis(500)

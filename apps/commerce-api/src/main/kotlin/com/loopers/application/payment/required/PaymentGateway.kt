@@ -1,6 +1,6 @@
 package com.loopers.application.payment.required
 
-import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.shared.Money
 
@@ -17,7 +17,7 @@ interface PaymentGateway {
      * [pgOrderId]의 PG 거래를 [amount]만큼 [card]로 만들어 달라고 한 번 요청한다. 다시 보내지 않는다(ADR 0022 규칙 1).
      * 받아들여진 생성은 [PgTransaction]을 담지만 성공이 아니다. PG 상태는 그 PG 거래가 말한다.
      */
-    fun requestPayment(pgOrderId: String, amount: Money, card: Card): PaymentRequestResult
+    fun requestPayment(pgOrderId: String, amount: Money, card: CreditCard): PaymentRequestResult
 
     /** 거래 키 [transactionKey]의 PG 거래를 한 번 조회한다. PG가 그 PG 거래를 모르면 빈 [TransactionLookupResult.Found]다. */
     fun retrieveTransaction(transactionKey: String): TransactionLookupResult
