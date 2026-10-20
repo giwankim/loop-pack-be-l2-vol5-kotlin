@@ -3,6 +3,7 @@ package com.loopers.adapter.integration.pg
 import com.loopers.application.payment.required.PaymentGateway
 import com.loopers.application.payment.required.PaymentRequestResult
 import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.shared.InvalidMoneyException
@@ -72,16 +73,41 @@ class LocalPgGateway(
         }
     }
 
-    /** 202와 잘 짜인 PG 거래만 받아들여진 생성이다. PG 상태가 무엇이든 그렇다. 그 밖의 상태 코드는 모두 결과 미확인이다. */
+    /**
+     * 202와 잘 짜인 PG 거래만 받아들여진 생성이다. PG 상태가 무엇이든 그렇다. 422는 본문이 정확한 생성 전 거절일 때만 거절이다.
+     * 그 밖의 상태 코드는 모두 결과 미확인이다.
+     */
     private fun readCreateResponse(response: ConvertibleClientHttpResponse): PaymentRequestResult {
         val status = response.statusCode.value()
-        if (status != HttpStatus.ACCEPTED.value()) {
-            return PaymentRequestResult.Unknown("HTTP $status")
+        if (status == HttpStatus.ACCEPTED.value()) {
+            return readAccepted(response)
         }
 
+        if (status == HttpStatus.UNPROCESSABLE_CONTENT.value()) {
+            return readRejection(response)
+        }
+
+        return PaymentRequestResult.Unknown("HTTP $status")
+    }
+
+    private fun readAccepted(response: ConvertibleClientHttpResponse): PaymentRequestResult {
         val transaction = response.bodyTo(PgTransactionResponse::class.java)
             ?: throw UnreadablePgResponseException("202에 본문이 없다.")
+
         return PaymentRequestResult.Accepted(transaction.toPgTransaction())
+    }
+
+    /**
+     * 정확한 생성 전 거절만 PG 거래가 없다는 증거다(ADR 0022 규칙 2). 본문 없는 422와 정확하지 않은 본문은 결과 미확인이다.
+     * 되돌려 받은 PG 주문 번호와 금액이 보낸 것과 같은지는 보지 않는다. 그것은 결제가 본다.
+     */
+    private fun readRejection(response: ConvertibleClientHttpResponse): PaymentRequestResult {
+        val rejection = response.bodyTo(PgRejectionResponse::class.java)
+        if (rejection == null || !rejection.isExact()) {
+            return PaymentRequestResult.Unknown("HTTP ${HttpStatus.UNPROCESSABLE_CONTENT.value()}")
+        }
+
+        return PaymentRequestResult.Rejected(rejection.toPgRejection())
     }
 }
 
@@ -103,7 +129,7 @@ private fun RestClientException.failureKind(): String {
 }
 
 /**
- * PG의 응답을 계약대로 읽지 못했다. Jackson이 읽은 뒤의 해석(빈 본문, 모르는 PG 상태, 음수 금액)이 실패한 것이다.
+ * PG의 응답을 계약대로 읽지 못했다. Jackson이 읽은 뒤의 해석(빈 본문, 빈 거래 키, 모르는 PG 상태, 음수 금액)이 실패한 것이다.
  * [RestClientException]을 넓혀, 전송 예외와 Jackson의 해석 오류를 결과 미확인으로 옮기는 catch 하나가 이것도 받게 한다.
  */
 private class UnreadablePgResponseException(
@@ -120,7 +146,10 @@ private data class PgPaymentCreateRequest(
     val callbackUrl: String,
 )
 
-/** PG 거래의 JSON. PG 상태는 문자열로 읽어 어댑터가 옮긴다. 모르는 값은 해석 실패다. */
+/**
+ * PG 거래의 JSON. PG 상태는 문자열로 읽어 어댑터가 옮긴다. 모르는 값은 해석 실패다.
+ * 빈 거래 키도 해석 실패다. 그 키로는 거래를 다시 조회할 수 없다.
+ */
 private data class PgTransactionResponse(
     val transactionKey: String,
     val orderId: String,
@@ -128,14 +157,44 @@ private data class PgTransactionResponse(
     val status: String,
 ) {
     fun toPgTransaction(): PgTransaction {
-        val pgStatus = PgStatus.entries.find { it.name == status }
-            ?: throw UnreadablePgResponseException("모르는 PG 상태다.")
-        val money = try {
-            Money(amount)
-        } catch (e: InvalidMoneyException) {
-            throw UnreadablePgResponseException("PG 거래의 금액이 음수다.", e)
+        if (transactionKey.isBlank()) {
+            throw UnreadablePgResponseException("PG 거래의 거래 키가 비었다.")
         }
 
-        return PgTransaction(transactionKey = transactionKey, pgOrderId = orderId, amount = money, status = pgStatus)
+        val pgStatus = PgStatus.entries.find { it.name == status }
+            ?: throw UnreadablePgResponseException("모르는 PG 상태다.")
+
+        return PgTransaction(transactionKey = transactionKey, pgOrderId = orderId, amount = pgMoney(amount), status = pgStatus)
+    }
+}
+
+/** 생성 전 거절의 JSON. `transactionCreated`는 JSON boolean만 읽는다. 문자열 `"false"`나 빠진 값은 해석 실패다. */
+private data class PgRejectionResponse(
+    val code: String,
+    val transactionCreated: Boolean,
+    val orderId: String,
+    val amount: Long,
+) {
+    companion object {
+        /** 테스트 PG가 생성 전 거절에만 싣는 code. */
+        private const val REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE"
+    }
+
+    /** 정확한 `code`이고 `transactionCreated`가 `false`인가. 둘 중 하나라도 아니면 PG 거래가 없다는 증거가 아니다. */
+    fun isExact(): Boolean {
+        return code == REJECTED_BEFORE_CREATE && !transactionCreated
+    }
+
+    fun toPgRejection(): PgRejection {
+        return PgRejection(pgOrderId = orderId, amount = pgMoney(amount))
+    }
+}
+
+/** PG가 보낸 금액. 음수는 해석 실패다. */
+private fun pgMoney(amount: Long): Money {
+    return try {
+        Money(amount)
+    } catch (e: InvalidMoneyException) {
+        throw UnreadablePgResponseException("PG가 보낸 금액이 음수다.", e)
     }
 }

@@ -3,16 +3,20 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.domain.payment.Card
+import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
+import com.loopers.support.TestPg.Companion.REJECTED_BEFORE_CREATE
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
+import org.junit.jupiter.params.provider.MethodSource
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
@@ -33,6 +37,7 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  * - 알림 주소는 [CALLBACK_URL]이다.
  *
  * 테스트 PG를 쓰는 다른 테스트와 달리 기반 클래스를 상속하지 않는다. 호출마다의 로그 줄은 출력 캡처로 읽는다.
+ * 연결 풀을 얻지 못한 생성은 풀의 연결 수가 다른 컨텍스트가 필요해 [ExhaustedPoolPaymentGatewayTest]에 있다.
  */
 @SpringJUnitConfig(classes = [LocalPgGatewayConfig::class], initializers = [ConfigDataApplicationContextInitializer::class])
 @TestPropertySource(properties = ["pg.response-timeout=1s", "pg.callback-url=$CALLBACK_URL"])
@@ -45,6 +50,39 @@ class PaymentGatewayTest(
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
         private val CARD = Card(type = "TEST", number = "0000-0000-0000-0000")
+
+        /**
+         * 생성 전 거절을 닮았지만 정확하지 않은 422의 본문. `null`은 본문 없는 422다. 어느 것도 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3).
+         * `transactionCreated`는 JSON boolean `false`만 증거다. 빠지거나 `null`인 값을 `false`로 읽으면 안 된다.
+         */
+        @JvmStatic
+        fun inexactRejections(): List<String?> {
+            return listOf(
+                null,
+                """{"code":"TEST_PG_REJECTED","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"transactionCreated":false}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"transactionCreated":true}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"transactionCreated":"false"}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"transactionCreated":null}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","amount":$AMOUNT}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","amount":$AMOUNT,"transactionCreated":false}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","transactionCreated":false}""",
+                """{"orderId":"$PG_ORDER_ID","amount":$AMOUNT,"transactionCreated":false}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID","amount":"$AMOUNT","transactionCreated":false}""",
+                """{"code":"$REJECTED_BEFORE_CREATE","orderId":"$PG_ORDER_ID",""",
+            )
+        }
+
+        /** 202에 실렸지만 잘 짜인 PG 거래가 아닌 본문. 거래 키가 빈 거래는 나중에 그 키로 조회할 수 없으므로 잘 짜인 거래가 아니다. */
+        @JvmStatic
+        fun unreadableTransactions(): List<String> {
+            return listOf(
+                """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID",""",
+                """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":"$AMOUNT","status":"PENDING"}""",
+                """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"CANCELLED"}""",
+                """{"transactionKey":"","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"PENDING"}""",
+                """{"transactionKey":"   ","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"PENDING"}""",
+            )
+        }
     }
 
     /**
@@ -93,12 +131,116 @@ class PaymentGatewayTest(
     }
 
     @Test
-    fun `a 500 comes back as Unknown instead of being thrown`() {
-        pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 500)
+    fun `an exact pre-create rejection comes back as Rejected and reaches the PG as one POST`() {
+        pg.rejectsBeforeCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
         val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
 
-        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP 500"))
+        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection(PG_ORDER_ID, Money(AMOUNT))))
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    /** 되돌려 받은 값이 보낸 것과 같은지는 결제가 본다(ADR 0022 규칙 2). 어댑터는 PG가 말한 그대로 옮긴다. */
+    @Test
+    fun `a pre-create rejection carries the order number and amount the PG echoed without comparing them`() {
+        pg.answersCreate(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            card = CARD,
+            httpStatus = 422,
+            body = """
+                {"code":"$REJECTED_BEFORE_CREATE","orderId":"LP-ORD-0000000043","amount":7001,"transactionCreated":false}
+            """,
+        )
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isEqualTo(PaymentRequestResult.Rejected(PgRejection("LP-ORD-0000000043", Money(7_001))))
+    }
+
+    @ParameterizedTest
+    @MethodSource("inexactRejections")
+    fun `a 422 that is not the exact pre-create rejection comes back as Unknown`(body: String?) {
+        pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 422, body = body)
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    /**
+     * HttpClient의 기본값은 429와 503에 POST를 한 번 더 보낸다(ADR 0022 규칙 5). 503은 응답 한도가 재시도 간격 1 s 이상일 때만 다시 보내므로
+     * 이 클래스가 운영의 응답 한도로 돌아야 이 수가 재시도를 끄는 스위치를 지킨다.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = [400, 404, 409, 429, 500, 502, 503, 504])
+    fun `any other 4xx or 5xx comes back as Unknown instead of being thrown and reaches the PG as one POST`(httpStatus: Int) {
+        pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = httpStatus)
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP $httpStatus"))
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = [200, 201])
+    fun `a 2xx other than 202 comes back as Unknown even with a well-formed transaction`(httpStatus: Int) {
+        pg.answersCreate(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            card = CARD,
+            httpStatus = httpStatus,
+            body = """{"transactionKey":"TEST-TX-0042","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"SUCCESS"}""",
+        )
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP $httpStatus"))
+    }
+
+    @ParameterizedTest
+    @MethodSource("unreadableTransactions")
+    fun `a 202 whose body is not a well-formed transaction comes back as Unknown`(body: String) {
+        pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 202, body = body)
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    /** HttpClient의 기본값은 307에 본문까지 복사해 리다이렉트를 따라간다(ADR 0022 규칙 5). */
+    @Test
+    fun `a 307 comes back as Unknown and the PG receives one POST and nothing at the redirect target`() {
+        pg.redirectsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isEqualTo(PaymentRequestResult.Unknown("HTTP 307"))
+        assertThat(pg.createCount()).isEqualTo(1)
+        assertThat(pg.requestCount()).isEqualTo(1)
+    }
+
+    @Test
+    fun `a connection dropped after the PG stored the transaction comes back as Unknown after one POST`() {
+        pg.losesCreateResponse(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
+    /** 이 클래스의 하나뿐인 느린 장면이다. 테스트 PG는 1.5 s 멈추고 어댑터는 응답 한도 1 s에서 그만 기다린다. */
+    @Test
+    fun `a create stalled past the response timeout comes back as Unknown after one POST`() {
+        pg.stalls(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
+
+        val result = paymentGateway.requestPayment(PG_ORDER_ID, Money(AMOUNT), CARD)
+
+        assertThat(result).isInstanceOf(PaymentRequestResult.Unknown::class.java)
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
