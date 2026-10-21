@@ -11,24 +11,27 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.SQLRestriction
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 /**
- * 확정 전 주문 하나의 금액을 PG로 치르는 일과, 그에 대해 커머스가 남긴 기록(`CONTEXT.md` 결제). 주문과 다른 애그리거트이며
- * 주문을 식별자로만 가리킨다(ADR 0021). 주문마다 하나, 멱등 키마다 하나이고, 두 유일 키가 그것을 지킨다.
+ * The commerce side's record of paying for one draft order through the PG (`CONTEXT.md` Payment). It reflects what is known
+ * about the PG transaction, not the transaction itself.
  *
- * 연관이 없으므로 주문 외래 키 `FK_PAYMENT_ON_ORDER_ID`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014). `payment`는
- * 가리키는 `orders`보다 이름 차례가 뒤라, 스키마를 다시 만들 때 `scalar-foreign-keys-drop.sql`이 그 외래 키를 먼저 지운다
- * (포인트·주문 설계 8.2).
+ * Payment is its own aggregate and refers to its order by ID only (ADR 0021). Unique constraints allow at most one payment per
+ * order and one per idempotency key.
  *
- * 결과 미확인으로 시작한다. 주문 식별자, 멱등 키, 금액, PG 주문 번호는 생성 때 정해지고 바뀌지 않는다. 카드는 PG에 넘기기만 하고
- * 담지 않는다.
+ * Without a JPA association, `scalar-foreign-keys.sql` adds the order foreign key `FK_PAYMENT_ON_ORDER_ID` (ADR 0014).
+ * Hibernate drops tables in alphabetical order and leaves keys it does not map in place, so `orders` would go before `payment`
+ * and MySQL would refuse. `scalar-foreign-keys-drop.sql` drops the key first (points-orders design 8.2).
  *
- * PG의 답은 [reconcile]과 [reject]로만 받는다. 결제 상태는 그 둘에서만 앞으로 가고, 맞지 않는 답은 상태를 바꾸지 않고 충돌로
- * 남는다(ADR 0021 규칙 1). PG에게서 답을 얻지 못한 것은 여기에 오지 않는다.
+ * A payment starts as [PaymentStatus.UNKNOWN]. Its order ID, idempotency key, amount, and PG order ID never change after
+ * creation. Card details are passed through to the PG and never stored.
  *
- * 결제를 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 결제는 없는 결제다(ADR 0016).
+ * Answers from the PG come in only through [reconcile] and [reject], and only those two move the status forward. An answer
+ * that does not match this payment leaves it untouched and is returned as [ReconcileResult.Conflicted] (ADR 0021 rule 1).
+ * Calls that get no answer from the PG never reach this class.
+ *
+ * Nothing deletes payments yet, but as an aggregate root Payment supports soft deletion, and queries treat a deleted payment
+ * as missing (ADR 0016).
  */
 @Entity
 @Table(
@@ -42,19 +45,19 @@ class Payment(
     @Column(nullable = false, updatable = false)
     val orderId: Long,
 
-    /** 고객이 결제를 시작할 때 보낸 키. 공백뿐이지 않고 [IDEMPOTENCY_KEY_MAX_LENGTH]자 이하다. */
+    /** Sent by the customer when starting the payment. Must not be blank or exceed [IDEMPOTENCY_KEY_MAX_LENGTH] characters. */
     @Column(nullable = false, updatable = false, length = IDEMPOTENCY_KEY_MAX_LENGTH)
     val idempotencyKey: String,
 
-    /** PG로 치를 금액. 1원 이상이다. */
+    /** The amount charged through the PG. Must be at least 1 won. */
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "amount", nullable = false, updatable = false))
     val amount: Money,
 ) : BaseEntity() {
     /**
-     * PG에 알리는 주문 식별자(`CONTEXT.md` PG 주문 번호). `LP-ORD-` 뒤에 주문 식별자를 10자리로 0 채움한다.
-     * 10자리는 최소 폭이라 더 긴 식별자도 자르지 않는다. PG에 보내는 값이라 `format`의 `%d`처럼 JVM 기본 로캘의 숫자를
-     * 따르는 길을 쓰지 않는다.
+     * The order identifier sent to the PG (`CONTEXT.md` pgOrderId): `LP-ORD-` plus the order ID, zero-padded to at least 10
+     * digits. Longer IDs are kept whole. Built with `padStart` rather than `String.format("%010d")`, whose digits depend on the
+     * JVM's default locale.
      */
     @Column(nullable = false, updatable = false)
     val pgOrderId: String = "LP-ORD-" + orderId.toString().padStart(10, '0')
@@ -65,20 +68,11 @@ class Payment(
         protected set
 
     /**
-     * 이 결제의 PG 거래에 PG가 붙인 식별자(`CONTEXT.md` 거래 키). 처음 맞은 PG 거래에서 받고, 그 뒤의 다른 키는 충돌이다.
-     * 모르면 null이다. 생성 전 거절로 실패한 결제는 PG 거래가 없으므로 끝까지 null이다.
+     * The PG's identifier for this payment's PG transaction (`CONTEXT.md` transactionKey), or null until it is known. It is set
+     * from the first matching PG transaction, and any other key reported later is a conflict. A payment failed by a pre-create
+     * rejection never had a PG transaction, so its key stays null.
      */
     var transactionKey: String? = null
-        protected set
-
-    /** 마지막 충돌의 까닭. 충돌이 없었으면 null이다. 다음 충돌이 덮어쓰고, 뒤에 온 맞는 답은 지우지 않는다. */
-    @Enumerated(EnumType.STRING)
-    @Column(length = 32)
-    var conflictReason: ConflictReason? = null
-        protected set
-
-    /** 마지막 충돌의 시각. [BaseEntity]의 시각처럼 마이크로초로 자른다. */
-    var conflictedAt: Instant? = null
         protected set
 
     init {
@@ -96,16 +90,17 @@ class Payment(
     }
 
     /**
-     * PG가 이 결제의 PG 주문 번호로 말한 PG 거래들과 대사한다(ADR 0021 규칙 2). 알림, 대사 API, 받아들여진 생성 응답이 모두
-     * 이 메서드를 부른다. 위에서부터 처음 맞는 규칙을 따른다.
+     * Reconciles this payment against the PG transactions the PG reports for its PG order ID (ADR 0021 rule 2). PG callbacks,
+     * the reconciliation API, and accepted create responses all end up here. The first rule that applies wins:
      *
-     * 1. 0건이면 아는 것이 늘지 않아 그대로다. 찾지 못한 것은 실패가 아니다.
-     * 2. 2건 이상이면 어느 것이 이 결제인지 모르므로 충돌이다.
-     * 3. PG 주문 번호, 금액, 이미 아는 거래 키가 다르면 충돌이다.
-     * 4. 생성 전 거절로 실패한 결제에는 PG 상태가 무엇이든 충돌이다. 거절은 PG 거래가 없다는 증거였다(ADR 0022).
-     * 5. 끝난 결제에 반대의 결과면 충돌이고, 같은 결과나 처리 중이면 그대로다.
-     * 6. 처리 중 결제에 처리 중이면 그대로다.
-     * 7. 그 밖에는 거래 키를 받고 PG 상태를 따라 앞으로 간다.
+     * 1. No transactions: nothing new is learned, so nothing changes. Not finding one is not a failure.
+     * 2. Several transactions: there is no telling which one is this payment's, so it is a conflict.
+     * 3. A different PG order ID, amount, or already known transaction key is a conflict.
+     * 4. A payment failed by a pre-create rejection conflicts with any transaction, whatever its status, because the rejection
+     *    proved none existed (ADR 0022).
+     * 5. A finished payment conflicts with the opposite outcome and stays as it is on the same outcome or `PENDING`.
+     * 6. A pending payment stays as it is on another `PENDING`.
+     * 7. Otherwise the payment records the transaction key and moves to the reported status.
      */
     fun reconcile(transactions: List<PgTransaction>): ReconcileResult {
         if (transactions.isEmpty()) {
@@ -113,57 +108,61 @@ class Payment(
         }
 
         if (transactions.size > 1) {
-            return conflict(ConflictReason.MULTIPLE_TRANSACTIONS)
+            return ReconcileResult.Conflicted(ConflictReason.MULTIPLE_TRANSACTIONS)
         }
 
         val transaction = transactions.single()
         val reason = conflictReasonFor(transaction.pgOrderId, transaction.amount)
         if (reason != null) {
-            return conflict(reason)
+            return ReconcileResult.Conflicted(reason)
         }
 
         if (transactionKey != null && transaction.transactionKey != transactionKey) {
-            return conflict(ConflictReason.TRANSACTION_KEY_MISMATCH)
+            return ReconcileResult.Conflicted(ConflictReason.TRANSACTION_KEY_MISMATCH)
         }
 
-        // 대사는 끝내기 전에 거래 키를 받으므로, 거래 키 없이 실패한 결제는 생성 전 거절로 실패한 결제다.
+        // Reconciling records the transaction key whenever it finishes a payment, so a failed payment without one must have been
+        // failed by a pre-create rejection.
         if (status == PaymentStatus.FAILED && transactionKey == null) {
-            return conflict(ConflictReason.TRANSACTION_AFTER_REJECTION)
+            return ReconcileResult.Conflicted(ConflictReason.TRANSACTION_AFTER_REJECTION)
         }
 
-        val reported = transaction.status.toPaymentStatus()
-        if (status.isFinished && reported.isFinished && reported != status) {
-            return conflict(ConflictReason.RESULT_MISMATCH)
+        val reportedStatus = transaction.status.toPaymentStatus()
+        if (status.isFinished && reportedStatus.isFinished && reportedStatus != status) {
+            return ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH)
         }
 
-        if (status.isFinished || reported == status) {
+        if (status.isFinished || reportedStatus == status) {
             return ReconcileResult.Unchanged
         }
 
         transactionKey = transaction.transactionKey
 
-        return moveTo(reported)
+        return moveTo(reportedStatus)
     }
 
     /**
-     * 생성 전 거절을 받는다(ADR 0022). PG 주문 번호와 금액이 다르면 [reconcile]과 같은 충돌이다. 맞으면 결과 미확인은 실패로
-     * 끝나고 이미 실패한 결제는 그대로다. 처리 중과 성공은 PG 거래가 있다는 것을 알므로 "PG 거래가 없다"는 거절과 충돌한다.
-     * 거절에는 PG 거래가 없으므로 거래 키를 받지 않는다.
+     * Applies a [PgRejection] (ADR 0022). A different PG order ID or amount is a conflict, as in [reconcile]. Otherwise an
+     * `UNKNOWN` payment fails and a `FAILED` one stays as it is. A `PENDING` or `SUCCESS` payment already knows a PG transaction
+     * exists, so a rejection saying there is none conflicts with it. With no transaction, there is no transaction key to record.
      */
     fun reject(rejection: PgRejection): ReconcileResult {
         val reason = conflictReasonFor(rejection.pgOrderId, rejection.amount)
         if (reason != null) {
-            return conflict(reason)
+            return ReconcileResult.Conflicted(reason)
         }
 
         return when (status) {
             PaymentStatus.UNKNOWN -> moveTo(PaymentStatus.FAILED)
             PaymentStatus.FAILED -> ReconcileResult.Unchanged
-            PaymentStatus.PENDING, PaymentStatus.SUCCESS -> conflict(ConflictReason.RESULT_MISMATCH)
+            PaymentStatus.PENDING, PaymentStatus.SUCCESS -> ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH)
         }
     }
 
-    /** 답의 PG 주문 번호나 금액이 이 결제의 것과 다르면 그 충돌의 까닭이고, 같으면 null이다. 둘 다 다르면 PG 주문 번호다. */
+    /**
+     * Why an answer's PG order ID or amount conflicts with this payment, or null if both match. The PG order ID is checked
+     * first.
+     */
     private fun conflictReasonFor(pgOrderId: String, amount: Money): ConflictReason? {
         if (pgOrderId != this.pgOrderId) {
             return ConflictReason.PG_ORDER_ID_MISMATCH
@@ -176,23 +175,12 @@ class Payment(
         return null
     }
 
-    /** 부르는 쪽이 앞으로 가는 상태만 넘긴다. 결과 미확인에서 셋 모두로, 처리 중에서 성공·실패로 간다. */
+    /** Assumes a forward transition: `UNKNOWN` to any other status, or `PENDING` to `SUCCESS` or `FAILED`. */
     private fun moveTo(to: PaymentStatus): ReconcileResult {
         val from = status
         status = to
 
         return ReconcileResult.Changed(from, to)
-    }
-
-    /**
-     * 마지막 충돌의 까닭과 시각을 바꾼다. 결제 상태와 거래 키는 그대로다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스가
-     * 쓴다(2단계). 엔티티는 로그를 쓰지 않는다.
-     */
-    private fun conflict(reason: ConflictReason): ReconcileResult {
-        conflictReason = reason
-        conflictedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
-
-        return ReconcileResult.Conflicted(reason)
     }
 
     private fun PgStatus.toPaymentStatus(): PaymentStatus {

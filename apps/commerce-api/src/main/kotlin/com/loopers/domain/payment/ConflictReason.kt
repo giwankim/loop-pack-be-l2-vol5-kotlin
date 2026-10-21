@@ -1,6 +1,6 @@
 package com.loopers.domain.payment
 
-/** 결제와 맞지 않는 PG 거래나 생성 전 거절의 까닭(`CONTEXT.md` 충돌). 결제는 마지막 충돌의 까닭만 남긴다. */
+/** 결제와 맞지 않는 PG 거래나 생성 전 거절의 까닭(`CONTEXT.md` 충돌). */
 enum class ConflictReason {
     /** PG 주문 번호 하나에 PG 거래가 둘 이상이다. */
     MULTIPLE_TRANSACTIONS,

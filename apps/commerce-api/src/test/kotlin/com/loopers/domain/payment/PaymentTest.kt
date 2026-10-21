@@ -8,8 +8,6 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 class PaymentTest {
@@ -102,8 +100,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(status)
         assertThat(payment.transactionKey).isEqualTo(transactionKey)
-        assertThat(payment.conflictReason).isNull()
-        assertThat(payment.conflictedAt).isNull()
     }
 
     @Test
@@ -129,7 +125,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isNull()
     }
 
     @ParameterizedTest
@@ -162,12 +157,11 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isNull()
     }
 
     /** PG 주문 번호 하나에 PG 거래가 둘 이상이면 어느 것이 이 결제인지 모르므로 고르지 않는다. */
     @Test
-    fun `two transactions record a multiple transactions conflict and leave the payment unknown`() {
+    fun `two transactions report a multiple transactions conflict and leave the payment unknown`() {
         val payment = createPayment(orderId = 42)
         val transactions = listOf(
             createPgTransaction(payment, status = PgStatus.SUCCESS),
@@ -179,13 +173,11 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.MULTIPLE_TRANSACTIONS))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.MULTIPLE_TRANSACTIONS)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     /** 다른 주문의 PG 거래가 이 결제를 끝내거나 거래 키를 정하지 않는다. */
     @Test
-    fun `a transaction for another PG order number records a PG order conflict and leaves the payment unknown`() {
+    fun `a transaction for another PG order number reports a PG order conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42)
 
         val result = payment.reconcile(listOf(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043")))
@@ -193,12 +185,10 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.PG_ORDER_ID_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.PG_ORDER_ID_MISMATCH)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     @Test
-    fun `a transaction for another amount records an amount conflict and leaves the payment unknown`() {
+    fun `a transaction for another amount reports an amount conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42, amount = Money(15_000))
 
         val result = payment.reconcile(listOf(createPgTransaction(payment, amount = Money(15_001))))
@@ -206,8 +196,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.AMOUNT_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.AMOUNT_MISMATCH)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     /**
@@ -216,7 +204,7 @@ class PaymentTest {
      */
     @ParameterizedTest
     @EnumSource(PaymentStatus::class, names = ["PENDING", "SUCCESS", "FAILED"])
-    fun `a transaction with another key than the known one records a key conflict and keeps status and key`(
+    fun `a transaction with another key than the known one reports a key conflict and keeps status and key`(
         known: PaymentStatus,
     ) {
         val payment = paymentIn(known)
@@ -228,13 +216,12 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_KEY_MISMATCH))
         assertThat(payment.status).isEqualTo(known)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.TRANSACTION_KEY_MISMATCH)
     }
 
-    /** 반대의 결과는 사람이 볼 모순이라 반영하지 않고 남긴다. */
+    /** 반대의 결과는 반영하지 않고 충돌로 돌려준다. */
     @ParameterizedTest
     @CsvSource("SUCCESS, FAILED", "FAILED, SUCCESS")
-    fun `a finished payment told the opposite result records a result conflict and keeps its status and key`(
+    fun `a finished payment told the opposite result reports a result conflict and keeps its status and key`(
         finished: PaymentStatus,
         pgStatus: PgStatus,
     ) {
@@ -245,8 +232,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH))
         assertThat(payment.status).isEqualTo(finished)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.RESULT_MISMATCH)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     /**
@@ -283,29 +268,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(reason))
         assertThat(payment.status).isEqualTo(PaymentStatus.SUCCESS)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isEqualTo(reason)
-    }
-
-    /**
-     * 결제는 마지막 충돌만 남긴다. 두 충돌이 같은 마이크로초에 찍히면 시각을 덮어썼는지 가릴 수 없으므로, 두 번째 충돌 전에
-     * 시계가 첫 시각을 넘기를 기다린다.
-     */
-    @Test
-    fun `a later conflict overwrites the earlier reason and time and still keeps status and key`() {
-        val payment = paymentIn(PaymentStatus.PENDING)
-        payment.reconcile(listOf(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043")))
-        val firstConflictedAt = payment.conflictedAt!!
-        while (!Instant.now().truncatedTo(ChronoUnit.MICROS).isAfter(firstConflictedAt)) {
-            Thread.onSpinWait()
-        }
-
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = "TEST-TX-OTHER")))
-
-        assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_KEY_MISMATCH))
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.TRANSACTION_KEY_MISMATCH)
-        assertThat(payment.conflictedAt).isAfter(firstConflictedAt)
-        assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
-        assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
     }
 
     /** 알림과 조회는 차례를 지키지 않는다. 성공 뒤에 늦게 온 처리 중은 아는 것을 되돌리지 않는다. */
@@ -321,7 +283,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isNull()
     }
 
     /** 맞는 생성 전 거절은 PG 거래가 없다는 증거라 결과 미확인 결제를 실패로 끝낸다(ADR 0022). 없는 PG 거래의 거래 키는 없다. */
@@ -334,7 +295,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Changed(from = PaymentStatus.UNKNOWN, to = PaymentStatus.FAILED))
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isNull()
     }
 
     /**
@@ -347,7 +307,7 @@ class PaymentTest {
         "LP-ORD-0000000042, 15001, AMOUNT_MISMATCH",
         "LP-ORD-0000000043, 15001, PG_ORDER_ID_MISMATCH",
     )
-    fun `a rejection for another PG order number or amount records that conflict and leaves the payment unknown`(
+    fun `a rejection for another PG order number or amount reports that conflict and leaves the payment unknown`(
         pgOrderId: String,
         amount: Long,
         reason: ConflictReason,
@@ -358,8 +318,7 @@ class PaymentTest {
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(reason))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(payment.conflictReason).isEqualTo(reason)
-        assertThat(payment.conflictedAt).isNotNull()
+        assertThat(payment.transactionKey).isNull()
     }
 
     /** 같은 거절을 다시 들어도 바뀌는 것이 없어야 2단계가 예약을 두 번 풀지 않는다. */
@@ -374,16 +333,15 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isNull()
     }
 
     /**
      * 맞는 생성 전 거절은 PG 거래가 없다는 증거다(ADR 0022). 그 뒤에 맞는 PG 거래가 오면 PG 상태가 무엇이든 그 증거와 모순이라,
-     * 실패를 바꾸지도 거래 키를 받지도 않고 충돌로 남긴다. 실패를 말하는 PG 거래도 결과는 같지만 PG가 약속을 어긴 것이다.
+     * 실패를 바꾸지도 거래 키를 받지도 않고 충돌로 돌려준다. 실패를 말하는 PG 거래도 결과는 같지만 PG가 약속을 어긴 것이다.
      */
     @ParameterizedTest
     @EnumSource(PgStatus::class)
-    fun `a matching transaction after a matching rejection records a conflict and keeps the payment failed without a key`(
+    fun `a matching transaction after a matching rejection reports a conflict and keeps the payment failed without a key`(
         pgStatus: PgStatus,
     ) {
         val payment = createPayment(orderId = 42)
@@ -394,8 +352,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_AFTER_REJECTION))
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
         assertThat(payment.transactionKey).isNull()
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.TRANSACTION_AFTER_REJECTION)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     @Test
@@ -407,13 +363,12 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isNull()
     }
 
-    /** 처리 중과 성공은 PG 거래가 있다는 것을 안다. "PG 거래가 없다"는 거절은 그것을 되돌리지 않고 충돌로 남는다. */
+    /** 처리 중과 성공은 PG 거래가 있다는 것을 안다. "PG 거래가 없다"는 거절은 충돌이다. */
     @ParameterizedTest
     @EnumSource(PaymentStatus::class, names = ["PENDING", "SUCCESS"])
-    fun `a rejection for a payment with a known transaction records a result conflict and keeps status and key`(
+    fun `a rejection for a payment with a known transaction reports a result conflict and keeps status and key`(
         known: PaymentStatus,
     ) {
         val payment = paymentIn(known)
@@ -423,8 +378,6 @@ class PaymentTest {
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH))
         assertThat(payment.status).isEqualTo(known)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-        assertThat(payment.conflictReason).isEqualTo(ConflictReason.RESULT_MISMATCH)
-        assertThat(payment.conflictedAt).isNotNull()
     }
 
     /**

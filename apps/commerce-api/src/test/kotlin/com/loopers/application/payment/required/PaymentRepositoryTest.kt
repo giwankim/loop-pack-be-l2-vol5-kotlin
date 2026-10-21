@@ -1,6 +1,5 @@
 package com.loopers.application.payment.required
 
-import com.loopers.domain.payment.ConflictReason
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.createPayment
@@ -44,9 +43,8 @@ class PaymentRepositoryTest(
         assertThat(byIdempotencyKey?.id).isEqualTo(payment.id)
     }
 
-    /** 충돌 시각은 마이크로초로 잘려 있어 `datetime(6)`을 거친 뒤에도 처음 값과 같다. */
     @Test
-    fun `a payment that adopted a transaction key and then recorded a conflict reads back with both`() {
+    fun `a conflicting transaction leaves the saved status and transaction key unchanged`() {
         preparePayment()
         val transaction = createPgTransaction(payment, status = PgStatus.PENDING)
         reconcile(listOf(transaction))
@@ -58,8 +56,6 @@ class PaymentRepositoryTest(
         assertThat(found).isNotNull().isNotSameAs(payment)
         assertThat(found?.status).isEqualTo(PaymentStatus.PENDING)
         assertThat(found?.transactionKey).isEqualTo(transaction.transactionKey)
-        assertThat(found?.conflictReason).isEqualTo(ConflictReason.AMOUNT_MISMATCH)
-        assertThat(found?.conflictedAt).isEqualTo(payment.conflictedAt)
     }
 
     @Test
@@ -111,7 +107,7 @@ class PaymentRepositoryTest(
      * 그러면 열 이름이 `type`과 `number`라 "card"가 든 이름을 찾는 검사로는 걸리지 않는다. 열이 늘면 이 목록도 함께 고친다.
      */
     @Test
-    fun `the payment table has no column for the card`() {
+    fun `the payment table stores neither card nor conflict details`() {
         val columns = entityManager
             .createNativeQuery(
                 "select column_name from information_schema.columns where table_schema = database() " +
@@ -127,8 +123,6 @@ class PaymentRepositoryTest(
             "amount",
             "status",
             "transaction_key",
-            "conflict_reason",
-            "conflicted_at",
             "created_at",
             "updated_at",
             "deleted_at",
