@@ -22,6 +22,7 @@ import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientObservationAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.test.context.TestPropertySource
@@ -50,6 +51,7 @@ import java.util.concurrent.CopyOnWriteArrayList
     JacksonAutoConfiguration::class,
     HttpMessageConvertersAutoConfiguration::class,
     RestClientAutoConfiguration::class,
+    ValidationAutoConfiguration::class,
     RestClientObservationAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s"])
@@ -63,6 +65,12 @@ class ObservedPaymentGatewayTest(
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
+        private val REQUEST = PgTransactionCreateRequest(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            cardType = CARD.type,
+            cardNumber = CARD.number,
+        )
     }
 
     /** [PaymentGatewayTest]의 같은 필드와 같은 까닭으로 생성자가 아니라 필드로 받는다. */
@@ -87,7 +95,7 @@ class ObservedPaymentGatewayTest(
     fun `a create is recorded as an HTTP client observation with its method, URI template and status`() {
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        paymentGateway.createTransaction(REQUEST)
 
         val observation = observations.stopped().single()
         assertThat(observation.name).isEqualTo("http.client.requests")

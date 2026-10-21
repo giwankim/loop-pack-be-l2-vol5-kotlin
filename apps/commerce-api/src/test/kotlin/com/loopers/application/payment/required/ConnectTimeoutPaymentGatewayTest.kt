@@ -4,7 +4,6 @@ import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
-import com.loopers.domain.shared.Money
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeAll
@@ -15,6 +14,7 @@ import org.springframework.boot.http.converter.autoconfigure.HttpMessageConverte
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig
 import java.io.IOException
@@ -47,6 +47,7 @@ private const val UNROUTED_PORT = 8082
     JacksonAutoConfiguration::class,
     HttpMessageConvertersAutoConfiguration::class,
     RestClientAutoConfiguration::class,
+    ValidationAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.base-url=http://$UNROUTED_HOST:$UNROUTED_PORT"])
 class ConnectTimeoutPaymentGatewayTest(
@@ -57,6 +58,12 @@ class ConnectTimeoutPaymentGatewayTest(
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
+        private val REQUEST = PgTransactionCreateRequest(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            cardType = CARD.type,
+            cardNumber = CARD.number,
+        )
 
         /** Any limit works. A dropped SYN times out however long the probe waits. */
         private const val PROBE_TIMEOUT_MILLIS = 200
@@ -85,7 +92,7 @@ class ConnectTimeoutPaymentGatewayTest(
     @Test
     fun `a create that cannot connect within the connect timeout throws PgOutcomeUnknownException`() {
         val exception = assertThrows<PgOutcomeUnknownException> {
-            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+            paymentGateway.createTransaction(REQUEST)
         }
 
         assertThat(exception.message).isEqualTo("ConnectTimeoutException")

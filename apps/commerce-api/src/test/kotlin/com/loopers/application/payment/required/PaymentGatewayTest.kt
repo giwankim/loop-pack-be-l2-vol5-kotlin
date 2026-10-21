@@ -12,11 +12,14 @@ import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
 import com.loopers.support.TestPg.Companion.REJECTED_BEFORE_CREATE
+import jakarta.validation.ConstraintViolationException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.Arguments.arguments
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.MethodSource
 import org.junit.jupiter.params.provider.ValueSource
@@ -25,6 +28,7 @@ import org.springframework.boot.http.converter.autoconfigure.HttpMessageConverte
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig
 import org.wiremock.spring.InjectWireMock
@@ -56,6 +60,7 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
     JacksonAutoConfiguration::class,
     HttpMessageConvertersAutoConfiguration::class,
     RestClientAutoConfiguration::class,
+    ValidationAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s", "pg.callback-url=$CALLBACK_URL"])
 @EnableTestPg
@@ -67,6 +72,27 @@ class PaymentGatewayTest(
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
+        private val REQUEST = PgTransactionCreateRequest(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            cardType = CARD.type,
+            cardNumber = CARD.number,
+        )
+
+        @JvmStatic
+        fun invalidCreateInputs(): List<Arguments> {
+            return listOf(
+                arguments(REQUEST.copy(pgOrderId = ""), "pgOrderId"),
+                arguments(REQUEST.copy(pgOrderId = "   "), "pgOrderId"),
+                arguments(REQUEST.copy(amount = 0), "amount"),
+                arguments(REQUEST.copy(amount = -1), "amount"),
+                arguments(REQUEST.copy(cardType = ""), "cardType"),
+                arguments(REQUEST.copy(cardType = "   "), "cardType"),
+                arguments(REQUEST.copy(cardNumber = ""), "cardNumber"),
+                arguments(REQUEST.copy(cardNumber = "   "), "cardNumber"),
+                arguments(REQUEST.copy(cardNumber = "4111-1111-1111-1112"), "cardNumber"),
+            )
+        }
 
         /**
          * 생성 전 거절을 닮았지만 정확하지 않은 422의 본문. `null`은 본문 없는 422다. 어느 것도 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3).
@@ -151,11 +177,44 @@ class PaymentGatewayTest(
         assertThat(server.options.http2PlainDisabled).isTrue()
     }
 
+    @ParameterizedTest
+    @MethodSource("invalidCreateInputs")
+    fun `invalid create input is rejected before sending a request`(
+        request: PgTransactionCreateRequest,
+        invalidField: String,
+    ) {
+        val exception = assertThrows<ConstraintViolationException> {
+            paymentGateway.createTransaction(request)
+        }
+
+        assertThat(exception.constraintViolations).anySatisfy {
+            assertThat(it.propertyPath.toString()).endsWith(".$invalidField")
+        }
+        assertThat(pg.requestCount()).isZero()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["4111111111111111", "4111-1111-1111-1111"])
+    fun `a one won create accepts plain and hyphenated card numbers`(cardNumber: String) {
+        val request = REQUEST.copy(amount = 1, cardNumber = cardNumber)
+        pg.acceptsCreate(
+            pgOrderId = PG_ORDER_ID,
+            amount = 1,
+            card = CARD.copy(number = cardNumber),
+            transactionKey = TRANSACTION_KEY,
+        )
+
+        val transaction = paymentGateway.createTransaction(request)
+
+        assertThat(transaction.amount).isEqualTo(Money(1))
+        assertThat(pg.createCount()).isEqualTo(1)
+    }
+
     @Test
     fun `an accepted create returns the PG's transaction and reaches the PG as one POST`() {
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        val transaction = paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val transaction = paymentGateway.createTransaction(REQUEST)
 
         assertThat(transaction).isEqualTo(
             PgTransaction(
@@ -179,7 +238,7 @@ class PaymentGatewayTest(
             pgStatus = status.name,
         )
 
-        val transaction = paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+        val transaction = paymentGateway.createTransaction(REQUEST)
 
         assertThat(transaction).isEqualTo(
             PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT), status = status),
@@ -190,7 +249,7 @@ class PaymentGatewayTest(
     fun `an exact pre-create rejection throws PgRejectedException and reaches the PG as one POST`() {
         pg.rejectsBeforeCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
-        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = PG_ORDER_ID, amount = Money(AMOUNT)))
         assertThat(pg.createCount()).isEqualTo(1)
@@ -209,7 +268,7 @@ class PaymentGatewayTest(
             """,
         )
 
-        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = "LP-ORD-0000000043", amount = Money(7_001)))
     }
@@ -219,7 +278,7 @@ class PaymentGatewayTest(
     fun `a 422 that is not the exact pre-create rejection throws PgOutcomeUnknownException`(body: String?) {
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 422, body = body)
 
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(pg.createCount()).isEqualTo(1)
     }
@@ -234,7 +293,7 @@ class PaymentGatewayTest(
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = httpStatus)
 
         val exception = assertThrows<PgOutcomeUnknownException> {
-            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+            paymentGateway.createTransaction(REQUEST)
         }
 
         assertThat(exception.message).isEqualTo("HTTP $httpStatus")
@@ -253,7 +312,7 @@ class PaymentGatewayTest(
         )
 
         val exception = assertThrows<PgOutcomeUnknownException> {
-            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+            paymentGateway.createTransaction(REQUEST)
         }
 
         assertThat(exception.message).isEqualTo("HTTP $httpStatus")
@@ -268,7 +327,7 @@ class PaymentGatewayTest(
         pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 202, body = body)
 
         val exception = assertThrows<PgOutcomeUnknownException> {
-            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+            paymentGateway.createTransaction(REQUEST)
         }
 
         assertThat(exception.cause).isNull()
@@ -291,7 +350,7 @@ class PaymentGatewayTest(
             contentType = "application/yaml",
         )
 
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(REQUEST) }
         assertThat(pg.createCount()).isEqualTo(1)
     }
 
@@ -301,7 +360,7 @@ class PaymentGatewayTest(
         pg.redirectsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
         val exception = assertThrows<PgOutcomeUnknownException> {
-            paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
+            paymentGateway.createTransaction(REQUEST)
         }
 
         assertThat(exception.message).isEqualTo("HTTP 307")
@@ -313,7 +372,7 @@ class PaymentGatewayTest(
     fun `a connection dropped after the PG stored the transaction throws PgOutcomeUnknownException after one POST`() {
         pg.losesCreateResponse(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD)
 
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(pg.createCount()).isEqualTo(1)
     }
@@ -323,7 +382,7 @@ class PaymentGatewayTest(
     fun `a create stalled past the response timeout throws PgOutcomeUnknownException after one POST`() {
         pg.stallsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
 
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(pg.createCount()).isEqualTo(1)
     }

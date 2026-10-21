@@ -3,8 +3,8 @@ package com.loopers.adapter.integration.pg
 import com.loopers.application.payment.required.PaymentGateway
 import com.loopers.application.payment.required.PgOutcomeUnknownException
 import com.loopers.application.payment.required.PgRejectedException
+import com.loopers.application.payment.required.PgTransactionCreateRequest
 import com.loopers.application.payment.required.PgUnavailableException
-import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -16,6 +16,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter
 import org.springframework.stereotype.Component
+import org.springframework.validation.annotation.Validated
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse
 import org.springframework.web.client.RestClientException
@@ -44,6 +45,7 @@ import tools.jackson.module.kotlin.jacksonMapperBuilder
  * [LocalPgGatewayConfig] and a strict PG-only mapper.
  */
 @Component
+@Validated
 class LocalPgGateway(
     restClientBuilder: RestClient.Builder,
     pgRequestFactory: HttpComponentsClientHttpRequestFactory,
@@ -79,12 +81,12 @@ class LocalPgGateway(
 
     private val callbackUrl = properties.callbackUrl
 
-    override fun createTransaction(pgOrderId: String, amount: Money, card: CreditCard): PgTransaction {
-        val request = PgPaymentCreateRequest(
-            orderId = pgOrderId,
-            cardType = card.type,
-            cardNo = card.number,
-            amount = amount.amount,
+    override fun createTransaction(request: PgTransactionCreateRequest): PgTransaction {
+        val body = PgPaymentCreateRequest(
+            orderId = request.pgOrderId,
+            cardType = request.cardType,
+            cardNo = request.cardNumber,
+            amount = request.amount,
             callbackUrl = callbackUrl,
         )
 
@@ -92,7 +94,7 @@ class LocalPgGateway(
             restClient.post()
                 .uri(PAYMENTS_PATH)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
+                .body(body)
                 .exchange { _, response -> readCreateResponse(response) }
         } catch (e: RestClientException) {
             throw PgOutcomeUnknownException(e.failureKind())

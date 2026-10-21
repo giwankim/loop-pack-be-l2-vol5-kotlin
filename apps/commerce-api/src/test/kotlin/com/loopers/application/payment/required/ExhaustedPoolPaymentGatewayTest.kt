@@ -5,7 +5,6 @@ import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
 import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
-import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
 import org.assertj.core.api.Assertions.assertThat
@@ -17,6 +16,7 @@ import org.springframework.boot.http.converter.autoconfigure.HttpMessageConverte
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
+import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig
 import org.wiremock.spring.InjectWireMock
@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit
     JacksonAutoConfiguration::class,
     HttpMessageConvertersAutoConfiguration::class,
     RestClientAutoConfiguration::class,
+    ValidationAutoConfiguration::class,
 )
 @TestPropertySource(properties = ["pg.max-connections=1", "pg.response-timeout=1s"])
 @EnableTestPg
@@ -50,6 +51,12 @@ class ExhaustedPoolPaymentGatewayTest(
         private const val PG_ORDER_ID = "LP-ORD-0000000042"
         private const val AMOUNT = 7_000L
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
+        private val REQUEST = PgTransactionCreateRequest(
+            pgOrderId = PG_ORDER_ID,
+            amount = AMOUNT,
+            cardType = CARD.type,
+            cardNumber = CARD.number,
+        )
 
         /** 멈춘 생성이 PG에 닿기를 기다리는 한도. 그 생성이 연결을 쥐는 응답 한도 1 s보다 짧다. */
         private val REACH_LIMIT: Duration = Duration.ofMillis(500)
@@ -69,12 +76,14 @@ class ExhaustedPoolPaymentGatewayTest(
         pg.stallsCreate(pgOrderId = STALLED_PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0041")
         pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = "TEST-TX-0042")
         val stalled = CompletableFuture.runAsync {
-            assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(STALLED_PG_ORDER_ID, Money(AMOUNT), CARD) }
+            assertThrows<PgOutcomeUnknownException> {
+                paymentGateway.createTransaction(REQUEST.copy(pgOrderId = STALLED_PG_ORDER_ID))
+            }
         }
         // WireMock은 지연 전에 요청을 기록하므로, PG에 닿았다면 멈춘 생성이 풀의 하나뿐인 연결을 쥐고 있다.
         await().atMost(REACH_LIMIT).until { pg.createCount() == 1 }
 
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
+        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(REQUEST) }
 
         assertThat(pg.createCount()).isEqualTo(1)
         // 멈춘 생성이 끝나기를 기다려, 그 호출이 컨텍스트가 닫힐 때까지 남지 않게 한다.

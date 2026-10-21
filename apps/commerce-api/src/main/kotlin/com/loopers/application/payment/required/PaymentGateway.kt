@@ -1,8 +1,8 @@
 package com.loopers.application.payment.required
 
-import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.shared.Money
+import jakarta.validation.ConstraintViolationException
+import jakarta.validation.Valid
 
 /**
  * PG에 PG 거래를 요청하고 조회하는 포트(ADR 0021). 구현은 `adapter.integration.pg`의 로컬 테스트 PG 어댑터다.
@@ -17,13 +17,14 @@ import com.loopers.domain.shared.Money
  */
 interface PaymentGateway {
     /**
-     * [pgOrderId]의 PG 거래를 [amount]만큼 [card]로 만들어 달라고 한 번 요청한다. 다시 보내지 않는다(ADR 0022 규칙 1).
+     * [request]에 담긴 PG 주문 번호, 금액, 카드로 PG 거래를 만들어 달라고 한 번 요청한다. 다시 보내지 않는다(ADR 0022 규칙 1).
      * 받아들여진 생성의 [PgTransaction]을 돌려주지만 성공이 아니다. PG 상태는 그 PG 거래가 말한다.
      *
+     * @throws ConstraintViolationException 입력이 제약에 맞지 않는다. PG에 요청하지 않는다.
      * @throws PgRejectedException 정확한 생성 전 거절. PG 거래가 없다.
      * @throws PgOutcomeUnknownException 그 밖의 모든 응답과 답 없음. 실패가 아니다.
      */
-    fun createTransaction(pgOrderId: String, amount: Money, card: CreditCard): PgTransaction
+    fun createTransaction(@Valid request: PgTransactionCreateRequest): PgTransaction
 
     /**
      * 거래 키 [transactionKey]의 PG 거래를 한 번 조회한다. PG가 그 PG 거래를 모르면(404) `null`이다. `null`은 PG 거래가 없다는 증거가 아니다.

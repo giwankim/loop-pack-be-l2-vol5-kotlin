@@ -156,10 +156,11 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 | 메서드 | 돌려주는 것 | 던지는 것 |
 | --- | --- | --- |
-| `createTransaction(pgOrderId, amount, card)` | 받아들여진 생성의 `PgTransaction`. 성공이 아니다. | `PgRejectedException(rejection)`, `PgOutcomeUnknownException` |
+| `createTransaction(request: PgTransactionCreateRequest)` | 받아들여진 생성의 `PgTransaction`. 성공이 아니다. | `ConstraintViolationException`, `PgRejectedException(rejection)`, `PgOutcomeUnknownException` |
 | `retrieveTransaction(transactionKey)` | `PgTransaction?`. PG가 모르는 키(404)면 `null`. | `PgUnavailableException` |
 | `listTransactions(pgOrderId)` | `List<PgTransaction>`. 비어 있을 수 있다. | `PgUnavailableException` |
 
+- 생성 입력은 포트와 같은 패키지의 `PgTransactionCreateRequest`다(2026-10-21). `pgOrderId`, `cardType`, `cardNumber`는 `@NotBlank`, `Long`인 `amount`는 `@Positive`로 검증한다. 카드 번호는 Hibernate Validator의 `@CreditCardNumber(ignoreNonDigitCharacters = true)`로 Luhn 검사를 하고, 하이픈 같은 숫자 아닌 문자는 무시한다. 카드가 발급되었거나 카드 종류와 맞는지는 이 검사로 알 수 없다. 포트 파라미터에 `@Valid`, 어댑터에 `@Validated`를 두어 잘못된 입력은 HTTP 요청 전에 `ConstraintViolationException`으로 거절한다. 이 예외는 PG의 답이 아니므로 PG 예외로 바꾸지 않는다. 트랜잭션을 더하지 않도록 `@ValidatedApplicationService`는 쓰지 않는다. 어댑터의 HTTP 본문 타입과 설정에서 오는 알림 주소는 그대로 어댑터에 둔다.
 - 생성의 이름은 `createTransaction`이다(2026-10-20, `requestPayment`에서 바꿨다). 이 호출이 PG 거래를 만들고, 거래 키는 그 응답에서 처음 생긴다. Stripe의 PaymentIntent와 Toss의 결제 승인에서 `confirm`은 PG가 먼저 만든 객체를 그 키로 승인하는 일이다. 그 두 단계는 생성과 승인 사이에 고객이 인증하는 단계가 있어서 생긴다. 테스트 PG에는 그 단계가 없어 한 번의 호출로 거래를 만든다. Toss의 키인 결제(`POST /v1/payments/key-in`), Square의 `POST /v2/payments`와 같은 모양이다. `confirm`은 고객의 요청인 주문을 확정하다의 이름으로 남긴다.
 - 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다.
 - 세 예외에는 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡지 못하게 하려는 것이다. 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다. Jackson의 실패는 `HttpMessageConversionException`이고 `RestClientException`이 아니어서 어댑터의 catch를 지난다.
