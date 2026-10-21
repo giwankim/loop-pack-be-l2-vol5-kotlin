@@ -3,6 +3,7 @@ package com.loopers.support.test
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.required.OrderRepository
+import com.loopers.application.payment.required.PaymentRepository
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
@@ -13,6 +14,9 @@ import com.loopers.domain.like.Like
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.createOrder
 import com.loopers.domain.order.createOrderProduct
+import com.loopers.domain.payment.Payment
+import com.loopers.domain.payment.PgTransaction
+import com.loopers.domain.payment.createPayment
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.createProduct
@@ -63,6 +67,9 @@ abstract class BaseRepositoryTest {
     @Autowired
     private lateinit var orderRepository: OrderRepository
 
+    @Autowired
+    private lateinit var paymentRepository: PaymentRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -80,6 +87,9 @@ abstract class BaseRepositoryTest {
 
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
+
+    /** 마지막으로 준비한 결제. */
+    protected lateinit var payment: Payment
 
     protected fun prepareBrand(name: String? = null): Brand {
         return brandRepository.save(createBrand(name = name)).also { brand = it }
@@ -122,6 +132,14 @@ abstract class BaseRepositoryTest {
         return orderRepository.save(createOrder(user.id, products.map { createOrderProduct(it) })).also { order = it }
     }
 
+    /** 주문의 총액을 치르는 결제. 주문 식별자가 외래 키에 걸리므로 저장한 주문을 받는다. */
+    protected fun preparePayment(
+        order: Order = prepareOrder(),
+        idempotencyKey: String? = null,
+    ): Payment {
+        return paymentRepository.save(createPayment(order.id, idempotencyKey, order.totalAmount)).also { payment = it }
+    }
+
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRepository.save(brand.apply { delete() })
@@ -142,7 +160,7 @@ abstract class BaseRepositoryTest {
     }
 
     /**
-     * 삭제 시각을 찍어 명시적으로 저장한다. 사용자·포인트 계정·주문을 삭제하는 기능은 없다. 셋은 애그리거트 루트라
+     * 삭제 시각을 찍어 명시적으로 저장한다. 사용자·포인트 계정·주문·결제를 삭제하는 기능은 없다. 넷은 애그리거트 루트라
      * 삭제 필터를 기본으로 가지므로(ADR 0016), 이 상태는 그 필터를 확인하는 테스트만 만든다.
      */
     protected fun deleteUser(user: User = this.user) {
@@ -157,6 +175,17 @@ abstract class BaseRepositoryTest {
     /** [deleteUser]와 같다. */
     protected fun deleteOrder(order: Order = this.order) {
         orderRepository.save(order.apply { delete() })
+    }
+
+    /** [deleteUser]와 같다. */
+    protected fun deletePayment(payment: Payment = this.payment) {
+        paymentRepository.save(payment.apply { delete() })
+    }
+
+    /** 결제를 PG 거래와 대사하고 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
+    protected fun reconcile(transactions: List<PgTransaction>, payment: Payment = this.payment) {
+        payment.reconcile(transactions)
+        paymentRepository.save(payment)
     }
 
     /** 좋아요 행을 지운다. 취소는 논리 삭제를 쓰지 않는다(ADR 0001). */

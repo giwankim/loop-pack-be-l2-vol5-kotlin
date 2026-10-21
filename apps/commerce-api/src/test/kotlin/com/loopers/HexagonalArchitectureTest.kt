@@ -29,9 +29,9 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
     ],
 )
 class HexagonalArchitectureTest {
-    // splearn's three layers, with its single adapter layer split in two so that the web and persistence adapters
-    // cannot reach each other. ApiControllerAdvice sits at the adapter root as in splearn, but it only answers web
-    // requests, so that one package belongs to the web adapter.
+    // splearn's three layers, with its single adapter layer split in three so that the web, persistence and
+    // integration (outbound HTTP, ADR 0021) adapters cannot reach each other. ApiControllerAdvice sits at the adapter
+    // root as in splearn, but it only answers web requests, so that one package belongs to the web adapter.
     @ArchTest
     val dependenciesPointInward: ArchRule = layeredArchitecture()
         .consideringAllDependencies()
@@ -39,11 +39,15 @@ class HexagonalArchitectureTest {
         .layer("application").definedBy("$ROOT.application..")
         .layer("adapter.webapi").definedBy("$ROOT.adapter", "$ROOT.adapter.webapi..")
         .layer("adapter.persistence").definedBy("$ROOT.adapter.persistence..")
+        .layer("adapter.integration").definedBy("$ROOT.adapter.integration..")
         .layer("support").definedBy("$ROOT.support..")
-        .whereLayer("domain").mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence")
-        .whereLayer("application").mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence")
+        .whereLayer("domain")
+        .mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence", "adapter.integration")
+        .whereLayer("application")
+        .mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence", "adapter.integration")
         .whereLayer("adapter.webapi").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter.integration").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
     // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
@@ -61,6 +65,9 @@ class HexagonalArchitectureTest {
 
     @ArchTest
     val persistenceSlicesAreFreeOfCycles: ArchRule = slicesOf("adapter.persistence").shouldBeFreeOfCycles()
+
+    @ArchTest
+    val integrationSlicesAreFreeOfCycles: ArchRule = slicesOf("adapter.integration").shouldBeFreeOfCycles()
 
     @ArchTest
     val domainSlicesOnlyReadEachOther: ArchRule = slicesOf("domain")
