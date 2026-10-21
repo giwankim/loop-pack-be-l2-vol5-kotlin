@@ -106,34 +106,17 @@ class LocalPgGateway(
     private fun readCreateResponse(response: ConvertibleClientHttpResponse): PgTransaction {
         val status = response.statusCode.value()
         if (status == HttpStatus.ACCEPTED.value()) {
-            return readAccepted(response)
+            return response.readPgTransaction()
         }
 
         if (status == HttpStatus.UNPROCESSABLE_CONTENT.value()) {
-            throwRejection(response)
+            val rejection = response.readExactPgRejection()
+                ?: throw PgOutcomeUnknownException("HTTP $status")
+
+            throw PgRejectedException(rejection)
         }
 
         throw PgOutcomeUnknownException("HTTP $status")
-    }
-
-    private fun readAccepted(response: ConvertibleClientHttpResponse): PgTransaction {
-        val transaction = response.bodyTo(PgTransactionResponse::class.java)
-            ?: throw UnreadablePgResponseException("A 202 has no body.")
-
-        return transaction.toPgTransaction()
-    }
-
-    /**
-     * Only an exact pre-create rejection proves that no PG transaction exists (ADR 0022 rule 2). A 422 without a body or with an
-     * inexact one is outcome unknown. Whether the echoed PG order ID and amount match the request is for the payment to check.
-     */
-    private fun throwRejection(response: ConvertibleClientHttpResponse): Nothing {
-        val rejection = response.bodyTo(PgRejectionResponse::class.java)
-        if (rejection == null || !rejection.isExact()) {
-            throw PgOutcomeUnknownException("HTTP ${HttpStatus.UNPROCESSABLE_CONTENT.value()}")
-        }
-
-        throw PgRejectedException(rejection.toPgRejection())
     }
 
     override fun retrieveTransaction(transactionKey: String): PgTransaction? {
@@ -160,10 +143,7 @@ class LocalPgGateway(
             throw PgUnavailableException("HTTP $status")
         }
 
-        val transaction = response.bodyTo(PgTransactionResponse::class.java)
-            ?: throw UnreadablePgResponseException("A 200 has no body.")
-
-        return transaction.toPgTransaction()
+        return response.readPgTransaction()
     }
 
     override fun listTransactions(pgOrderId: String): List<PgTransaction> {
@@ -186,14 +166,40 @@ class LocalPgGateway(
             throw PgUnavailableException("HTTP $status")
         }
 
-        val transactions = response.bodyTo(object : ParameterizedTypeReference<List<PgTransactionResponse?>>() {})
-            ?: throw UnreadablePgResponseException("A 200 has no body.")
-        if (null in transactions) {
-            throw UnreadablePgResponseException("The array has a null element.")
-        }
-
-        return transactions.filterNotNull().map { it.toPgTransaction() }
+        return response.readPgTransactions()
     }
+}
+
+/** A well-formed PG transaction. A missing body is unreadable. */
+private fun ConvertibleClientHttpResponse.readPgTransaction(): PgTransaction {
+    val transaction = bodyTo(PgTransactionResponse::class.java)
+        ?: throw UnreadablePgResponseException("A ${statusCode.value()} has no body.")
+
+    return transaction.toPgTransaction()
+}
+
+/** A JSON array of well-formed PG transactions. A missing body or a null element is unreadable. */
+private fun ConvertibleClientHttpResponse.readPgTransactions(): List<PgTransaction> {
+    val transactions = bodyTo(object : ParameterizedTypeReference<List<PgTransactionResponse?>>() {})
+        ?: throw UnreadablePgResponseException("A ${statusCode.value()} has no body.")
+    if (null in transactions) {
+        throw UnreadablePgResponseException("The array has a null element.")
+    }
+
+    return transactions.filterNotNull().map { it.toPgTransaction() }
+}
+
+/**
+ * The exact pre-create rejection, or `null` when the body is missing or inexact. Only an exact one proves that no PG transaction
+ * exists (ADR 0022 rule 2). Whether the echoed PG order ID and amount match the request is for the payment to check.
+ */
+private fun ConvertibleClientHttpResponse.readExactPgRejection(): PgRejection? {
+    val rejection = bodyTo(PgRejectionResponse::class.java)
+    if (rejection == null || !rejection.isExact()) {
+        return null
+    }
+
+    return rejection.toPgRejection()
 }
 
 /**
@@ -228,6 +234,10 @@ private fun RestClientException.failureKind(): String {
  * Jackson parsed the PG's response but it does not match the contract: an empty body, a blank transaction key, a null array
  * element, an unknown PG status or a negative amount. Extends [RestClientException] so that the one catch that turns transport
  * and Jackson errors into outcome unknown or unavailable handles this as well.
+ *
+ * Only the body readers and the JSON types throw it, and the status mappers throw only the port's exceptions. The readers are
+ * the only code that touches the JSON types, and they extend `ConvertibleClientHttpResponse`, which exists only inside
+ * `exchange`, so this always reaches the catch of the call that read the body.
  */
 private class UnreadablePgResponseException(
     message: String,
