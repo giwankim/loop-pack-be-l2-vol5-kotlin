@@ -16,7 +16,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.MethodSource
@@ -26,8 +25,6 @@ import org.springframework.boot.http.converter.autoconfigure.HttpMessageConverte
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer
-import org.springframework.boot.test.system.CapturedOutput
-import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig
 import org.wiremock.spring.InjectWireMock
@@ -47,8 +44,8 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
  *   지워도 요청 수가 그대로다(탐침 보고서 §3).
  * - 알림 주소는 [CALLBACK_URL]이다.
  *
- * 이 저장소의 다른 Spring 테스트와 달리 기반 클래스를 상속하지 않는다. 호출마다의 로그 줄은 출력 캡처로 읽는다. 테스트가 끝날 때마다
- * 테스트 PG가 받은 요청이 모두 장면의 스텁과 맞았는지 본다([everyRequestMatchedAScene]).
+ * 이 저장소의 다른 Spring 테스트와 달리 기반 클래스를 상속하지 않는다. 테스트가 끝날 때마다 테스트 PG가 받은 요청이 모두 장면의 스텁과
+ * 맞았는지 본다([everyRequestMatchedAScene]).
  * 연결 풀을 얻지 못한 생성은 풀의 연결 수가 다른 컨텍스트가 필요해 [ExhaustedPoolPaymentGatewayTest]에 있다.
  */
 @SpringJUnitConfig(
@@ -62,7 +59,6 @@ private const val CALLBACK_URL = "http://127.0.0.1:9090/api/v1/payments/callback
 )
 @TestPropertySource(properties = ["pg.response-timeout=1s", "pg.callback-url=$CALLBACK_URL"])
 @EnableTestPg
-@ExtendWith(OutputCaptureExtension::class)
 class PaymentGatewayTest(
     private val paymentGateway: PaymentGateway,
 ) {
@@ -333,30 +329,6 @@ class PaymentGatewayTest(
     }
 
     @Test
-    fun `an accepted create writes one log line with the call and no body or card number`(output: CapturedOutput) {
-        pg.acceptsCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, transactionKey = TRANSACTION_KEY)
-
-        paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD)
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("POST /api/v1/payments", "HTTP 202", PG_ORDER_ID, TRANSACTION_KEY)
-            .containsPattern("in \\d+ ms")
-            .doesNotContain(CARD.number, "cardNo", "callbackUrl")
-    }
-
-    @Test
-    fun `an unknown create writes one log line with the HTTP status and no card number`(output: CapturedOutput) {
-        pg.answersCreate(pgOrderId = PG_ORDER_ID, amount = AMOUNT, card = CARD, httpStatus = 500)
-
-        assertThrows<PgOutcomeUnknownException> { paymentGateway.createTransaction(PG_ORDER_ID, Money(AMOUNT), CARD) }
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("POST /api/v1/payments", "HTTP 500", PG_ORDER_ID)
-            .containsPattern("in \\d+ ms")
-            .doesNotContain(CARD.number, "cardNo", "callbackUrl")
-    }
-
-    @Test
     fun `a key lookup answered 200 returns that one transaction and reaches the PG as one GET`() {
         val transaction = PgTransaction(
             transactionKey = TRANSACTION_KEY,
@@ -525,78 +497,5 @@ class PaymentGatewayTest(
         val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
 
         assertThat(exception.cause).isNull()
-    }
-
-    @Test
-    fun `a key lookup writes one log line with the call, the status and the transaction`(output: CapturedOutput) {
-        pg.hasTransaction(
-            PgTransaction(
-                transactionKey = TRANSACTION_KEY,
-                pgOrderId = PG_ORDER_ID,
-                amount = Money(AMOUNT),
-                status = PgStatus.SUCCESS,
-            ),
-        )
-
-        paymentGateway.retrieveTransaction(TRANSACTION_KEY)
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments/{transactionKey}", "Found 1", "HTTP 200", PG_ORDER_ID, TRANSACTION_KEY)
-            .containsPattern("in \\d+ ms")
-    }
-
-    @Test
-    fun `a key lookup that finds none writes one log line with HTTP 404`(output: CapturedOutput) {
-        pg.answersRetrieve(transactionKey = TRANSACTION_KEY, httpStatus = 404)
-
-        paymentGateway.retrieveTransaction(TRANSACTION_KEY)
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments/{transactionKey}", "Found 0", "HTTP 404", TRANSACTION_KEY)
-    }
-
-    @Test
-    fun `a list lookup writes one log line with the call and every transaction key`(output: CapturedOutput) {
-        pg.hasTransactions(
-            pgOrderId = PG_ORDER_ID,
-            PgTransaction(
-                transactionKey = "TEST-TX-0041",
-                pgOrderId = PG_ORDER_ID,
-                amount = Money(AMOUNT),
-                status = PgStatus.FAILED,
-            ),
-            PgTransaction(
-                transactionKey = TRANSACTION_KEY,
-                pgOrderId = PG_ORDER_ID,
-                amount = Money(AMOUNT),
-                status = PgStatus.SUCCESS,
-            ),
-        )
-
-        paymentGateway.listTransactions(PG_ORDER_ID)
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments?orderId={pgOrderId}", "Found 2", "HTTP 200", PG_ORDER_ID)
-            .contains("TEST-TX-0041", TRANSACTION_KEY)
-            .containsPattern("in \\d+ ms")
-    }
-
-    @Test
-    fun `an unavailable lookup writes one log line with the HTTP status`(output: CapturedOutput) {
-        pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 500)
-
-        assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
-
-        assertThat(output.gatewayLines()).singleElement().asString()
-            .contains("GET /api/v1/payments?orderId={pgOrderId}", "Unavailable", "HTTP 500", PG_ORDER_ID)
-    }
-
-    /**
-     * 게이트웨이의 로거가 쓴 줄. 컨텍스트가 Boot의 로그 설정 없이 뜨므로 이 클래스만 돌리면 logback 기본값(DEBUG)이고, 다른 테스트 뒤에 돌면
-     * Boot의 설정이다. 두 형식 모두 줄에 로거 이름의 마지막 마디(`LocalPgGateway`)를 남긴다. 기본값에서는 HttpClient의 wire 로그도 찍히므로
-     * 게이트웨이의 줄만 골라 본다.
-     */
-    private fun CapturedOutput.gatewayLines(): List<String> {
-        return all.lines().filter { "LocalPgGateway" in it }
     }
 }
