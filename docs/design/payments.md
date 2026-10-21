@@ -51,7 +51,6 @@
 | `amount` | `amount` | 생성 | 1원 이상의 `Money`. |
 | `status` | `status` | `reconcile`, `reject` | 결과 미확인으로 시작해 앞으로만 간다(2.2). |
 | `transactionKey` | `transaction_key` | 처음 맞은 PG 거래 | 모르면 null. 생성 전 거절로 실패한 결제는 PG 거래가 없으므로 끝까지 null이다. |
-| `conflictReason`, `conflictedAt` | `conflict_reason`, `conflicted_at` | 충돌 | 마지막 충돌만 남는다(2.5). 시각은 마이크로초로 자른다. |
 
 - 앞의 넷은 생성 뒤에 바뀌지 않는다(`updatable = false`). 생성의 규칙을 어기면 `InvalidPaymentException`이다.
 - 카드는 담지 않는다. PG에 넘기기만 한다. `PaymentRepositoryTest`가 `information_schema.columns`로 열 목록 전체를 본다. 이름에 "card"가 든 열만 찾으면 `@Embedded CreditCard`가 만들 `type`, `number`를 놓치기 때문이다.
@@ -130,7 +129,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | `Conflicted(reason)` | 결제와 맞지 않는 답이다. 상태와 거래 키는 그대로다. |
 
 - 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다.
-- `Conflicted`는 결제의 마지막 충돌 까닭(`ConflictReason`, 여섯 값)과 시각을 덮어쓴다. 과제의 "충돌을 남긴다"가 재시작 뒤에도 보이게 하기 위해서다. 뒤에 맞는 답이 와도 지우지 않는다. 지우면 PG가 한때 결제와 어긋났다는 것을 사람이 볼 수 없다.
+- `Conflicted`는 충돌 까닭(`ConflictReason`, 여섯 값)을 돌려주고 결제를 바꾸지 않는다. 까닭과 시각을 결제에 저장하지 않는다. 원래는 재시작 뒤에도 마지막 충돌을 보려고 두 열을 뒀지만, 이를 읽는 업무 규칙이나 복구 절차가 없어 2026-10-21에 제거했다([ADR 0021 규칙 1의 날짜 메모](../adr/0021-payment-is-its-own-aggregate-and-slice.md)). 결제 행만으로 마지막 충돌을 조회할 수는 없다.
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다.
 - PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것).
 
@@ -342,7 +341,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 # PaymentGatewayTest(84), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2), ConnectTimeoutPaymentGatewayTest(2). 필터가 넷 다 맞는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
 
-# PaymentTest(50)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
+# PaymentTest(49)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentTest' --tests '*PaymentRepositoryTest'
 
 # 끝의 전체 확인

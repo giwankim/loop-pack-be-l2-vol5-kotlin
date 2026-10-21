@@ -163,6 +163,8 @@ Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-
 
 Recorded 2026-10-20 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/141#issuecomment-6281409260) of [issue 141](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/141). The code is [`Payment`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/Payment.kt), [`ReconcileResult`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/ReconcileResult.kt), [`ConflictReason`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/ConflictReason.kt), [`PaymentTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/payment/PaymentTest.kt) and [`PaymentRepositoryTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentRepositoryTest.kt).
 
+2026-10-21: the latest-conflict columns and their persistence tests were removed because no business rule or recovery procedure reads them. `Conflicted(reason)` still reports conflicts without changing the payment. The notes below describe the implementation when issue 141 closed; see [ADR 0021's dated revision](../adr/0021-payment-is-its-own-aggregate-and-slice.md) and [the current design](../design/payments.md#25-결과와-충돌).
+
 ### Landed
 
 [`d6f4685`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/d6f4685) on `feat/pg-adapter` (pushed). It is rebased onto [issue 142](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/142)'s `9af0c32` and its writing-material commit `d44dd3b`.
