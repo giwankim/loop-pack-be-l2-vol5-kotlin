@@ -1,6 +1,8 @@
 package com.loopers.support
 
 import jakarta.persistence.EntityManager
+import java.math.BigDecimal
+import java.math.BigInteger
 
 /**
  * `point_account` 테이블을 저장 약속을 거치지 않고 SQL로 읽는다.
@@ -8,12 +10,12 @@ import jakarta.persistence.EntityManager
  * "잔액이 그대로다", "조회가 계정을 만들지 않았다"는 저장소가 아니라 테이블의 사실이다.
  * 영속성 컨텍스트도 거치지 않으므로 롤백 뒤의 상태를 다른 트랜잭션에서 그대로 본다. 까닭은 [countLikes]와 같다.
  */
-fun EntityManager.balanceOf(accountId: Long): Long {
+fun EntityManager.balanceOf(accountId: Long): BigInteger {
     return (
         createNativeQuery("select balance from point_account where id = :id")
             .setParameter("id", accountId)
-            .singleResult as Number
-    ).toLong()
+            .singleResult as BigDecimal
+    ).toBigIntegerExact()
 }
 
 /** 한 사용자의 계정 행 수. 조회나 충전이 계정을 만들지 않았는지 볼 때 쓴다. */

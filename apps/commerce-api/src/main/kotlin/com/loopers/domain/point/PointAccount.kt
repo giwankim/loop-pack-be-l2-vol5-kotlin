@@ -17,7 +17,7 @@ import org.hibernate.annotations.SQLRestriction
  * 사용자를 식별자로만 가리킨다. 계정을 읽는 쪽이 사용자를 건너 읽지 않으므로 연관을 두지 않고, 외래 키
  * `FK_POINT_ACCOUNT_ON_USER_ID`는 `scalar-foreign-keys.sql`이 만든다(ADR 0014, 설계 12.1).
  *
- * 잔액은 0 이상인 [Money]이며 상품 가격의 상한을 따르지 않는다. `Long` 범위만 지킨다(설계 5.7).
+ * 잔액은 0 이상인 [Money]이며 상품 가격의 상한을 따르지 않는다.
  *
  * 계정을 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 계정은 없는 계정이다(ADR 0016).
  */
@@ -34,13 +34,13 @@ class PointAccount(
     val userId: Long = userId
 
     @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "balance", nullable = false))
+    @AttributeOverride(name = "amount", column = Column(name = "balance", nullable = false, precision = 65, scale = 0))
     var balance: Money = Money.ZERO
         protected set
 
     /**
      * 양의 충전액만큼 잔액을 늘린다(CONTEXT.md 충전하다).
-     * 충전 후 잔액이 `Long` 범위를 넘으면 [Money]가 거절하고, 0원 이하면 여기서 거절한다. 어느 쪽이든 잔액은 그대로다.
+     * 0원 이하의 충전액은 거절하고 잔액은 그대로 둔다.
      */
     fun charge(amount: Money) {
         if (amount <= Money.ZERO) {

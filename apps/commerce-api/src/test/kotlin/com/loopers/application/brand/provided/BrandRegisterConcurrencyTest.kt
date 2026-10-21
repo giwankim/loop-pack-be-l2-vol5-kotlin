@@ -191,7 +191,7 @@ class BrandRegisterConcurrencyTest(
         deleting.await()
         inNewTransaction {
             assertThat(columnOf("product", "name", product.id)).isEqualTo("바꾼 이름")
-            assertThat(columnOf("product", "price", product.id)).isEqualTo(2_000L)
+            assertThat(columnOf("product", "price", product.id)).isEqualTo(2_000.toBigDecimal())
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }

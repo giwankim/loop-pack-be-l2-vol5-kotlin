@@ -282,7 +282,7 @@ class ProductCacheTest(
     /** 재고가 [stock]개인 상품 하나를 [quantity]개 담은 주문을 만들고, 확정할 수 있게 그 합계만큼 충전한다. */
     private fun prepareConfirmableOrder(stock: Int, quantity: Int) {
         prepareOrder(products = listOf(prepareProduct(stock = stock)), quantity = quantity)
-        charge(amount = order.totalAmount.amount)
+        charge(amount = order.totalAmount.amount.longValueExact())
     }
 
     /** 다음 읽기가 revision 하나만 읽는 hit인지 본다. */

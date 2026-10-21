@@ -1,6 +1,5 @@
 package com.loopers.domain.order
 
-import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -9,23 +8,25 @@ import org.junit.jupiter.api.assertThrows
 
 class OrderTest {
     @Test
-    fun `an order whose line amount overflows is rejected at creation`() {
+    fun `an order line amount can exceed Long MAX_VALUE`() {
         val product = createOrderProduct(unitPrice = Money(Long.MAX_VALUE), quantity = 2)
 
-        val exception = assertThrows<InvalidMoneyException> { createOrder(userId = 1, products = listOf(product)) }
+        val order = createOrder(userId = 1, products = listOf(product))
 
-        assertThat(exception.message).isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
+        assertThat(order.lineItems.single().lineAmount.amount.toString()).isEqualTo("18446744073709551614")
     }
 
     @Test
-    fun `an order whose total overflows is rejected at creation`() {
+    fun `an order total can exceed Long MAX_VALUE`() {
         val products = listOf(1L, 2L).map { productId ->
             createOrderProduct(productId = productId, unitPrice = Money(Long.MAX_VALUE / 2 + 1), quantity = 1)
         }
 
-        val exception = assertThrows<InvalidMoneyException> { createOrder(userId = 1, products = products) }
+        val order = createOrder(userId = 1, products = products)
+        order.confirm()
 
-        assertThat(exception.message).isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
+        assertThat(order.totalAmount.amount.toString()).isEqualTo("9223372036854775808")
+        assertThat(order.paidAmount).isEqualTo(order.totalAmount)
     }
 
     @Test

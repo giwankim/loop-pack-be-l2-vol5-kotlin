@@ -36,7 +36,7 @@ class ProductCacheRollbackTest(
     @Test
     fun `a sold out confirmation failing after its SQL leaves the revision and the cached list as they were`() {
         prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
-        charge(amount = order.totalAmount.amount)
+        charge(amount = order.totalAmount.amount.longValueExact())
         val request = ProductListRequest()
         val cached = productFinder.findAll(request)
         assertThat(cached.items.map { it.soldOut }).containsExactly(false)

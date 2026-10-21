@@ -149,7 +149,7 @@ class ProductFinderTest(
 
         assertThat(found?.id).isEqualTo(product.id)
         assertThat(found?.name).isEqualTo("티셔츠")
-        assertThat(found?.price?.amount).isEqualTo(12_000L)
+        assertThat(found?.price?.amount).isEqualTo(12_000L.toBigInteger())
     }
 
     /**

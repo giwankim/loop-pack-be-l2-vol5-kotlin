@@ -25,6 +25,16 @@ class PaymentRepositoryTest(
     private val paymentRepository: PaymentRepository,
 ) : BaseRepositoryTest() {
     @Test
+    fun `a 65 digit payment amount round trips without losing digits`() {
+        prepareOrder()
+        val amount = Money("9".repeat(65).toBigInteger())
+        paymentRepository.save(createPayment(orderId = order.id, amount = amount))
+        entityManager.flushAndClear()
+
+        assertThat(paymentRepository.findByOrderId(order.id)?.amount).isEqualTo(amount)
+    }
+
+    @Test
     fun `a saved payment reads back by its order id and by its idempotency key after flush and clear`() {
         preparePayment()
         entityManager.flushAndClear()

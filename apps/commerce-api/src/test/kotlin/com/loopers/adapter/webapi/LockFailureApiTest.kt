@@ -104,7 +104,7 @@ class LockFailureApiTest(
             assertThat(draft.status).isEqualTo(OrderStatus.DRAFT)
             assertThat(draft.paidAmount).isNull()
             assertThat(productFinder.find(product.id).stock).isEqualTo(10)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(4_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(4_000L.toBigInteger())
         }
     }
 

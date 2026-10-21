@@ -91,7 +91,7 @@ class BrandRegisterRollbackTest(
         soldOut = prepareProduct(brandToDelete, stock = 0)
         otherBrandProduct = prepareProduct(prepareBrand())
         prepareOrder(products = listOf(inStock))
-        charge(amount = order.totalAmount.amount)
+        charge(amount = order.totalAmount.amount.longValueExact())
         confirmOrder()
     }
 

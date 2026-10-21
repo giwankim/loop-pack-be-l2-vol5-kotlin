@@ -211,7 +211,7 @@ class TestPg(
         return transactionJson(
             transactionKey = transaction.transactionKey,
             pgOrderId = transaction.pgOrderId,
-            amount = transaction.amount.amount,
+            amount = transaction.amount.amount.longValueExact(),
             pgStatus = transaction.status.name,
         )
     }

@@ -51,6 +51,24 @@ class OrderConfirmationApiTest(
     }
 
     @Test
+    fun `confirming an order above Long MAX_VALUE persists the exact payment and balance`() {
+        charge(amount = Long.MAX_VALUE, user = owner)
+        charge(amount = Long.MAX_VALUE, user = owner)
+        prepareBrand()
+        val products = List(5) { prepareProduct(brand, price = 1_000_000_000, stock = Int.MAX_VALUE) }
+        val orderId = prepareOrder(owner, products, quantity = Int.MAX_VALUE).id
+
+        val body = assertThat(requestConfirm(orderId)).hasStatusOk().bodyJson()
+
+        body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.paidAmount").isEqualTo("10737418235000000000".toBigInteger())
+        assertThat(requestDetail(orderId)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.paidAmount").isEqualTo("10737418235000000000".toBigInteger())
+        balance(7_709_325_838_709_551_614L)
+        products.forEach { assertStock(it, 0) }
+    }
+
+    @Test
     fun `charging creating and confirming deduct stock and points once and read back the confirmed order`() {
         balance(0)
         charge(amount = 10_000, user = owner)

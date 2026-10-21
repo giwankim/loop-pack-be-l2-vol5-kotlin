@@ -56,7 +56,7 @@ class OrderConfirmerRollbackTest(
             assertThat(persisted.updatedAt).isEqualTo(order.updatedAt)
             assertThat(productFinder.find(first.id).stock).isEqualTo(10)
             assertThat(productFinder.find(second.id).stock).isEqualTo(5)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(10_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(10_000L.toBigInteger())
         }
         val confirmed = orderConfirmer.confirm(user.id, order.id)
         assertThat(confirmed.status).isEqualTo(OrderStatus.CONFIRMED)
@@ -64,7 +64,7 @@ class OrderConfirmerRollbackTest(
         inNewTransaction {
             assertThat(productFinder.find(first.id).stock).isEqualTo(7)
             assertThat(productFinder.find(second.id).stock).isEqualTo(4)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L.toBigInteger())
         }
     }
 

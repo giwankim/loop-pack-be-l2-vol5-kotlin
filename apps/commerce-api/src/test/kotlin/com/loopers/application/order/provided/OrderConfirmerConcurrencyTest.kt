@@ -83,7 +83,7 @@ class OrderConfirmerConcurrencyTest(
                 val confirmedByOwner = confirmed.filter { persisted -> persisted.userId == draft.userId }
                 val paid = confirmedByOwner.sumOf { persisted -> persisted.paidAmount!!.amount }
                 val finalBalance = pointAccountFinder.findByUser(draft.userId).balance.amount
-                assertThat(finalBalance).isEqualTo(initialBalance - paid)
+                assertThat(finalBalance).isEqualTo(initialBalance.toBigInteger() - paid)
             }
             drafts.zip(results).forEach { (draft, result) ->
                 val persisted = reread.getValue(draft.id)
@@ -127,7 +127,7 @@ class OrderConfirmerConcurrencyTest(
             val soldQuantity = persisted.lineItems.sumOf { item -> item.quantity }
             assertThat(productFinder.find(product.id).stock).isEqualTo(initialStock - soldQuantity)
             val paid = persisted.paidAmount!!.amount
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(initialBalance - paid)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(initialBalance.toBigInteger() - paid)
         }
     }
 
@@ -156,8 +156,8 @@ class OrderConfirmerConcurrencyTest(
             val confirmed = reread.filter { persisted -> persisted.status == OrderStatus.CONFIRMED }
             val paid = confirmed.sumOf { persisted -> persisted.paidAmount!!.amount }
             val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
-            assertThat(finalBalance).isEqualTo(initialBalance - paid)
-            assertThat(finalBalance).isEqualTo(2_000L)
+            assertThat(finalBalance).isEqualTo(initialBalance.toBigInteger() - paid)
+            assertThat(finalBalance).isEqualTo(2_000L.toBigInteger())
             val confirmedItems = confirmed.flatMap { persisted -> persisted.lineItems }
             products.forEach { ordered ->
                 val soldQuantity = confirmedItems.filter { item -> item.productId == ordered.id }.sumOf { item -> item.quantity }
@@ -199,8 +199,8 @@ class OrderConfirmerConcurrencyTest(
             assertThat(persisted.status).isEqualTo(OrderStatus.CONFIRMED)
             val paid = persisted.paidAmount!!.amount
             val finalBalance = pointAccountFinder.findByUser(user.id).balance.amount
-            assertThat(finalBalance).isEqualTo(initialBalance + chargeAmount - paid)
-            assertThat(finalBalance).isEqualTo(5_000L)
+            assertThat(finalBalance).isEqualTo((initialBalance + chargeAmount).toBigInteger() - paid)
+            assertThat(finalBalance).isEqualTo(5_000L.toBigInteger())
             val soldQuantity = persisted.lineItems.sumOf { item -> item.quantity }
             assertThat(productFinder.find(product.id).stock).isEqualTo(product.stock - soldQuantity)
         }
@@ -226,7 +226,7 @@ class OrderConfirmerConcurrencyTest(
         assertThrows<OrderAlreadyConfirmedException> { second.await() }
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L.toBigInteger())
             assertThat(productFinder.find(product.id).stock).isEqualTo(7)
         }
     }
@@ -251,7 +251,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(confirming.await().status).isEqualTo(OrderStatus.CONFIRMED)
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L.toBigInteger())
         }
     }
 
@@ -275,7 +275,7 @@ class OrderConfirmerConcurrencyTest(
         charging.await()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(5_000L.toBigInteger())
         }
     }
 
@@ -341,7 +341,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L.toBigInteger())
             assertThat(stockOf(product)).isEqualTo(10)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
@@ -364,7 +364,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(exception.errorType).isEqualTo(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L)
+            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(3_000L.toBigInteger())
             assertThat(stockOf(product)).isEqualTo(10)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }

@@ -2,6 +2,7 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
+import java.math.BigInteger
 import java.time.Instant
 
 /**
@@ -18,9 +19,9 @@ data class OrderAdminResponse(
     val userId: Long,
     val status: OrderStatus,
     val items: List<OrderLineItemResponse>,
-    val totalAmount: Long,
+    val totalAmount: BigInteger,
     val createdAt: Instant,
-    val paidAmount: Long?,
+    val paidAmount: BigInteger?,
     val confirmedAt: Instant?,
 ) {
     companion object {

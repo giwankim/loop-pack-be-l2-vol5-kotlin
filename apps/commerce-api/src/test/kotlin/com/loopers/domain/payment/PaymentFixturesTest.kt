@@ -28,7 +28,7 @@ class PaymentFixturesTest {
             assertThat(payment.orderId).isEqualTo(42)
             assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
             assertThat(payment.idempotencyKey).hasSize(36)
-            assertThat(payment.amount.amount).isBetween(1, 1_000_000_000)
+            assertThat(payment.amount.amount).isBetween(1.toBigInteger(), 1_000_000_000.toBigInteger())
         }
     }
 

@@ -51,7 +51,10 @@ class Payment(
 
     /** The amount charged through the PG. Must be at least 1 won. */
     @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "amount", nullable = false, updatable = false))
+    @AttributeOverride(
+        name = "amount",
+        column = Column(name = "amount", nullable = false, updatable = false, precision = 65, scale = 0),
+    )
     val amount: Money,
 ) : BaseEntity() {
     /**

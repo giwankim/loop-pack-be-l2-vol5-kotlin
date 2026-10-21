@@ -56,7 +56,7 @@ class Product(
         protected set
 
     @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "price", nullable = false))
+    @AttributeOverride(name = "amount", column = Column(name = "price", nullable = false, precision = 65, scale = 0))
     var price: Money = price
         protected set
 

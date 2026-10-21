@@ -20,6 +20,16 @@ class PointAccountRepositoryTest(
     private val pointAccountRepository: PointAccountRepository,
 ) : BaseRepositoryTest() {
     @Test
+    fun `the largest stored integer balance round trips without losing digits`() {
+        val amount = Money("9".repeat(65).toBigInteger())
+        prepareUser()
+        charge(amount = amount)
+        entityManager.flushAndClear()
+
+        assertThat(pointAccountRepository.findByUserId(user.id)?.balance).isEqualTo(amount)
+    }
+
+    @Test
     fun `findByUserId reads a saved account back with its balance after flush and clear`() {
         prepareUser()
         charge(amount = Money(10_000))

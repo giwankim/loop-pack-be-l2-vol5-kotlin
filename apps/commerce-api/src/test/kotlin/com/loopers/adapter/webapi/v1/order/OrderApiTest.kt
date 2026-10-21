@@ -215,14 +215,15 @@ class OrderApiTest(
     }
 
     @Test
-    fun `order amount overflow rolls back every item`() {
+    fun `order totals beyond Long MAX_VALUE are created and read exactly`() {
         prepareBrand()
         val products = List(5) { prepareProduct(brand, price = 1_000_000_000).id }
         val entries = products.joinToString { """{"productId":$it,"quantity":2147483647}""" }
-        val body = assertThat(requestCreate("""{"items":[$entries]}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
-        assertNoOrders()
+        val body = assertThat(requestCreate("""{"items":[$entries]}""")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.totalAmount").isEqualTo("10737418235000000000".toBigInteger())
+        val orderId = body.extractingPath("$.data.orderId").asNumber().actual().toLong()
+        assertThat(requestDetail(orderId)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.totalAmount").isEqualTo("10737418235000000000".toBigInteger())
     }
 
     @Test
@@ -295,16 +296,15 @@ class OrderApiTest(
     }
 
     @Test
-    fun `line amount overflow is rejected with no partial order`() {
+    fun `line amounts beyond Long MAX_VALUE are created and read exactly`() {
         val id = prepareProduct().id
-        // Valid catalog prices cannot overflow one line; a DB fixture exercises the Long multiplication guard.
+        // Valid catalog prices are capped; a stored fixture exercises arbitrary-precision line multiplication.
         jdbc.update("update product set price = ? where id = ?", Long.MAX_VALUE, id)
-        val body = assertThat(requestCreate(item(id, 2))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
-        assertNoOrders()
-        jdbc.update("update product set price = 1000 where id = ?", id)
-        assertThat(requestCreate(item(id))).hasStatus(HttpStatus.CREATED)
+        val body = assertThat(requestCreate(item(id, 2))).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.items[0].lineAmount").isEqualTo("18446744073709551614".toBigInteger())
+        val orderId = body.extractingPath("$.data.orderId").asNumber().actual().toLong()
+        assertThat(requestDetail(orderId)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.items[0].lineAmount").isEqualTo("18446744073709551614".toBigInteger())
     }
 
     @Test
