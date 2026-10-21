@@ -29,8 +29,9 @@ import tools.jackson.module.kotlin.jacksonMapperBuilder
  * them with the commerce side's records.
  *
  * Returns only the PG transactions the PG reports and throws the port's exceptions for every other outcome (ADR 0023).
- * Responses are read with `exchange`, not `retrieve()`, so the adapter reads the status code itself and none of Spring's
- * status-handler exceptions leak out of the port (ADR 0022 rule 4). Transport errors and unreadable responses are both
+ * Responses are read with `exchange`, not `retrieve()`. `retrieve()` treats any 2xx as success and any 4xx or 5xx as one kind
+ * of error, but here only a 202 is an accepted create, a 404 on a key lookup finds none, and a 422 body must be read by the
+ * strict converter (payments design 4.2). Transport errors and unreadable responses are both
  * [RestClientException]s, so one catch per call turns them into [PgOutcomeUnknownException] for a create and
  * [PgUnavailableException] for a lookup. Jackson's own failures, such as a request it cannot write, are
  * `HttpMessageConversionException`s, not [RestClientException]s: programming errors that propagate as is. A misconfigured
