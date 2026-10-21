@@ -162,7 +162,8 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 - 생성의 이름은 `createTransaction`이다(2026-10-20, `requestPayment`에서 바꿨다). 이 호출이 PG 거래를 만들고, 거래 키는 그 응답에서 처음 생긴다. Stripe의 PaymentIntent와 Toss의 결제 승인에서 `confirm`은 PG가 먼저 만든 객체를 그 키로 승인하는 일이다. 그 두 단계는 생성과 승인 사이에 고객이 인증하는 단계가 있어서 생긴다. 테스트 PG에는 그 단계가 없어 한 번의 호출로 거래를 만든다. Toss의 키인 결제(`POST /v1/payments/key-in`), Square의 `POST /v2/payments`와 같은 모양이다. `confirm`은 고객의 요청인 주문을 확정하다의 이름으로 남긴다.
 - 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다.
-- 세 예외에는 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡지 못하게 하려는 것이다. 설정 누락이나 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다.
+- 세 예외에는 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡지 못하게 하려는 것이다. 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다. Jackson의 실패는 `HttpMessageConversionException`이고 `RestClientException`이 아니어서 어댑터의 catch를 지난다.
+- 컨버터 설정이 잘못된 것은 그대로 던지지 않는다(2026-10-21 Spring 7.0.9의 소스로 확인). 요청을 쓸 컨버터가 없으면 Spring이 `RestClientException`을 던지므로, 아무것도 보내지 않았는데도 생성은 결과 미확인이 된다. 응답을 읽을 컨버터가 없으면 `UnknownContentTypeException`이라 생성은 결과 미확인, 조회는 조회 불가가 된다. 그렇게 깨진 설정은 계약 테스트의 받아들여진 생성 장면이 모두 실패하므로 그대로 나가지 않는다. 그 전에는 "설정 누락"도 그대로 던진다고 적었지만, `pg.*` 설정이 빠지면 호출이 아니라 시작할 때 바인딩이 실패한다.
 - 예외의 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 로그와 테스트의 단언에만 쓴다. 원인 예외는 잇지 않는다(3.5). 호출자는 모든 결과 미확인과 모든 조회 불가를 각각 같게 다룬다.
 - 호출자는 PG 호출을 트랜잭션 안에 두지 않고, `Exception`이나 `RuntimeException`을 잡는 catch로 감싸지 않는다. 결과 미확인의 예외가 결제를 저장한 트랜잭션을 지나면 그 저장이 되돌아간다(ADR 0023 규칙 4).
 - 포트 하나가 생성과 조회를 함께 가진다. 그래서 대사가 생성을 부르지 않는다는 것을 타입이 막지 않고, ADR 0022 규칙 6·7의 테스트가 PG가 받은 생성 수로 지킨다.
@@ -177,11 +178,11 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | 생성 | 422, 정확한 `code`, `transactionCreated`가 JSON `false`, `orderId`·`amount` 있음 | `PgRejectedException(PgRejection(되돌려 받은 PG 주문 번호, 금액))` |
 | 생성 | 정확하지 않은 422: 본문 없음, 다른 `code`, `transactionCreated`가 `true`·`"false"`·`null`·빠짐, `code`·`orderId`·`amount` 빠짐, 문자열 금액, 잘린 JSON | `PgOutcomeUnknownException` |
 | 생성 | 202가 아닌 2xx(200, 201. 잘 짜인 PG 거래를 실어도), 다른 4xx, 5xx | `PgOutcomeUnknownException("HTTP <상태>")` |
-| 생성 | 잘 짜이지 않은 202, 연결 끊김, 응답 시간 초과, 풀 대기 초과 | `PgOutcomeUnknownException` |
+| 생성 | 잘 짜이지 않은 202, 연결 끊김, 연결 시간 초과, 응답 시간 초과, 풀 대기 초과 | `PgOutcomeUnknownException` |
 | 거래 키 조회 | 200, 잘 짜인 PG 거래 | 그 PG 거래를 돌려준다 |
 | 거래 키 조회 | 404 | `null`을 돌려준다 |
 | 목록 조회 | 200, 잘 짜인 PG 거래의 배열 | 그 PG 거래들을 돌려준다. 0건도, 2건 이상도 PG의 차례 그대로다. |
-| 두 조회 | 그 밖의 모든 상태(목록 조회의 404 포함), 잘 짜이지 않은 본문, 연결 끊김, 응답 시간 초과 | `PgUnavailableException` |
+| 두 조회 | 그 밖의 모든 상태(목록 조회의 404 포함), 잘 짜이지 않은 본문, 연결 끊김, 연결 시간 초과, 응답 시간 초과 | `PgUnavailableException` |
 
 - **목록:** JSON 배열만 받는다. 객체 하나, `null`, `null` 원소는 잘 짜이지 않은 본문이다.
 - **404:** PG 계약이 404를 말하는 곳은 거래 키 조회뿐이다. 목록의 "없음"은 빈 배열이다. 그래서 목록 조회의 404는 조회 불가다.
@@ -193,20 +194,14 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 - **증거는 하나다.** PG가 "만들지 않았고 앞으로도 만들지 않는다"고 명시하는 것은 생성 전 거절뿐이다. 422, 정확한 `code`, boolean `false`를 모두 확인할 때만 거절(`PgRejectedException`)이다. `transactionCreated` 검사를 뺀 변이 실행에서는 `true` 본문이 거절로 나왔다(그때의 이름은 값 `Rejected`였다).
 - **시간 초과와 5xx는 실패가 아니다.** PG가 저장한 뒤 응답을 잃은 PG 거래가 나중에 성공하면, 예약을 돌려준 주문에서 돈이 빠져나간다. 고객이 다시 결제하면 두 번 낸다.
 - **생성은 다시 보내지 않는다.** 테스트 PG는 같은 PG 주문 번호의 생성을 하나로 합친다고 약속하지 않고, 과제도 금한다. 결과는 조회와 대사로만 알아낸다.
-- **풀을 얻지 못한 생성도 결과 미확인이다.** 보내지 않은 것은 확실하다. 그러나 그 증거는 HttpClient의 예외 타입과 Spring이 그것을 감싸는 방식에 달려 있어, 라이브러리를 올리면 조용히 틀어질 수 있다. 증거에 두 번째 길을 들이지 않는다.
+- **풀을 얻지 못한 생성도 결과 미확인이다.** 보내지 않은 것은 확실하다. 그러나 그 증거는 HttpClient의 예외 타입과 Spring이 그것을 감싸는 방식에 달려 있어, 라이브러리를 올리면 조용히 틀어질 수 있다. 증거에 두 번째 길을 들이지 않는다. PG가 TCP 연결을 받지 않아 연결 한도 500 ms가 지난 생성도 같은 까닭으로 결과 미확인이다(2026-10-21, `ConnectTimeoutPaymentGatewayTest`).
 - **조회의 0건은 PG 거래가 없다는 증거가 아니다**(5.4).
 
 ### 3.5 로그와 관측
 
-호출마다 로그 한 줄을 쓴다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키다. 본문과 카드 번호는 쓰지 않는다. 결과 미확인과 조회 불가는 WARN이다. 결과의 낱말(`Accepted`, `Rejected`, `Unknown`, `Found n`, `Unavailable`)은 결과를 값으로 돌려주던 때의 이름을 그대로 쓴다.
+게이트웨이는 로그를 쓰지 않는다(2026-10-21). 그 전에는 호출마다 한 줄을 썼다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않았다. 결과 미확인과 조회 불가는 WARN이었다. 어댑터를 줄이려고 지웠고, 나중에 다시 둘 수 있다. 지우기 전의 모양은 [76bd60e의 `LocalPgGateway`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)와 그 줄을 보던 [`PaymentGatewayTest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt)에 있다.
 
-```text
-PG POST /api/v1/payments Accepted (HTTP 202) in 43 ms, pgOrderId=LP-ORD-0000000042, transactionKey=TEST-TX-0042
-PG GET /api/v1/payments/{transactionKey} Found 1 (HTTP 200) in 1 ms, pgOrderId=LP-ORD-0000000042, transactionKey=TEST-TX-0042
-PG GET /api/v1/payments?orderId={pgOrderId} Found 2 (HTTP 200) in 1 ms, pgOrderId=LP-ORD-0000000042, transactionKeys=[TEST-TX-0041, TEST-TX-0042]
-```
-
-- 예외 메시지는 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
+- 포트의 예외 메시지에는 Spring 예외의 메시지를 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
 - observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. Boot의 `RestClientObservationAutoConfiguration`이 게이트웨이가 받는 `RestClient.Builder`에 registry를 단다(2026-10-20, 그 전에는 설정이 `ObjectProvider`로 직접 달았다). 어댑터만 담은 테스트 컨텍스트에는 registry가 없다. `ObservedPaymentGatewayTest`가 registry와 그 자동 설정을 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 - 포트의 예외는 `exchange` 안에서도 던지므로 observation의 `exception`에 그 이름이 남는다. 422의 생성 전 거절, 202가 아닌 생성 응답, 200·404가 아닌 조회 응답이 그렇다. 받아들여진 생성과 찾은 조회(404 포함)만 오류가 없다(ADR 0023의 대가). 테스트는 이 값을 보지 않는다.
@@ -285,7 +280,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **`@EnableTestPg`**가 `@EnableWireMock(ConfigureWireMock(name = "pg", baseUrlProperties = ["pg.base-url"], configurationCustomizers = [TestPgConfigurationCustomizer::class]))`를 감싼다. customizer는 서버를 `127.0.0.1`에 묶고 h2c를 끈다. WireMock의 기본값은 `0.0.0.0`에 묶고 h2c를 알린다. PG를 쓰는 테스트는 모두 이 애노테이션을 달아, 같은 설정끼리 컨텍스트와 서버를 나눠 쓴다.
 - 서버는 `@InjectWireMock("pg") lateinit var` 필드로 받아 `TestPg`로 감싼다. 생성자 주입의 하나뿐인 예외다. `spring.test.constructor.autowire.mode=all`이면 생성자 파라미터를 `SpringExtension`과 WireMock의 resolver가 함께 맡으려다 실패한다.
 - 스텁과 요청 기록은 테스트 메서드마다 지워진다(라이브러리 기본값).
-- 1단계의 세 게이트웨이 테스트(`PaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `ObservedPaymentGatewayTest`)는 운영의 `LocalPgGatewayConfig`, `LocalPgGateway`와 `supports/jackson`의 `JacksonConfig`를 그대로 읽는다. Boot의 자동 설정은 `@ImportAutoConfiguration`으로 게이트웨이의 builder를 만드는 것만 고른다. Jackson, 컨버터, `RestClient.Builder`이고, `ObservedPaymentGatewayTest`는 RestClient의 observation을 더한다. 테스트만의 설정 클래스는 `ObservedPaymentGatewayTest`의 registry 하나이고 `@TestConfiguration`이다. PG 테스트에 설정 클래스를 더하면 그렇게 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
+- 1단계의 네 게이트웨이 테스트(`PaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `ObservedPaymentGatewayTest`, `ConnectTimeoutPaymentGatewayTest`)는 운영의 `LocalPgGatewayConfig`, `LocalPgGateway`와 `supports/jackson`의 `JacksonConfig`를 그대로 읽는다. `ConnectTimeoutPaymentGatewayTest`만 테스트 PG 없이 `pg.base-url`을 라우팅되지 않는 TEST-NET-1(`192.0.2.1`, RFC 5737)로 둔다. 그 주소가 SYN을 조용히 버리지 않는 네트워크(기본 경로가 없는 오프라인 등)에서는 `@BeforeAll`의 가정이 클래스를 건너뛴다. Boot의 자동 설정은 `@ImportAutoConfiguration`으로 게이트웨이의 builder를 만드는 것만 고른다. Jackson, 컨버터, `RestClient.Builder`이고, `ObservedPaymentGatewayTest`는 RestClient의 observation을 더한다. 테스트만의 설정 클래스는 `ObservedPaymentGatewayTest`의 registry 하나이고 `@TestConfiguration`이다. PG 테스트에 설정 클래스를 더하면 그렇게 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
 - **Jetty 판.** wiremock-spring-boot는 Jetty EE10을 12.1.6에 묶고, Boot는 Jetty core 12.1.12를 관리한다. 카탈로그가 `jettyEe10 = "12.1.12"`를 고정해 EE10 BOM을 가져오고, 설정 시점의 검사가 Boot의 `jetty.version`과 다르면 빌드를 멈춘다. Boot의 판을 읽어 쓰지 못한 것은 dependency-management 플러그인의 가져온 속성을 읽으면 그 뒤의 가져오기가 조용히 무시되기 때문이다([issue 140](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/140)).
 
 ### 6.2 장면(`TestPg`)
@@ -339,7 +334,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ### 7.2 1단계의 명령
 
 ```bash
-# PaymentGatewayTest(90), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2). 필터가 셋 다 맞는다.
+# PaymentGatewayTest(84), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2), ConnectTimeoutPaymentGatewayTest(2). 필터가 넷 다 맞는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
 
 # PaymentTest(50)와 PaymentRepositoryTest(9). 저장소 테스트는 Docker의 MySQL을 쓴다.
@@ -349,7 +344,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check
 ```
 
-괄호의 수는 2026-10-20의 것이다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다.
+괄호의 수는 2026-10-21의 것이다. `PaymentGatewayTest`는 그날 로그 줄의 테스트 6개를 지워 90에서 84가 되었다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다.
 
 **과제의 명령은 게이트웨이를 시험하지 않는다.** 과제가 적은 `--tests '*PaymentProviderContractTest'`에 맞는 클래스는 없다. [명세 138](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138)은 Gradle이 "No tests found"로 실패하리라 적었지만, 2026-10-20에 돌려 보니 실패하지 않는다. `HexagonalArchitectureTest`의 7개만 돌고 `BUILD SUCCESSFUL`로 끝난다. 아무 이름에도 맞지 않는 필터(`--tests '*NoSuchClassAnywhere'`)도 같다. 까닭은 확인하지 않았다. ArchUnit의 JUnit 엔진이 규칙을 메서드가 아니라 필드로 알려, Gradle의 이름 필터가 거르지 못하는 것으로 보인다. 그 명령의 초록은 게이트웨이에 대해 아무것도 말하지 않는다. 위의 명령을 쓰고, 돈 테스트의 수를 확인한다.
 
@@ -358,4 +353,4 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다).
 - **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2에 있다. 모든 결과 미확인과 조회 불가를 각각 같게 다루고, PG 호출을 트랜잭션 밖에 두며, PG 예외를 넓은 catch로 잡지 않는다. 생성이 결과 미확인일 때 결제가 결과 미확인으로 남는지를 호출자마다 장면 테스트로 본다(ADR 0023 규칙 4).
 - **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다.
-- **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 시간 초과는 목록 조회로, 끊김은 거래 키 조회로만 시험했다. 둘은 같은 catch를 지난다.
+- **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 응답 시간 초과는 목록 조회로, 끊김과 연결 시간 초과는 거래 키 조회로만 시험했다. 두 조회는 같은 catch를 지난다.
