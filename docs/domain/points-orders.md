@@ -21,15 +21,15 @@
 ### 규칙
 
 - 사용자마다 계정 하나. 사용자 fixture와 함께 만들고, 조회나 충전이 없는 계정을 만들어 주지 않는다. 사용자는 있는데 계정이 없으면 application이 `POINT_ACCOUNT_MISSING`(500)이다(설계 5.9, 6절 끝, 12.5).
-- 잔액은 0 이상이다. `Money`가 지킨다. 상품 가격의 상한은 잔액에 적용되지 않고 `Long` 범위만 지킨다(설계 5.7).
-- 충전액은 1원 이상이다. 어기면 `InvalidChargeAmountException`. 충전 후 잔액이 `Long` 범위를 넘으면 `InvalidMoneyException`. 어느 쪽이든 잔액은 그대로다.
+- 잔액은 0 이상이다. `Money`가 지킨다. 상품 가격의 상한은 잔액에 적용되지 않는다. `BigInteger`로 계산하고 `DECIMAL(65,0)`으로 저장한다.
+- 충전액은 1원 이상이다. 어기면 `InvalidChargeAmountException`. `Long` 범위를 넘는 잔액도 허용한다. 거절된 충전은 잔액을 바꾸지 않는다.
 
 ### 행위
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `PointAccount(userId)` | 그 사용자의 0원 계정을 만든다 | 없음 |
-| `charge(amount)` | 잔액에 `amount`를 더한다 | `InvalidChargeAmountException`, `InvalidMoneyException` |
+| `charge(amount)` | 잔액에 `amount`를 더한다 | `InvalidChargeAmountException` |
 | `pay(amount)` | 양의 결제액을 차감한다. 어느 주문의 결제인지는 모른다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
 
 ### 저장 약속
@@ -65,7 +65,7 @@
 - 품목은 하나 이상이고 상품별로 하나씩이다. 어기면 `InvalidOrderException`.
 - 생성 정보(품목의 상품·이름·단가·수량·금액과 총액, 생성 시각)는 생성 후 바뀌지 않는다(ADR 0002).
 - `DRAFT`는 재고도 포인트도 건드리지 않는다. 재고 0이거나 잔액이 부족한 상태에서도 생성된다(설계 5.7, Q12).
-- 총액은 품목 금액의 합이며 `Money`가 `Long` 범위를 지킨다. 넘치면 `InvalidMoneyException`이고 주문은 저장되지 않는다. 생성자가 총액을 한 번 세므로 만든 주문의 총액을 읽을 때는 넘치지 않는다.
+- 총액은 품목 금액의 합이며 `Money`가 임의 정밀도로 계산한다. `Long` 범위를 넘는 품목 금액과 총액도 허용한다.
 - `DRAFT`에는 `paidAmount`·`confirmedAt`이 없고 `CONFIRMED`에는 둘 다 있으며 `paidAmount`는 총액과 같다. 확정 전 주문만 확정할 수 있다. 이미 확정된 주문은 `OrderAlreadyConfirmedException`으로 거절해 결제액·확정 시각을 다시 쓰지 않는다.
 - 생성 시각은 MySQL `datetime(6)`과 정밀도를 맞춰 생성 응답과 저장 후 조회가 같은 값을 준다. `updatedAt`에 기대지 않는다.
 
@@ -73,7 +73,7 @@
 
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
-| `Order(userId, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException`, `InvalidMoneyException` |
+| `Order(userId, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException` |
 | `ensureDraft()` | 확정 전(DRAFT) 주문인지 본다. 상태를 바꾸지 않는다 | `OrderAlreadyConfirmedException`. application이 상품·재고·포인트를 보기 전에 불러 이 거절이 앞서게 한다(설계 17.2) |
 | `confirm()` | 총액과 마이크로초 정밀도의 현재 시각으로 확정한다 | `OrderAlreadyConfirmedException`. `ensureDraft()`와 같은 검사다. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다 |
 
@@ -117,7 +117,7 @@
 - 이름과 단가는 생성 당시의 값이다. 이후 상품의 이름·가격이 바뀌어도 이 품목은 그대로다(ADR 0002).
 - 상품을 객체로 참조하지 않는 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 논리 삭제된 상품의 주문을 읽을 수 없게 되기 때문이다(설계 12.1). 상품이 삭제되어도 주문과 그 스냅샷은 읽힌다.
 - 한 주문 안에서 상품 하나는 품목 하나로만 나타난다. 같은 상품을 두 번 담은 요청은 `Order`의 검사가 `InvalidOrderException`(400)으로 거절하고 아무것도 저장하지 않는다(설계 5.2).
-- 수량은 양의 `Int` 범위, 금액은 `Long` 범위다. 넘치면 거절하고 주문의 일부만 저장하지 않는다.
+- 수량은 양의 `Int` 범위다. 금액은 `BigInteger`로 계산하고, 저장되는 단가와 결제액은 `DECIMAL(65,0)`의 65자리 한도를 따른다.
 
 ## 사용자 (User)와 요청자
 

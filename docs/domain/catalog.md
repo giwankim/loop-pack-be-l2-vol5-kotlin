@@ -95,12 +95,12 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
-| `amount` | `Long` | 원 단위 정수 |
+| `amount` | `BigInteger` | 원 단위 임의 정밀도 정수 |
 
 ### 규칙
 
 - 0 이상이다. 어기면 `InvalidMoneyException`. 가격 범위는 `Product`가 따로 막고 `InvalidPriceException`을 던진다. 금액은 여러 개념이 함께 쓰므로 가격 예외를 빌리지 않는다.
-- 더하기·곱하기 결과가 `Long` 범위를 넘으면 `InvalidMoneyException`으로 거절한다. `Math.addExact`, `Math.multiplyExact`.
+- 더하기·곱하기는 `BigInteger`로 정확히 계산하며 `Long` 범위에 제한되지 않는다. 저장 열은 `DECIMAL(65,0)`이므로 저장되는 금액은 65자리 이하다.
 - 가진 값보다 큰 값을 뺄 수 없다. 어기면 `InvalidMoneyException`.
 
 ### 행위
