@@ -15,10 +15,11 @@ import org.wiremock.spring.WireMockConfigurationCustomizer
  * [TestPg]로 감싼다.
  *
  * 생성 스텁이 PG 주문 번호까지 맞추도록 [TestPgOrderIdGeneratorConfig]도 가져와, 결제가 테스트가 정해 둔 번호를 받게 한다(ADR 0029 규칙 4).
+ * [TestPgWarmUpConfig]는 컨텍스트가 뜰 때 서버를 한 번 데워, 장면의 첫 생성이 test 프로필의 200 ms 응답 한도를 넘기지 않게 한다.
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
-@Import(TestPgOrderIdGeneratorConfig::class)
+@Import(TestPgOrderIdGeneratorConfig::class, TestPgWarmUpConfig::class)
 @EnableWireMock(
     ConfigureWireMock(
         name = TestPg.NAME,
