@@ -176,7 +176,6 @@ class OrderAdminApiTest(
         body.extractingPath("$.data.items[0].productId").isEqualToLong(product.id)
         body.extractingPath("$.data.items[0].quantity").isEqualTo(3)
         body.doesNotHavePath("$.data.paidAmount")
-        body.doesNotHavePath("$.data.confirmedAt")
 
         val error = assertThat(requestGetOrder(Long.MAX_VALUE)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
         error.extractingPath("$.meta.result").isEqualTo("FAIL")
@@ -184,8 +183,8 @@ class OrderAdminApiTest(
     }
 
     /**
-     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제 결과를 그대로 싣는지만 본다. 정해 둔 확정 시각은 포트가 만들 수 없으므로
-     * 준비한 초안 위에 SQL로 덮어쓴다(설계 13의 같은 판단).
+     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제액을 그대로 싣는지만 본다. 확정된 주문은 준비한 초안 위에 SQL로 덮어쓴다
+     * (설계 13의 같은 판단). 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
      */
     @Test
     fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {
@@ -194,8 +193,7 @@ class OrderAdminApiTest(
         val draft = prepareOrder(user, listOf(product)).id
         val confirmed = prepareOrder(user, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
-                "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
+            "update orders set status = 'CONFIRMED', paid_amount = 2000, confirmed_at = now(6) where id = ?",
             confirmed,
         )
 
@@ -203,16 +201,14 @@ class OrderAdminApiTest(
         body.extractingPath("$.data.items[0].orderId").isEqualToLong(confirmed)
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
         body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
-        body.extractingPath("$.data.items[0].confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
         body.extractingPath("$.data.items[1].orderId").isEqualToLong(draft)
         body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
         body.doesNotHavePath("$.data.items[1].paidAmount")
-        body.doesNotHavePath("$.data.items[1].confirmedAt")
 
         val detail = assertThat(requestGetOrder(confirmed)).hasStatusOk().bodyJson()
         detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
         detail.extractingPath("$.data.paidAmount").isEqualTo(2_000)
-        detail.extractingPath("$.data.confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
+        detail.doesNotHavePath("$.data.confirmedAt")
     }
 
     @Test

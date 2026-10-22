@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
-import java.time.Instant
 
 /** Each request ends its own transaction; read-back uses fresh persistence contexts. */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -83,16 +82,15 @@ class OrderConfirmationApiTest(
         assertStock(first, 10)
         assertStock(second, 5)
 
-        val before = Instant.now().minusSeconds(1)
         val confirmed = requestConfirm(orderId)
         val body = assertThat(confirmed).hasStatusOk().bodyJson()
         body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
         body.extractingPath("$.data.paidAmount").isEqualTo(7_000)
         body.extractingPath("$.data.totalAmount").isEqualTo(7_000)
+        body.doesNotHavePath("$.data.confirmedAt")
 
         assertThat(confirmed.json()["data"]["items"]).isEqualTo(draft.json()["data"]["items"])
         assertThat(confirmed.json()["data"]["createdAt"]).isEqualTo(draft.json()["data"]["createdAt"])
-        assertThat(Instant.parse(confirmed.json()["data"]["confirmedAt"].stringValue())).isBetween(before, Instant.now())
         balance(3_000)
         assertStock(first, 5)
         assertStock(second, 4)

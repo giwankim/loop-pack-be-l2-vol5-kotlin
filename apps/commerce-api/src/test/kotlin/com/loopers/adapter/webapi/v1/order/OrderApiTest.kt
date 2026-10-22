@@ -99,7 +99,6 @@ class OrderApiTest(
         body.extractingPath("$.data.items[0].lineAmount").isEqualTo(5_000)
         body.extractingPath("$.data.items[1].productId").isEqualToLong(second)
         body.doesNotHavePath("$.data.paidAmount")
-        body.doesNotHavePath("$.data.confirmedAt")
 
         val ownDetail = requestDetail(body.extractingPath("$.data.orderId").asNumber().actual().toLong())
         assertThat(ownDetail).hasStatusOk()
@@ -449,25 +448,22 @@ class OrderApiTest(
         assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
     }
 
-    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 정해 둔 확정 시각은 포트가 만들 수 없으므로 준비한 초안 위에 SQL로 덮어쓴다(설계 13). */
+    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정된 주문은 준비한 초안 위에 SQL로 덮어쓴다(설계 13). */
     @Test
     fun `the order list shows draft and confirmed entries with their stored payment fields`() {
         prepareProduct(price = 1_000)
         prepareOrder(owner, listOf(product))
         val confirmed = prepareOrder(owner, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
-                "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
+            "update orders set status = 'CONFIRMED', paid_amount = 2000, confirmed_at = now(6) where id = ?",
             confirmed,
         )
 
         val body = assertThat(requestList()).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
         body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
-        body.extractingPath("$.data.items[0].confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
         body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
         body.doesNotHavePath("$.data.items[1].paidAmount")
-        body.doesNotHavePath("$.data.items[1].confirmedAt")
     }
 
     /**
