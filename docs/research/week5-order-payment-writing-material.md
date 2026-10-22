@@ -908,3 +908,107 @@ Two commits on `feat/order-payment` (pushed, `a96f2d9..59a6551`):
   - the stored-state re-read and the `ProductCacheTest` relaxation
   - the ports `OrderPaymentReconciler` and `PgTransactionRetriever`
 - **Not in any ticket:** a base-class helper for the point-paid SQL bypass, shared by four order HTTP test classes.
+
+## Issue 157: the payments design doc covers step 2
+
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157#issuecomment-6353617364) of [issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157). The rules the doc traces are [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) through [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md) and the tests of tickets 148 to 156. The docs are:
+
+- [`docs/design/payments.md`](../design/payments.md), sections 9 to 17
+- [`docs/design/points-orders.md`](../design/points-orders.md) and [`docs/domain/points-orders.md`](../domain/points-orders.md), dated notes
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt), the one test change
+
+### Landed
+
+Two commits on `feat/order-payment` (pushed, `98d88bc..bbb6136`):
+
+- [`005ebc9`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/005ebc9) is the one test change. The lost-response test (scene 4) in [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt) now asserts exactly one WARN after the confirm, carrying `결과 미확인` and the order ID (see the decisions below).
+- [`bbb6136`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/bbb6136) is the docs:
+  - [`docs/design/payments.md`](../design/payments.md) gets sections 9 to 17:
+    - §9: sources, scope, and what tickets 148 to 156 built
+    - §10: the order × payment state combinations, the transition diagram and table, and the guards
+    - §11: TX A, the PG call and TX B, each with its ports and propagation; the lock table; the orchestrator's `NEVER`; the create's outcomes and their WARNs
+    - §12: confirm's ten-step check order, the replay contract and the responses
+    - §13: the reconcile's order, the lookup's outcomes, and the stored state read when answering
+    - §14: the scene table. All 31 `OrderPaymentIntegrationTest` cases are mapped, with create and lookup counts and end states.
+    - §15: the accepted limits
+    - §16: the names table and the PR command block
+    - §17: the step-3 handover
+
+    The title now covers step 2, and §1.1's status cell for step 2 reads "끝남(2026-10-23, …)". Step 1's sections that step 2 made stale (the intro, the status line, §1.1, §2.5, §5.3 and §8) have dated notes.
+  - [`docs/design/points-orders.md`](../design/points-orders.md): 2026-10-23 dated notes on every section that describes paying for confirm with points, pointing at ADR 0024 and ADR 0027.
+  - [`docs/domain/points-orders.md`](../domain/points-orders.md): one dated note. It corrects "TX B는 지금 주문만 잠근다", because a failure also locks the products and the revision, and it describes reconcile. Issue 154 handed this off.
+
+[Spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)'s body has nine new dated "2026-10-23 고침" notes, one wherever the implementation changed a decision (listed below). Nothing in its text was removed.
+
+### Acceptance criteria
+
+- [x] **The step-2 sections exist and match the code. Every rule in them can be traced to a test or an ADR.**
+  - Each rule cites the ADR rule or the test that pins it. §14 names each scene's test.
+  - The unknown create's WARN (§11.4) had neither a test nor an ADR. `005ebc9` adds a test for it rather than dropping the rule. **Mutation check:** deleting the `log.warn` in `OrderPaymentService.confirm` turns the test red.
+- [x] **The command block was run. The recorded counts are the ones Gradle reported, and no filter matches nothing.**
+  - Run 2026-10-23. The counts are read from the JUnit XML reports. Every filter found its classes, with 0 failed and 0 skipped.
+
+    | Filter | Classes (tests) |
+    | --- | --- |
+    | `*PaymentIntegrationTest` | `OrderPaymentIntegrationTest` (31) |
+    | `*OrderConfirmationApiTest` | `OrderConfirmationApiTest` (45) |
+    | `*OrderConfirmer*Test` | `OrderConfirmerConcurrencyTest` (7), `OrderConfirmerRollbackTest` (1) |
+    | `*OrderApiTest`, `*OrderAdminApiTest`, `*OrderFinderTest` | 55, 12, 10 |
+    | `*.OrderTest`, `*.PaymentTest`, `*OrderRepositoryTest`, `*PaymentRepositoryTest` | 21, 55, 24, 14 |
+    | `*PaymentGatewayTest` | `PaymentGatewayTest` (96), `ExhaustedPoolPaymentGatewayTest` (1), `ObservedPaymentGatewayTest` (2), `ConnectTimeoutPaymentGatewayTest` (2, ran rather than skipped) |
+    | `*.ProductCacheTest`, `*PointChargerConcurrencyTest` | 16, 1 |
+
+  - Every filtered run also runs `HexagonalArchitectureTest`'s 7 rules. The counts leave them out.
+  - The full `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes: 71 classes, **856 tests, 0 failures, 0 skipped**. That equals issue 156's count, because `005ebc9` adds an assertion, not a test.
+- [x] **The points-orders design doc has dated notes where it describes point payment for confirm, keeping the original text.**
+  - The notes are on the status line and on §1, §2, §4, §5.1, §5.3, §5.5, §5.6, §5.9, §6, §7, §9, §10, §11, §15, §17 (with ADR 0025 and Q25, Q32 and Q33), §17.2, §17.3, §18.1 (Q39, Q42), §18.2, §18.3, §19 (Q44, Q45, Q46, Q49, 19.3), §19.2 and §20.
+  - A script listed every mention of point payment for confirm and found none without a note.
+  - A word diff of both points-orders docs deletes nothing.
+- [x] **All relative links in the changed docs resolve.** A script resolved every relative link in the three docs.
+
+### Decisions made while implementing
+
+- **The WARN got a test.** The line was added in issue 151 as the only trace of a payment left UNKNOWN, since no metric finds one. No test read it, so the doc could not trace it. Pinning it seemed better than leaving the rule untraced, and it is the one code-side change in this docs ticket.
+- **`'*.ProductCacheTest'` with a dot.** Without the dot the filter also matches `BrandProductCacheTest` and `LikeProductCacheTest`. The dots in `'*.OrderTest'` and `'*.PaymentTest'` do the same job.
+- **The scene numbers follow spec 147's scene list.** I did not re-read the assignment's Notion page, which would have needed Chrome in front.
+- **The key race happens at the payment's save** (§12.1 row 10). The payment's ID is `IDENTITY`, so the insert hits `UK_PAYMENT_ON_IDEMPOTENCY_KEY` at `PaymentStarter.start`'s save, not at commit. The first draft said commit, and the review caught it.
+- **Wording.** "슬라이스" is the vertical slice. "조각" is only a Spring `Slice` page (§15.4).
+- **Spec 147's nine notes:**
+  - The names chosen for the spec's placeholders (issues 151, 152, 156)
+  - `OrderStatusConflictException` (issue 149)
+  - The list's `PAYMENT_MISSING` (issue 153)
+  - The PG amount cap in TX A (issue 151)
+  - The unknown create's WARN (issue 151)
+  - The stored state read when answering (issue 156)
+  - `InvalidPaymentAmountException` deleted (issue 154)
+  - Scene 9's zero-transaction case lives in scene 8's test (issue 156)
+  - The stock race staying in `OrderConfirmerConcurrencyTest`, run by the PR's third command (issue 151)
+- **Review.** A two-axis review ran on the docs before the commit.
+  - **Standards:**
+    - Dated notes were missing in points-orders §5.1, §5.6's 10–12 note, §17.1 (Q25, Q32, Q33), §18.1 (Q39) and §19.1 (Q49), and in payments §5.3.
+    - "조각" was used with two meanings.
+    - Some wording was not glossary-safe: "결제가 없는 PG 주문", "포인트 주문", and an ambiguous "결제 실패".
+
+    All of these are fixed.
+  - **Spec:** six fixes.
+    - The untraced WARN (`005ebc9`).
+    - Spec notes were missing for the WARN and for scene 9's zero-transaction case.
+    - §12.1 placed the key race at commit.
+    - The "트랜잭션 안" row claimed zero creates for both tests, but the reconcile test's setup sends one.
+    - §16.2's comment said the filter covers all of scene 11. Its point-paid half is in `OrderConfirmationApiTest`.
+    - The validator row missed the call made outside any transaction.
+  - **Kept as judgement calls:**
+    - §10 to §13 restate rules their ADRs already hold.
+    - One decision fans out into many dated notes across points-orders.md.
+    - The title is rewritten.
+
+### For later tickets
+
+- **Step 3:** §17 of the payments design doc is the handover:
+  - The callback. `PaymentRepository` has no find by PG order ID yet, and the reconcile port takes a requester that the callback does not have.
+  - The `transaction_key` index.
+  - The breaker. It goes on lookups only, and a refused lookup still surfaces as `PgUnavailableException`. It must never wrap the create inside the adapter.
+  - Retries resend lookups, never creates.
+  - The restart scene.
+  - Metrics for payments left UNKNOWN.
+- **[Spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147):** with this ticket, tickets 148 to 157 are all closed. The spec can be reviewed against its checklist and closed.
