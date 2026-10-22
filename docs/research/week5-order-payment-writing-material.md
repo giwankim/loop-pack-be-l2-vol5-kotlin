@@ -137,3 +137,90 @@ Two commits on `feat/order-payment` (pushed), rebased onto issue 148's `4fedc8e`
 - [Issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150) appends its `payment` statements to the same migration file, under the header's `orders` block. The enum, unknown-in-CHECK and utf8mb4 points above apply to its columns too.
 - The tracer ([issue 151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151)) calls `startPayment()` in TX A, and `completePayment()` or `failPayment()` in TX B. It decides how `OrderStatusConflictException` maps over HTTP, if it can reach the web boundary at all.
 - `paymentStatus` in the responses is still to come, with the payment finder.
+
+## Issue 150: a payment mints its own PG order ID
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150#issuecomment-6339171998) of [issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150). The decisions are [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md) and rule 2 of [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md). The code is:
+
+- [`PgOrderIdGenerator`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/PgOrderIdGenerator.kt)
+- [`UuidPgOrderIdGenerator`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/UuidPgOrderIdGenerator.kt)
+- [`Payment`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/Payment.kt)
+- [`PaymentFixtures`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/payment/PaymentFixtures.kt)
+- [`PaymentTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/payment/PaymentTest.kt)
+- [`UuidPgOrderIdGeneratorTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/integration/pg/UuidPgOrderIdGeneratorTest.kt)
+- [`PaymentRepositoryTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentRepositoryTest.kt)
+- [the step 2 migration](../migrations/2026-10-22-order-payment.sql)
+
+### Landed
+
+Three commits on `feat/order-payment` (pushed, `54d2321..3fc7565`), on top of issue 149:
+
+- [`b985e05`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/b985e05) is the code and tests: `PgOrderIdGenerator` in `domain.payment`, `UuidPgOrderIdGenerator` in `adapter.integration.pg`, `Payment.start` with a private constructor, the key rule, the `utf8mb4_bin` key column, `UK_PAYMENT_ON_PG_ORDER_ID`, and fixtures that go through `start`.
+- [`9cff4e3`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9cff4e3) is the docs: the `payment` statements in [`docs/migrations/2026-10-22-order-payment.sql`](../migrations/2026-10-22-order-payment.sql), dated notes in the payments design doc, a dated note on ADR 0025 rule 2, and the fixture rule in `CODING_STANDARDS.md`.
+- [`3fc7565`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/3fc7565) is the review follow-up. The two `start` tests became one that asserts every literal it passes, the no-break-space key row is written as ` `, and a fixture variable was renamed.
+
+### Acceptance criteria
+
+- [x] **`PaymentTest`** went from 43 to 51 tests.
+  - **`start` takes its PG order ID from the generator and calls it once.** One test passes a counting lambda (`PgOrderIdGenerator` is a `fun interface`). It asserts `UNKNOWN`, the order, the key, the amount, the generator's value, and exactly one call.
+  - **Rejected keys:**
+    - Blank keys (3 rows) and a 65-character key, as before.
+    - Keys containing whitespace (5 rows): inner space, leading space, trailing space, tab, newline.
+    - Keys with a character outside visible ASCII (6 rows): Korean, `café`, fullwidth letters, U+00A0, NUL, DEL.
+  - **Accepted keys:** one test shows all 94 visible ASCII characters (`!` to `~`, split into two keys) are allowed, so the rule is not stricter than the ADR.
+  - **Mutation check:** widening the range past ASCII turned 5 of the 6 outside-ASCII rows red. NUL sits below `!`, so it stays rejected.
+  - **Removed:** the derived `LP-ORD-…` tests, including the Thai-locale `padStart` test. No `LP-ORD` is left under `apps/`.
+- [x] **The generator's unit test** draws 1,000 values. Each is at least 6 characters and ASCII, and none repeats.
+- [x] **`PaymentRepositoryTest`** went from 10 to 14 tests.
+  - A second payment with the same PG order ID throws `DataIntegrityViolationException`, and the root cause names `UK_PAYMENT_ON_PG_ORDER_ID`.
+  - `Checkout-42` and `checkout-42` are both saved, and each lookup returns its own payment.
+  - A lookup by `Checkout-42` finds that payment. `checkout-42` and `CHECKOUT-42` find nothing.
+  - `information_schema` shows the key column as `utf8mb4`, `utf8mb4_bin`, length 64, and lists exactly three unique keys. Any case-sensitive collation would pass the behaviour tests, so this pins the one the migration writes.
+- [x] **The payments design doc's `pgOrderId` row and `String.format` note** keep their original text and gain dated notes pointing at ADR 0029.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 69 classes, **785 tests, 0 failures, 0 skipped**. That is 149's 772 plus this ticket's 13. Executed counts for the changed classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `PaymentTest` | 51 (was 43) |
+  | `PaymentRepositoryTest` | 14 (was 10) |
+  | `UuidPgOrderIdGeneratorTest` | 1 (new) |
+  | `PaymentFixturesTest` | 4 |
+  | `PaymentGatewayTest` | 96 |
+
+**The migration.** I checked it on a disposable `mysql:8.4` started with the test container's server flags (`utf8mb4`, `utf8mb4_general_ci`):
+
+1. Build a schema from the previous mapping. I used this ticket's show-sql DDL with its two changes reverted: `idempotency_key varchar(64) not null`, and no `UK_PAYMENT_ON_PG_ORDER_ID`.
+2. Seed a payment with `Checkout-42`. Inserting `checkout-42` for another order fails on `UK_PAYMENT_ON_IDEMPOTENCY_KEY`, which is the bug this ticket fixes.
+3. Apply the two `payment` statements.
+4. Compare with a schema created from the new mapping's DDL in `information_schema`: columns with type, charset, collation and nullability; indexes; constraints. **Identical.**
+
+After the migration, the seeded row is intact, `checkout-42` is accepted, lookups match case exactly, and the new key rejects a duplicate PG order ID.
+
+### Decisions made while implementing
+
+- **`utf8mb4_bin` is PAD SPACE. It tells case apart but not trailing spaces.**
+  - On MySQL 8.4, `'abc' = 'abc ' collate utf8mb4_bin` is true. `utf8mb4_0900_bin` is the NO PAD one.
+  - The issue says the column separates keys that differ in trailing space, and it does not.
+  - The collation stays as specified (the user's call, 2026-10-22). The key rule rejects all whitespace, so no stored key can end in a space.
+  - The fact is recorded as a dated note on ADR 0025 rule 2, which keeps its original text.
+- **The column uses `columnDefinition`.** The value is `varchar(64) character set utf8mb4 collate utf8mb4_bin`, as the removed `IdempotencyKey.COLUMN_DEFINITION` did. Hibernate still appends `not null`. Hibernate 7.4.1 has `@Collate`, but it is `@Incubating`.
+- **`PgOrderIdGenerator` is a `fun interface`, so tests pass a lambda.** `createPayment` passes `{ fixedPgOrderId }`, a UUID string unless the test gives one. No mocks are involved.
+- **The key rule.**
+  - It is one check with one message, "멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.", covering whitespace, control characters and anything outside ASCII.
+  - It runs after the blank and length checks, so a 65-character key with a space reports the length.
+  - The checks stay in `init`, so `start` calls the generator before they run. An invalid key still consumes one UUID, which is harmless.
+- **The unique-key test asserts the constraint name**, unlike its sibling tests, because the acceptance criterion names the key.
+- **The gateway tests' `LP-ORD-…` example literals are now UUID strings.** They treat the PG order ID as opaque, so only the values changed. The reserved-characters lookup keeps its `+` and `&` (`pg-order+42&orderId=43`).
+- **Docs beyond the two required notes.**
+  - The payments design doc also notes the `idempotencyKey` row, the creation bullet (`Payment.start` only), and the lookup-index bullet.
+  - It closes two hand-offs in §8: the key comparison and the `pg_order_id` index.
+  - `CODING_STANDARDS.md` now says that fixtures for a factory-only entity call the factory, and that `Payment.start` gets a fixed generator.
+
+### For later tickets
+
+- **The tracer ([issue 151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151)) must reject a bad `Idempotency-Key` header before any lookup.** Under PAD SPACE, `findByIdempotencyKey("Checkout-42 ")` finds `Checkout-42`.
+  - The character range is `Payment.IDEMPOTENCY_KEY_CHARACTERS`, which is private for now. Share it with the header check when that check needs it.
+  - `IDEMPOTENCY_KEY_MAX_LENGTH` is already public.
+- **151 injects `PgOrderIdGenerator` (the `UuidPgOrderIdGenerator` bean) wherever it calls `Payment.start`.** Tests that stub the test PG before confirming need a fixed generator bean (ADR 0029 rule 4). No test covers the bean's wiring yet; its first consumer will.
+- **Step 3's callback looks payments up through `UK_PAYMENT_ON_PG_ORDER_ID`.** `PaymentRepository` has no `findByPgOrderId` yet.
+- **The migration file now holds both blocks.** The `payment` block follows 149's `orders` block.
