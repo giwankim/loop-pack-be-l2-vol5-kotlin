@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.domain.shared.Money
 import com.loopers.support.test.BaseRepositoryTest
@@ -138,5 +139,22 @@ class OrderFixturesTest : BaseRepositoryTest() {
             OrderCreateRequest.Item(productId = 3, quantity = 5),
             OrderCreateRequest.Item(productId = 1, quantity = 11),
         )
+    }
+
+    @Test
+    fun `createOrderConfirmRequest satisfies the request's own constraints with a card type the test PG takes`() {
+        val requests = List(SAMPLES) { createOrderConfirmRequest() }
+
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests.map { it.cardType }).allSatisfy { cardType ->
+            assertThat(cardType).isIn("SAMSUNG", "KB", "HYUNDAI")
+        }
+    }
+
+    @Test
+    fun `createOrderConfirmRequest uses the card type and number it is given`() {
+        val request = createOrderConfirmRequest(cardType = "KB", cardNo = "1234-5678-9814-1451")
+
+        assertThat(request).isEqualTo(OrderConfirmRequest(cardType = "KB", cardNo = "1234-5678-9814-1451"))
     }
 }

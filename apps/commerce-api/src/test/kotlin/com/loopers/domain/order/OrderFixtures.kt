@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
@@ -87,5 +88,16 @@ fun createOrderCreateRequest(vararg items: Pair<Long, Int?>): OrderCreateRequest
                     .create()
             },
         )
+        .create()
+}
+
+/**
+ * 주문 확정 요청. 카드 종류는 테스트 PG가 받는 셋 가운데 하나이고, 카드 번호는 Luhn 검사를 지나는 16자리 숫자다.
+ * 확정이 PG에 그대로 넘기므로 테스트는 같은 카드로 생성 스텁을 맞춘다.
+ */
+fun createOrderConfirmRequest(cardType: String? = null, cardNo: String? = null): OrderConfirmRequest {
+    return KInstancio.of<OrderConfirmRequest>()
+        .set(field(OrderConfirmRequest::cardType), cardType ?: gen().oneOf("SAMSUNG", "KB", "HYUNDAI").get())
+        .set(field(OrderConfirmRequest::cardNo), cardNo ?: gen().finance().creditCard().get())
         .create()
 }

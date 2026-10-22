@@ -6,6 +6,7 @@ import org.springframework.data.domain.Slice
 
 /**
  * 주문 조각이 내주는 읽기. 고객의 내 주문 상세·목록과 관리자의 주문 목록·상세가 부르고, 주문 확정은 [findForUpdate]로 바꿀 주문을 잠가 얻는다.
+ * 결제 상태까지 싣는 읽기는 [OrderInfo]를 돌려준다.
  * 품목은 같은 애그리거트라 함께 읽어 [Order]를 통째로 돌려준다. 트랜잭션 밖에서 품목을 건너도 지연 로딩이 없다(ADR 0014).
  *
  * 저장된 스냅샷만 싣는다. 상품을 다시 읽어 이름·단가를 채우지 않으므로 이름이 바뀌거나 삭제된 상품의 주문도
@@ -16,6 +17,12 @@ import org.springframework.data.domain.Slice
 interface OrderFinder {
     /** 요청자의 주문 하나. 없는 주문도 남의 주문도 `ORDER_NOT_FOUND`다. */
     fun find(userId: Long, orderId: Long): Order
+
+    /**
+     * 요청자의 주문 하나와 그 결제 상태. 고객의 주문 상세가 부른다. 결제수단이 PG인 주문만 결제를 읽는다(ADR 0028 규칙 1).
+     * 없는 주문도 남의 주문도 [find]처럼 `ORDER_NOT_FOUND`다.
+     */
+    fun findInfo(userId: Long, orderId: Long): OrderInfo
 
     /**
      * 요청자의 주문 하나를 품목과 함께 잠가 읽는다. 없는 주문도 남의 주문도 [find]처럼 `ORDER_NOT_FOUND`다.

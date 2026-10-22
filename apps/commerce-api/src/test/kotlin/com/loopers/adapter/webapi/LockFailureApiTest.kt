@@ -1,7 +1,6 @@
 package com.loopers.adapter.webapi
 
 import com.loopers.application.order.provided.OrderFinder
-import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.domain.order.OrderStatus
@@ -27,7 +26,7 @@ import kotlin.concurrent.thread
 
 /**
  * 행 잠금을 3초 안에 얻지 못한 요청의 응답을 고정한다(ADR 0018 규칙 7, 8). 관리자의 상품 쓰기와 확정은 행을 처음 읽는 잠금 조회에서 기다린다.
- * 관리자의 상품 쓰기는 첫 문장에서, 확정은 앞선 잠금을 쥔 채 결제의 계정 잠금에서다(ADR 0019).
+ * 관리자의 상품 쓰기는 첫 문장에서, 확정은 TX A가 주문 잠금을 쥔 채 상품의 잠금에서다(ADR 0028 규칙 4).
  * 좋아요는 행을 잠가 읽지 않고, 커밋 바로 앞에 상품 목록 revision을 올리는 마지막 문장에서 그 행을 기다린다(ADR 0020).
  * 모두 409로 끝나고 아무것도 바꾸지 않아야 한다.
  *
@@ -39,7 +38,6 @@ import kotlin.concurrent.thread
 class LockFailureApiTest(
     private val productFinder: ProductFinder,
     private val orderFinder: OrderFinder,
-    private val pointAccountFinder: PointAccountFinder,
     private val productListRevisionRepository: ProductListRevisionRepository,
     private val databaseCleanUp: DatabaseCleanUp,
     transactionManager: PlatformTransactionManager,
@@ -84,14 +82,13 @@ class LockFailureApiTest(
     }
 
     /**
-     * 확정의 결제는 포인트 계정을 잠가 읽으므로(ADR 0019), 다른 충전이 계정을 쥐고 있으면 주문과 상품을 잠그고 재고를 차감한 뒤
-     * `deduct`의 잠금 읽기에서 기다린다. 409는 그때까지 잡은 잠금을 풀고 재고 차감을 되돌린 결과다.
+     * 확정의 TX A는 주문을 잠근 뒤 품목의 상품을 잠가 읽으므로(ADR 0028 규칙 4), 다른 트랜잭션이 상품을 쥐고 있으면 그 잠금 읽기에서 기다린다.
+     * 409는 그때까지 잡은 주문 잠금을 풀고 TX A를 되돌린 결과다. 결제를 만들기 전이라 PG는 불리지 않으므로 테스트 PG를 띄우지 않는다.
      */
     @Test
-    fun `a confirmation that cannot lock its point account within the lock wait returns 409 and changes nothing`() {
+    fun `a confirmation that cannot lock its product within the lock wait returns 409 and changes nothing`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
-        charge(amount = 3_000)
-        holdInAnotherTransaction { charge(amount = 1_000) }
+        holdInAnotherTransaction { productFinder.findForUpdate(product.id) }
 
         val body = assertThat(requestConfirm(order.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("FAIL")
@@ -102,9 +99,8 @@ class LockFailureApiTest(
         transaction.executeWithoutResult {
             val draft = orderFinder.find(user.id, order.id)
             assertThat(draft.status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(draft.paidAmount).isNull()
+            assertThat(draft.paymentMethod).isNull()
             assertThat(productFinder.find(product.id).stock).isEqualTo(10)
-            assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(4_000L.toBigInteger())
         }
     }
 
@@ -162,6 +158,9 @@ class LockFailureApiTest(
     private fun requestConfirm(orderId: Long): MvcTestResult {
         return mvc.post().uri("/api/v1/orders/$orderId/confirm")
             .header(UserIdHeader.NAME, user.id)
+            .header(IdempotencyKeyHeader.NAME, "lock-failure-key")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""{"cardType":"SAMSUNG","cardNo":"4111-1111-1111-1111"}""")
             .exchange()
     }
 

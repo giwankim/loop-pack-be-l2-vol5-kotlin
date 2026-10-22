@@ -1,6 +1,7 @@
 package com.loopers.support
 
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration
+import org.springframework.context.annotation.Import
 import org.wiremock.spring.ConfigureWireMock
 import org.wiremock.spring.EnableWireMock
 import org.wiremock.spring.WireMockConfigurationCustomizer
@@ -12,9 +13,12 @@ import org.wiremock.spring.WireMockConfigurationCustomizer
  * 서버는 컨텍스트와 함께 살고 죽는다. PG를 쓰는 테스트는 모두 이 애노테이션을 달아, 같은 설정끼리 컨텍스트와 서버를 나눠 쓴다.
  * 스텁과 요청 기록은 테스트 메서드마다 지워진다(라이브러리 기본값). 서버는 테스트 클래스의 `@InjectWireMock(TestPg.NAME)` 필드로 받아
  * [TestPg]로 감싼다.
+ *
+ * 생성 스텁이 PG 주문 번호까지 맞추도록 [TestPgOrderIdGeneratorConfig]도 가져와, 결제가 테스트가 정해 둔 번호를 받게 한다(ADR 0029 규칙 4).
  */
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
+@Import(TestPgOrderIdGeneratorConfig::class)
 @EnableWireMock(
     ConfigureWireMock(
         name = TestPg.NAME,

@@ -1,8 +1,8 @@
 package com.loopers.application.brand.provided
 
+import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.application.brand.BrandModifyService
 import com.loopers.application.brand.BrandQueryService
-import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.product.ProductModifyService
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.brand.createBrandAdminUpdateRequest
@@ -10,6 +10,8 @@ import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.createProductAdminRegisterRequest
 import com.loopers.domain.product.createProductAdminStockUpdateRequest
 import com.loopers.domain.product.createProductAdminUpdateRequest
+import com.loopers.support.EnableTestPg
+import com.loopers.support.TestPg
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.Pause
@@ -22,6 +24,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.test.util.AopTestUtils
+import org.wiremock.spring.InjectWireMock
 
 /**
  * 브랜드 삭제와 그 브랜드나 상품을 바꾸는 다른 쓰기가 엇갈릴 때를 실제 MySQL의 행 잠금으로 확인한다(ADR 0018 규칙 1, 3, 4).
@@ -30,11 +33,12 @@ import org.springframework.test.util.AopTestUtils
  * 브랜드 행 잠금이 막지 않아야 하는 것도 여기서 본다. 같은 브랜드의 상품 등록끼리, 그리고 다른 브랜드 상품의 주문 확정은 삭제를 기다리지 않는다.
  *
  * 멈추는 방법과 기다리는지 보는 방법은 [com.loopers.application.order.provided.OrderConfirmerConcurrencyTest]와 같다.
+ * 주문 확정은 PG로 결제하므로 테스트 PG를 띄운다.
  */
+@EnableTestPg
 class BrandRegisterConcurrencyTest(
     private val brandRegister: BrandRegister,
     private val productRegister: ProductRegister,
-    private val orderConfirmer: OrderConfirmer,
 ) : BaseCommittingApplicationServiceTest() {
     @MockkSpyBean
     private lateinit var productModifyService: ProductModifyService
@@ -44,6 +48,12 @@ class BrandRegisterConcurrencyTest(
 
     @MockkSpyBean
     private lateinit var brandQueryService: BrandQueryService
+
+    /** 생성자 주입의 하나뿐인 예외다. 까닭은 `OrderPaymentIntegrationTest`의 같은 필드에 있다. */
+    @InjectWireMock(TestPg.NAME)
+    private lateinit var server: WireMockServer
+
+    private val testPg by lazy { TestPg(server) }
 
     private val pause = Pause()
 
@@ -267,15 +277,14 @@ class BrandRegisterConcurrencyTest(
         val brandToDelete = prepareBrand()
         prepareProduct(brand = brandToDelete)
         prepareOrder(products = listOf(prepareProduct(price = 1_000)), quantity = 1)
-        charge(amount = 1_000)
         pauseBrandDeleteAfterItsProducts()
 
         val deleting = inAnotherThread { brandRegister.delete(brandToDelete.id) }
         pause.awaitHeld()
-        val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id) }
+        val confirming = inAnotherThread { confirmOrder(testPg) }
 
         assertThat(confirming.finishesWithin(LOCK_WAIT_PROBE)).isTrue()
-        assertThat(confirming.await().status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(confirming.await().order.status).isEqualTo(OrderStatus.CONFIRMED)
         pause.release()
         deleting.await()
     }

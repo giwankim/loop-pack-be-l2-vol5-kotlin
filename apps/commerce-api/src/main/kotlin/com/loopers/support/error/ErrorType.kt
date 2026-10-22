@@ -33,4 +33,7 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     INSUFFICIENT_POINTS(HttpStatus.CONFLICT, "INSUFFICIENT_POINTS", "포인트가 부족합니다."),
     ORDER_ALREADY_CONFIRMED(HttpStatus.CONFLICT, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다."),
     POINT_ACCOUNT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "사용자의 포인트 계정이 없습니다."),
+
+    /** 결제. 결제수단이 PG인 주문에 결제가 없는 것은 데이터의 불일치라 포인트 계정 없음처럼 범용 500과 status·code를 공유한다(ADR 0028 규칙 1). */
+    PAYMENT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "주문의 결제가 없습니다."),
 }

@@ -88,17 +88,7 @@ class Payment private constructor(
         protected set
 
     init {
-        if (idempotencyKey.isBlank()) {
-            throw InvalidPaymentException("멱등 키는 공백일 수 없습니다.")
-        }
-
-        if (idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
-            throw InvalidPaymentException("멱등 키는 ${IDEMPOTENCY_KEY_MAX_LENGTH}자 이하여야 합니다.")
-        }
-
-        if (!idempotencyKey.all { it in IDEMPOTENCY_KEY_CHARACTERS }) {
-            throw InvalidPaymentException("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
-        }
+        checkIdempotencyKey(idempotencyKey)
 
         if (amount <= Money.ZERO) {
             throw InvalidPaymentException("결제 금액은 1원 이상이어야 합니다.")
@@ -204,6 +194,25 @@ class Payment private constructor(
 
         /** Visible ASCII, `!` (0x21) to `~` (0x7E): no space, no control character, nothing outside ASCII. */
         private val IDEMPOTENCY_KEY_CHARACTERS = '!'..'~'
+
+        /**
+         * Rejects an idempotency key that breaks the key rule (ADR 0025 rule 2) with an [InvalidPaymentException] naming the broken
+         * part. Creating a payment checks the key here, and so does the web boundary before the key reaches a lookup: under
+         * `utf8mb4_bin`'s PAD SPACE a key with a trailing space would find the payment of the key without it.
+         */
+        fun checkIdempotencyKey(idempotencyKey: String) {
+            if (idempotencyKey.isBlank()) {
+                throw InvalidPaymentException("멱등 키는 공백일 수 없습니다.")
+            }
+
+            if (idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
+                throw InvalidPaymentException("멱등 키는 ${IDEMPOTENCY_KEY_MAX_LENGTH}자 이하여야 합니다.")
+            }
+
+            if (!idempotencyKey.all { it in IDEMPOTENCY_KEY_CHARACTERS }) {
+                throw InvalidPaymentException("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+            }
+        }
 
         /**
          * Starts paying for order [orderId] through the PG. This is the only way to create a payment, so callers cannot choose
