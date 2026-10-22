@@ -151,8 +151,8 @@ class OrderPaymentIntegrationTest(
 
     /**
      * 과제 6절의 장면 4. 생성은 PG에 닿았지만 응답을 잃었다. PG 거래가 생겼을 수도 있으므로 결제는 결과 미확인, 주문은 결제 중인 주문으로
-     * 남고 예약도 그대로다(ADR 0024 규칙 4). 생성은 다시 보내지 않는다. 대사가 PG 주문 번호로 그 PG 거래를 찾아 결제를 끝내고, 생성은 1
-     * 그대로다(ADR 0024 규칙 3).
+     * 남고 예약도 그대로다(ADR 0024 규칙 4). 그런 결제를 찾을 지표가 없으므로 주문 식별자를 담은 WARN을 한 줄 남긴다. 생성은 다시 보내지
+     * 않는다. 대사가 PG 주문 번호로 그 PG 거래를 찾아 결제를 끝내고, 생성은 1 그대로다(ADR 0024 규칙 3).
      */
     @Test
     fun `a lost create response leaves the payment unknown until a reconcile finds the transaction, without another create`() {
@@ -170,6 +170,9 @@ class OrderPaymentIntegrationTest(
         assertThat(pending.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(testPg.createCount()).isOne()
+        assertThat(applicationLogs.list.filter { it.level == Level.WARN }).singleElement().satisfies({
+            assertThat(it.formattedMessage).contains("결과 미확인", "orderId=${order.id}")
+        })
         inNewTransaction {
             val persisted = orderFinder.find(user.id, order.id)
             assertThat(persisted.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
