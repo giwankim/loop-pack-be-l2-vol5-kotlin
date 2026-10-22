@@ -491,3 +491,99 @@ Two commits on `feat/order-payment` (pushed, `f2723fa..a6f0198`), on top of issu
 - **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):**
   - `docs/design/points-orders.md` still lists `INSUFFICIENT_POINTS` in its §6 error table and its insufficiency rule, with no dated note yet.
   - The domain doc's confirm-flow note can point at the payments design doc once its step-2 sections exist.
+
+## Issue 153: the order lists and admin views show the payment status
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153#issuecomment-6341445265) of [issue 153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153). The rules are rules 1 and 5 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md). The code is:
+
+- [`OrderInfoAssembler`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderInfoAssembler.kt)
+- [`OrderQueryService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderQueryService.kt)
+- [`PaymentQueryService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentQueryService.kt)
+- [`OrderAdminResponse`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderAdminResponse.kt)
+- [`OrderApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderApiTest.kt)
+- [`OrderAdminApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderAdminApiTest.kt)
+- [`OrderFinderTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderFinderTest.kt)
+
+### Landed
+
+Three commits on `feat/order-payment` (pushed, `15fda3b..2cafc0b`), on top of issue 154:
+
+- [`bab9990`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/bab9990) is the code and tests:
+  - the customer list, the admin list and the admin detail return `OrderInfo`
+  - `PaymentFinder.findAllByOrders` reads a slice's payments in one statement
+  - `OrderAdminResponse` gains `paymentStatus`, and the API docs describe both payment fields
+  - the HTTP and port tests, and the test support they need
+- [`16a9a6a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/16a9a6a) is the ADR note and the coding standards:
+  - a dated note on ADR 0028 rule 1: a list fails on a missing payment too
+  - `CODING_STANDARDS.md`: where `confirmOrder` lives, and how to count one table's statements
+- [`2cafc0b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2cafc0b) is a dated note on points-orders design 16.2: both order responses read `OrderInfo` again
+
+### Acceptance criteria
+
+- [x] **A customer list that mixes a draft, a point order, a payment pending PG order and a confirmed PG order shows each order's `paymentMethod` and `paymentStatus`.**
+  - [`OrderApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderApiTest.kt) now carries `@EnableTestPg`. Its draft/point list scene became the four-way mix:
+
+    | Order | `status` | `paymentMethod` | `paymentStatus` | `paidAmount` |
+    | --- | --- | --- | --- | --- |
+    | PG-paid (test PG answers SUCCESS) | CONFIRMED | PG | SUCCESS | 4000 |
+    | payment pending (test PG answers PENDING) | PAYMENT_PENDING | PG | PENDING | absent |
+    | point-paid (SQL-seeded, no transition reaches POINT since issue 154) | CONFIRMED | POINT | absent | 2000 |
+    | draft | DRAFT | absent | absent | absent |
+
+  - Each list entry is also compared, as JSON, with that order's `GET /api/v1/orders/{orderId}`. The list path (`toInfos`) and the detail path (`toInfo`) cannot drift apart.
+- [x] **The admin list and detail show the same fields.** [`OrderAdminApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderAdminApiTest.kt) runs the same four orders through `GET /api-admin/v1/orders`. It compares every entry with `GET /api-admin/v1/orders/{orderId}` and checks that `confirmedAt` stays out.
+- [x] **A page of several PG orders reads their payments in one query (`captureSql`).**
+  - `OrderApiTest` confirms three orders through the test PG, behind a point-paid order and a draft.
+  - Page 0 (size 3) holds the three PG-paid orders. It sends exactly one statement that selects from `payment`: `… from payment p1_0 where (p1_0.deleted_at is null) and p1_0.order_id in (?,?,?)`.
+  - Page 1 holds the point-paid order and the draft. It sends none.
+  - **Mutation check:** I made `toInfos` map each order through `toInfo`. The page sent four payment statements, and the test failed.
+  - An older test caught the same rule first. `OrderFinderTest` pins two statements for a slice of drafts. Before an empty-input guard was added, the customer-list version went red at three, because Hibernate still sends a query for an empty `IN ()`. It and its admin-list twin now pin "drafts and point orders read no payment".
+- [x] **A PG order whose payment row is missing answers 500 `PAYMENT_MISSING`. The test helper that creates this state names the bypass.**
+  - [`BaseApplicationServiceTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/test/BaseApplicationServiceTest.kt)`.startPaymentWithoutPayment()` calls `Order.startPayment()` and saves the order through the repository. It skips the payment TX A would create, and its KDoc says no port can build this state.
+  - **HTTP:** 500 with the generic code `Internal Server Error` and the message `ErrorType.PAYMENT_MISSING.message`, as `POINT_ACCOUNT_MISSING` answers. Checked on the customer detail and list, and on the admin list and detail.
+  - **Port:** [`OrderFinderTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderFinderTest.kt) asserts `ErrorType.PAYMENT_MISSING` from `findInfo`, both `findAll`s and `findForAdmin`.
+- [x] **The API docs list the new fields on the list and admin responses.**
+  - `OrderApiSpec.findAll`, `OrderAdminApiSpec.getOrders` and `OrderAdminApiSpec.getOrder` describe `paymentMethod` and `paymentStatus`, and when each is absent. The customer detail already did after issue 151.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 71 classes, **802 tests, 0 failures, 0 skipped**.
+  - That is issue 154's 798 plus 4 new tests. Two old list scenes were rewritten in place.
+  - Executed counts for the changed or affected classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderApiTest` | 55 (was 53) |
+  | `OrderAdminApiTest` | 12 (was 11) |
+  | `OrderFinderTest` | 10 (was 9) |
+  | `OrderCreatorTest` | 2 |
+  | `OrderConfirmationApiTest` | 27 |
+  | `OrderPaymentIntegrationTest` | 6 |
+
+### Decisions made while implementing
+
+- **A list page fails on a missing payment too.** This was decided during the implementation. `findAllByOrders` throws `PAYMENT_MISSING` when any requested order has no payment, as `findByOrder` does. Dropping that order would list it with the PG payment method and no payment status, a shape the API docs rule out, and so hide the inconsistency. The [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) rule 1 note records it.
+- **The empty-input guard sits in `PaymentQueryService`.** It is part of the port's contract ("[orderIds]가 비면 읽지 않는다"), so every caller gets it. The assembler stays branch-free.
+- **`findAllByOrders` returns `List<Payment>`.** Finders return whole aggregates (ADR 0014). The assembler reads only `orderId` and `status` from the payments. `orderId` is the order's own key, so ADR 0028 rule 5 ("reads only the payment status") still holds.
+- **`findForAdmin` keeps its name** while it now returns `OrderInfo`. The points-orders design table names it, and its KDoc now contrasts it with the customer's `find` and `findInfo`.
+- **Test support:**
+  - `confirmOrder(testPg)` moved from the committing base up to `BaseApplicationServiceTest`, so `NOT_SUPPORTED` MockMvc classes can call it. It takes `pgStatus` to build a payment pending order.
+  - `OrderApiTest` and `OrderAdminApiTest` now carry `@EnableTestPg`. Their annotation set matches `OrderConfirmationApiTest`'s, so the context cache can reuse that context instead of starting another.
+- **The per-table count uses `captureSql`, not `withStatistics`.** Hibernate statistics don't split statements by table, so the test filters `captureSql`'s SQL. `CODING_STANDARDS.md` now records this exception to its query-count rule.
+- **Review.** A two-axis review (standards and spec) ran before the commit.
+  - **Spec:** every criterion met.
+    - It noted that the admin list has no `captureSql` check of its own. Kept as is: it runs through the same `toInfos`.
+    - It noted that the empty-input guard sits in the payment slice, not in the order slice. Kept, for the reason above.
+  - **Standards:**
+    - "PG order" collides with the glossary's PG 주문 번호 (`pgOrderId`). The local `pgOrderIds` became `orderIdsWithPayment`, and the test names now say "paying through the PG".
+    - PENDING is on the glossary's avoid list for 결제 중인 주문, so the test names say "payment pending order".
+    - Two quantities that no test asserts were dropped.
+    - The `captureSql` exception was recorded.
+    - The PG check became one named rule, `hasPayment`.
+- **A dated design note.** Points-orders design 16.2 said ADR 0014 had removed `OrderInfo` and that both responses read `Order`. A 2026-10-22 note now says both read `OrderInfo` again.
+
+### For later tickets
+
+- **[Issue 152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152):** a PAYMENT_FAILED order goes through the same assembler, so the lists and admin views show `paymentStatus: FAILED` without new code. No list test covers a failed order yet. The four-way scenes in `OrderApiTest` and `OrderAdminApiTest` are the natural place for a fifth row.
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** the payments design doc should carry three facts:
+  - the list's one-statement payment read
+  - the 500 on a missing payment for lists too
+  - `confirmOrder`'s new home
+- **Flaky timeout.** The test profile's `pg.response-timeout` is 200 ms. At a load average around 14, with other worktrees running Gradle, the first create in a cold JVM timed out once. That left the payment `UNKNOWN` instead of `PENDING`, and it passed on rerun. Every PG scene test is exposed the same way. A warm-up or a longer limit for non-timeout scenes would fix it. No issue is filed.
