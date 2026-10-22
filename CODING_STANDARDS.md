@@ -135,7 +135,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 테이블은 DB의 테이블 이름 그대로다(`orders`, `likes`).
 - 유일 키·외래 키·인덱스의 대상은 컬럼 이름을 선언한 차례대로 `_AND_`로 잇는다. 컬럼 이름은 줄이지 않고(`USER_ID`, `CREATED_AT`), 정렬 방향은 넣지 않으며, 같은 값을 가르는 `id`도 넣는다. 예: `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`.
 - 외래 키는 자기 컬럼으로 이름 짓고 가리키는 테이블은 넣지 않는다. 예: `FK_LIKES_ON_USER_ID`. 두 컬럼이 같은 테이블을 가리켜도 이름이 겹치지 않는다.
-- CHECK 하나에는 규칙 하나를 둔다. 대상은 컬럼 하나의 규칙이면 `<컬럼>_<조건>`(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`), 여러 컬럼에 걸친 규칙이면 그 규칙의 이름(`CK_ORDERS_ON_PAYMENT_STATE`)이다.
+- CHECK 하나에는 규칙 하나를 둔다. 대상은 컬럼 하나의 규칙이면 `<컬럼>_<조건>`(`CK_ORDER_LINE_ITEM_ON_QUANTITY_POSITIVE`), 여러 컬럼에 걸친 규칙이면 그 규칙의 이름(`CK_ORDERS_ON_PAYMENT_STATE`)이다.
 - 유일 키·외래 키·인덱스·CHECK에는 모두 이름을 준다. Hibernate(`FK<hash>`)나 MySQL(`<테이블>_chk_<n>`)이 짓게 두지 않는다. 테스트가 잠시 걸었다 지우는 CHECK만 예외다.
 
 ### 외래 키
