@@ -697,3 +697,111 @@ Fixed in [`fda7f0b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/com
   - The 200 ms limit stays, so the timeout scenes stay fast.
 - **No committed regression test.** The bug needs the JVM's first PG exchange under CPU load, and no test can pin that it runs first. `CODING_STANDARDS.md` records the warm-up next to `@EnableTestPg`. The harness was deleted.
 - **Full `ktlintCheck check`** with the fix: 71 classes, 817 tests, 0 failures, 0 skipped.
+
+## Issue 155: a same-key confirmation replays and a wrong key is rejected
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155#issuecomment-6343745417) of [issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155). The contract is [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md), the check order is in [spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)'s "주문 슬라이스의 조율", and rule 5 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) decides who compares the key. The code is:
+
+- [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
+- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`PaymentValidator`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PaymentValidator.kt) and its implementation [`PaymentValidationService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentValidationService.kt)
+- [`Payment.isStartedWith`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/Payment.kt)
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt) and [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)
+
+### Landed
+
+Two commits on `feat/order-payment` (pushed, `7071838..773f9eb`):
+
+- [`8d02f60`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/8d02f60) is the code and tests:
+  - TX A (`OrderPaymentSteps.startPayment`) checks in ADR 0025's order:
+    1. It locks the order. A missing order, or someone else's, is 404, even with the owner's key.
+    2. A point-confirmed order is 409 `ORDER_ALREADY_CONFIRMED`.
+    3. An order that has a payment replays on the key that started it. Any other key is 409 `IDEMPOTENCY_KEY_MISMATCH`.
+    4. A draft whose key another payment uses is 409 `IDEMPOTENCY_KEY_IN_USE`.
+    5. It reserves stock.
+    6. It starts the payment.
+
+    This replaces the "non-draft is already confirmed" placeholder.
+  - A replay changes nothing and hands the orchestrator no payment to send. The orchestrator returns the stored order and payment status with neither a create nor a lookup at the PG. The controller already answers 202 with `Location` for a payment pending order and 200 otherwise.
+  - The new payment port `PaymentValidator.validateForStart(idempotencyKey)`, implemented by the read-only `PaymentValidationService`, runs at step 4.
+  - `Payment.isStartedWith(key)` decides replay against mismatch, with an exact comparison. The order slice still reads nothing of a payment but its status (ADR 0028 rule 5).
+  - When two drafts race with one key and both pass the pre-check, the loser's insert hits `UK_PAYMENT_ON_IDEMPOTENCY_KEY`, and its TX A rolls back with the reservation. The orchestrator catches `DataIntegrityViolationException` outside the transaction and asks the validator again. The validator now sees the winner's payment and answers `IDEMPOTENCY_KEY_IN_USE`. Any other violation is rethrown.
+  - The new error types `IDEMPOTENCY_KEY_MISMATCH` and `IDEMPOTENCY_KEY_IN_USE` are both 409. The confirm API description lists the replay and the three 409s in check order.
+- [`773f9eb`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/773f9eb) holds the notes:
+  - ADR 0005's status and a dated note
+  - ADR 0019's dated note
+  - the order domain doc's dated note on the confirm flow
+  - `CODING_STANDARDS.md`: `tally` without a rejection type, and the race spy
+
+### Acceptance criteria
+
+- [x] **Same key after a 202 is 202 while pending and 200 once finished, with zero extra creates and lookups. The same key after a failure returns the 200 payment-failed body.**
+  - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt) replays during the first confirmation's PG call and gets `PAYMENT_PENDING` / `UNKNOWN`. A replay after it gets `CONFIRMED` / `SUCCESS`. There is one create, zero lookups, and stock goes 5 → 3 once.
+  - [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt):
+    - A pending replay answers 202 with `Location` and the first body, even though it carries another card.
+    - Finished replays answer 200 without `Location` and with the first body, for both SUCCESS and FAILED.
+    - Every case has one create, zero lookups, and no second reservation or second return.
+  - Over HTTP, a 202 followed by a 200 after the payment finishes needs the reconcile API. That belongs to issue 156.
+- [x] **A different key on an order that has a payment is 409 `IDEMPOTENCY_KEY_MISMATCH`, and nothing changes.**
+  - The API test runs over SUCCESS, PENDING and FAILED. The detail, the create count, the lookup count and the stock are all unchanged.
+  - The port test checks the same with a pending payment.
+- [x] **Another order's key, even another user's, is 409 `IDEMPOTENCY_KEY_IN_USE`, and nothing is reserved.**
+  - The API test runs with draft stock 10 and with draft stock 1. The short case proves the check comes before the reservation.
+  - **Mutation check:** with the pre-check moved after the reservation, the short case answered `INSUFFICIENT_STOCK`.
+  - The port test checks that the draft and its stock are unchanged.
+- [x] **Scene 5: concurrent confirms of one order with one key make one payment, one reservation and one create, and the others replay.**
+  - Five confirms run with `runConcurrently`, giving 5 successes, 0 rejections and 0 technical errors.
+  - There is one create and zero lookups. The final stock is 10 − 2, computed from the re-read line items.
+  - Each answer is either pending/unknown or confirmed/success.
+- [x] **Two drafts racing with one key make one payment. The loser gets 409 `IDEMPOTENCY_KEY_IN_USE`, and its stock is untouched.**
+  - The loser is paused between the pre-check and its insert. Meanwhile, the winner confirms another product.
+  - The loser's draft keeps its `updatedAt` and its stock of 5, and the winner's payment holds the key.
+  - **Before the mapping existed,** the loser got a raw `DataIntegrityViolationException` naming `payment.UK_PAYMENT_ON_IDEMPOTENCY_KEY`.
+- [x] **After a shortage rejection, the same key confirms the draft once stock is replenished.** The existing test `a later item shortage rolls back every reservation and sends nothing, and the same key confirms after replenishment` covers this.
+- [x] **Keys that differ only in case are different keys.**
+  - In the port test, `Checkout-42` and `checkout-42` each confirm an order, with two creates.
+  - **Mutation check:** the key column under `utf8mb4_0900_ai_ci` fails that test.
+  - `PaymentTest` pins the exact comparison of `isStartedWith`.
+- [x] **Notes, keeping the original text.**
+  - ADR 0005's status reads `accepted; superseded by ADR-0025 for confirm`. Its dated note also says the unique-key recovery its "대가" called gone is back for confirm.
+  - ADR 0019 has a dated note after "새 요청 키를 들이지 않는다". It also covers rule 2's `ORDER_ALREADY_CONFIRMED` bullet, which now holds only for point-confirmed orders.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 71 classes, **835 tests, 0 failures, 0 skipped**. That is issue 152's 817 plus 18 new tests.
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 18 (was 12) |
+  | `OrderConfirmationApiTest` | 37 (was 29) |
+  | `PaymentTest` | 55 (was 51) |
+  | `OrderConfirmerConcurrencyTest` | 7 |
+
+### Decisions made while implementing
+
+- **The key-in-use check is its own port, not part of making the payment.** The spec's port list put "미리 찾아보고" inside the port that makes the payment. But step 4 has to come before the reservation (step 5), and the payment is made at step 6. `PaymentValidator` follows the `BrandValidator` precedent: a precondition that only a repository can answer. `PaymentStarter`'s KDoc says callers validate first and that a lost race surfaces as the unique-key violation. Spec 147 has a dated note.
+- **Comparing the key is the payment's question.** The first cut compared `payment.idempotencyKey` in the order slice. Both review axes flagged that against ADR 0028 rule 5, so `Payment.isStartedWith(key)` answers it.
+- **The race is mapped by asking again, not by parsing the constraint name.** Hibernate does expose `payment.UK_PAYMENT_ON_IDEMPOTENCY_KEY`. Using it would tie the order slice to Hibernate's exception type and MySQL's message format.
+  - MySQL reports the duplicate only after the winner commits. So a fresh read outside the rolled-back TX A sees the winner's payment.
+  - If another constraint fails while the key happens to be taken, the answer is also `IDEMPOTENCY_KEY_IN_USE`. That answer is true: the key is taken. The KDoc says so.
+  - The temporary-CHECK test in `OrderConfirmationApiTest` still gets 500.
+- **A replay is a null payment in `StartedPayment`.** The orchestrator reads `started.payment ?: return started.info`. There is no sealed result type, in line with the earlier choice against `PgAnswer`.
+- **The point check reads the payment method, not `ensureDraft()`.** `ensureDraft()` runs inside `Order.startPayment()`, which comes after the reservation. A point order with a deleted product would then answer `ORDER_PRODUCT_NOT_AVAILABLE`.
+- **Existing tests changed meaning.**
+  - Re-confirming an order paid through the PG with a fresh key is now a key mismatch, so `OrderConfirmationApiTest`'s re-confirm assertions use `assertKeyMismatch`. The product-and-brand-deleted test now shows a replay with the original key and a mismatch with another key, both before any product read.
+  - The ownership test sends the owner's key, so 404 is shown to come before a replay.
+  - `OrderConfirmerConcurrencyTest`'s two same-order scenes use different keys and now expect `IDEMPOTENCY_KEY_MISMATCH`, asserting the `errorType` of each counted rejection.
+- **The confirm API description also gained the first-request failure path** (200 with a payment-failed order and the stock returned). Issue 152 had left it out, and the 200 response now covers it.
+- **Review.** A two-axis review ran before the commit.
+  - **Spec:** every criterion met. It flagged the rule 5 read and asked for scene 5's mismatch and in-use cases in `OrderPaymentIntegrationTest`, so that `--tests '*PaymentIntegrationTest'` runs them. Both are fixed.
+  - **Standards:** three findings, all fixed: an `MvcTestResult` named `detail`, a second `assertThrows` result not named `exception`, and a `Location` read that bypassed MockMvcTester. As part of that, the replay API test split into a pending test and a finished test. The orchestrator's private wrapper became `startPaymentMappingKeyRace`.
+  - **Kept:** the null-as-replay flag, and `findByIdempotencyKey(...) != null` over a new `existsBy` method.
+
+### For later tickets
+
+- **[Issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156):**
+  - Add the real replay transition over HTTP: a 202, the payment finished by reconcile, then a 200 replay with the same key.
+  - Scene 8's restart replays with the same key. The replay path neither creates nor looks up.
+  - `OrderPaymentIntegrationTest` now has two spies (`PgTransactionService`, `PaymentModifyService`) and `pauseBeforeStartingPaymentOf(order)`.
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** the payments design doc should carry:
+  - TX A's six checks
+  - the `PaymentValidator` port and `Payment.isStartedWith`
+  - the race mapping by re-check, with its one accepted misattribution
+  - the replay contract table, with "the card is not compared"
