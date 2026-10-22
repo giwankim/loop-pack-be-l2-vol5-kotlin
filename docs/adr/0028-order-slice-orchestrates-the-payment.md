@@ -30,6 +30,7 @@ date: 2026-10-22
    - PG의 답을 하나로 감싸는 결과 타입을 두지 않는다. TX B의 입구가 PG 거래의 반영과 거절의 반영 둘이라, 부른 자리에서 곧바로 갈린다.
    - PG의 예외는 이제 결제 슬라이스의 provided 포트가 던지는 것이므로 `application.payment.provided`로 옮긴다.
    - TX B 안의 충돌은 예외가 아니라 `ReconcileResult.Conflicted`다. 결제의 반영은 TX B에 참여하므로, 거기서 던진 예외는 주문 쪽이 잡아도 트랜잭션을 rollback-only로 만든다. TX B가 WARN을 남기고 저장된 상태로 답한다.
+   - (2026-10-23, [issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156): 표의 "저장된 상태"는 PG를 부르기 전에 읽은 것이 아니라 답하는 때에 다시 읽은 주문과 결제 상태다. 생성의 `PgOutcomeUnknownException`, 조회의 `null`, `PgUnavailableException`, `MultiplePgTransactionsException`이 모두 그렇다. 대사가 생기자 PG 호출 동안 다른 대사가 결제를 끝낼 수 있게 됐고, TX A의 사본으로 답하면 확정된 주문을 202로 알린다. 그래서 생성 행의 "(결제 중인 주문)"은 대개 그렇다는 뜻이다. 다시 읽는 값이 바뀌는 일은 드물고, 읽기 두 문장이 PG의 답이 주문을 바꾸지 못한 길에만 든다. 3단계의 알림도 이 대사로 오므로 같은 창이 생긴다.)
 4. **결제를 바꾸는 트랜잭션은 모두 주문을 먼저 잠근다. 그래서 결제 행은 잠그지 않는다.** 주문 잠금 뒤의 일반 읽기는 늘 가장 최근에 커밋된 결제를 본다. 포인트 계정은 확정에서 빠진다([ADR 0027](./0027-point-payment-path-is-deleted.md)).
 
    | 경로 | 잠그는 차례 |
