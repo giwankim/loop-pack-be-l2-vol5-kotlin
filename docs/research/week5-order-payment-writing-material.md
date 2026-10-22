@@ -393,3 +393,101 @@ Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issu
   - The reconcile entry can reuse `OrderPaymentSteps.applyTransaction`.
   - The unknown-outcome path answers with TX A's snapshot. Once reconcile can change the order between TX A and the response, decide whether that path should read the order again.
 - **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** carry the PG amount cap into the payments design doc as a deviation.
+
+## Issue 154: the point payment path is deleted
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154#issuecomment-6340905631) of [issue 154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154). The decision is [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), and the lock it changes is in [ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md). The code is:
+
+- [`PointModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/point/PointModifyService.kt)
+- [`PointAccount`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/point/PointAccount.kt)
+- [`Order`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/order/Order.kt)
+- [`ErrorType`](../../apps/commerce-api/src/main/kotlin/com/loopers/support/error/ErrorType.kt)
+- [`PointChargerConcurrencyTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/point/provided/PointChargerConcurrencyTest.kt)
+- [`OrderTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/order/OrderTest.kt)
+
+### Landed
+
+Two commits on `feat/order-payment` (pushed, `f2723fa..a6f0198`), on top of issue 151:
+
+- [`ff40ee0`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ff40ee0) is the code and tests:
+  - the point payment path deleted
+  - the new charge-vs-charge concurrency test
+  - `OrderTest` and `PointAccountTest` without the deleted methods
+  - KDoc that named point payment, corrected
+- [`a6f0198`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/a6f0198) is the docs:
+  - dated notes on ADRs 0013 and 0019 and catalog design 5.37
+  - the points-orders and catalog domain docs updated
+  - the balance identity in `CODING_STANDARDS.md` without confirmed payments
+
+### Acceptance criteria
+
+- [x] **Nothing in main or test refers to the deleted symbols.**
+  - Deleted: `PointDeductor`, `PointModifyService.deduct`, `PointAccount.pay`, `InsufficientPointsException`, `ErrorType.INSUFFICIENT_POINTS` with its `ApiControllerAdvice` handler, and `Order.confirm()`.
+  - Also deleted: their five tests (three `pay` tests in `PointAccountTest`, two `confirm()` tests in `OrderTest`). Nothing is `@Disabled`.
+  - A grep of `apps/` for every deleted name finds nothing. The only `deduct` left is `StockDeductor`, and every `.confirm(` is `OrderConfirmer.confirm`.
+  - `INSUFFICIENT_POINTS` is gone from the error contract (`ErrorType`). The API docs (`OrderApiSpec`, `PointApiSpec`) did not list it after issue 151, and nothing generates the OpenAPI error list from `ErrorType`.
+  - Charging and the balance lookup are unchanged. `PointModifyService` implements `PointCharger` only.
+- [x] **[`PointChargerConcurrencyTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/point/provided/PointChargerConcurrencyTest.kt)** is new, on `BaseCommittingApplicationServiceTest`.
+  - **The race:** charges of 2,000 and 3,000 on a 10,000 balance are released together through `runConcurrently`'s start gate.
+  - **Outcomes:** `tally` counts 2 successes, 0 rejections and 0 technical errors.
+  - **Ordering:** one charge returns 15,000, so the later charge added to the balance the earlier one had committed.
+  - **Balance:** re-read in a new transaction, it equals the initial balance plus the successful charges, and the fixed 15,000.
+  - **Mutation check:** I made `charge` read the account with `findByUser` instead of `findForUpdate` and ran the test as `@RepeatedTest(20)`. It failed 20 of 20, with the charges returning `[12000, 13000]`: both read 10,000, and the later commit overwrote the earlier charge. With the lock back, 20 of 20 passed.
+- [x] **Old point-confirmed orders still read back.**
+  - No domain transition reaches a POINT order any more, so these orders exist only as stored rows, and the tests seed them with SQL.
+  - [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt), from issue 151, still passes:
+    - status CONFIRMED, `paymentMethod: "POINT"`, `paidAmount: 2000` and no `paymentStatus`
+    - re-confirming is 409 `ORDER_ALREADY_CONFIRMED`, with no create and unchanged stock
+  - `OrderApiTest` and `OrderAdminApiTest` still read POINT rows in the lists. `OrderRepositoryTest` still maps them.
+- [x] **ADR 0019's dated notes, with the original text kept:**
+  - **Rule 1:** the point account left confirm's lock order, and only charging locks it now. The lock is tested by two racing charges, with the 20-of-20 mutation result.
+  - **Rule 4:** the double payment it guarded against is gone. The order is still the first row TX A and TX B lock.
+  - **Cost section:** account waits are charge against charge only, and the point race test is deleted.
+  - **Revisit condition:** a parenthetical, since only charging is left to pile up on the account.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 71 classes, **798 tests, 0 failures, 0 skipped**.
+  - That is 151's 802, plus 1 new test, minus 3 `pay` tests, minus 2 `confirm()` tests.
+  - Executed counts for the changed or affected classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `PointChargerConcurrencyTest` | 1 (new) |
+  | `PointAccountTest` | 5 (was 8) |
+  | `OrderTest` | 21 (was 23) |
+  | `OrderConfirmationApiTest` | 27 |
+  | `PointChargerTest` | 6 |
+  | `PointAccountFinderTest` | 2 |
+  | `PointApiTest` | 12 |
+
+### Decisions made while implementing
+
+- **`InvalidPaymentAmountException` is deleted too.** The ticket did not list it, but `PointAccount.pay` was its only thrower. Keeping it would leave an exception nothing can throw.
+- **`OrderTest` builds confirmed orders only through `startPayment` and `completePayment`.**
+  - The two tests that compared PG-confirmed and point-confirmed orders now use PG-confirmed orders only.
+  - `ensureDraft()` and `paidAmount` look only at the status, so the payment method never changed their answer.
+  - A reflection-built POINT order would break the helper's own rule, "상태를 직접 쓰지 않고 그 상태에 이르는 전이를 차례로 부른다". Its KDoc now points at the HTTP test that covers stored POINT rows.
+- **The balance is checked two ways.** `CODING_STANDARDS.md` requires the balance identity computed from re-read values, "고정된 숫자와만 견주지 않는다". The test checks initial + successful charges and the fixed 15,000. The standard's formula itself no longer subtracts confirmed payments.
+- **Docs beyond ADR 0019, each naming a deleted symbol or a point-paying confirm:**
+  - ADR 0013's port list and catalog design 5.37 get dated notes.
+  - The points-orders domain doc is a current-state reference, which issue 149 rewrote in place:
+    - Its `pay(amount)` and `confirm()` rows are removed, each with a line saying so.
+    - The account lock is described as charge-only.
+    - The confirm flow keeps its point-era text under a dated note on TX A, the PG call and TX B. Rewriting that flow is the payments write-up's job.
+  - The catalog domain doc's stock deduction now joins TX A, not points.
+- **KDoc corrected:**
+  - `PointAccountFinder` and `PointModifyService`: charging is the only lock taker.
+  - `RuleViolationException`: the 409s are stock shortage and already confirmed.
+  - the `tally` KDoc
+  - `ProductModifyService.deduct`: the revision bump is confirm's last lock.
+- **Review.** A two-axis review (standards and spec) ran before the commit.
+  - The spec axis found every criterion met. It flagged one wrong citation, fixed: my domain-doc note said TX B locks only the order "per ADR 0028 rule 4", but that rule's table includes the failure case. It now cites ADR 0019's note that TX B locks only the order *today*.
+  - It also flagged stale lines in `ProductModifyService` and the two domain docs, all fixed.
+  - The standards axis found one breach, fixed: the new test compared only against the fixed balance.
+
+### For later tickets
+
+- **[Issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155):**
+  - Re-confirming an old POINT order is 409 `ORDER_ALREADY_CONFIRMED` today because of TX A's placeholder ("non-draft → `ORDER_ALREADY_CONFIRMED`"), not `ensureDraft()`. Keep that answer when the placeholder is replaced (spec 147: "포인트로 확정된 주문이면 409 `ORDER_ALREADY_CONFIRMED`다").
+  - The points-orders domain doc's `ensureDraft()` row still says the application calls it before touching stock.
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):**
+  - `docs/design/points-orders.md` still lists `INSUFFICIENT_POINTS` in its §6 error table and its insufficiency rule, with no dated note yet.
+  - The domain doc's confirm-flow note can point at the payments design doc once its step-2 sections exist.
