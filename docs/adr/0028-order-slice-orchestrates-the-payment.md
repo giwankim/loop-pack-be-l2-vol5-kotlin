@@ -53,7 +53,7 @@ date: 2026-10-22
 
 - 주문 슬라이스가 PG 예외 넷과 결제 슬라이스의 값(카드, PG 거래, 생성 전 거절)을 다룬다. ADR 0021 규칙 3의 "주문 슬라이스는 거래 키, PG 상태, 카드를 보지 않는다"가 "옮기되 읽지 않는다"로 느슨해진다.
 - 조율하는 서비스, 트랜잭션 단계의 빈, 결제 슬라이스의 포트 여럿이 는다.
-- `NEVER`는 이 저장소에서 처음 쓰는 전파다. 테스트를 트랜잭션으로 감싸는 `BaseApplicationServiceTest`와 `BaseWebApiAdapterTest`에서는 확정과 대사를 부를 수 없다. 그 테스트는 커밋하는 기반을 쓰고, 웹 어댑터에도 그런 기반이 하나 든다. 감싼 트랜잭션 안에서는 어차피 TX A가 커밋되지 않아 발송 기록의 뜻이 사라진다.
+- `NEVER`는 이 저장소에서 처음 쓰는 전파다. 테스트를 트랜잭션으로 감싸는 `BaseApplicationServiceTest`와 `BaseWebApiAdapterTest`에서는 확정과 대사를 부를 수 없다. 응용 계층의 테스트는 커밋하는 기반을 쓰고, 웹 어댑터의 테스트는 `OrderConfirmationApiTest`처럼 클래스에 `@Transactional(propagation = NOT_SUPPORTED)`를 단다. 감싼 트랜잭션 안에서는 어차피 TX A가 커밋되지 않아 발송 기록의 뜻이 사라진다.
 
 ## 다시 볼 조건
 
