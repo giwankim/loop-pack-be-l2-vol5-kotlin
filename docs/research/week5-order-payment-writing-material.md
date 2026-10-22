@@ -224,3 +224,172 @@ After the migration, the seeded row is intact, `checkout-42` is accepted, lookup
 - **151 injects `PgOrderIdGenerator` (the `UuidPgOrderIdGenerator` bean) wherever it calls `Payment.start`.** Tests that stub the test PG before confirming need a fixed generator bean (ADR 0029 rule 4). No test covers the bean's wiring yet; its first consumer will.
 - **Step 3's callback looks payments up through `UK_PAYMENT_ON_PG_ORDER_ID`.** `PaymentRepository` has no `findByPgOrderId` yet.
 - **The migration file now holds both blocks.** The `payment` block follows 149's `orders` block.
+
+## Issue 151: confirming a draft pays through the PG
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151#issuecomment-6340388224) of [issue 151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151), the tracer. The decisions are [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) and [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), with the header rule from [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md) and the test generator from [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md). The code is:
+
+- [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
+- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`PaymentModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentModifyService.kt)
+- [`PgTransactionService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PgTransactionService.kt)
+- [`IdempotencyKeyArgumentResolver`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/IdempotencyKeyArgumentResolver.kt)
+- [`OrderApi`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderApi.kt)
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt)
+- [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)
+- [`TestPgOrderIdGenerator`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPgOrderIdGenerator.kt)
+
+### Landed
+
+Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issue 150:
+
+- [`c2eb03d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c2eb03d) is the code and tests:
+  - the `NEVER` orchestrator `OrderPaymentService`, with TX A and TX B on `OrderPaymentSteps`
+  - the payment slice's four provided ports
+  - `OrderInfo` and `OrderFinder.findInfo`
+  - the `Idempotency-Key` resolver and the 200/202 confirm handler
+  - the tests moved onto the test PG
+- [`94dd580`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/94dd580) is the docs: ADR 0003 marked superseded by ADR 0024, dated notes on ADRs 0013, 0019, 0021 and 0024, and the test PG convention in `CODING_STANDARDS.md`.
+
+### Acceptance criteria
+
+- [x] **[`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt)** is new, with 6 tests. It extends `BaseCommittingApplicationServiceTest` and carries `@EnableTestPg`, so TX A and TX B really commit and the real adapter reaches the test PG over HTTP.
+  - **Scene 1:**
+    - One create.
+    - The order is CONFIRMED, with payment method PG and a `confirmedAt`.
+    - Stock goes 5 → 3. It would be 1 if TX B deducted again.
+    - The payment is SUCCESS with the stubbed transaction key and the request's idempotency key.
+    - The 10,000-point balance is unchanged.
+  - **Accepted PENDING:** the order is payment pending, the payment is PENDING with its transaction key, and the stock is 3.
+  - **Lost response** (`Fault.EMPTY_RESPONSE`): the payment is UNKNOWN with no transaction key, the order is payment pending, the stock is 3, and there was exactly one create.
+  - **Shortage and deleted product:** `InsufficientStockException` and `ORDER_PRODUCT_NOT_AVAILABLE`. The order stays a draft with an unchanged `updatedAt`, there are zero creates, and the stock is unchanged.
+  - **Inside a transaction:** `IllegalTransactionStateException`, zero creates, and the order is still a draft with stock 5.
+  - **Mutation checks:**
+    - I applied two mutations together: dropping the orchestrator's `NEVER`, and completing the order on any `Changed`. Four of the six scenes turned red.
+    - The lost-response scene was red before the `PgOutcomeUnknownException` catch was added.
+- [x] **[`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)** is rewritten for the PG. It uses MockMvc, class-level `NOT_SUPPORTED` and `@EnableTestPg`, and runs 27 tests (was 14).
+  - **Missing key:** 400 "필수 요청 헤더 'Idempotency-Key'가 누락되었습니다.".
+  - **Malformed keys:**
+    - Five keys (empty, 65 characters, an inner space, a tab, Korean) each get a 400 naming the rule they break.
+    - They get the same 400 against a nonexistent order, which shows the web boundary rejects them before the order is read.
+    - Removing the resolver's check turned all five red.
+  - **Invalid cards:** four cards (blank type, blank number, a number that fails Luhn, a missing field) each get a 400. The draft, the stock and the zero create count are unchanged.
+  - **200:**
+    - The body has status CONFIRMED, `paymentMethod: "PG"`, `paymentStatus: "SUCCESS"` and `paidAmount: 7000`.
+    - Items and `createdAt` equal the draft's, and GET detail returns the same JSON.
+    - A second confirm is 409, and there is still only one create.
+  - **202:**
+    - Both PENDING and a lost response answer 202 with `Location: /api/v1/orders/{orderId}`, with `paymentStatus` PENDING or UNKNOWN respectively and no `paidAmount`.
+    - The detail equals the 202 body.
+  - **No secrets:** the 200 body, the 202 body and the detail never contain the transaction key, the PG order ID, or the card number with or without hyphens.
+  - **Removed:** the point-confirm and balance scenes.
+  - **Moved onto the PG:**
+    - Shortage, then replenishment: the same key confirms after the rejected attempt.
+    - Saved price: the create stub matches 1,000 won exactly, so a request at the new catalog price would not get its 200.
+    - Unavailable product or brand, and unavailable outranking shortage.
+    - Requester and ownership checks.
+    - Re-confirming after the product and its brand are deleted.
+    - Rollback on the last write at commit, which is now TX A's. A temporary CHECK fails the second product's stock UPDATE. The stocks, the payment row and the order are rolled back and no create is sent. The retry confirms with one create.
+  - **New:** an old point-paid order, built by SQL, reads back with `paymentMethod: "POINT"` and no `paymentStatus`. Re-confirming it is 409 with no create.
+- [x] **`OrderConfirmerConcurrencyTest`** keeps 7 scenes (was 11). The four point scenes are gone.
+  - **8 confirmations for 5 units:** 5 confirmed, 3 `InsufficientStockException`, 0 technical errors, `createCount` = 5, and the stock formula holds.
+  - **5 confirmations of one draft:** 1 confirmed, 4 `OrderAlreadyConfirmedException`, and one create.
+  - **Held order:** the second confirmation waits on the order lock, then is rejected.
+  - **Four deletion scenes:** one create when the confirmation held the product, zero when the deletion did.
+  - **Pause point:** the paused confirmation now holds the order and product locks just before the payment is created, through a spy on `PaymentModifyService.start`.
+- [x] **The API docs** (`OrderApiSpec`):
+  - The `Idempotency-Key` header is a documented parameter.
+  - The description covers the `{cardType, cardNo}` body, the 400s, the 409s and the 404s.
+  - The 200 and 202 responses are listed, the 202 with its `Location` header.
+  - The detail operation describes `paymentStatus`.
+- [x] **Dated notes, with the original text kept:**
+  - ADR 0003: `status: superseded by ADR-0024` and a top note.
+  - ADR 0021: rule 4's open choice is settled by ADR 0028, and rule 3's last line becomes "옮기되 읽지 않는다" (carries but never reads).
+  - ADR 0019: rule 3 gets the TX A row (order → products by id → revision when sold out flips) and the TX B row (order only, for now). The revisit condition "when payment becomes an external integration" is marked as arrived.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 70 classes, **802 tests, 0 failures, 0 skipped**.
+  - That is 150's 785, plus 6 for the new integration test, plus 2 fixture contract tests, minus 4 point concurrency scenes, plus 13 in the API test.
+  - Executed counts for the changed classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 6 (new) |
+  | `OrderConfirmationApiTest` | 27 (was 14) |
+  | `OrderConfirmerConcurrencyTest` | 7 (was 11) |
+  | `OrderConfirmerRollbackTest` | 1 |
+  | `OrderFixturesTest` | 12 (was 10) |
+  | `ProductCacheTest` | 15 |
+  | `ProductCacheRollbackTest` | 2 |
+  | `BrandRegisterConcurrencyTest` | 11 |
+  | `BrandRegisterRollbackTest` | 2 |
+  | `LockFailureApiTest` | 3 |
+  | `PaymentTest` | 51 |
+  | `PaymentRepositoryTest` | 14 |
+
+### Decisions made while implementing
+
+- **Names for the spec's placeholders.**
+  - Payment slice ports:
+    - `PaymentStarter.start(orderId, idempotencyKey, amount)` joins TX A.
+    - `PaymentFinder.findByOrder(orderId)` finds a payment.
+    - `PgTransactionCreator.create(payment, card)` runs as `NEVER`.
+    - `PaymentReconciler.reconcile(orderId, transaction)` joins TX B.
+  - Payment slice services: `PaymentModifyService`, `PaymentQueryService` and `PgTransactionService`.
+  - Order slice:
+    - `OrderPaymentService` implements `OrderConfirmer` as the `NEVER` orchestrator.
+    - `OrderPaymentSteps` holds TX A (`startPayment`) and TX B (`applyTransaction`) and implements no port.
+    - `OrderInfo(order, paymentStatus)` is the cross-aggregate result.
+    - `OrderFinder.findInfo` sits beside `find`, as `ProductFinder` has both `find` and `findInfo`.
+    - `OrderInfoAssembler` reads the payment only when the payment method is PG.
+- **`PaymentReconciler` is keyed by order ID**, like `findByOrder`. It re-reads the payment inside TX B after the order lock, so a stale payment from TX A can never be merged back. TX B then reads the payment status for the response through `PaymentFinder`.
+- **A PG amount cap, which the ticket did not ask for.**
+  - The PG takes 64-bit amounts, and an order can total more. The old point test confirmed 10,737,418,235,000,000,000 won.
+  - Without a cap, TX A would commit and `longValueExact()` would throw while building the PG request. That leaves an UNKNOWN payment that was never sent, holding its stock (ADR 0024 rule 1).
+  - `PaymentStarter` now refuses amounts above `Long.MAX_VALUE` with a 400 inside TX A, so the reservation rolls back.
+  - My first version put the rule on `Payment`. `PaymentRepositoryTest` pins a 65-digit amount round trip, though, and the limit belongs to the PG, so it moved to the slice that builds the PG request.
+  - It is recorded as a dated note on ADR 0024 rule 1. Removing the cap turns the API test red.
+- **Non-draft orders.**
+  - TX A checks `status != DRAFT` and throws `OrderAlreadyConfirmedException` (409 `ORDER_ALREADY_CONFIRMED`).
+  - It does not call `ensureDraft()`, which answers a payment-pending order with the unmapped `OrderStatusConflictException` (the generic 400).
+  - This is the ticket's "for now".
+- **Unknown outcome.**
+  - `PgOutcomeUnknownException` returns the state TX A committed (payment pending, payment UNKNOWN) without reading it again.
+  - It logs one WARN with the order ID and the failure kind. The ticket did not ask for this log, but nothing else would show such a payment.
+  - `PgRejectedException` is not caught.
+- **The `Idempotency-Key` header.**
+  - An `@IdempotencyKey` argument resolver reads it, as `@RequesterId` works.
+  - The resolver calls `Payment.checkIdempotencyKey`, the same check `Payment.start` runs, now extracted from `init`. The rule has one declaration and two enforcement points.
+  - A missing header throws `MissingRequestHeaderException`, which `ApiControllerAdvice` now maps to 400. It used to fall through to the generic 500.
+  - The resolver runs before the body, so a bad key is rejected before the card is read.
+- **`PAYMENT_MISSING`** (500, with the generic code, like `POINT_ACCOUNT_MISSING`) was added because `findByOrder` needs it. Its test still belongs to issue 153.
+- **Test PG order IDs.**
+  - `@EnableTestPg` imports a `@TestConfiguration` `TestPgOrderIdGenerator`, `@Primary` over `UuidPgOrderIdGenerator`.
+  - Tests reserve IDs with the base's `nextPgOrderId()`. The generator hands them out in order from a thread-safe queue.
+  - It throws when no ID is reserved. A UUID fallback would silently miss the stub and look like an unknown outcome.
+  - The base clears leftover IDs after each test.
+  - A payment created in a TX A that then fails still takes an ID, so the rollback scenes reserve two.
+- **Other tests that confirmed orders.**
+  - `ProductCacheTest`, `BrandRegisterConcurrencyTest` and `BrandRegisterRollbackTest` now use `@EnableTestPg` and the committing base's `confirmOrder(testPg)`, which stubs a successful PG create.
+  - The cache test's "upsert is the last statement" scene loses the create response, so only TX A's SQL is captured. The upsert is still last, after `update orders`, `update product` and `insert into payment`.
+  - `ProductCacheRollbackTest` and `LockFailureApiTest` fail inside TX A and don't start the test PG.
+  - The lock-failure scene now waits on the product row that another transaction holds, instead of the point account.
+- **Review.** A two-axis review (standards and spec) ran before the commit.
+  - The spec axis found every criterion met and flagged the extras above.
+  - The standards axis found six rule breaches, all fixed:
+    - two test variable names and one status assertion in the API test
+    - the handler locals, now `order` as catalog design 5.33 asks
+    - "결제를 요청하다" in the API doc, which `CONTEXT.md` avoids
+    - missing dated notes on ADR 0013, and the `@ApplicationService` KDoc, because `OrderPaymentSteps` implements no port
+  - Three copies of the accepted-create stub became one base helper, `acceptNextCreate`.
+
+### For later tickets
+
+- **[Issue 152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152):**
+  - TX B completes the order only on `Changed(to = SUCCESS)`. A FAILED transaction leaves the payment FAILED and the order payment pending.
+  - `PgRejectedException` propagates as a 500 and leaves the payment UNKNOWN.
+  - `PaymentReconciler` is the place for a `reject` beside `reconcile`.
+- **[Issue 153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153):** the customer list still maps `OrderResponse.from(order)`, so a PG order in the list has no `paymentStatus` yet. `PAYMENT_MISSING` exists, but no test covers it.
+- **[Issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155):** replays and key conflicts go where TX A checks "non-draft → `ORDER_ALREADY_CONFIRMED`". The web boundary already rejects malformed keys before any lookup.
+- **[Issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156):**
+  - The reconcile entry can reuse `OrderPaymentSteps.applyTransaction`.
+  - The unknown-outcome path answers with TX A's snapshot. Once reconcile can change the order between TX A and the response, decide whether that path should read the order again.
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** carry the PG amount cap into the payments design doc as a deviation.
