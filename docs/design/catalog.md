@@ -738,7 +738,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 바꾼 엔티티는 관리 상태다. `SimpleJpaRepository.save`는 식별자가 0이 아니면 `EntityManager.merge`를 부르고, 관리 중인 엔티티를 병합하면 SQL을 보내지 않고 같은 인스턴스를 돌려준다. UPDATE는 전처럼 커밋의 flush가 보낸다. 그래서 ADR 0018의 잠금 순서, `order_updates`의 차례, 배치는 그대로다. 주문 품목의 cascade는 `PERSIST`뿐이라 병합이 품목으로 번지지 않는다.
   - `save`가 돌려준 값을 쓴다. 돌려줄 것이 있으면 `return brandRepository.save(brand)`, 응답으로 옮길 것이면 `productInfoAssembler.toInfo(productRepository.save(product))`다. Spring Data는 `save`가 돌려준 인스턴스를 이어서 쓰라고 권한다. 관리 상태에서는 같은 인스턴스다.
   - 바꾸는 단계와 저장 사이에 빈 줄을 둔다(5.33의 덩어리). 엔티티를 바꾸는 줄과 저장하는 줄이 따로 있어야 하므로 `finder.findForUpdate(id).delete()` 같은 한 줄 연쇄는 지역 변수로 푼다.
-  - 각 Service는 자기 조각의 애그리거트만 저장한다. 확정은 주문을 `orderRepository`로 저장하고, 재고와 잔액은 `StockDeductor`·`PointDeductor`의 구현이 자기 저장소로 저장한다. 그래서 `PointModifyService`가 `PointAccountRepository`를 받는다.
+  - 각 Service는 자기 조각의 애그리거트만 저장한다. 확정은 주문을 `orderRepository`로 저장하고, 재고와 잔액은 `StockDeductor`·`PointDeductor`의 구현이 자기 저장소로 저장한다. 그래서 `PointModifyService`가 `PointAccountRepository`를 받는다. (2026-10-22: `PointDeductor`는 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). `PointModifyService`는 충전한 계정을 저장하려고 여전히 `PointAccountRepository`를 받는다.)
   - 브랜드 삭제의 연쇄(`deleteAllOfBrand`)는 `saveAll`로 저장한다. `ProductRepository`가 `CrudRepository.saveAll`과 같은 이름·매개변수로 선언하므로 호출은 `SimpleJpaRepository.saveAll`로 가고(5.20), 그 구현은 항목마다 `save`를 부른다.
 - 그대로 두는 것: dirty checking 자체. `save`를 빠뜨려도 관리 엔티티의 변경은 커밋된다. 이 규칙은 저장의 의도를 코드에 적을 뿐 dirty checking을 끄지 않는다. 그러니 `product.brand`에서 상태를 바꾸는 메서드를 부르면 브랜드도 함께 바뀐다는 주의(5.1)는 여전히 참이다. 행을 지우는 좋아요 취소의 `delete`와 새 엔티티의 `save`는 이미 저장소를 불렀다.
 - 지키는 것: 리뷰다. 빠뜨린 `save`는 동작을 바꾸지 않으므로 스위트가 잡지 못한다. ArchUnit은 메서드 본문에서 호출의 차례를 보지 못한다.

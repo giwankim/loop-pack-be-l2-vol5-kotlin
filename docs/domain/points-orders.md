@@ -2,7 +2,7 @@
 
 개념의 뜻은 [`CONTEXT.md`](../../CONTEXT.md)에 있고 여기서는 반복하지 않는다. 표기와 예외 규칙은 [카탈로그 도메인](./catalog.md)과 같다. 구조와 API, 결정은 [`docs/design/points-orders.md`](../design/points-orders.md)에 있다.
 
-2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13), 원자적 주문 확정과 결제 이력(#14), 내 주문 목록 조회(#15), 관리자 조회(#16)까지 구현되었다. 2026-09-28 충전·주문 생성의 `Idempotency-Key`와 성공 재생을 걷어 냈다. 요청마다 새 충전·새 주문이며, 이미 확정된 주문의 재확정은 거절한다([ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md), 설계 17). 같은 날 포인트 이력도 걷어 냈다. 충전은 잔액만 바꾸고, 결제의 기록은 확정된 주문이다([ADR 0006](../adr/0006-no-point-history-until-a-reader.md), 설계 18). 2026-10-09 확정은 주문 행과 포인트 계정 행을, 충전은 포인트 계정 행을 처음 읽을 때 잠근다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md), 설계 19).
+2026-09-18 기준 충전과 잔액 조회(#12), 확정 전 주문 생성과 내 상세 조회(#13), 원자적 주문 확정과 결제 이력(#14), 내 주문 목록 조회(#15), 관리자 조회(#16)까지 구현되었다. 2026-09-28 충전·주문 생성의 `Idempotency-Key`와 성공 재생을 걷어 냈다. 요청마다 새 충전·새 주문이며, 이미 확정된 주문의 재확정은 거절한다([ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md), 설계 17). 같은 날 포인트 이력도 걷어 냈다. 충전은 잔액만 바꾸고, 결제의 기록은 확정된 주문이다([ADR 0006](../adr/0006-no-point-history-until-a-reader.md), 설계 18). 2026-10-09 확정은 주문 행과 포인트 계정 행을, 충전은 포인트 계정 행을 처음 읽을 때 잠근다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md), 설계 19). 2026-10-22 확정은 PG로 결제하고([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)), 포인트로 결제하는 길은 지웠다. 충전과 잔액 조회는 그대로이고, 포인트로 확정된 이전 주문은 그대로 읽힌다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 ## 포인트 계정 (PointAccount)
 
@@ -30,15 +30,16 @@
 | --- | --- | --- |
 | `PointAccount(userId)` | 그 사용자의 0원 계정을 만든다 | 없음 |
 | `charge(amount)` | 잔액에 `amount`를 더한다 | `InvalidChargeAmountException` |
-| `pay(amount)` | 양의 결제액을 차감한다. 어느 주문의 결제인지는 모른다 | `InvalidPaymentAmountException`, `InsufficientPointsException`. 거절하면 잔액은 그대로다 |
+
+잔액을 줄이는 `pay(amount)`는 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 ### 저장 약속
 
-`PointAccountRepository`: `save`, `findByUserId`, `findForUpdateByUserId`. 없는 계정은 null이다. `findForUpdateByUserId`는 계정 행을 `FOR UPDATE`로 잠가 읽고, 충전과 확정의 결제만 쓴다(ADR 0019).
+`PointAccountRepository`: `save`, `findByUserId`, `findForUpdateByUserId`. 없는 계정은 null이다. `findForUpdateByUserId`는 계정 행을 `FOR UPDATE`로 잠가 읽고, 충전만 쓴다(ADR 0019, ADR 0027).
 
 ### 협력
 
-- 충전: `PointCharger.charge` → `PointAccountFinder.findForUpdate`로 계정을 잠가 읽는다 → `account.charge(amount)` → 저장. `point_account` 한 행만 바뀐다(설계 19.2). 같은 계정의 다른 충전이나 확정의 결제와 겹치면 계정 행의 잠금으로 한쪽이 커밋할 때까지 기다리고, 뒤에 온 쪽은 앞선 쪽이 커밋한 잔액에 더한다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
+- 충전: `PointCharger.charge` → `PointAccountFinder.findForUpdate`로 계정을 잠가 읽는다 → `account.charge(amount)` → 저장. `point_account` 한 행만 바뀐다(설계 19.2). 같은 계정의 다른 충전과 겹치면 계정 행의 잠금으로 한쪽이 커밋할 때까지 기다리고, 뒤에 온 쪽은 앞선 쪽이 커밋한 잔액에 더한다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)). 확정은 계정을 바꾸지 않으므로 계정 행에서 겨루는 것은 충전끼리뿐이다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 요청마다 새 충전이라 같은 충전액을 다시 보내면 다시 충전된다(설계 17).
 - 잔액 조회: `PointAccountFinder.findByUser` → 계정 조회 → 계정을 돌려주고 응답이 현재 잔액을 고른다. 잠그지 않는다.
 
 ## 주문 (Order)
@@ -67,7 +68,7 @@
 - 생성 정보(품목의 상품·이름·단가·수량·금액과 총액, 생성 시각)는 생성 후 바뀌지 않는다(ADR 0002).
 - `DRAFT`는 재고도 포인트도 건드리지 않는다. 재고 0이거나 잔액이 부족한 상태에서도 생성된다(설계 5.7, Q12).
 - 총액은 품목 금액의 합이며 `Money`가 임의 정밀도로 계산한다. `Long` 범위를 넘는 품목 금액과 총액도 허용한다.
-- `CONFIRMED`에만 `paidAmount`·`confirmedAt`이 있고 `paidAmount`는 총액과 같다. 확정 전 주문만 확정하거나 결제를 시작할 수 있다. 이미 확정된 주문은 `OrderAlreadyConfirmedException`으로, 결제를 시작한 주문(`PAYMENT_PENDING`·`PAYMENT_FAILED`)은 `OrderStatusConflictException`으로 거절해 결제수단·확정 시각을 다시 쓰지 않는다.
+- `CONFIRMED`에만 `paidAmount`·`confirmedAt`이 있고 `paidAmount`는 총액과 같다. 확정 전 주문만 결제를 시작할 수 있다. 이미 확정된 주문은 `OrderAlreadyConfirmedException`으로, 결제를 시작한 주문(`PAYMENT_PENDING`·`PAYMENT_FAILED`)은 `OrderStatusConflictException`으로 거절해 결제수단·확정 시각을 다시 쓰지 않는다.
 - 결제를 끝내거나 실패시키는 것은 결제 중인 주문만 할 수 있다. 다른 상태는 `OrderStatusConflictException`으로 거절한다. `PAYMENT_FAILED`는 끝난 상태다.
 - 생성 시각은 MySQL `datetime(6)`과 정밀도를 맞춰 생성 응답과 저장 후 조회가 같은 값을 준다. `updatedAt`에 기대지 않는다.
 
@@ -76,12 +77,13 @@
 | 메서드 | 하는 일 | 거절 |
 | --- | --- | --- |
 | `Order(userId, products)` | 상품별 품목과 총액을 가진 `DRAFT`를 만든다 | `InvalidOrderException` |
-| `ensureDraft()` | 확정 전(DRAFT) 주문인지 본다. 상태를 바꾸지 않는다 | `CONFIRMED`면 `OrderAlreadyConfirmedException`, `PAYMENT_PENDING`·`PAYMENT_FAILED`면 `OrderStatusConflictException`. application이 상품·재고·포인트를 보기 전에 불러 이 거절이 앞서게 한다(설계 17.2) |
+| `ensureDraft()` | 확정 전(DRAFT) 주문인지 본다. 상태를 바꾸지 않는다 | `CONFIRMED`면 `OrderAlreadyConfirmedException`, `PAYMENT_PENDING`·`PAYMENT_FAILED`면 `OrderStatusConflictException`. application이 상품·재고를 보기 전에 불러 이 거절이 앞서게 한다(설계 17.2) |
 | `ensurePaymentPending()` | 결제 중(PAYMENT_PENDING) 주문인지 본다. 상태를 바꾸지 않는다 | `OrderStatusConflictException` |
-| `confirm()` | 포인트로 결제했다고 적고(`POINT`) 마이크로초 정밀도의 현재 시각으로 확정한다 | `ensureDraft()`와 같다. 재고·잔액의 확보는 application의 같은 트랜잭션이 조율한다. 포인트 결제의 길과 함께 지운다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)) |
 | `startPayment()` | 결제수단 `PG`를 적고 결제 중으로 바꾼다 | `ensureDraft()`와 같다 |
 | `completePayment()` | 마이크로초 정밀도의 현재 시각으로 확정한다 | `ensurePaymentPending()`과 같다 |
 | `failPayment()` | 결제에 실패한 주문으로 바꾼다 | `ensurePaymentPending()`과 같다 |
+
+포인트로 결제해 바로 확정하던 `confirm()`은 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 결제수단이 `POINT`인 주문에 이르는 전이는 없고, 그런 주문은 그 전에 확정된 행으로만 있다.
 
 ### 저장 약속
 
@@ -97,6 +99,8 @@
 - 확정: `OrderConfirmer.confirm` → `OrderFinder.findForUpdate`로 요청자의 주문을 품목과 함께 잠가 읽는다(소유권 확인. 잠금은 그 조회 자체에 걸린다) → `Order.ensureDraft`(이미 확정이면 `ORDER_ALREADY_CONFIRMED` 409) → 품목 전부의 상품 ID별 수량으로 `StockDeductor.deduct`를 한 번 부른다(→ 모든 상품 행을 상품 ID 순으로 잠가 읽고(`ProductFinder.findForUpdateOrNull`. 브랜드는 조인하지 않는다. 브랜드 삭제가 상품을 함께 삭제하기 때문이다) → 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절하고, 확정이 그것을 `ORDER_PRODUCT_NOT_AVAILABLE`(404)로 옮긴다 → 상품마다 `Product.deductStock` → 하나라도 품절이 되면 고객 상품 목록이 바뀌었다고 표시 → 저장) → `PointDeductor.deduct`(→ `PointAccountFinder.findForUpdate`로 계정을 잠가 읽음 → `PointAccount.pay(총액)` → 저장) → `Order.confirm` → 저장. 두 차감 포트는 상품·포인트 쪽의 것이고 확정의 트랜잭션에 참여한다. 재고·잔액·주문의 변경은 하나의 트랜잭션으로 커밋되며 실패 시 같은 DRAFT를 유지한다. 차감이 표시했으면 주문·상품·포인트 계정의 UPDATE가 모두 나간 뒤, 커밋 바로 앞의 마지막 SQL로 상품 목록 revision을 올린다. 잠금은 주문 → 상품 → 포인트 계정 → 상품 목록 revision의 차례다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)). 확정은 표시하지 않는다. 가격은 품목에 저장된 단가로 센 총액을 사용한다.
   - 잠금은 주문 → 상품(id 오름차순) → 포인트 계정 차례로 걸린다. 같은 주문의 확정끼리는 주문 행에서 기다린다. 뒤진 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된 주문을 읽으므로, 앞선 확정이 커밋했으면 상품과 계정을 읽기 전에 `ORDER_ALREADY_CONFIRMED`(409)로 거절된다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)).
   - 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제)나 같은 상품의 다른 확정과는 상품 행에서([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)), 같은 사용자의 충전이나 다른 확정의 결제와는 계정 행에서 한쪽이 커밋할 때까지 기다린다. 3초 안에 잠금을 얻지 못하면 `CONCURRENT_REQUEST`(409)이고 아무것도 바뀌지 않는다.
+
+  > 2026-10-22 위 확정의 흐름은 포인트로 결제하던 때의 원문이다. 확정은 이제 PG로 결제하며 TX A(주문을 잠가 읽기 → 재고 예약 → `Order.startPayment` → 결제 시작), 트랜잭션 밖의 PG 호출, TX B(주문을 잠가 읽기 → PG의 답을 결제에 반영 → 성공이면 `Order.completePayment`)로 나뉜다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). `PointDeductor.deduct`, `PointAccount.pay`, `Order.confirm`은 지웠고 확정은 포인트 계정을 읽지도 잠그지도 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 잠금은 TX A가 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 바뀌면)이다(ADR 0028 규칙 4). TX B는 지금 주문만 잠근다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md) 규칙 3의 메모). 실패한 결제의 예약을 돌려주게 되면 ADR 0028 규칙 4대로 그 경우에만 상품과 revision도 잠근다.
 - 관리자 상세 조회: `OrderFinder.findForAdmin` → `findWithLineItemsById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
 - 관리자 목록 조회: `OrderFinder.findAll(OrderAdminListRequest)` → 페이지 범위 확인 → 같은 `findAll(userId, …)`에 거를 사용자를 넣거나 비운다. 주문한 사용자의 식별자를 응답에 싣고, 카탈로그가 바뀌거나 상품이 삭제되어도 저장된 이름·단가를 그대로 준다(설계 16).
 
