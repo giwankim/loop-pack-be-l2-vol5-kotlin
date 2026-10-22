@@ -932,6 +932,8 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 좋아요는 수가 항목에 실리고 `likes_desc`의 차례를 정하므로 언제나 표시한다(5.28의 2026-10-15 메모). 이미 그 상태인 누르기·취소를 가려내는 분기는 값어치가 없다.
   - 표시하지 않는 쓰기: 브랜드 등록, 주문 생성, 포인트 충전. 주문 취소와 재고 복원은 없다.
   - 표시는 상품 조각의 `ProductListRevisionMarker`가 받는다. 좋아요는 상품 조각의 포트를 직접 부른다. 주문 확정은 표시하지 않고, 차감이 상품 조각 안에서 표시한다. 브랜드는 상품 조각에 기댈 수 없으므로(5.16) 브랜드가 선언한 포트를 상품 조각이 구현한다. [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)의 `ProductDeleter`와 같은 꼴이다.
+
+  > 2026-10-22 쓰기가 아홉이 됐다([ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md) 규칙 6). 아홉째는 결제에 실패한 주문의 재고 돌려주기(`StockRestorer.restore`)이고, 품목 가운데 하나라도 품절이 풀릴 때만 표시한다. 돌려주기는 재고를 늘리기만 하므로 품절이 되는 일은 없고, 삭제된 상품은 건너뛴다. 그래서 위의 "재고 복원은 없다"는 더 맞지 않는다. "차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다"는 차감에는 그대로 맞다. 표의 "주문 확정의 재고 차감"은 이제 확정 TX A의 재고 예약이고, 표시 규칙은 그대로다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 돌려주기도 차감처럼 주문 조각이 아니라 상품 조각 안에서 표시한다. 8.10의 "여덟 쓰기"도 아홉이다.
 - revision: 카탈로그 전체에 행 하나(`product_list_revision`)이고, 행이 없으면 0이다. 올리기는 `insert … on duplicate key update revision = revision + 1` 한 문장이다. 더하기를 문장 안에서 하므로 읽고 더해 쓰지 않고, upsert라서 표를 비운 뒤에도 0행을 고치고 지나가지 않는다. 이 행은 `BaseEntity`를 상속하지 않는 유일한 엔티티다(ADR 0016의 예외).
 - 잠금 순서: 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정 → revision. revision이 마지막이고, 경로마다의 차례는 ADR 0020 규칙 3의 표에 있다. 올리기가 트랜잭션의 마지막 SQL이므로 revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않고 커밋으로 간다. 기다리지 않는 트랜잭션은 교착의 고리에 들 수 없다. revision을 기다리다 3초를 넘기면 409 `CONCURRENT_REQUEST`다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 7, 8).
 - 트랜잭션 경계:

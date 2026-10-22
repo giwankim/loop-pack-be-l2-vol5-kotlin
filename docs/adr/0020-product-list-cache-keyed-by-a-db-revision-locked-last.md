@@ -15,6 +15,8 @@ date: 2026-10-15
    - 관리자의 재고 수정과 확정의 차감은 품절이 바뀔 때만 올린다. 두 쓰기는 상품 행을 `FOR UPDATE`로 쥔 채([ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)) 바뀌기 전과 뒤를 견주므로, 그 판단에 잠금을 더하지 않는다. 좋아요의 누르기와 취소는 관계가 이미 그 상태여도 올린다. 그것을 가려내는 분기는 값어치가 없다.
    - 행이 없으면 revision은 0이다. upsert가 행을 만들므로, 표를 비운 뒤의 올리기가 0행을 고치고 조용히 지나가는 일이 없다.
    - revision 행은 `BaseEntity`를 상속하지 않는 JPA 엔티티다. 생성되는 식별자, 생성·수정·삭제 시각, 논리 삭제가 카운터 하나에는 맞지 않으므로 [ADR 0016](./0016-every-entity-extends-base-entity-and-roots-soft-delete.md)의 예외로 둔다. 표는 다른 표처럼 Hibernate가 만들고, 테스트의 `DatabaseCleanUp`이 함께 비운다. 올리기는 엔티티를 읽어 고치지 않고 위의 upsert 한 문장으로 한다.
+
+   > 2026-10-22 [ADR 0026](./0026-stock-reservation-is-the-pending-orders-line-items.md) 규칙 6으로 쓰기가 아홉이 됐다. 아홉째는 결제에 실패한 주문의 재고 돌려주기(`StockRestorer.restore`)다. 머리말과 대가의 "여덟"도 아홉으로 읽는다. 돌려주기는 재고를 늘리기만 하므로 품절이던 상품이 다시 팔 수 있게 될 때만 올리고, 관리자의 재고 수정처럼 잠가 읽은 상품 행의 앞뒤를 견준다. 삭제된 상품은 건너뛰므로 돌려주기가 목록에 상품을 되살리지 않는다. "확정의 차감"은 이제 확정 TX A의 재고 예약이다([ADR 0024](./0024-confirm-calls-the-pg-between-two-transactions.md)). 같은 차감 포트를 쓰므로 품절이 될 때 올리는 규칙은 그대로다.
 2. **고객 목록은 revision을 트랜잭션의 첫 문장으로 읽는다.** 잠그지 않는 일반 `SELECT`다. REPEATABLE READ의 스냅샷이 이 문장에서 정해지므로, 뒤따르는 페이지 쿼리와 좋아요 수 조회는 읽은 revision과 같은 상태를 본다. 키는 revision과 필터·정렬·페이지·크기를 품는다. hit이면 SQL은 revision 하나다. miss면 같은 스냅샷에서 읽은 페이지를 그 키에 만료를 함께 단 `SET` 한 번으로 넣는다.
    - 캐시는 Query Service의 읽기 전용 트랜잭션 안에서 다룬다. `@Cacheable`의 키 생성기가 revision을 읽으므로, `@EnableTransactionManagement`의 order를 캐시보다 앞에 두어 트랜잭션 advisor가 캐시 advisor를 감싸게 한다. 키 생성기는 트랜잭션이 없으면 실패한다. 페이지를 먼저 읽고 revision을 나중에 읽으면, 그 사이 commit한 변경 전의 페이지가 새 revision의 키에 들어간다.
    - 캐시 advisor가 바깥이어도 지금은 revision을 페이지보다 먼저 읽는다. Spring이 조회 때 만든 키를 넣을 때 다시 쓰기 때문이다(6.1.2부터). 그러나 그러면 정확성이 그 구현에 기댄다. 트랜잭션이 바깥이면 키를 다시 만들어도 같은 스냅샷에서 같은 revision을 읽는다.
@@ -38,6 +40,15 @@ date: 2026-10-15
    - 코드의 마지막 줄이라는 것만으로는 모자라다. [ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)과 [ADR 0019](./0019-order-and-point-account-rows-locked-on-first-read.md)의 규칙 3은 "commit의 flush가 새 잠금을 얻지 않는다"에 기댄다. 그것은 처음 읽을 때 잠그는 브랜드, 상품, 주문, 포인트 계정 행의 이야기다. 좋아요 행은 잠그지 않고 읽으므로, 취소의 DELETE는 flush에서 처음 그 행을 잠근다. 올리기가 flush보다 먼저 나가면 revision을 쥔 채 좋아요 행을 기다린다. 누르기의 INSERT는 식별자가 `IDENTITY`라서 `save`에서 곧바로 나간다. 외래 키 검사가 상품 행에 거는 공유 잠금도 그때 걸리므로 revision보다 앞선다.
    - flush 뒤에 보내면 뜨거운 행을 쥐는 시간도 짧아진다. 브랜드 삭제의 연쇄가 UPDATE를 50개씩 묶어 보내는 동안([ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md) 규칙 9) revision을 쥐지 않는다.
    - 문장의 차례는 SQL 로그(`captureSql`)를 보는 테스트가 고정한다.
+
+   > 2026-10-22 확정이 PG 호출을 사이에 둔 두 트랜잭션으로 나뉘고([ADR 0024](./0024-confirm-calls-the-pg-between-two-transactions.md)), 포인트 계정이 확정에서 빠졌다([ADR 0027](./0027-point-payment-path-is-deleted.md)). 위 표의 "주문 확정" 행은 [ADR 0028](./0028-order-slice-orchestrates-the-payment.md) 규칙 4의 두 행으로 바뀌고, 재고 돌려주기는 TX B의 실패 경로로 표에 든다.
+   >
+   > | 경로 | 잠그는 차례 |
+   > | --- | --- |
+   > | 확정의 TX A | 주문 → 상품(id 오름차순) → revision(품절이 바뀌면) |
+   > | 확정과 대사의 TX B | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) |
+   >
+   > 돌려주기는 상품을 처음 읽을 때 id 오름차순으로 잠근다. 올리기는 다른 쓰기처럼 커밋 앞의 훅이 flush한 뒤 마지막 SQL로 보내므로, 실패한 TX B도 revision을 쥔 채 다른 잠금을 기다리지 않는다. 그 TX B의 올리기가 주문, 결제, 상품의 UPDATE 뒤라는 것은 `ProductCacheTest`가 고정한다.
 4. **Redis는 쓰기 경로에 없다.** 쓰기는 Redis에 아무것도 보내지 않는다. Redis가 멈춰도 쓰기는 성공하고, commit 뒤에 실패할 무효화 호출이 없다. 키는 지우지 않는다. revision이 오르면 옛 키는 아무도 읽지 않게 된다.
    - 늦은 채움은 자기가 읽은 옛 revision의 키에 쓴다. 변경의 commit 뒤에 시작한 조회는 새 revision의 키를 읽으므로 그것을 보지 않는다.
    - commit하지 않은 revision은 다른 트랜잭션에 보이지 않는다. 그래서 되돌린 쓰기의 revision으로 채워지는 키가 없다.
