@@ -55,7 +55,6 @@ class OrderLineItem internal constructor(
     @Column(nullable = false, updatable = false)
     val quantity: Int = product.quantity
 
-    /** 단가 × 수량. 같은 행의 두 열에서 바로 나오므로 저장하지 않는다. */
     val lineAmount: Money
         get() = unitPrice * quantity
 }

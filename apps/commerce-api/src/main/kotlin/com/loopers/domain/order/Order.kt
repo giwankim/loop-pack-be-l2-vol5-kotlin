@@ -52,7 +52,7 @@ class Order(
         get() = _lineItems.fold(Money.ZERO) { total, item -> total + item.lineAmount }
 
     init {
-        if (products.isEmpty() || products.map { it.productId }.distinct().size != products.size) {
+        if (products.isEmpty() || products.distinctBy { it.productId }.size != products.size) {
             throw InvalidOrderException("주문은 상품별로 하나씩인 품목을 포함해야 합니다.")
         }
     }
