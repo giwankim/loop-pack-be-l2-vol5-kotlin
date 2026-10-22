@@ -672,4 +672,28 @@ Three commits on `feat/order-payment` (pushed, `595dfc5..4ce2f98`), on top of is
 - **Flaky create timeout.** `OrderConfirmationApiTest` "[1] newPrice = 500" got 202 once in a full run.
   - It was the first test in a fresh context. The stub matched and WireMock answered 202, but the test profile's 200 ms `pg.response-timeout` had already fired (`SocketTimeoutException`), so the create was outcome unknown.
   - It passed alone and on rerun. Issue 153 saw the same thing.
-  - A drill-down follows separately.
+  - Diagnosed and fixed after the close; see the follow-up below.
+
+### Follow-up: the flaky create timeout
+
+Fixed in [`fda7f0b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/fda7f0b) (pushed, `d5cd282..fda7f0b`).
+
+- **Cause.** The test JVM's first HTTP exchange runs Jetty's and WireMock's server code cold. `-Xshare:off` and the JaCoCo agent make it slower still. Under CPU load, that server-side work passes the test profile's 200 ms `pg.response-timeout`. So a create that WireMock answered 202 surfaces as `SocketTimeoutException`, the payment stays UNKNOWN, and the confirmation answers 202 instead of 200.
+- **Only the JVM's first exchange is exposed.**
+  - Later fresh contexts, with fresh WireMock servers, answered their first create in 87–196 ms even under load. Warm exchanges took milliseconds.
+  - Gradle runs test classes in package order, so the exposed test is whichever `@EnableTestPg` class comes first. Before issue 153 that was `OrderConfirmationApiTest`, and "[1] newPrice = 500" was its first method. Since issue 153 it is `OrderAdminApiTest`.
+- **Evidence.** A throwaway harness ran the first create of a fresh JVM against the gateway's minimal context, with 20 busy threads to stand in for a load average of ~14. Each run took about 25 s.
+
+  | | Runs | Timed out |
+  | --- | --- | --- |
+  | No warm-up | 20 | 9 |
+  | With the fix | 14 | 0 |
+  | Fix removed again, same load | 8 | 4 |
+
+- **Fix.** `@EnableTestPg` now also imports `TestPgWarmUpConfig`. When each context refreshes, it sends one GET to the test PG's `/__admin/health` with the JDK `HttpClient`, reading the address from `PgProperties`.
+  - WireMock does not journal admin requests, so `createCount()` and `unmatchedRequests()` are unchanged.
+  - The adapter's HTTP client, its connection pool and its observations are untouched. `ExhaustedPoolPaymentGatewayTest` and `ObservedPaymentGatewayTest` still pass.
+  - A failing warm-up fails the context.
+  - The 200 ms limit stays, so the timeout scenes stay fast.
+- **No committed regression test.** The bug needs the JVM's first PG exchange under CPU load, and no test can pin that it runs first. `CODING_STANDARDS.md` records the warm-up next to `@EnableTestPg`. The harness was deleted.
+- **Full `ktlintCheck check`** with the fix: 71 classes, 817 tests, 0 failures, 0 skipped.
