@@ -1,16 +1,10 @@
 package com.loopers.support.test
 
-import com.loopers.application.order.provided.OrderConfirmer
-import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRevisionRepository
-import com.loopers.domain.order.Order
-import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.CreditCard
 import com.loopers.support.DatabaseCleanUp
-import com.loopers.support.TestPg
 import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.transaction.PlatformTransactionManager
@@ -19,7 +13,6 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Duration
-import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -75,9 +68,6 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     @Autowired
     private lateinit var productListCacheKeyGenerator: ProductListCacheKeyGenerator
 
-    @Autowired
-    private lateinit var orderConfirmer: OrderConfirmer
-
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
 
@@ -113,21 +103,6 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
         val findAll = ProductFinder::class.java.getMethod("findAll", ProductListRequest::class.java)
 
         return inNewTransaction { productListCacheKeyGenerator.generate(productFinder, findAll, request) }
-    }
-
-    /**
-     * 주문한 사용자가 [order]를 확정하고, 테스트 PG [testPg]는 그 생성을 성공한 PG 거래로 받아들인다. 확정된 주문을 돌려준다.
-     * 품목의 재고가 넉넉해야 하고, 클래스에 `@EnableTestPg`가 있어야 한다. 확정은 트랜잭션 밖에서만 돌므로 커밋하는 기반에 둔다(ADR 0028 규칙 2).
-     */
-    protected fun confirmOrder(testPg: TestPg, order: Order = this.order): OrderInfo {
-        val request = createOrderConfirmRequest()
-        acceptNextCreate(
-            testPg,
-            amount = order.totalAmount.amount.longValueExact(),
-            card = CreditCard(type = request.cardType, number = request.cardNo),
-        )
-
-        return orderConfirmer.confirm(order.userId, order.id, idempotencyKey = UUID.randomUUID().toString(), request = request)
     }
 
     /** [block]을 다른 스레드에서 부르고 곧바로 돌아온다. 그 스레드에는 트랜잭션이 없으므로 [block]이 부른 포트가 저마다 커밋한다. */

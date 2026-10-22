@@ -3,7 +3,10 @@ package com.loopers.support.test
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreator
+import com.loopers.application.order.provided.OrderInfo
+import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -14,6 +17,7 @@ import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.createLikeRequest
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.order.createOrderCreateRequest
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.point.PointAccount
@@ -97,6 +101,12 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var orderCreator: OrderCreator
+
+    @Autowired
+    private lateinit var orderConfirmer: OrderConfirmer
+
+    @Autowired
+    private lateinit var orderRepository: OrderRepository
 
     /** `@EnableTestPg`가 가져온 컨텍스트에만 있다. 테스트 PG를 쓰지 않는 컨텍스트에서는 비어 있다. */
     @Autowired
@@ -193,6 +203,14 @@ abstract class BaseApplicationServiceTest {
         return orderCreator.create(user.id, request).also { order = it }
     }
 
+    /**
+     * 결제를 만들지 않고 [order]의 결제를 시작해, 결제수단이 PG인데 결제가 없는 결제 중인 주문으로 둔다. 확정은 결제와 함께만 결제를 시작하므로
+     * 이 데이터의 불일치는 포트로 만들 수 없어 저장소로 만들고, 바꾼 주문을 명시적으로 저장한다. 주문 조회가 `PAYMENT_MISSING`인 장면만 쓴다(ADR 0028 규칙 1).
+     */
+    protected fun startPaymentWithoutPayment(order: Order = this.order) {
+        orderRepository.save(order.apply { startPayment() })
+    }
+
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
     }
@@ -235,5 +253,22 @@ abstract class BaseApplicationServiceTest {
             transactionKey = UUID.randomUUID().toString(),
             pgStatus = pgStatus,
         )
+    }
+
+    /**
+     * 주문한 사용자가 [order]를 확정하고, 테스트 PG [testPg]는 그 생성을 PG 상태 [pgStatus]의 PG 거래로 받아들인다. 확정의 결과를 돌려준다.
+     * 성공이면 확정된 주문, 처리 중(`PENDING`)이면 결제 중인 주문이다. 품목의 재고가 넉넉해야 하고, 클래스에 `@EnableTestPg`가 있어야 한다.
+     * 확정은 트랜잭션 밖에서만 돌므로(ADR 0028 규칙 2) 테스트 트랜잭션에서 빠진 클래스만 부른다. 커밋하는 기반과 `NOT_SUPPORTED`를 단 MockMvc 클래스다.
+     */
+    protected fun confirmOrder(testPg: TestPg, order: Order = this.order, pgStatus: String = "SUCCESS"): OrderInfo {
+        val request = createOrderConfirmRequest()
+        acceptNextCreate(
+            testPg,
+            amount = order.totalAmount.amount.longValueExact(),
+            card = CreditCard(type = request.cardType, number = request.cardNo),
+            pgStatus = pgStatus,
+        )
+
+        return orderConfirmer.confirm(order.userId, order.id, idempotencyKey = UUID.randomUUID().toString(), request = request)
     }
 }

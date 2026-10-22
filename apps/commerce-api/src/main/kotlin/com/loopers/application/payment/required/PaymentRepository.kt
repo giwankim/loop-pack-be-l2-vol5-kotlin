@@ -12,5 +12,7 @@ interface PaymentRepository : Repository<Payment, Long> {
 
     fun findByOrderId(orderId: Long): Payment?
 
+    fun findAllByOrderIdIn(orderIds: Collection<Long>): List<Payment>
+
     fun findByIdempotencyKey(idempotencyKey: String): Payment?
 }

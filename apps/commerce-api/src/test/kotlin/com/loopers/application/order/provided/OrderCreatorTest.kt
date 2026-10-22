@@ -32,7 +32,7 @@ class OrderCreatorTest(
         val second = orderCreator.create(user.id, request)
         entityManager.flushAndClear()
 
-        val listed = orderFinder.findAll(user.id, OrderListRequest()).content
+        val listed = orderFinder.findAll(user.id, OrderListRequest()).content.map { it.order }
         assertThat(second.id).isNotEqualTo(first.id)
         assertThat(listed.map { it.id }).containsExactly(second.id, first.id)
         assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT)

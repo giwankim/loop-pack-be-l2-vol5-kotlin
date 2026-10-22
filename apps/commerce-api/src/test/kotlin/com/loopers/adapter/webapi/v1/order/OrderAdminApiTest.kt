@@ -1,6 +1,10 @@
 package com.loopers.adapter.webapi.v1.order
 
+import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.EnableTestPg
+import com.loopers.support.TestPg
+import com.loopers.support.error.ErrorType
 import com.loopers.support.isEqualToLong
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
@@ -14,6 +18,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.wiremock.spring.InjectWireMock
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
@@ -23,7 +28,9 @@ import tools.jackson.databind.ObjectMapper
  * 끝나고 다음 요청은 새 영속성 컨텍스트에서 읽는다.
  *
  * 관리자 경계는 기존 테스트 전용 설정을 쓴다([com.loopers.config.security.AdminSecurityConfig]). 운영 인증 수단을 더하는 것이 아니다.
+ * 결제 필드를 보는 장면은 테스트 PG로 주문을 확정한다.
  */
+@EnableTestPg
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class OrderAdminApiTest(
     private val objectMapper: ObjectMapper,
@@ -35,6 +42,12 @@ class OrderAdminApiTest(
         private val ADMIN = user("admin").roles("ADMIN")
         private val USER = user("user").roles("USER")
     }
+
+    /** 생성자 주입의 하나뿐인 예외다. 까닭은 `OrderPaymentIntegrationTest`의 같은 필드에 있다. */
+    @InjectWireMock(TestPg.NAME)
+    private lateinit var server: WireMockServer
+
+    private val testPg by lazy { TestPg(server) }
 
     @BeforeEach
     fun setUp() {
@@ -184,35 +197,69 @@ class OrderAdminApiTest(
     }
 
     /**
-     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제수단과 그 주문의 결제액을 싣는지만 본다. 확정된 주문은 준비한 초안 위에
-     * SQL로 덮어쓴다(설계 13의 같은 판단). 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
+     * 관리자 목록과 상세도 고객 응답처럼 결제수단과 결제 상태를 싣는다. 결제 상태는 결제수단이 PG인 주문에만 있다(ADR 0028 규칙 1).
+     * 결제수단이 PG인 주문은 테스트 PG로 확정하고, 포인트로 확정된 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13).
+     * 항목마다 상세와 같은 응답인지 견주므로 상세도 같은 필드를 싣는다. 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
      */
     @Test
-    fun `the list and the detail show the payment result of a confirmed order and omit it for a draft`() {
+    fun `the admin list and detail show the payment fields of a draft, a point-paid, a payment pending and a PG-paid order`() {
         prepareProduct(price = 1_000)
         prepareUser()
         val draft = prepareOrder(user, listOf(product)).id
-        val confirmed = prepareOrder(user, listOf(product), quantity = 2).id
+        val pointPaid = prepareOrder(user, listOf(product), quantity = 2).id
         jdbc.update(
             "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
-            confirmed,
+            pointPaid,
         )
+        val pending = confirmOrder(testPg, prepareOrder(user, listOf(product)), pgStatus = "PENDING").order.id
+        val confirmed = confirmOrder(testPg, prepareOrder(user, listOf(product), quantity = 4)).order.id
 
-        val body = assertThat(requestGetOrders()).hasStatusOk().bodyJson()
+        val orders = requestGetOrders()
+        val body = assertThat(orders).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(4)
         body.extractingPath("$.data.items[0].orderId").isEqualToLong(confirmed)
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
-        body.extractingPath("$.data.items[0].paymentMethod").isEqualTo("POINT")
-        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
-        body.extractingPath("$.data.items[1].orderId").isEqualToLong(draft)
-        body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
-        body.doesNotHavePath("$.data.items[1].paymentMethod")
+        body.extractingPath("$.data.items[0].paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.items[0].paymentStatus").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(4_000)
+        body.doesNotHavePath("$.data.items[0].confirmedAt")
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(pending)
+        body.extractingPath("$.data.items[1].status").isEqualTo("PAYMENT_PENDING")
+        body.extractingPath("$.data.items[1].paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.items[1].paymentStatus").isEqualTo("PENDING")
         body.doesNotHavePath("$.data.items[1].paidAmount")
+        body.extractingPath("$.data.items[2].orderId").isEqualToLong(pointPaid)
+        body.extractingPath("$.data.items[2].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[2].paymentMethod").isEqualTo("POINT")
+        body.doesNotHavePath("$.data.items[2].paymentStatus")
+        body.extractingPath("$.data.items[2].paidAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.items[3].orderId").isEqualToLong(draft)
+        body.extractingPath("$.data.items[3].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[3].paymentMethod")
+        body.doesNotHavePath("$.data.items[3].paymentStatus")
+        body.doesNotHavePath("$.data.items[3].paidAmount")
 
-        val detail = assertThat(requestGetOrder(confirmed)).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
-        detail.extractingPath("$.data.paymentMethod").isEqualTo("POINT")
-        detail.extractingPath("$.data.paidAmount").isEqualTo(2_000)
-        detail.doesNotHavePath("$.data.confirmedAt")
+        val listed = orders.json()["data"]["items"]
+        listOf(confirmed, pending, pointPaid, draft).forEachIndexed { index, orderId ->
+            val adminDetail = requestGetOrder(orderId)
+            assertThat(adminDetail).hasStatusOk()
+            assertThat(listed[index]).isEqualTo(adminDetail.json()["data"])
+        }
+    }
+
+    /** 결제수단이 PG인데 결제가 없는 주문은 관리자 목록과 상세에서도 고객 조회처럼 범용 500과 그 사유다(ADR 0028 규칙 1). */
+    @Test
+    fun `an order paying through the PG without its payment answers 500 PAYMENT_MISSING on the admin list and detail`() {
+        prepareOrder()
+        startPaymentWithoutPayment()
+
+        val body = assertThat(requestGetOrders()).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Internal Server Error")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.PAYMENT_MISSING.message)
+
+        val error = assertThat(requestGetOrder(order.id)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Internal Server Error")
+        error.extractingPath("$.meta.message").isEqualTo(ErrorType.PAYMENT_MISSING.message)
     }
 
     @Test

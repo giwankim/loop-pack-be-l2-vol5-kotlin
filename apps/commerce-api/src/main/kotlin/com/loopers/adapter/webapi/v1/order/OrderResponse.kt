@@ -28,7 +28,7 @@ data class OrderResponse(
     val paidAmount: BigInteger?,
 ) {
     companion object {
-        /** 결제 상태를 읽지 않은 주문. 갓 만든 확정 전 주문과 목록의 항목이다. */
+        /** 결제 상태를 읽지 않은 주문. 갓 만든 확정 전 주문이다. */
         fun from(order: Order): OrderResponse {
             return from(OrderInfo(order, paymentStatus = null))
         }
