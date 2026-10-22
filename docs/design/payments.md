@@ -46,18 +46,18 @@
 | 필드 | 열 | 정해지는 때 | 규칙 |
 | --- | --- | --- | --- |
 | `orderId` | `order_id` | 생성 | 주문마다 하나(`UK_PAYMENT_ON_ORDER_ID`). 물리 외래 키 `FK_PAYMENT_ON_ORDER_ID` → `orders.id`. |
-| `idempotencyKey` | `idempotency_key` | 생성 | 공백뿐이지 않고 64자 이하. 유일(`UK_PAYMENT_ON_IDEMPOTENCY_KEY`). |
-| `pgOrderId` | `pg_order_id` | 생성 | `LP-ORD-` 뒤에 주문 식별자를 10자리로 0 채움. 10자리는 최소 폭이라 더 긴 식별자도 자르지 않는다. |
+| `idempotencyKey` | `idempotency_key` | 생성 | 공백뿐이지 않고 64자 이하. 유일(`UK_PAYMENT_ON_IDEMPOTENCY_KEY`). (2026-10-22: 공백 없는 보이는 ASCII 1–64자다. 열은 `utf8mb4_bin`이라 대소문자만 다른 두 키가 따로 저장된다([ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md) 규칙 2, [issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150)).) |
+| `pgOrderId` | `pg_order_id` | 생성 | `LP-ORD-` 뒤에 주문 식별자를 10자리로 0 채움. 10자리는 최소 폭이라 더 긴 식별자도 자르지 않는다. (2026-10-22: 결제를 시작할 때 `PgOrderIdGenerator`가 새로 만들고, 주문 식별자에서 만들지 않는다. 운영 구현은 UUID 문자열(36자)이다. 유일(`UK_PAYMENT_ON_PG_ORDER_ID`). [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md), [issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150).) |
 | `amount` | `amount` | 생성 | 1원 이상의 `Money`. |
 | `status` | `status` | `reconcile`, `reject` | 결과 미확인으로 시작해 앞으로만 간다(2.2). |
 | `transactionKey` | `transaction_key` | 처음 맞은 PG 거래 | 모르면 null. 생성 전 거절로 실패한 결제는 PG 거래가 없으므로 끝까지 null이다. |
 
-- 앞의 넷은 생성 뒤에 바뀌지 않는다(`updatable = false`). 생성의 규칙을 어기면 `InvalidPaymentException`이다.
+- 앞의 넷은 생성 뒤에 바뀌지 않는다(`updatable = false`). 생성의 규칙을 어기면 `InvalidPaymentException`이다. (2026-10-22: 결제는 `Payment.start(orderId, idempotencyKey, amount, pgOrderIdGenerator)`로만 만든다. 생성자는 private이라 호출자가 PG 주문 번호를 고를 수 없다(ADR 0029 규칙 2). fixture는 정해 둔 값을 돌려주는 생성기를 넣는다.)
 - 카드는 담지 않는다. PG에 넘기기만 한다. `PaymentRepositoryTest`가 `information_schema.columns`로 열 목록 전체를 본다. 이름에 "card"가 든 열만 찾으면 `@Embedded CreditCard`가 만들 `type`, `number`를 놓치기 때문이다.
-- PG 주문 번호는 `String.format`을 쓰지 않는다. `%d`는 JVM 기본 로캘의 숫자를 따라 `th-TH-u-nu-thai`에서 `LP-ORD-๐๐๐๐๐๐๐๐๔๒`가 됐다. `padStart`로 만들고, 테스트가 그 로캘에서 ASCII 숫자를 확인한다.
+- PG 주문 번호는 `String.format`을 쓰지 않는다. `%d`는 JVM 기본 로캘의 숫자를 따라 `th-TH-u-nu-thai`에서 `LP-ORD-๐๐๐๐๐๐๐๐๔๒`가 됐다. `padStart`로 만들고, 테스트가 그 로캘에서 ASCII 숫자를 확인한다. (2026-10-22: [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md)가 파생 형식을 없애, `padStart`와 그 로캘 테스트도 함께 지웠다. 운영 생성기가 만드는 UUID 문자열은 `String.format`을 거치지 않는다. 생성기의 테스트가 값이 6자 이상의 ASCII이고 서로 다른지 본다.)
 - 표는 `payment`다. 이 저장소는 예약어를 피할 때만 표 이름을 적는다. `BaseEntity`를 상속하고, 애그리거트 루트라 `@SQLRestriction("deleted_at is null")`로 논리 삭제한다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)). 지우는 기능은 없다.
 - `payment`는 가리키는 `orders`보다 이름 차례가 뒤라, 스키마를 다시 만들 때 `scalar-foreign-keys-drop.sql`이 그 외래 키를 먼저 지운다([포인트·주문 설계](./points-orders.md) 8.2의 2026-10-19 메모). migration 도구는 [issue 145](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/145)에서 다시 본다.
-- `PaymentRepository`는 저장, 주문 식별자로 찾기, 멱등 키로 찾기만 가진다. 없으면 null이다. 거래 키나 PG 주문 번호로 찾는 것과 그 인덱스는 그것을 쓰는 단계가 더한다.
+- `PaymentRepository`는 저장, 주문 식별자로 찾기, 멱등 키로 찾기만 가진다. 없으면 null이다. 거래 키나 PG 주문 번호로 찾는 것과 그 인덱스는 그것을 쓰는 단계가 더한다. (2026-10-22: PG 주문 번호의 인덱스는 2단계가 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`로 먼저 더했다. PG 주문 번호가 주문 식별자에서 오지 않으므로 유일성이 주문마다 하나에서 따라 나오지 않는다(ADR 0029 규칙 3). 그것으로 찾는 메서드는 3단계의 알림이 더한다.)
 
 ### 2.2 결제 상태
 
@@ -356,8 +356,8 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ## 8. 다음 단계로 넘기는 것
 
-- **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다).
+- **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다). 2026-10-22 2단계([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150))가 열을 `utf8mb4_bin`으로 바꾸고 키를 공백 없는 보이는 ASCII로 좁혔다([이행 SQL](../migrations/2026-10-22-order-payment.sql)). 이제 `abc`와 `ABC`는 다른 키이고, `abc `로는 결제가 만들어지지 않는다. `utf8mb4_bin`은 PAD SPACE라 열만으로는 끝 공백을 가르지 않는다([ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md) 규칙 2의 날짜 메모).
 - **주문의 결제액.** `orders.paid_amount`는 확정이 `paidAmount = totalAmount`로 만든 사본이다. 품목은 생성 뒤 바뀌지 않으므로 상태와 총액에서 늘 계산되고, 운영 코드에서 읽는 곳은 주문 응답 DTO 둘뿐이다. 응답의 `paidAmount`는 과제가 요구하므로 남는다([포인트·주문 설계](./points-orders.md) 2절). 열을 남길지는 2단계가 결제수단과 함께 정한다. PG로 결제한 주문은 `Payment.amount`가 청구한 금액을 이미 기록하고, 포인트로 결제한 주문은 주문의 결제액과 확정 시각이 결제의 기록이다(ADR 0006, ADR 0021). 남기면 결제수단마다 무엇을 뜻하는지 적는다. 지우면 응답이 상태와 총액에서 계산하고, `CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`와 결제 상태 CHECK의 `paid_amount` 조건이 함께 빠진다. 2026-10-22 사용자의 결정으로 그때까지 그대로 둔다. 2026-10-22 2단계([issue 149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149))가 열을 지웠다. 결제액은 확정된 주문이면 주문 금액, 아니면 없는 계산 속성이고, 주문은 결제수단을 따로 적는다([이행 SQL](../migrations/2026-10-22-order-payment.sql)).
 - **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2에 있다. 모든 결과 미확인과 조회 불가를 각각 같게 다루고, PG 호출을 트랜잭션 밖에 두며, PG 예외를 넓은 catch로 잡지 않는다. 생성이 결과 미확인일 때 결제가 결과 미확인으로 남는지를 호출자마다 장면 테스트로 본다(ADR 0023 규칙 4).
-- **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다.
+- **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다. 2026-10-22 `pg_order_id`에는 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`가 생겼다([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150), ADR 0029 규칙 3). `transaction_key`는 그대로다.
 - **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 응답 시간 초과는 목록 조회로, 끊김과 연결 시간 초과는 거래 키 조회로만 시험했다. 두 조회는 같은 catch를 지난다.

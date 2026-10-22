@@ -20,3 +20,10 @@ ALTER TABLE orders ADD CONSTRAINT CK_ORDERS_ON_PAYMENT_STATE CHECK (
         AND confirmed_at IS NULL)
     OR (status = 'CONFIRMED' AND payment_method IS NOT NULL AND confirmed_at IS NOT NULL)
 );
+
+-- payment: idempotency keys compare exactly, and each payment mints its own PG order ID (ADR 0025 rule 2, ADR 0029).
+-- No payment rows exist in any environment yet, so neither statement meets existing data.
+-- The key column took the server's case-insensitive collation, under which the unique key and the lookup ignored case.
+-- The PG order ID is no longer derived from the order ID, so its uniqueness no longer follows from UK_PAYMENT_ON_ORDER_ID.
+ALTER TABLE payment MODIFY COLUMN idempotency_key VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL;
+ALTER TABLE payment ADD CONSTRAINT UK_PAYMENT_ON_PG_ORDER_ID UNIQUE (pg_order_id);

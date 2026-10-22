@@ -10,7 +10,7 @@ date: 2026-10-22
 1. **확정은 `Idempotency-Key` 헤더를 요구한다.** 없으면 400이다. 본문은 카드(`cardType`, `cardNo`)뿐이고, 금액은 저장된 주문에서 정한다. 과제의 `paymentAttemptKey`를 본문 대신 IETF 초안(`draft-ietf-httpapi-idempotency-key-header`)과 Stripe, Toss가 쓰는 헤더로 받는다.
 2. **키는 그대로 비교하고, 모든 사용자에 걸쳐 유일하다.**
    - 1자에서 64자까지의 공백 없는 보이는 ASCII다. 웹 경계와 `Payment`의 생성이 둘 다 검사한다.
-   - 열은 `utf8mb4_bin`이라 대소문자와 끝 공백을 가른다.
+   - 열은 `utf8mb4_bin`이라 대소문자와 끝 공백을 가른다. (2026-10-22: 대소문자는 가르지만 끝 공백은 가르지 않는다. `utf8mb4_bin`은 PAD SPACE라 MySQL 8.4에서 `'abc' = 'abc ' collate utf8mb4_bin`이 참이다. NO PAD인 것은 `utf8mb4_0900_bin`이다. 끝 공백만 다른 키는 위의 규칙이 공백을 거절해 생기지 않는다. 결제의 생성이 그 검사를 하고, 웹 경계의 검사는 확정 API와 함께 온다([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150)).)
    - 유일성은 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`가 지킨다. 결제에는 사용자 식별자가 없어, 사용자마다 유일하게 하려면 결제가 주문을 건너야 한다.
 3. **재요청에는 업무 기록, 곧 결제와 주문으로 답한다([ADR 0004](./0004-replay-success-from-business-records.md)).** 응답을 따로 저장하지 않는다.
 
