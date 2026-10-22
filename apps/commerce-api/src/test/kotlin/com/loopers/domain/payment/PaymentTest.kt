@@ -16,24 +16,9 @@ class PaymentTest {
         private const val OTHER_PG_ORDER_ID = "7c9d2e4f-1b3a-4d5c-8e6f-9a0b1c2d3e4f"
     }
 
-    @Test
-    fun `a started payment is result unknown and carries its order, key and amount`() {
-        val payment = Payment.start(
-            orderId = 42,
-            idempotencyKey = "checkout-42",
-            amount = Money(15_000),
-            pgOrderIdGenerator = { PG_ORDER_ID },
-        )
-
-        assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(payment.orderId).isEqualTo(42)
-        assertThat(payment.idempotencyKey).isEqualTo("checkout-42")
-        assertThat(payment.amount).isEqualTo(Money(15_000))
-    }
-
     /** 결제를 시작하는 쪽은 PG 주문 번호를 고르지 않는다. 생성기가 결제마다 한 번 새 값을 만든다(ADR 0029). */
     @Test
-    fun `start takes its PG order number from the generator and calls it once`() {
+    fun `start begins a result unknown payment with its order, key, amount and a PG order number from one generator call`() {
         var calls = 0
         val generator = PgOrderIdGenerator {
             calls++
@@ -47,6 +32,10 @@ class PaymentTest {
             pgOrderIdGenerator = generator,
         )
 
+        assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
+        assertThat(payment.orderId).isEqualTo(42)
+        assertThat(payment.idempotencyKey).isEqualTo("checkout-42")
+        assertThat(payment.amount).isEqualTo(Money(15_000))
         assertThat(payment.pgOrderId).isEqualTo(PG_ORDER_ID)
         assertThat(calls).isEqualTo(1)
     }
@@ -70,7 +59,7 @@ class PaymentTest {
 
     /** ASCII 밖의 문자는 ASCII와 닮아 보여도(전각 문자, 줄 바꿈 없는 공백) 거절한다. ASCII의 제어 문자도 보이지 않으므로 거절한다. */
     @ParameterizedTest
-    @ValueSource(strings = ["결제-42", "café-42", "ｃｈｅｃｋｏｕｔ", "checkout 42", "checkout\u000042", "checkout\u007F42"])
+    @ValueSource(strings = ["결제-42", "café-42", "ｃｈｅｃｋｏｕｔ", "checkout\u00A042", "checkout\u000042", "checkout\u007F42"])
     fun `an idempotency key with a character outside visible ASCII is rejected at creation`(idempotencyKey: String) {
         val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
 

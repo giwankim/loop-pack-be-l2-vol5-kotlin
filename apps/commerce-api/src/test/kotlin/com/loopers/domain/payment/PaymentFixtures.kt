@@ -15,13 +15,13 @@ fun createPayment(
     amount: Money? = null,
     pgOrderId: String? = null,
 ): Payment {
-    val mintedPgOrderId = pgOrderId ?: gen().text().uuid().get()
+    val fixedPgOrderId = pgOrderId ?: gen().text().uuid().get()
 
     return Payment.start(
         orderId = orderId,
         idempotencyKey = idempotencyKey ?: gen().text().uuid().get(),
         amount = amount ?: Money(gen().longs().range(1, 1_000_000_000).get()),
-        pgOrderIdGenerator = { mintedPgOrderId },
+        pgOrderIdGenerator = { fixedPgOrderId },
     )
 }
 
