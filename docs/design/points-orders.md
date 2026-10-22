@@ -831,6 +831,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 아래 표의 자리가 바뀌었다. 목록 `findAll(userId, pageable)`은 Spring Data 포트 `OrderRepository`가 아니라 순수 포트 `OrderListRepository`(`application/order/required`)에 있고, `adapter.persistence`의 `QuerydslOrderListRepository`가 구현한다. `findAll(OrderAdminListRequest)`와 `findForAdmin(orderId)`는 `OrderService`가 아니라 provided 포트 `OrderFinder`에 있고 `OrderQueryService`가 구현한다. `OrderInfo`는 `application/order/provided`에 있다. 끝 문단이 적은 "`application/order`가 `application/product`를 참조하지 않는 것"은 더는 사실이 아니다. 주문 기능은 생성과 확정에서 상품 기능의 `ProductFinder`와 `StockDeductor`를 부른다. 페이지 상수를 주문 기능 안에서만 나눠 갖는 선택은 그대로다.
 >
 > 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `OrderInfo`가 없어졌다. 두 응답은 같은 `Order` 엔티티를 읽어 각자 내보낼 필드를 고르고, `userId`는 `Order.userId`에서 온다. 단건 조회는 품목을 엔티티 그래프로 함께 읽는 `findWithLineItemsById`, `findWithLineItemsByIdAndUserId`로 이름이 바뀌었다. 소유자를 묻는 쪽과 묻지 않는 쪽이 이름에 남는다는 까닭은 그대로다.
+>
+> 2026-10-22 [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) 규칙 5로 `OrderInfo`가 다시 생겼다. 이번에는 주문과 그 결제 상태를 담아 애그리거트를 건너는 Info다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)가 두는 경우). 고객 상세에 이어 고객 목록, 관리자 목록, 관리자 상세가 그것을 돌려주므로 두 응답은 다시 같은 `OrderInfo`를 읽어 각자 내보낼 필드를 고른다. `userId`는 여전히 `Order.userId`에서 온다. 결제 상태는 결제수단이 PG인 주문에만 있고, 목록은 한 조각에 있는 그런 주문의 결제를 한 문장으로 읽는다. `findForAdmin`은 이름을 그대로 두고 `OrderInfo`를 돌려준다.
 
 | 더한 것 | 자리 | 까닭 |
 | --- | --- | --- |
