@@ -7,6 +7,7 @@ import com.loopers.application.payment.required.PaymentRepository
 import com.loopers.domain.payment.InvalidPaymentException
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PgOrderIdGenerator
+import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.payment.ReconcileResult
 import com.loopers.domain.shared.Money
@@ -54,6 +55,22 @@ class PaymentModifyService(
             log.warn {
                 "PG 거래가 결제와 맞지 않아 반영하지 않았다. paymentId=${payment.id}, reason=${result.reason}, " +
                     "transactionKey=${transaction.transactionKey}, pgOrderId=${transaction.pgOrderId}"
+            }
+        }
+
+        paymentRepository.save(payment)
+
+        return result
+    }
+
+    /** 생성 전 거절에는 PG 거래가 없으므로 WARN에 거래 키가 없다. 맞지 않는 것은 PG가 되돌려 준 PG 주문 번호나 금액이다. */
+    override fun reject(orderId: Long, rejection: PgRejection): ReconcileResult {
+        val payment = paymentFinder.findByOrder(orderId)
+        val result = payment.reject(rejection)
+        if (result is ReconcileResult.Conflicted) {
+            log.warn {
+                "생성 전 거절이 결제와 맞지 않아 반영하지 않았다. paymentId=${payment.id}, reason=${result.reason}, " +
+                    "pgOrderId=${rejection.pgOrderId}"
             }
         }
 

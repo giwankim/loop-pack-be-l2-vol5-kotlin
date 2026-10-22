@@ -12,13 +12,13 @@ import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.product.InsufficientStockException
-import com.loopers.domain.product.Product
 import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
 import com.loopers.support.TestPg
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.productDeletedAt
+import com.loopers.support.productStock
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
@@ -172,7 +172,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(testPg.createCount()).isOne()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
-            assertThat(stockOf(product)).isEqualTo(7)
+            assertThat(entityManager.productStock(product.id)).isEqualTo(7)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
@@ -194,7 +194,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(testPg.createCount()).isOne()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
-            assertThat(stockOf(product)).isEqualTo(7)
+            assertThat(entityManager.productStock(product.id)).isEqualTo(7)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
@@ -217,7 +217,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(testPg.createCount()).isZero()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(stockOf(product)).isEqualTo(10)
+            assertThat(entityManager.productStock(product.id)).isEqualTo(10)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
@@ -239,7 +239,7 @@ class OrderConfirmerConcurrencyTest(
         assertThat(testPg.createCount()).isZero()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.DRAFT)
-            assertThat(stockOf(product)).isEqualTo(10)
+            assertThat(entityManager.productStock(product.id)).isEqualTo(10)
             assertThat(entityManager.productDeletedAt(product.id)).isNotNull()
         }
     }
@@ -279,15 +279,5 @@ class OrderConfirmerConcurrencyTest(
             pause.hold()
             callOriginal()
         }
-    }
-
-    /** 삭제된 상품의 재고는 어느 포트로도 읽히지 않으므로 SQL 제한을 지나는 native 조회로 읽는다. */
-    private fun stockOf(product: Product): Int {
-        return (
-            entityManager
-                .createNativeQuery("select stock from product where id = :id")
-                .setParameter("id", product.id)
-                .singleResult as Number
-        ).toInt()
     }
 }

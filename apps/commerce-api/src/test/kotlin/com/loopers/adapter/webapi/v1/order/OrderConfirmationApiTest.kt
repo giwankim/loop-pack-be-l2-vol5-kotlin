@@ -166,9 +166,35 @@ class OrderConfirmationApiTest(
         assertStock(product, 8)
     }
 
+    /**
+     * 생성 전 거절은 결제에 실패한 주문으로 끝나는 결과다. 결제 중이 아니므로 202가 아니라 200이고 `Location`이 없다(ADR 0025 규칙 3).
+     * 확정되지 않았으므로 결제액이 없고, 돌려준 예약으로 재고는 확정 전과 같다. 상세도 같은 본문이다.
+     */
+    @Test
+    fun `a confirmation the PG rejects before creating returns 200 with a payment failed order and the stock returned`() {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        testPg.rejectsBeforeCreate(pgOrderId = nextPgOrderId(), amount = 2_000, card = CARD)
+
+        val failed = requestConfirm(orderId)
+        val body = assertThat(failed).hasStatusOk().bodyJson()
+        assertThat(failed).headers().doesNotContainHeader(HttpHeaders.LOCATION)
+        body.extractingPath("$.data.status").isEqualTo("PAYMENT_FAILED")
+        body.extractingPath("$.data.paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.paymentStatus").isEqualTo("FAILED")
+        body.extractingPath("$.data.totalAmount").isEqualTo(2_000)
+        body.doesNotHavePath("$.data.paidAmount")
+
+        val failedDetail = requestDetail(orderId)
+        assertThat(failedDetail).hasStatusOk()
+        assertThat(failedDetail.json()).isEqualTo(failed.json())
+        assertThat(testPg.createCount()).isOne()
+        assertStock(product, 10)
+    }
+
     /** 결제의 거래 키, PG 주문 번호, 카드는 주문 조각이 옮기기만 하고 응답에 싣지 않는다(ADR 0028 규칙 5). 카드 번호는 숫자만 남겨서도 찾는다. */
     @ParameterizedTest
-    @CsvSource("SUCCESS, OK", "PENDING, ACCEPTED")
+    @CsvSource("SUCCESS, OK", "PENDING, ACCEPTED", "FAILED, OK")
     fun `no confirmation or detail response carries the transaction key, the PG order ID or the card`(
         pgStatus: String,
         status: HttpStatus,

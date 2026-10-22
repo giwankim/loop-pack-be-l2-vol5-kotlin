@@ -255,6 +255,34 @@ class ProductCacheTest(
     }
 
     /**
+     * 품절을 푼 돌려주기의 TX B에서도 올리기는 마지막 SQL이다. 주문, 결제, 상품의 UPDATE가 모두 그 앞에 나가므로 잠금의 차례는 주문 → 상품 →
+     * revision이다(ADR 0020 규칙 3, ADR 0028 규칙 4). 마지막 하나를 예약한 TX A도 품절을 바꿔 올리므로, TX B의 SQL은 TX A의 올리기 뒤의 문장들이다.
+     * 돌려준 상품은 다시 팔 수 있으므로 TX B가 끝난 뒤 둘째 올리기가 나간다(ADR 0026 규칙 6).
+     */
+    @Test
+    fun `the upsert of a failed payment that makes a sold out product buyable is TX B's last statement after its writes`() {
+        prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
+        val request = createOrderConfirmRequest()
+        testPg.rejectsBeforeCreate(
+            pgOrderId = nextPgOrderId(),
+            amount = order.totalAmount.amount.longValueExact(),
+            card = CreditCard(type = request.cardType, number = request.cardNo),
+        )
+
+        val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "returned-key", request) }
+
+        val isUpsert = { statement: String -> statement.startsWith("insert into product_list_revision") }
+        assertThat(captured.statements.filter(isUpsert)).hasSize(2)
+        val txB = captured.statements.drop(captured.statements.indexOfFirst(isUpsert) + 1)
+        val upsert = txB.last()
+        val writes = txB.dropLast(1)
+        assertThat(upsert).startsWith("insert into product_list_revision")
+        assertThat(writes).anyMatch { it.startsWith("update orders ") }
+        assertThat(writes).anyMatch { it.startsWith("update payment ") }
+        assertThat(writes).anyMatch { it.startsWith("update product ") }
+    }
+
+    /**
      * 올리기는 트랜잭션의 마지막 SQL이고 상품의 UPDATE 바로 뒤다. 그래서 revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않는다(ADR 0020 규칙 3).
      * UPDATE는 커밋의 flush가 아니라 커밋 앞의 훅이 먼저 flush해 보낸다. 그렇지 않으면 올리기가 UPDATE보다 앞선다.
      */

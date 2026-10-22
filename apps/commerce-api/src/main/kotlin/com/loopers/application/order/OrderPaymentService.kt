@@ -4,6 +4,7 @@ import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.payment.provided.PgOutcomeUnknownException
+import com.loopers.application.payment.provided.PgRejectedException
 import com.loopers.application.payment.provided.PgTransactionCreator
 import com.loopers.domain.payment.CreditCard
 import com.loopers.support.stereotype.ValidatedApplicationService
@@ -26,9 +27,15 @@ class OrderPaymentService(
     private val pgTransactionCreator: PgTransactionCreator,
 ) : OrderConfirmer {
     /**
-     * PG의 답을 모르면(`PgOutcomeUnknownException`) TX A가 저장한 상태, 곧 결제 중인 주문과 결과 미확인 결제로 답한다. 실패가 아니며
-     * 예약은 그대로 남고, 생성은 다시 보내지 않는다(ADR 0024 규칙 3, 4). 결과는 대사가 조회로 안다. 그런 결제를 찾는 지표가 없으므로
-     * WARN을 한 줄 남긴다.
+     * 생성의 답은 타입마다 갈린다(ADR 0028 규칙 3). 받아들여진 PG 거래는 TX B의 PG 거래 입구로 간다.
+     *
+     * - 생성 전 거절(`PgRejectedException`)은 PG 거래가 없다는 증거라서(ADR 0022) TX B의 거절 입구로 간다. 결제는 실패, 주문은 결제에 실패한
+     *   주문이 되고 예약을 돌려준다.
+     * - PG의 답을 모르면(`PgOutcomeUnknownException`) TX A가 저장한 상태, 곧 결제 중인 주문과 결과 미확인 결제로 답한다. 실패가 아니며
+     *   예약은 그대로 남고, 생성은 다시 보내지 않는다(ADR 0024 규칙 3, 4). 결과는 대사가 조회로 안다. 그런 결제를 찾는 지표가 없으므로
+     *   WARN을 한 줄 남긴다.
+     *
+     * 두 예외는 트랜잭션 밖에서 정확한 타입으로 잡는다. 넓게 잡으면 결과 미확인이 실패로 바뀔 수 있다.
      */
     override fun confirm(userId: Long, orderId: Long, idempotencyKey: String, request: OrderConfirmRequest): OrderInfo {
         val started = orderPaymentSteps.startPayment(userId, orderId, idempotencyKey)
@@ -36,6 +43,8 @@ class OrderPaymentService(
 
         val transaction = try {
             pgTransactionCreator.create(started.payment, card)
+        } catch (e: PgRejectedException) {
+            return orderPaymentSteps.applyRejection(userId, orderId, e.rejection)
         } catch (e: PgOutcomeUnknownException) {
             log.warn { "PG 거래의 생성 결과를 몰라 결제를 결과 미확인으로 둔다. orderId=$orderId, cause=${e.message}" }
             return started.info
