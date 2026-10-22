@@ -30,7 +30,6 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),
     ORDER_PRODUCT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "ORDER_PRODUCT_NOT_AVAILABLE", "주문할 수 없는 상품입니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "재고가 부족합니다."),
-    INSUFFICIENT_POINTS(HttpStatus.CONFLICT, "INSUFFICIENT_POINTS", "포인트가 부족합니다."),
     ORDER_ALREADY_CONFIRMED(HttpStatus.CONFLICT, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다."),
     POINT_ACCOUNT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "사용자의 포인트 계정이 없습니다."),
 

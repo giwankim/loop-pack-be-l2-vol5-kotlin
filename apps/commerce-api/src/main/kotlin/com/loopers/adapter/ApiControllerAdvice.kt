@@ -2,7 +2,6 @@ package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.domain.order.OrderAlreadyConfirmedException
-import com.loopers.domain.point.InsufficientPointsException
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
 import com.loopers.support.error.CoreException
@@ -34,12 +33,6 @@ class ApiControllerAdvice {
     fun handleInsufficientStock(e: InsufficientStockException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.INSUFFICIENT_STOCK)
-    }
-
-    @ExceptionHandler
-    fun handleInsufficientPoints(e: InsufficientPointsException): ResponseEntity<ApiResponse<*>> {
-        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
-        return failureResponse(errorType = ErrorType.INSUFFICIENT_POINTS)
     }
 
     @ExceptionHandler

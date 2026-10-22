@@ -8,36 +8,6 @@ import org.junit.jupiter.api.assertThrows
 
 class PointAccountTest {
     @Test
-    fun `paying the entire balance leaves a zero balance`() {
-        val account = PointAccount(userId = 1L)
-        account.charge(Money(3_000))
-
-        account.pay(Money(3_000))
-
-        assertThat(account.balance).isEqualTo(Money.ZERO)
-    }
-
-    @Test
-    fun `paying zero is rejected without changing the balance`() {
-        val account = PointAccount(userId = 1L)
-        account.charge(Money(3_000))
-
-        assertThrows<InvalidPaymentAmountException> { account.pay(Money.ZERO) }
-
-        assertThat(account.balance).isEqualTo(Money(3_000))
-    }
-
-    @Test
-    fun `paying 4000 from a 3000 balance rejects insufficient points and preserves the balance`() {
-        val account = PointAccount(userId = 1L)
-        account.charge(Money(3_000))
-
-        assertThrows<InsufficientPointsException> { account.pay(Money(4_000)) }
-
-        assertThat(account.balance).isEqualTo(Money(3_000))
-    }
-
-    @Test
     fun `a new account starts with a zero balance`() {
         val account = PointAccount(userId = 1L)
 

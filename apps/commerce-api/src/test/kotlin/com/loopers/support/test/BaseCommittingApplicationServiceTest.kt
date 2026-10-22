@@ -171,7 +171,7 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
      * [runConcurrently]의 결과를 성공·업무 거절·기술 오류로 센다. [expectedRejections]는 그 테스트가 기대하는 업무 거절의 예외 타입이다.
      * 타입이 정확히 같은 예외만 업무 거절로 세므로, 상위 타입(`RuleViolationException`)을 넘겨 다른 거절까지 셀 수 없다.
      * 나머지 예외는 모두 기술 오류다. API가 409로 바꾸는 잠금 실패(`CannotAcquireLockException` 등)도 여기서는 기술 오류다.
-     * 그래서 기술 오류가 품절이나 포인트 부족으로 섞여 통과하지 않는다.
+     * 그래서 기술 오류가 품절이나 이미 확정된 주문의 거절로 섞여 통과하지 않는다.
      */
     protected fun tally(results: List<Result<*>>, vararg expectedRejections: KClass<out Throwable>): Outcomes {
         val exceptions = results.mapNotNull { it.exceptionOrNull() }

@@ -89,15 +89,6 @@ class Order(
         }
     }
 
-    /** 포인트로 결제해 바로 확정한다. PG로 결제하는 주문은 [startPayment]로 시작한다. 포인트 결제의 길과 함께 지운다(ADR 0027). */
-    fun confirm() {
-        ensureDraft()
-
-        paymentMethod = PaymentMethod.POINT
-        confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
-        status = OrderStatus.CONFIRMED
-    }
-
     fun startPayment() {
         ensureDraft()
 

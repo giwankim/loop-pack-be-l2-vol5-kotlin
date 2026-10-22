@@ -49,20 +49,4 @@ class PointAccount(
 
         balance = balance + amount
     }
-
-    /**
-     * 결제액만큼 잔액을 줄인다. 어느 주문의 결제인지는 모른다(ADR 0006).
-     * 주문과 재고의 변경·저장은 application이 조율한다.
-     */
-    fun pay(amount: Money) {
-        if (amount <= Money.ZERO) {
-            throw InvalidPaymentAmountException()
-        }
-
-        if (amount > balance) {
-            throw InsufficientPointsException()
-        }
-
-        balance = balance - amount
-    }
 }
