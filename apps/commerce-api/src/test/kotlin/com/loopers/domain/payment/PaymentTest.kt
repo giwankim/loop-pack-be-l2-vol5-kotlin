@@ -90,6 +90,15 @@ class PaymentTest {
         assertThat(payment.idempotencyKey).hasSize(64)
     }
 
+    /** 재요청인지는 결제를 시작한 키와 그대로 견주어 정한다. 대소문자만 다른 키는 다른 키다(ADR 0025 규칙 2). */
+    @ParameterizedTest
+    @CsvSource("Checkout-42, true", "checkout-42, false", "CHECKOUT-42, false", "Checkout-43, false")
+    fun `a payment is started only with exactly its own idempotency key`(idempotencyKey: String, startedWith: Boolean) {
+        val payment = createPayment(orderId = 42, idempotencyKey = "Checkout-42")
+
+        assertThat(payment.isStartedWith(idempotencyKey)).isEqualTo(startedWith)
+    }
+
     /** 음수는 [Money]가 먼저 거절하므로 결제가 거절하는 것은 0원이다. */
     @Test
     fun `an amount of zero is rejected at creation`() {

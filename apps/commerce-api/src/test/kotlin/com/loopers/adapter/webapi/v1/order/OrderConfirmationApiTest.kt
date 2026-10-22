@@ -53,6 +53,9 @@ class OrderConfirmationApiTest(
 
         private const val TRANSACTION_KEY = "20261022:TR:api001"
 
+        /** [CARD]가 아닌 카드의 본문. 카드 번호는 Luhn 검사를 지난다. */
+        private const val OTHER_CARD_JSON = """{"cardType":"KB","cardNo":"5555-5555-5555-4444"}"""
+
         @JvmStatic
         fun malformedKeys(): List<Arguments> {
             return listOf(
@@ -121,7 +124,7 @@ class OrderConfirmationApiTest(
         val confirmedDetail = requestDetail(orderId)
         assertThat(confirmedDetail).hasStatusOk()
         assertThat(confirmedDetail.json()).isEqualTo(confirmed.json())
-        assertAlreadyConfirmed(orderId)
+        assertKeyMismatch(orderId)
         assertThat(testPg.createCount()).isOne()
         assertStock(first, 5)
         assertStock(second, 4)
@@ -219,6 +222,102 @@ class OrderConfirmationApiTest(
             assertThat(result.response.contentAsString)
                 .doesNotContain(TRANSACTION_KEY, pgOrderId, CARD.number, CARD.number.filter(Char::isDigit))
         }
+    }
+
+    /**
+     * 같은 키로 다시 확정하면 저장된 상태로 답한다(ADR 0025 규칙 3). 결제 중이면 첫 응답처럼 202와 Location이고 본문도 같다. PG에는 생성도 조회도
+     * 더 가지 않고 재고도 다시 예약하지 않는다. 카드는 저장하지 않으므로 다른 카드여도 견주지 않는다.
+     */
+    @Test
+    fun `confirming again with the same key while the payment is pending replays 202 with the location and sends nothing`() {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        acceptCreate(amount = 2_000, pgStatus = "PENDING")
+        val first = requestConfirm(orderId, idempotencyKey = "replayed-key")
+        assertThat(first).hasStatus(HttpStatus.ACCEPTED)
+
+        val replayed = requestConfirm(orderId, idempotencyKey = "replayed-key", json = OTHER_CARD_JSON)
+        assertThat(replayed).hasStatus(HttpStatus.ACCEPTED)
+        assertThat(replayed).headers().hasValue(HttpHeaders.LOCATION, "/api/v1/orders/$orderId")
+        assertThat(replayed.json()).isEqualTo(first.json())
+
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isZero()
+        assertStock(product, 8)
+    }
+
+    /** 결제가 끝난 주문의 재요청은 성공이든 실패든 첫 응답처럼 200이고 Location이 없으며 본문도 같다. 실패의 반환도 다시 일어나지 않는다. */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, 8", "FAILED, 10")
+    fun `confirming again with the same key after the payment finished replays 200 with the first body and sends nothing`(
+        pgStatus: String,
+        stock: Int,
+    ) {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        acceptCreate(amount = 2_000, pgStatus = pgStatus)
+        val first = requestConfirm(orderId, idempotencyKey = "replayed-key")
+        assertThat(first).hasStatusOk()
+
+        val replayed = requestConfirm(orderId, idempotencyKey = "replayed-key", json = OTHER_CARD_JSON)
+        assertThat(replayed).hasStatusOk()
+        assertThat(replayed).headers().doesNotContainHeader(HttpHeaders.LOCATION)
+        assertThat(replayed.json()).isEqualTo(first.json())
+
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isZero()
+        assertStock(product, stock)
+    }
+
+    /** 결제가 있는 주문은 결제 중이든 끝났든 결제를 시작한 키로만 다시 물을 수 있다. 다른 키는 409이고 바뀌는 것이 없다(ADR 0025 규칙 3). */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, 8", "PENDING, 8", "FAILED, 10")
+    fun `confirming an order that has a payment with another key returns 409 IDEMPOTENCY_KEY_MISMATCH and changes nothing`(
+        pgStatus: String,
+        stock: Int,
+    ) {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        acceptCreate(amount = 2_000, pgStatus = pgStatus)
+        assertThat(requestConfirm(orderId, idempotencyKey = "first-key")).hasStatus2xxSuccessful()
+        val paidDetail = requestDetail(orderId)
+        assertThat(paidDetail).hasStatusOk()
+
+        val error = assertThat(requestConfirm(orderId, idempotencyKey = "second-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_MISMATCH")
+
+        assertThat(requestDetail(orderId).json()).isEqualTo(paidDetail.json())
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isZero()
+        assertStock(product, stock)
+    }
+
+    /**
+     * 키는 모든 사용자에 걸쳐 유일하므로 다른 사용자의 주문이 쓴 키도 쓸 수 없다(ADR 0025 규칙 2, 3). 재고를 예약하기 전에 거절하므로 확정 전 주문과
+     * 재고가 그대로이고, 재고가 모자란 주문(재고 1)에서도 재고 부족보다 이 거절이 앞선다.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = [10, 1])
+    fun `confirming a draft with a key another user's order used returns 409 IDEMPOTENCY_KEY_IN_USE before reserving`(
+        stock: Int,
+    ) {
+        prepareBrand()
+        val paidProduct = prepareProduct(brand, price = 1_000, stock = 10)
+        val paidId = prepareOrder(owner, listOf(paidProduct), quantity = 1).id
+        acceptCreate(amount = 1_000)
+        assertThat(requestConfirm(paidId, idempotencyKey = "shared-key")).hasStatusOk()
+        val other = prepareUser()
+        val draftProduct = prepareProduct(brand, price = 1_000, stock = stock)
+        val draftId = prepareOrder(other, listOf(draftProduct), quantity = 2).id
+        val draft = requestDetail(draftId, other.id)
+        assertThat(draft).hasStatusOk()
+
+        val error = assertThat(requestConfirm(draftId, other.id, "shared-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_IN_USE")
+
+        assertThat(requestDetail(draftId, other.id).json()).isEqualTo(draft.json())
+        assertThat(testPg.createCount()).isOne()
+        assertStock(draftProduct, stock)
     }
 
     @Test
@@ -409,23 +508,25 @@ class OrderConfirmationApiTest(
         assertStock(short, 1)
     }
 
+    /** 주인의 키를 실어도 요청자와 소유를 먼저 본다. 남의 주문은 결제가 있어도 재요청이 아니라 없는 주문과 같은 404다. */
     @Test
-    fun `requester and ownership checks precede both first confirmation and the already confirmed rejection`() {
+    fun `requester and ownership checks precede both the first confirmation and a replay of its key`() {
         prepareProduct(price = 1_000, stock = 10)
         val orderId = prepareOrder(owner, listOf(product), quantity = 1).id
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
         val otherUser = prepareUser().id
+        val key = "owner-key"
 
         fun assertAccessDenied() {
             listOf(null, Long.MAX_VALUE).forEach { requester ->
-                val body = assertThat(requestConfirm(orderId, requester)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+                val body = assertThat(requestConfirm(orderId, requester, key)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
                 body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
             }
-            val missing = requestConfirm(Long.MAX_VALUE)
+            val missing = requestConfirm(Long.MAX_VALUE, idempotencyKey = key)
             val error = assertThat(missing).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
             error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
-            val forbidden = requestConfirm(orderId, otherUser)
+            val forbidden = requestConfirm(orderId, otherUser, key)
             assertThat(forbidden).hasStatus(HttpStatus.NOT_FOUND)
             assertThat(forbidden.json()).isEqualTo(missing.json())
         }
@@ -435,25 +536,26 @@ class OrderConfirmationApiTest(
         assertThat(testPg.createCount()).isZero()
         assertStock(product, 10)
         acceptCreate(amount = 1_000)
-        val confirmed = requestConfirm(orderId)
+        val confirmed = requestConfirm(orderId, idempotencyKey = key)
         assertThat(confirmed).hasStatusOk()
         assertAccessDenied()
-        assertAlreadyConfirmed(orderId)
+        assertThat(requestConfirm(orderId, idempotencyKey = key).json()).isEqualTo(confirmed.json())
         assertThat(requestDetail(orderId).json()).isEqualTo(confirmed.json())
         assertThat(testPg.createCount()).isOne()
         assertStock(product, 9)
     }
 
     /**
-     * 확정할 수 있는지를 상품·재고보다 먼저 본다. 재고를 다 쓰고 상품·브랜드가 삭제돼도 판매 불가가 아니라 이미 확정된 주문이라는 거절이
-     * 나온다. 재고가 0인 상품은 브랜드 삭제가 함께 삭제하고(ADR 0017), 확정된 주문은 품목, 수량, 단가, 합계, 결제 결과까지 그대로 읽힌다.
+     * 결제가 있는 주문의 재요청과 키 불일치는 상품·재고보다 먼저 본다. 재고를 다 쓰고 상품·브랜드가 삭제돼도 판매 불가가 아니라, 같은 키는 저장된
+     * 상태로 답하고 다른 키는 409다. 재고가 0인 상품은 브랜드 삭제가 함께 삭제하고(ADR 0017), 확정된 주문은 품목, 수량, 단가, 합계, 결제 결과까지
+     * 그대로 읽힌다.
      */
     @Test
-    fun `re-confirming is rejected as already confirmed even after the product and its brand are deleted`() {
+    fun `a paid order replays its key and rejects another key even after its product and brand are deleted`() {
         prepareProduct(price = 1_000, stock = 3)
         val firstId = prepareOrder(owner, listOf(product), quantity = 1).id
         acceptCreate(amount = 1_000)
-        val confirmed = requestConfirm(firstId)
+        val confirmed = requestConfirm(firstId, idempotencyKey = "first-key")
         assertThat(confirmed).hasStatusOk()
         val secondId = prepareOrder(owner, listOf(product), quantity = 2).id
         acceptCreate(amount = 2_000)
@@ -462,7 +564,10 @@ class OrderConfirmationApiTest(
         deleteBrand()
 
         repeat(2) {
-            assertAlreadyConfirmed(firstId)
+            val replayed = requestConfirm(firstId, idempotencyKey = "first-key")
+            assertThat(replayed).hasStatusOk()
+            assertThat(replayed.json()).isEqualTo(confirmed.json())
+            assertKeyMismatch(firstId)
             val firstDetail = requestDetail(firstId)
             assertThat(firstDetail).hasStatusOk()
             assertThat(firstDetail.json()).isEqualTo(confirmed.json())
@@ -538,10 +643,16 @@ class OrderConfirmationApiTest(
         assertStock(second, 2)
     }
 
-    /** 확정 전이 아닌 주문은 다시 확정하면 예약도 생성도 없이 거절된다. 첫 확정의 결과는 GET으로 읽는다. */
+    /** 포인트로 확정된 주문은 다시 확정하면 예약도 생성도 없이 거절된다. 그 결과는 GET으로 읽는다. */
     private fun assertAlreadyConfirmed(orderId: Long) {
         val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
         body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_ALREADY_CONFIRMED")
+    }
+
+    /** 결제가 있는 주문은 새 키로 다시 확정하면 예약도 생성도 없이 거절된다. 첫 확정의 결과는 GET이나 같은 키로 읽는다. */
+    private fun assertKeyMismatch(orderId: Long) {
+        val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_MISMATCH")
     }
 
     /** 다음 결제의 [amount]원 생성을 [CARD]로 받아들여 PG 상태 [pgStatus]의 PG 거래로 답한다. */
@@ -569,8 +680,8 @@ class OrderConfirmationApiTest(
             .exchange()
     }
 
-    private fun requestDetail(orderId: Long): MvcTestResult {
-        return mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, owner.id).exchange()
+    private fun requestDetail(orderId: Long, requester: Long = owner.id): MvcTestResult {
+        return mvc.get().uri("/api/v1/orders/$orderId").header(UserIdHeader.NAME, requester).exchange()
     }
 
     private fun MvcTestResult.json(): JsonNode {

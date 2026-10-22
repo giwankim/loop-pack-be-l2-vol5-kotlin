@@ -7,7 +7,6 @@ import com.loopers.application.product.ProductModifyService
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.payment.CreditCard
@@ -106,21 +105,24 @@ class OrderConfirmerConcurrencyTest(
     }
 
     /**
-     * 같은 주문의 확정이 함께 풀려도 주문 행의 잠금을 먼저 얻은 하나만 재고를 예약하고 결제를 만든다(ADR 0019, ADR 0024 규칙 2).
-     * 나머지는 잠금을 기다린 뒤 결제를 시작한 주문을 읽고 예약 없이 거절된다. 재고는 다섯 번 모두 예약할 만큼 준비하므로,
-     * 주문을 잠그지 않으면 거절 대신 예약과 생성이 거듭되어 드러난다.
+     * 같은 주문의 확정이 저마다 다른 키로 함께 풀려도 주문 행의 잠금을 먼저 얻은 하나만 재고를 예약하고 결제를 만든다(ADR 0019, ADR 0024 규칙 2).
+     * 나머지는 잠금을 기다린 뒤 다른 키로 결제를 시작한 주문을 읽고 예약 없이 거절된다(ADR 0025 규칙 3). 재고는 다섯 번 모두 예약할 만큼
+     * 준비하므로, 주문을 잠그지 않으면 거절 대신 예약과 생성이 거듭되어 드러난다. 같은 키의 동시 확정은 `OrderPaymentIntegrationTest`가 본다.
      */
     @Test
-    fun `five concurrent confirmations of one draft reserve once, send one create and reject the rest as already confirmed`() {
+    fun `five concurrent confirmations of one draft with different keys reserve once, send one create and reject the rest`() {
         val initialStock = 10
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = initialStock)), quantity = 1)
         acceptSuccessfulCreate(amount = 1_000)
 
         val results = runConcurrently(List(5) { { confirm(order) } })
 
-        val outcomes = tally(results, OrderAlreadyConfirmedException::class)
+        val outcomes = tally(results, CoreException::class)
         assertThat(outcomes).isEqualTo(Outcomes(successes = 1, rejections = 4, technicalErrors = 0))
         assertThat(outcomes.total).isEqualTo(results.size)
+        results.mapNotNull { it.exceptionOrNull() as? CoreException }.forEach { exception ->
+            assertThat(exception.errorType).isEqualTo(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
+        }
         assertThat(testPg.createCount()).isOne()
         inNewTransaction {
             val persisted = orderFinder.find(user.id, order.id)
@@ -131,11 +133,11 @@ class OrderConfirmerConcurrencyTest(
     }
 
     /**
-     * 멈춘 확정은 주문과 상품을 잠근 채다. 같은 주문의 둘째 확정은 주문 잠금에서 기다리다, 풀린 뒤 결제를 시작한 주문을 읽고 거절된다.
-     * 주문을 잠그지 않으면 둘째 확정도 재고를 예약해 재고가 두 번 줄고 결제가 둘이 된다.
+     * 멈춘 확정은 주문과 상품을 잠근 채다. 다른 키로 같은 주문을 확정하는 둘째 확정은 주문 잠금에서 기다리다, 풀린 뒤 결제를 시작한 주문을 읽고
+     * 거절된다. 주문을 잠그지 않으면 둘째 확정도 확정 전 주문을 읽어 재고를 예약하므로 재고가 두 번 줄고 결제가 둘이 된다.
      */
     @Test
-    fun `confirming an order held by another confirmation waits, then is rejected as already confirmed and reserves nothing`() {
+    fun `confirming an order held by another confirmation waits, then is rejected as a key mismatch and reserves nothing`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 3)
         acceptSuccessfulCreate(amount = 3_000)
         pauseConfirmationBeforeCreatingPayment()
@@ -147,7 +149,8 @@ class OrderConfirmerConcurrencyTest(
         assertThat(second.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
         pause.release()
         assertThat(first.await().order.status).isEqualTo(OrderStatus.CONFIRMED)
-        assertThrows<OrderAlreadyConfirmedException> { second.await() }
+        val exception = assertThrows<CoreException> { second.await() }
+        assertThat(exception.errorType).isEqualTo(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
         assertThat(testPg.createCount()).isOne()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)

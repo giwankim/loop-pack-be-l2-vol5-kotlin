@@ -96,6 +96,16 @@ class Payment private constructor(
     }
 
     /**
+     * Whether [idempotencyKey] is the key this payment was started with, so a confirmation carrying it replays this payment
+     * (ADR 0025 rule 3). Keys are compared exactly, as the column does, so keys that differ only in case are different keys.
+     * The order slice asks this instead of reading the key, because it reads nothing of a payment but its status (ADR 0028
+     * rule 5).
+     */
+    fun isStartedWith(idempotencyKey: String): Boolean {
+        return idempotencyKey == this.idempotencyKey
+    }
+
+    /**
      * Reconciles this payment against a PG transaction the PG reports for its PG order ID (ADR 0021 rule 2). PG callbacks, the
      * reconciliation API, and accepted create responses all end up here. The first rule that applies wins:
      *

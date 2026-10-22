@@ -3,13 +3,15 @@ package com.loopers.application.order
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.required.OrderRepository
+import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentReconciler
 import com.loopers.application.payment.provided.PaymentStarter
+import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.product.provided.StockDeductor
 import com.loopers.application.product.provided.StockRestorer
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderAlreadyConfirmedException
-import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.order.PaymentMethod
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgRejection
@@ -35,25 +37,44 @@ class OrderPaymentSteps(
     private val orderInfoAssembler: OrderInfoAssembler,
     private val stockDeductor: StockDeductor,
     private val stockRestorer: StockRestorer,
+    private val paymentFinder: PaymentFinder,
+    private val paymentValidator: PaymentValidator,
     private val paymentStarter: PaymentStarter,
     private val paymentReconciler: PaymentReconciler,
 ) {
     /**
-     * TX A. 요청자의 확정 전 주문을 잠그고, 재고를 예약하고, 주문을 결제 중인 주문으로 바꾸고, 결제를 결과 미확인으로 만든다.
-     * 이 커밋이 발송 기록이다. 결과 미확인 결제를 커밋한 요청만 생성을 보낸다(ADR 0024 규칙 2).
+     * TX A. 요청자의 주문을 잠그고 이 차례로 본다(ADR 0025 규칙 3).
      *
-     * - 확정 전이 아닌 주문은 상품을 읽기 전에 `ORDER_ALREADY_CONFIRMED`로 거절한다. 같은 주문의 뒤진 확정은 주문 잠금을 기다린 뒤
-     *   결제 중인 주문을 읽고 여기서 거절된다.
-     * - 재고 부족과 주문할 수 없는 상품은 결제를 만들기 전에 거절된다. 이 트랜잭션이 되돌아가므로 주문은 확정 전 그대로이고 멱등 키도 쓰이지 않는다.
-     * - 잠금은 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 바뀌면)의 차례다(ADR 0028 규칙 4). 상품은 [StockDeductor]가,
-     *   revision은 커밋 앞의 훅이 잠근다. 결제는 새 행으로 들어간다.
+     * 1. 없거나 남의 주문이면 [OrderFinder.findForUpdate]가 `ORDER_NOT_FOUND`로 거절한다.
+     * 2. 포인트로 확정된 주문은 `ORDER_ALREADY_CONFIRMED`다.
+     * 3. 결제가 있는 주문에 결제를 시작한 키로 온 확정은 재요청이다. 아무것도 바꾸지 않고 저장된 상태로 답하며, 보낼 결제가 없다. 다른 키는
+     *    `IDEMPOTENCY_KEY_MISMATCH`다. 같은 주문의 뒤진 확정은 주문 잠금을 기다린 뒤 결제가 있는 주문을 읽고 여기로 온다.
+     * 4. 확정 전 주문에 다른 결제가 쓴 키면 [PaymentValidator]가 `IDEMPOTENCY_KEY_IN_USE`로 거절한다.
+     * 5. 재고를 예약한다. 재고 부족과 주문할 수 없는 상품은 결제를 만들기 전에 거절된다. 이 트랜잭션이 되돌아가므로 주문은 확정 전 그대로이고
+     *    멱등 키도 쓰이지 않는다.
+     * 6. 주문을 결제 중인 주문으로 바꾸고 결제를 결과 미확인으로 만든다. 이 커밋이 발송 기록이다. 결과 미확인 결제를 커밋한 요청만 생성을
+     *    보낸다(ADR 0024 규칙 2).
+     *
+     * 1–4는 상품을 읽기 전이다. 잠금은 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 바뀌면)의 차례다(ADR 0028 규칙 4). 상품은
+     * [StockDeductor]가, revision은 커밋 앞의 훅이 잠근다. 결제는 잠그지 않는다. 결제를 바꾸는 트랜잭션이 모두 주문을 먼저 잠그므로 주문 잠금
+     * 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 보고, 새 결제는 새 행으로 들어간다.
      */
     fun startPayment(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         val order = orderFinder.findForUpdate(userId, orderId)
-        if (order.status != OrderStatus.DRAFT) {
+        if (order.paymentMethod == PaymentMethod.POINT) {
             throw OrderAlreadyConfirmedException()
         }
 
+        if (order.paymentMethod == PaymentMethod.PG) {
+            val payment = paymentFinder.findByOrder(order.id)
+            if (!payment.isStartedWith(idempotencyKey)) {
+                throw CoreException(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
+            }
+
+            return StartedPayment(OrderInfo(order, payment.status), payment = null)
+        }
+
+        paymentValidator.validateForStart(idempotencyKey)
         reserveStock(order)
         order.startPayment()
         val payment = paymentStarter.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
@@ -140,9 +161,12 @@ class OrderPaymentSteps(
         return order.lineItems.associate { item -> item.productId to item.quantity }
     }
 
-    /** TX A가 커밋한 것. [info]는 저장된 상태(결제 중인 주문과 결과 미확인 결제)이고, [payment]는 PG에 생성을 보낼 결제다. */
+    /**
+     * TX A의 답. [info]는 저장된 상태이고, [payment]는 PG에 생성을 보낼 결제다. 결제를 시작했으면 결제 중인 주문과 결과 미확인 결제를
+     * 커밋했고, 재요청이면 바꾼 것이 없어 [info]는 그때의 주문과 결제 상태, [payment]는 null이다.
+     */
     data class StartedPayment(
         val info: OrderInfo,
-        val payment: Payment,
+        val payment: Payment?,
     )
 }

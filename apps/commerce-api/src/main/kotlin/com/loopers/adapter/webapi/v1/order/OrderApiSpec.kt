@@ -63,13 +63,18 @@ interface OrderApiSpec {
             "주문 합계가 PG가 받는 금액(9,223,372,036,854,775,807원)을 넘어도 PG를 부르기 전에 400입니다. " +
             "재고를 예약하고 PG에 PG 거래의 생성을 한 번 보내며 포인트는 쓰지 않습니다. " +
             "PG가 성공을 알리면 확정된 주문으로 200, 처리 중이거나 답을 받지 못하면 결제 중인 주문으로 202와 Location을 돌려줍니다. " +
+            "PG가 거절하거나 실패를 알리면 결제에 실패한 주문으로 200이고, 예약한 재고를 돌려줍니다. " +
             "결제 중인 주문의 결과는 Location의 상세 조회로 읽습니다. " +
+            "같은 멱등 키로 다시 확정하면 PG를 다시 부르지 않고 지금 저장된 상태로 답합니다. 결제 중이면 202와 Location, 결제가 끝났으면 " +
+            "실패여도 200이고, 카드는 견주지 않습니다. " +
+            "없거나 다른 사용자의 주문은 키와 상관없이 404입니다. 포인트로 확정된 이전 주문은 409(ORDER_ALREADY_CONFIRMED), " +
+            "결제를 시작한 주문에 다른 키는 409(IDEMPOTENCY_KEY_MISMATCH), 다른 주문이 쓴 키는 다른 사용자의 주문이어도 " +
+            "409(IDEMPOTENCY_KEY_IN_USE)이며, 셋 다 재고를 예약하거나 PG를 부르기 전입니다. " +
             "재고가 부족하면 409(INSUFFICIENT_STOCK), 주문할 수 없는 상품이 있으면 404(ORDER_PRODUCT_NOT_AVAILABLE)이며, " +
-            "두 거절에서 주문은 확정 전 그대로라 다시 확정할 수 있습니다. " +
-            "확정 전이 아닌 주문은 409(ORDER_ALREADY_CONFIRMED)입니다. 없거나 다른 사용자의 주문은 404입니다. " +
+            "두 거절에서 주문은 확정 전 그대로이고 키도 쓰이지 않아 같은 키로 다시 확정할 수 있습니다. " +
             "응답에는 결제수단(paymentMethod)과 결제 상태(paymentStatus)가 있고, 거래 키·PG 주문 번호·카드는 없습니다.",
         responses = [
-            DocumentedResponse(responseCode = "200", description = "결제가 성공해 확정된 주문"),
+            DocumentedResponse(responseCode = "200", description = "결제가 성공해 확정된 주문, 또는 결제에 실패한 주문"),
             DocumentedResponse(
                 responseCode = "202",
                 description = "PG가 아직 결과를 알리지 않은 결제 중인 주문",
