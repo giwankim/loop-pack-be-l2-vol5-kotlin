@@ -50,7 +50,7 @@ class OrderPaymentIntegrationTest(
         private const val TRANSACTION_KEY = "20261022:TR:9577c5"
     }
 
-    /** 결제 중인 주문 곁의 쓰기를 넣는 자리([whilePaymentPending]). stub이 없으면 실제 PG 호출 그대로다. */
+    /** 결제 중인 주문 곁의 쓰기와 읽기를 넣는 자리([whilePaymentPending]). stub이 없으면 실제 PG 호출 그대로다. */
     @MockkSpyBean
     private lateinit var pgTransactionService: PgTransactionService
 
@@ -189,6 +189,39 @@ class OrderPaymentIntegrationTest(
             assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
             assertThat(payment.transactionKey).isNull()
             assertThat(productFinder.find(product.id).stock).isEqualTo(5)
+        }
+    }
+
+    /**
+     * 생성 전 거절도 결제와 맞아야 반영한다. PG가 되돌려 준 금액이 보낸 것과 다르면 충돌이라, TX B는 결제를 결과 미확인으로, 주문을 결제 중인 주문으로
+     * 두고 예약도 돌려주지 않는다(ADR 0028 규칙 3). 다른 금액을 말하는 거절은 이 결제에 PG 거래가 없다는 증거가 아니다.
+     */
+    @Test
+    fun `a rejection echoing another amount conflicts and leaves the payment unknown and the stock reserved`() {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        val otherAmountRejection =
+            """{"code":"${TestPg.REJECTED_BEFORE_CREATE}","orderId":"$pgOrderId","amount":1000,"transactionCreated":false}"""
+        testPg.answersCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = CreditCard(type = request.cardType, number = request.cardNo),
+            httpStatus = 422,
+            body = otherAmountRejection,
+        )
+
+        val pending = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+
+        assertThat(pending.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+        assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
+        assertThat(testPg.createCount()).isOne()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            val payment = paymentFinder.findByOrder(order.id)
+            assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
+            assertThat(payment.transactionKey).isNull()
+            assertThat(productFinder.find(product.id).stock).isEqualTo(3)
         }
     }
 
@@ -378,14 +411,14 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 확정의 PG 호출이 생성을 보내기 바로 앞에서 [write]를 한다. TX A가 커밋한 뒤이고 TX B 전이라, 결제 중인 주문 곁에서 커밋되는 쓰기다.
-     * PG 호출은 어느 트랜잭션에도 들지 않으므로 [write]가 부른 포트는 자기 트랜잭션에서 커밋한다. Service는 CGLIB 프록시이므로 프록시가 감싼 spy에
-     * stub한다.
+     * 확정의 PG 호출이 생성을 보내기 바로 앞에서 [action]을 한다. TX A가 커밋한 뒤이고 TX B 전이라, [action]의 쓰기는 결제 중인 주문 곁에서 커밋되고
+     * 읽기는 TX A가 커밋한 것을 본다. PG 호출은 어느 트랜잭션에도 들지 않으므로 [action]이 부른 포트는 자기 트랜잭션에서 돈다. Service는 CGLIB
+     * 프록시이므로 프록시가 감싼 spy에 stub한다.
      */
-    private fun whilePaymentPending(write: () -> Unit) {
+    private fun whilePaymentPending(action: () -> Unit) {
         val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
         every { target.create(any(), any()) } answers {
-            write()
+            action()
             callOriginal()
         }
     }
