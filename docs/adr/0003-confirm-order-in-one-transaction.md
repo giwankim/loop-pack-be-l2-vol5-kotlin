@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0024
 date: 2026-09-18
 ---
 
 # 주문 확정은 여러 애그리거트를 하나의 트랜잭션에서 변경한다
+
+> 2026-10-22 [ADR 0024](./0024-confirm-calls-the-pg-between-two-transactions.md)로 대체했다. 확정은 이제 포인트 대신 PG로 결제하고, 한 트랜잭션이 아니라 TX A(주문 잠금, 재고 예약, 결제 시작), 트랜잭션 밖의 PG 호출, TX B(PG의 답을 결제와 주문에 반영)의 세 단계다. 확정은 포인트 계정을 읽지도 바꾸지도 않는다([ADR 0027](./0027-point-payment-path-is-deleted.md)). 조율하는 쪽과 잠금의 차례는 [ADR 0028](./0028-order-slice-orchestrates-the-payment.md)이 정한다. 아래는 포인트로 결제하던 확정의 기록으로 남긴다. "생성과 확정의 차이"의 DRAFT 생성 줄은 그대로 유효하다.
 
 주문 확정은 주문 상태·결제 결과, 모든 품목의 재고, 포인트 잔액과 성공 이력을 함께 반영해야 한다. `Order`와 그 안의 `OrderLineItem`, 사용자별 `PointAccount`, 재고를 가진 `Product`의 책임은 나누되, application이 하나의 DB 트랜잭션에서 각 애그리거트의 행위를 호출하고 결과를 저장한다. 이것은 카탈로그 설계의 단일 애그리거트 변경 원칙에 대한 명시적인 주문 확정 예외다.
 

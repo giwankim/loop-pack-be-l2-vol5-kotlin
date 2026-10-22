@@ -26,11 +26,11 @@ date: 2026-10-19
    - PG에게서 답을 얻지 못한 것은 도메인에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다.
    - `PgTransaction`은 PG가 그 순간 말한 PG 거래의 사본이며 값 객체다. 커머스의 식별자도, 표도, 생애도 없다.
 3. **PG 포트는 결제 슬라이스의 required 포트다.** `application.payment.required.PaymentGateway`가 `requestPayment`, `retrieveTransaction`, `listTransactions`를 가지고, 결과를 값으로 돌려준다([ADR 0022](./0022-only-the-pre-create-rejection-proves-no-pg-transaction.md)). 구현은 새 어댑터 층 `adapter.integration.pg`의 `LocalPgGateway`다. (2026-10-20: `requestPayment`를 `createTransaction`으로 바꿨다. 이 호출은 PG 거래를 만든다. Stripe와 Toss의 `confirm`은 PG가 이미 만든 객체를 그 키로 승인하는 일이고, 이 맥락에서 `confirm`은 주문을 확정하다의 이름이다. 같은 날 [ADR 0023](./0023-pg-port-returns-transactions-and-throws-the-rest.md)이 결과를 값 대신 예외로 바꿨다. 포트는 PG 거래만 돌려주고 나머지는 결과마다 다른 예외로 던진다. [결제 설계 3.2](../design/payments.md).) (2026-10-22: `listTransactions`는 `retrieveTransactionByPgOrderId`가 되었고 PG 거래를 하나까지 돌려준다. 규칙 2의 메모.)
-   - 어댑터는 HTTP를 위의 값으로 옮길 뿐 커머스의 기록과 견주지 않는다(부패 방지 계층). 주문 슬라이스는 거래 키, PG 상태, 카드를 보지 않는다.
+   - 어댑터는 HTTP를 위의 값으로 옮길 뿐 커머스의 기록과 견주지 않는다(부패 방지 계층). 주문 슬라이스는 거래 키, PG 상태, 카드를 보지 않는다. (2026-10-22: [ADR 0028](./0028-order-slice-orchestrates-the-payment.md) 규칙 5로 "주문 슬라이스는 결제의 값을 옮기되 읽지 않는다"가 되었다. 확정을 조율하는 주문 슬라이스가 카드와 PG 거래를 결제 슬라이스의 부름 사이에서 넘기고, 읽는 것은 결제 상태뿐이다.)
    - `HexagonalArchitectureTest`는 `adapter.integration`을 다른 두 어댑터와 같은 규칙의 층으로 더한다. 어느 층도 그것을 쓰지 않고, 그것도 다른 어댑터를 쓰지 않는다.
 4. **결제와 주문은 응용 서비스의 트랜잭션이 함께 바꾼다.** 확정이 주문, 상품, 포인트 계정을 한 트랜잭션에서 잠그고 바꾸듯([ADR 0003](./0003-confirm-order-in-one-transaction.md), [ADR 0019](./0019-order-and-point-account-rows-locked-on-first-read.md)), PG의 결과를 반영하는 트랜잭션(과제의 TX B)이 결제, 주문, 예약을 함께 바꾼다.
    - 주문이 결제를 부르고 결제가 주문을 바꾸면 `applicationSlicesAreFreeOfCycles`가 깨진다. 브랜드 삭제의 `ProductDeleter`처럼 부르는 쪽이 자기 `required` 패키지에 인터페이스를 두고 다른 쪽 서비스가 구현해, 의존을 한 방향으로 둔다.
-   - 어느 쪽이 조율하고 어느 쪽이 인터페이스를 두는지는 2단계가 정한다.
+   - 어느 쪽이 조율하고 어느 쪽이 인터페이스를 두는지는 2단계가 정한다. (2026-10-22: [ADR 0028](./0028-order-slice-orchestrates-the-payment.md)이 정했다. 주문 슬라이스의 확정이 조율하고, 결제 슬라이스는 주문을 모른 채 provided 포트를 내준다. 결제를 만드는 포트는 TX A에, PG 거래를 반영하는 포트는 TX B에 참여하고, PG 거래를 만드는 포트는 트랜잭션 밖(`NEVER`)에서 돈다. 결제가 주문을 부르지 않아 의존이 주문에서 결제로 한 방향이므로, 고리를 끊는 required 인터페이스는 두지 않았다.)
 
 ## 고르지 않은 것
 
