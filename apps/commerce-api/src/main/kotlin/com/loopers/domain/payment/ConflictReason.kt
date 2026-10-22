@@ -1,10 +1,10 @@
 package com.loopers.domain.payment
 
-/** 결제와 맞지 않는 PG 거래나 생성 전 거절의 까닭(`CONTEXT.md` 충돌). */
+/**
+ * 결제와 맞지 않는 PG 거래나 생성 전 거절의 까닭(`CONTEXT.md` 충돌). PG 주문 번호 하나에 PG 거래가 둘 이상인 충돌은 PG의 답만으로
+ * 정해져 결제에 들어오지 않으므로 여기 없다. PG 주문 번호의 조회가 `MultiplePgTransactionsException`으로 던진다(ADR 0028).
+ */
 enum class ConflictReason {
-    /** PG 주문 번호 하나에 PG 거래가 둘 이상이다. */
-    MULTIPLE_TRANSACTIONS,
-
     /** 답의 PG 주문 번호가 결제의 것과 다르다. */
     PG_ORDER_ID_MISMATCH,
 

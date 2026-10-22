@@ -3,6 +3,7 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.application.payment.provided.MultiplePgTransactionsException
 import com.loopers.application.payment.provided.PgOutcomeUnknownException
 import com.loopers.application.payment.provided.PgRejectedException
 import com.loopers.application.payment.provided.PgUnavailableException
@@ -152,10 +153,17 @@ class PaymentGatewayTest(
             return MALFORMED_TRANSACTIONS + listOf("", "[$WELL_FORMED_TRANSACTION]")
         }
 
-        /** 목록 조회의 200에 실려 와도 PG 거래의 배열로 읽지 않는 본문. 읽을 수 없는 PG 거래를 담은 배열, 배열 대신 객체, null 원소, null이다. */
+        /**
+         * PG 주문 번호 조회의 200에 실려 와도 PG 거래의 배열로 읽지 않는 본문. 읽을 수 없는 PG 거래를 담은 배열, 배열 대신 객체, null 원소,
+         * null이다. 마지막은 둘째 원소의 PG 상태만 모르는 배열이다. 원소를 모두 읽은 뒤에 세므로 PG 거래가 둘이라고 답하지 않는다.
+         */
         @JvmStatic
-        fun unreadableListBodies(): List<String> {
-            return MALFORMED_TRANSACTIONS.map { "[$it]" } + listOf(WELL_FORMED_TRANSACTION, "[null]", "null")
+        fun unreadableArrayBodies(): List<String> {
+            val unknownStatus =
+                """{"transactionKey":"TEST-TX-0041","orderId":"$PG_ORDER_ID","amount":$AMOUNT,"status":"CANCELLED"}"""
+
+            return MALFORMED_TRANSACTIONS.map { "[$it]" } +
+                listOf(WELL_FORMED_TRANSACTION, "[null]", "null", "[$WELL_FORMED_TRANSACTION,$unknownStatus]")
         }
     }
 
@@ -417,17 +425,17 @@ class PaymentGatewayTest(
     }
 
     @Test
-    fun `a list lookup answered with an empty array returns an empty list instead of throwing PgUnavailableException`() {
+    fun `a PG order number lookup answered with an empty array returns null instead of throwing PgUnavailableException`() {
         pg.hasTransactions(pgOrderId = PG_ORDER_ID)
 
-        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
+        val found = paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID)
 
-        assertThat(transactions).isEmpty()
+        assertThat(found).isNull()
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
     @Test
-    fun `a list lookup answered with one transaction returns that transaction`() {
+    fun `a PG order number lookup answered with one transaction returns that transaction`() {
         val transaction = PgTransaction(
             transactionKey = TRANSACTION_KEY,
             pgOrderId = PG_ORDER_ID,
@@ -436,13 +444,14 @@ class PaymentGatewayTest(
         )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, transaction)
 
-        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
+        val found = paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID)
 
-        assertThat(transactions).containsExactly(transaction)
+        assertThat(found).isEqualTo(transaction)
     }
 
+    /** PG의 차례나 PG 상태로 하나를 고르지 않는다. 어느 것이 결제의 PG 거래인지는 PG의 답이 말하지 않는다(ADR 0028). */
     @Test
-    fun `a list lookup answered with two transactions returns both and reaches the PG as one GET`() {
+    fun `a PG order number lookup answered with two transactions throws MultiplePgTransactionsException after one GET`() {
         val failed = PgTransaction(
             transactionKey = "TEST-TX-0041",
             pgOrderId = PG_ORDER_ID,
@@ -457,9 +466,11 @@ class PaymentGatewayTest(
         )
         pg.hasTransactions(pgOrderId = PG_ORDER_ID, failed, succeeded)
 
-        val transactions = paymentGateway.listTransactions(PG_ORDER_ID)
+        val exception = assertThrows<MultiplePgTransactionsException> {
+            paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID)
+        }
 
-        assertThat(transactions).containsExactly(failed, succeeded)
+        assertThat(exception.message).isEqualTo("PG 주문 번호 하나에 PG 거래가 2개다.")
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
@@ -488,13 +499,13 @@ class PaymentGatewayTest(
      * PG는 `+`를 공백으로 읽는다. 어느 쪽이든 스텁이 정확히 맞추는 `orderId`와 다르다.
      */
     @Test
-    fun `a list lookup sends the PG order number as one exact orderId query parameter even with reserved characters`() {
+    fun `a PG order number lookup sends the number as one exact orderId query parameter even with reserved characters`() {
         val pgOrderId = "LP-ORD+42&orderId=43"
         pg.hasTransactions(pgOrderId = pgOrderId)
 
-        val transactions = paymentGateway.listTransactions(pgOrderId)
+        val found = paymentGateway.retrieveTransactionByPgOrderId(pgOrderId)
 
-        assertThat(transactions).isEmpty()
+        assertThat(found).isNull()
         assertThat(pg.lookupCount()).isEqualTo(1)
     }
 
@@ -513,7 +524,7 @@ class PaymentGatewayTest(
     fun `a lookup that outlasts the response timeout throws PgUnavailableException after exactly one GET`() {
         pg.stallsLookup()
 
-        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID) }
 
         assertThat(exception.message).isEqualTo("SocketTimeoutException")
         assertThat(pg.lookupCount()).isEqualTo(1)
@@ -533,10 +544,12 @@ class PaymentGatewayTest(
 
     @ParameterizedTest
     @ValueSource(ints = [201, 204, 400, 404, 500, 503])
-    fun `a list lookup answered with a status other than 200, 404 included, throws PgUnavailableException`(httpStatus: Int) {
+    fun `a PG order number lookup answered with a status other than 200, 404 included, throws PgUnavailableException`(
+        httpStatus: Int,
+    ) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = httpStatus)
 
-        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID) }
 
         assertThat(exception.message).isEqualTo("HTTP $httpStatus")
     }
@@ -552,11 +565,13 @@ class PaymentGatewayTest(
     }
 
     @ParameterizedTest
-    @MethodSource("unreadableListBodies")
-    fun `a list lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(body: String) {
+    @MethodSource("unreadableArrayBodies")
+    fun `a PG order number lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(
+        body: String,
+    ) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 200, body = body)
 
-        val exception = assertThrows<PgUnavailableException> { paymentGateway.listTransactions(PG_ORDER_ID) }
+        val exception = assertThrows<PgUnavailableException> { paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID) }
 
         assertThat(exception.cause).isNull()
     }

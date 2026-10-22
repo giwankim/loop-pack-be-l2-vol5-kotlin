@@ -1,5 +1,6 @@
 package com.loopers.adapter.integration.pg
 
+import com.loopers.application.payment.provided.MultiplePgTransactionsException
 import com.loopers.application.payment.provided.PgOutcomeUnknownException
 import com.loopers.application.payment.provided.PgRejectedException
 import com.loopers.application.payment.provided.PgUnavailableException
@@ -148,27 +149,33 @@ class LocalPgGateway(
         return response.readPgTransaction()
     }
 
-    override fun listTransactions(pgOrderId: String): List<PgTransaction> {
+    override fun retrieveTransactionByPgOrderId(pgOrderId: String): PgTransaction? {
         return try {
             restClient.get()
                 .uri(LIST_PATH, pgOrderId)
-                .exchange { _, response -> readListResponse(response) }
+                .exchange { _, response -> readRetrieveByPgOrderIdResponse(response) }
         } catch (e: RestClientException) {
             throw PgUnavailableException(e.failureKind())
         }
     }
 
     /**
-     * Only a 200 with a JSON array of well-formed PG transactions is a result, and an empty array finds none. Every other status,
-     * 404 included, is unavailable.
+     * Only a 200 with a JSON array of well-formed PG transactions is a result. An empty array finds none, one element is that
+     * transaction, and more than one is [MultiplePgTransactionsException]. Every element is read before counting, so an array
+     * with an unreadable element is unavailable whatever its size. Every other status, 404 included, is unavailable.
      */
-    private fun readListResponse(response: ConvertibleClientHttpResponse): List<PgTransaction> {
+    private fun readRetrieveByPgOrderIdResponse(response: ConvertibleClientHttpResponse): PgTransaction? {
         val status = response.statusCode.value()
         if (status != HttpStatus.OK.value()) {
             throw PgUnavailableException("HTTP $status")
         }
 
-        return response.readPgTransactions()
+        val transactions = response.readPgTransactions()
+        if (transactions.size > 1) {
+            throw MultiplePgTransactionsException(transactions.size)
+        }
+
+        return transactions.singleOrNull()
     }
 }
 

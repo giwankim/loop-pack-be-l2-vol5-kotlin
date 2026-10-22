@@ -93,28 +93,20 @@ class Payment(
     }
 
     /**
-     * Reconciles this payment against the PG transactions the PG reports for its PG order ID (ADR 0021 rule 2). PG callbacks,
-     * the reconciliation API, and accepted create responses all end up here. The first rule that applies wins:
+     * Reconciles this payment against a PG transaction the PG reports for its PG order ID (ADR 0021 rule 2). PG callbacks, the
+     * reconciliation API, and accepted create responses all end up here. The first rule that applies wins:
      *
-     * 1. No transactions: nothing new is learned, so nothing changes. Not finding one is not a failure.
-     * 2. Several transactions: there is no telling which one is this payment's, so it is a conflict.
-     * 3. A different PG order ID, amount, or already known transaction key is a conflict.
-     * 4. A payment failed by a pre-create rejection conflicts with any transaction, whatever its status, because the rejection
+     * 1. A different PG order ID, amount, or already known transaction key is a conflict.
+     * 2. A payment failed by a pre-create rejection conflicts with any transaction, whatever its status, because the rejection
      *    proved none existed (ADR 0022).
-     * 5. A finished payment conflicts with the opposite outcome and stays as it is on the same outcome or `PENDING`.
-     * 6. A pending payment stays as it is on another `PENDING`.
-     * 7. Otherwise the payment records the transaction key and moves to the reported status.
+     * 3. A finished payment conflicts with the opposite outcome and stays as it is on the same outcome or `PENDING`.
+     * 4. A pending payment stays as it is on another `PENDING`.
+     * 5. Otherwise the payment records the transaction key and moves to the reported status.
+     *
+     * Finding no transaction and finding several never get here. Both depend on the PG's answer alone, so the lookup by PG
+     * order ID handles them (ADR 0028).
      */
-    fun reconcile(transactions: List<PgTransaction>): ReconcileResult {
-        if (transactions.isEmpty()) {
-            return ReconcileResult.Unchanged
-        }
-
-        if (transactions.size > 1) {
-            return ReconcileResult.Conflicted(ConflictReason.MULTIPLE_TRANSACTIONS)
-        }
-
-        val transaction = transactions.single()
+    fun reconcile(transaction: PgTransaction): ReconcileResult {
         val reason = conflictReasonFor(transaction.pgOrderId, transaction.amount)
         if (reason != null) {
             return ReconcileResult.Conflicted(reason)

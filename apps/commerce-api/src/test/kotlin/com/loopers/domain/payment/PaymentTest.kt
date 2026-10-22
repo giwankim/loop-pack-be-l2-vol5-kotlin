@@ -85,29 +85,12 @@ class PaymentTest {
         assertThat(payment.amount).isEqualTo(Money(1))
     }
 
-    /**
-     * 대사에서 PG 거래를 찾지 못한 것은 "결제되지 않았다"가 아니다(`CONTEXT.md` 결과 미확인). 처리 중 결제도 결과 미확인으로
-     * 돌아가지 않는다.
-     */
-    @ParameterizedTest
-    @EnumSource(PaymentStatus::class)
-    fun `reconciling no transaction leaves a payment of any status unchanged`(status: PaymentStatus) {
-        val payment = paymentIn(status)
-        val transactionKey = payment.transactionKey
-
-        val result = payment.reconcile(emptyList())
-
-        assertThat(result).isEqualTo(ReconcileResult.Unchanged)
-        assertThat(payment.status).isEqualTo(status)
-        assertThat(payment.transactionKey).isEqualTo(transactionKey)
-    }
-
     @Test
     fun `a pending transaction moves an unknown payment to pending and gives it the transaction key`() {
         val payment = createPayment(orderId = 42)
         val transaction = createPgTransaction(payment, status = PgStatus.PENDING)
 
-        val result = payment.reconcile(listOf(transaction))
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Changed(from = PaymentStatus.UNKNOWN, to = PaymentStatus.PENDING))
         assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
@@ -118,9 +101,7 @@ class PaymentTest {
     fun `a pending transaction leaves a pending payment unchanged`() {
         val payment = paymentIn(PaymentStatus.PENDING)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
@@ -137,7 +118,7 @@ class PaymentTest {
         val payment = paymentIn(from)
         val transaction = createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)
 
-        val result = payment.reconcile(listOf(transaction))
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Changed(from = from, to = to))
         assertThat(payment.status).isEqualTo(to)
@@ -152,27 +133,11 @@ class PaymentTest {
     ) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
-    }
-
-    /** PG 주문 번호 하나에 PG 거래가 둘 이상이면 어느 것이 이 결제인지 모르므로 고르지 않는다. */
-    @Test
-    fun `two transactions report a multiple transactions conflict and leave the payment unknown`() {
-        val payment = createPayment(orderId = 42)
-        val transactions = listOf(
-            createPgTransaction(payment, status = PgStatus.SUCCESS),
-            createPgTransaction(payment, status = PgStatus.SUCCESS),
-        )
-
-        val result = payment.reconcile(transactions)
-
-        assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.MULTIPLE_TRANSACTIONS))
-        assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(payment.transactionKey).isNull()
     }
 
     /** 다른 주문의 PG 거래가 이 결제를 끝내거나 거래 키를 정하지 않는다. */
@@ -180,7 +145,7 @@ class PaymentTest {
     fun `a transaction for another PG order number reports a PG order conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043")))
+        val result = payment.reconcile(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043"))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.PG_ORDER_ID_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
@@ -191,7 +156,7 @@ class PaymentTest {
     fun `a transaction for another amount reports an amount conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42, amount = Money(15_000))
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, amount = Money(15_001))))
+        val result = payment.reconcile(createPgTransaction(payment, amount = Money(15_001)))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.AMOUNT_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
@@ -209,9 +174,7 @@ class PaymentTest {
     ) {
         val payment = paymentIn(known)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = "TEST-TX-OTHER", status = PgStatus.SUCCESS)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = "TEST-TX-OTHER", status = PgStatus.SUCCESS))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_KEY_MISMATCH))
         assertThat(payment.status).isEqualTo(known)
@@ -227,7 +190,7 @@ class PaymentTest {
     ) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH))
         assertThat(payment.status).isEqualTo(finished)
@@ -240,30 +203,26 @@ class PaymentTest {
      */
     @ParameterizedTest
     @CsvSource(
-        "2, true, true, true, MULTIPLE_TRANSACTIONS",
-        "1, true, true, true, PG_ORDER_ID_MISMATCH",
-        "1, false, true, true, AMOUNT_MISMATCH",
-        "1, false, false, true, TRANSACTION_KEY_MISMATCH",
+        "true, true, true, PG_ORDER_ID_MISMATCH",
+        "false, true, true, AMOUNT_MISMATCH",
+        "false, false, true, TRANSACTION_KEY_MISMATCH",
     )
     fun `an answer that breaks several rules reports the first broken rule in table order`(
-        count: Int,
         otherPgOrderId: Boolean,
         otherAmount: Boolean,
         otherKey: Boolean,
         reason: ConflictReason,
     ) {
         val payment = paymentIn(PaymentStatus.SUCCESS)
-        val transactions = List(count) {
-            createPgTransaction(
-                payment,
-                transactionKey = if (otherKey) "TEST-TX-OTHER-$it" else TRANSACTION_KEY,
-                pgOrderId = if (otherPgOrderId) "LP-ORD-0000000043" else null,
-                amount = if (otherAmount) payment.amount + Money(1) else null,
-                status = PgStatus.SUCCESS,
-            )
-        }
+        val transaction = createPgTransaction(
+            payment,
+            transactionKey = if (otherKey) "TEST-TX-OTHER" else TRANSACTION_KEY,
+            pgOrderId = if (otherPgOrderId) "LP-ORD-0000000043" else null,
+            amount = if (otherAmount) payment.amount + Money(1) else null,
+            status = PgStatus.SUCCESS,
+        )
 
-        val result = payment.reconcile(transactions)
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(reason))
         assertThat(payment.status).isEqualTo(PaymentStatus.SUCCESS)
@@ -276,9 +235,7 @@ class PaymentTest {
     fun `a late pending transaction leaves a finished payment unchanged without a conflict`(finished: PaymentStatus) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
@@ -347,7 +304,7 @@ class PaymentTest {
         val payment = createPayment(orderId = 42)
         payment.reject(PgRejection(pgOrderId = payment.pgOrderId, amount = payment.amount))
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_AFTER_REJECTION))
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
@@ -392,7 +349,7 @@ class PaymentTest {
             PaymentStatus.SUCCESS -> PgStatus.SUCCESS
             PaymentStatus.FAILED -> PgStatus.FAILED
         }
-        payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         return payment
     }

@@ -57,8 +57,8 @@ class PaymentRepositoryTest(
     fun `a conflicting transaction leaves the saved status and transaction key unchanged`() {
         preparePayment()
         val transaction = createPgTransaction(payment, status = PgStatus.PENDING)
-        reconcile(listOf(transaction))
-        reconcile(listOf(createPgTransaction(payment, amount = payment.amount + Money(1))))
+        reconcile(transaction)
+        reconcile(createPgTransaction(payment, amount = payment.amount + Money(1)))
         entityManager.flushAndClear()
 
         val found = paymentRepository.findByOrderId(order.id)
