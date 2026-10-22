@@ -230,12 +230,12 @@ class ProductCacheTest(
     }
 
     /**
-     * 품절을 만든 확정의 TX A에서 올리기는 마지막 SQL이다. 주문과 상품의 UPDATE, 결제의 INSERT가 모두 그 앞에 나가므로,
+     * 품절을 만든 확정의 TX A에서 올리기는 마지막으로 잠그는 SQL이다. 주문과 상품의 UPDATE, 결제의 INSERT가 모두 그 앞에 나가므로,
      * 잠금의 차례는 주문 → 상품 → revision이다(ADR 0020 규칙 3, ADR 0028 규칙 4). 생성의 응답을 잃게 해 TX B 없이 TX A의 SQL만 남긴다.
-     * 답을 모르는 확정은 TX A가 저장한 상태로 답하므로 그 뒤에 읽는 SQL도 없다.
+     * 답을 모르는 확정은 답하는 때에 저장된 상태를 다시 읽으므로(ADR 0028 규칙 3의 2026-10-23 메모) 올리기 뒤에는 잠그지 않는 SELECT만 온다.
      */
     @Test
-    fun `the upsert of a confirmation that sells out is TX A's last statement after the order, product and payment writes`() {
+    fun `the upsert of a sell-out confirmation is TX A's last locking statement after the order, product and payment writes`() {
         prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
         val request = createOrderConfirmRequest()
         testPg.losesCreateResponse(
@@ -246,12 +246,14 @@ class ProductCacheTest(
 
         val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "sold-out-key", request) }
 
-        val upsert = captured.statements.last()
-        val writes = captured.statements.dropLast(1)
-        assertThat(upsert).startsWith("insert into product_list_revision")
+        val upsertAt = captured.statements.indexOfFirst { it.startsWith("insert into product_list_revision") }
+        val writes = captured.statements.take(upsertAt)
+        val reads = captured.statements.drop(upsertAt + 1)
+        assertThat(upsertAt).isPositive()
         assertThat(writes).anyMatch { it.startsWith("update orders ") }
         assertThat(writes).anyMatch { it.startsWith("update product ") }
         assertThat(writes).anyMatch { it.startsWith("insert into payment ") }
+        assertThat(reads).allMatch { it.startsWith("select ") && !it.contains(" for update") }
     }
 
     /**

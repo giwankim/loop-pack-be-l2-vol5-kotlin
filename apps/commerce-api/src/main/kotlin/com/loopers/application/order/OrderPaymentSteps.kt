@@ -23,7 +23,7 @@ import com.loopers.support.stereotype.ApplicationService
 
 /**
  * 주문 확정의 두 트랜잭션 단계(ADR 0024 규칙 1). TX A는 결제를 시작하고, TX B는 PG의 답을 결제와 주문에 반영한다. TX B의 입구는
- * PG 거래의 반영과 생성 전 거절의 반영 둘이다(ADR 0028 규칙 3).
+ * PG 거래의 반영과 생성 전 거절의 반영 둘이다(ADR 0028 규칙 3). 대사도 조회로 찾은 PG 거래를 같은 PG 거래 입구로 반영한다(ADR 0024 규칙 5).
  * 둘 사이의 PG 호출은 [OrderPaymentService]가 트랜잭션 밖에서 한다. 단계마다 이 빈의 메서드라서 프록시를 지나 선언한 트랜잭션이 걸리고,
  * 장면 테스트가 한 단계만 실패시킬 수 있다(ADR 0028 규칙 2). provided 포트가 아니라 조율하는 Service만 부른다.
  *
@@ -85,8 +85,11 @@ class OrderPaymentSteps(
     }
 
     /**
-     * TX B의 PG 거래 입구. 주문을 다시 잠그고 받아들여진 PG 거래를 결제에 반영한 뒤, 그 결과로 주문을 바꾼다([applyResult]).
-     * 실패한 PG 거래면 거래 키를 남긴 채 결제에 실패한 주문이 된다.
+     * TX B의 PG 거래 입구. 주문을 다시 잠그고 PG 거래를 결제에 반영한 뒤, 그 결과로 주문을 바꾼다([applyResult]). 확정이 받은 생성의
+     * 답과 대사가 찾은 조회의 답이 모두 이리로 온다. 실패한 PG 거래면 거래 키를 남긴 채 결제에 실패한 주문이 된다.
+     *
+     * 다시 해도 된다(ADR 0024 규칙 5). 이 트랜잭션이 DB 오류로 되돌아가면 결제는 그대로 남고, 대사가 같은 PG 거래로 다시 부른다. 같은 답을
+     * 둘이 함께 반영하면 뒤진 쪽은 주문 잠금에서 기다린 뒤 끝난 결제를 읽어 `Unchanged`가 되므로 주문도 예약도 한 번만 바뀐다.
      */
     fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)

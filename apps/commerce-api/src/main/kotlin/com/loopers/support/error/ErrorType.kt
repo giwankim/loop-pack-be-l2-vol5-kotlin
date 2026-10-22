@@ -35,9 +35,11 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
 
     /**
      * 결제. 결제수단이 PG인 주문에 결제가 없는 것은 데이터의 불일치라 포인트 계정 없음처럼 범용 500과 status·code를 공유한다(ADR 0028 규칙 1).
-     * 멱등 키의 두 거절은 고객이 키를 고쳐야 하는 409라서 code를 새로 갖는다(ADR 0025 규칙 3).
+     * 멱등 키의 두 거절은 고객이 키를 고쳐야 하는 409라서 code를 새로 갖는다(ADR 0025 규칙 3). 확정 전 주문의 대사도 고객이 먼저 확정해야
+     * 하는 409라서 code를 새로 갖는다.
      */
     IDEMPOTENCY_KEY_MISMATCH(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_MISMATCH", "다른 멱등 키로 결제를 시작한 주문입니다."),
     IDEMPOTENCY_KEY_IN_USE(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_IN_USE", "다른 주문이 이미 쓴 멱등 키입니다."),
+    PAYMENT_NOT_STARTED(HttpStatus.CONFLICT, "PAYMENT_NOT_STARTED", "결제를 시작하지 않은 주문입니다."),
     PAYMENT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "주문의 결제가 없습니다."),
 }

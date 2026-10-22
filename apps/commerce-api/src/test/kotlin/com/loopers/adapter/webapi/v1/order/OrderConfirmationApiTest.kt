@@ -4,7 +4,10 @@ import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.webapi.IdempotencyKeyHeader
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.payment.CreditCard
+import com.loopers.domain.payment.PgStatus
+import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.product.Product
+import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
@@ -267,6 +270,148 @@ class OrderConfirmationApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isZero()
         assertStock(product, stock)
+    }
+
+    /**
+     * 결제 중인 주문의 결과는 대사로 되찾는다(ADR 0024 규칙 5). 202를 받은 확정 뒤 대사가 PG 거래의 성공이나 실패를 찾으면 200이고 `Location`이
+     * 없다. 그 뒤 같은 키의 재요청과 상세도 같은 본문이다(ADR 0025 규칙 3). 대사는 생성을 보내지 않고 조회를 한 번 보낸다. 실패면 예약을
+     * 돌려줘 재고가 10이다.
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 8", "FAILED, PAYMENT_FAILED, FAILED, 10")
+    fun `a reconcile that finds the pending payment finished returns 200, and a same-key replay then returns the same body`(
+        pgStatus: PgStatus,
+        orderStatus: String,
+        paymentStatus: String,
+        stock: Int,
+    ) {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(pgOrderId, amount = 2_000, card = CARD, transactionKey = TRANSACTION_KEY, pgStatus = "PENDING")
+        assertThat(requestConfirm(orderId, idempotencyKey = "replayed-key")).hasStatus(HttpStatus.ACCEPTED)
+        testPg.hasTransactions(
+            pgOrderId,
+            PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = pgOrderId, amount = Money(2_000), status = pgStatus),
+        )
+
+        val reconciled = requestReconcile(orderId)
+        val body = assertThat(reconciled).hasStatusOk().bodyJson()
+        assertThat(reconciled).headers().doesNotContainHeader(HttpHeaders.LOCATION)
+        body.extractingPath("$.data.status").isEqualTo(orderStatus)
+        body.extractingPath("$.data.paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.paymentStatus").isEqualTo(paymentStatus)
+
+        val replayed = requestConfirm(orderId, idempotencyKey = "replayed-key")
+        assertThat(replayed).hasStatusOk()
+        assertThat(replayed.json()).isEqualTo(reconciled.json())
+        assertThat(requestDetail(orderId).json()).isEqualTo(reconciled.json())
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStock(product, stock)
+    }
+
+    /**
+     * PG를 조회할 수 없는 것은 PG 거래가 없다는 뜻이 아니다. 대사는 아무것도 바꾸지 않고 결제 중인 주문으로 202와 `Location`을 돌려주며,
+     * 본문은 첫 확정과 상세와 같다(ADR 0028 규칙 3). 생성은 다시 보내지 않는다.
+     */
+    @Test
+    fun `reconciling while the PG lookup is unavailable returns 202 with the location and changes nothing`() {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(pgOrderId, amount = 2_000, card = CARD, transactionKey = TRANSACTION_KEY, pgStatus = "PENDING")
+        val accepted = requestConfirm(orderId)
+        assertThat(accepted).hasStatus(HttpStatus.ACCEPTED)
+        testPg.answersList(pgOrderId, httpStatus = 503)
+
+        val reconciled = requestReconcile(orderId)
+        val body = assertThat(reconciled).hasStatus(HttpStatus.ACCEPTED).bodyJson()
+        assertThat(reconciled).headers().hasValue(HttpHeaders.LOCATION, "/api/v1/orders/$orderId")
+        body.extractingPath("$.data.status").isEqualTo("PAYMENT_PENDING")
+        body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
+
+        assertThat(reconciled.json()).isEqualTo(accepted.json())
+        assertThat(requestDetail(orderId).json()).isEqualTo(accepted.json())
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStock(product, 8)
+    }
+
+    /** 요청자와 소유를 PG보다 먼저 본다. 남의 주문은 결제 중이어도 없는 주문과 같은 404이고, 어느 거절도 PG에 조회하지 않는다. */
+    @Test
+    fun `reconciling without a requester, a missing order or another user's order is rejected before any lookup`() {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 1).id
+        acceptCreate(amount = 1_000, pgStatus = "PENDING")
+        assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
+        val pending = requestDetail(orderId)
+        assertThat(pending).hasStatusOk()
+        val otherUser = prepareUser().id
+
+        val body = assertThat(requestReconcile(orderId, requester = null)).hasStatus(HttpStatus.UNAUTHORIZED).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Unauthorized")
+        val missing = requestReconcile(Long.MAX_VALUE)
+        val error = assertThat(missing).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
+        val forbidden = requestReconcile(orderId, otherUser)
+        assertThat(forbidden).hasStatus(HttpStatus.NOT_FOUND)
+        assertThat(forbidden.json()).isEqualTo(missing.json())
+
+        assertThat(requestDetail(orderId).json()).isEqualTo(pending.json())
+        assertThat(testPg.lookupCount()).isZero()
+    }
+
+    /**
+     * 결제가 끝난 주문과 포인트로 확정된 이전 주문은 PG에 조회하지 않고 저장된 상태로 200이다. 몇 번을 물어도 바뀌는 것이 없고, 실패한 결제의
+     * 반환도 다시 일어나지 않는다. 포인트 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13).
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, 8", "FAILED, 10", "POINT, 10")
+    fun `reconciling a finished or point-paid order returns 200 with the stored state and sends no lookup`(
+        paid: String,
+        stock: Int,
+    ) {
+        prepareProduct(price = 1_000, stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
+        if (paid == "POINT") {
+            jdbc.update(
+                "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
+                orderId,
+            )
+        } else {
+            acceptCreate(amount = 2_000, pgStatus = paid)
+            assertThat(requestConfirm(orderId)).hasStatusOk()
+        }
+        val stored = requestDetail(orderId)
+        assertThat(stored).hasStatusOk()
+
+        repeat(2) {
+            val reconciled = requestReconcile(orderId)
+            assertThat(reconciled).hasStatusOk()
+            assertThat(reconciled).headers().doesNotContainHeader(HttpHeaders.LOCATION)
+            assertThat(reconciled.json()).isEqualTo(stored.json())
+        }
+
+        assertThat(testPg.lookupCount()).isZero()
+        assertStock(product, stock)
+    }
+
+    /** 확정 전 주문에는 대사할 결제가 없다. PG에 아무것도 보내지 않고 409이며 주문은 그대로다. */
+    @Test
+    fun `reconciling a draft returns 409 PAYMENT_NOT_STARTED and sends nothing to the PG`() {
+        prepareProduct(stock = 10)
+        val orderId = prepareOrder(owner, listOf(product), quantity = 1).id
+        val draft = requestDetail(orderId)
+        assertThat(draft).hasStatusOk()
+
+        val error = assertThat(requestReconcile(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("PAYMENT_NOT_STARTED")
+
+        assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
+        assertThat(testPg.requestCount()).isZero()
     }
 
     /** 결제가 있는 주문은 결제 중이든 끝났든 결제를 시작한 키로만 다시 물을 수 있다. 다른 키는 409이고 바뀌는 것이 없다(ADR 0025 규칙 3). */
@@ -677,6 +822,13 @@ class OrderConfirmationApiTest(
             .apply { idempotencyKey?.let { header(IdempotencyKeyHeader.NAME, it) } }
             .contentType(MediaType.APPLICATION_JSON)
             .content(json)
+            .exchange()
+    }
+
+    /** 본문 없이 대사한다. `null`이면 요청자 헤더를 싣지 않는다. */
+    private fun requestReconcile(orderId: Long, requester: Long? = owner.id): MvcTestResult {
+        return mvc.post().uri("/api/v1/orders/$orderId/payment/reconcile")
+            .apply { requester?.let { header(UserIdHeader.NAME, it) } }
             .exchange()
     }
 
