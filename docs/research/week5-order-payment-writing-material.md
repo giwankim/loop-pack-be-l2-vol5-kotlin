@@ -805,3 +805,106 @@ Two commits on `feat/order-payment` (pushed, `7071838..773f9eb`):
   - the `PaymentValidator` port and `Payment.isStartedWith`
   - the race mapping by re-check, with its one accepted misattribution
   - the replay contract table, with "the card is not compared"
+
+## Issue 156: an unfinished payment is reconciled with the PG
+
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156#issuecomment-6344945061) of [issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156). The rules are rules 4 and 5 of [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) and rule 3 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), and the scenes are the reconcile halves of [spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)'s integration-test list. The code is:
+
+- [`OrderPaymentReconciler`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/provided/OrderPaymentReconciler.kt) and its implementation [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
+- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt), whose TX B the reconcile reuses
+- [`PgTransactionRetriever`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PgTransactionRetriever.kt) and its implementation [`PgTransactionService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PgTransactionService.kt)
+- [`OrderApi`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderApi.kt) and [`OrderApiSpec`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderApiSpec.kt)
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt), [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt) and [`ProductCacheTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/product/provided/ProductCacheTest.kt)
+
+### Landed
+
+Two commits on `feat/order-payment` (pushed, `a96f2d9..59a6551`):
+
+- [`6aab164`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/6aab164) is the code and tests:
+  - The new order port [`OrderPaymentReconciler`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/provided/OrderPaymentReconciler.kt)`.reconcile(userId, orderId)` serves `POST /api/v1/orders/{orderId}/payment/reconcile`, with no body. [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt) implements it next to `OrderConfirmer`, so it also runs `NEVER`, outside any transaction.
+  - It reads the order without a lock and checks in this order:
+    1. A missing order, or someone else's, is 404.
+    2. A draft is 409 `PAYMENT_NOT_STARTED`.
+    3. A point-confirmed order and a finished PG order answer their stored state without calling the PG.
+    4. A payment pending order is looked up.
+  - The new payment port [`PgTransactionRetriever`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PgTransactionRetriever.kt)`.retrieve(payment)`, implemented by `PgTransactionService` (`NEVER`), looks the transaction up by the payment's PG order ID. It rethrows `PgUnavailableException` and `MultiplePgTransactionsException`.
+  - A found transaction goes through `OrderPaymentSteps.applyTransaction`, the confirmation's TX B, unchanged. Success confirms the order. Failure fails it and returns the stock once.
+  - `null` and `PgUnavailableException` answer the stored state. `MultiplePgTransactionsException` logs a WARN and answers the stored state. A mismatched transaction is logged by TX B's `Conflicted`. None of them changes the payment or the reservation, and no path sends a create.
+  - The new error type `PAYMENT_NOT_STARTED` is 409. `OrderApi` shares the 202-with-`Location` / 200 mapping between confirm and reconcile, and `OrderApiSpec` documents the endpoint.
+  - The confirmation's unknown create now re-reads the stored state when it answers (see the decisions below).
+- [`59a6551`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/59a6551) holds the notes:
+  - ADR 0028 rule 3's dated note on what "stored state" means
+  - `CODING_STANDARDS.md`: the three new spy uses and the WARN capture
+
+### Acceptance criteria
+
+- [x] **Scene 2: an accepted PENDING, then a reconcile that sees SUCCESS, confirms the order. Stock stays 3, with one create and one lookup.**
+  - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt)'s scene 2 test now continues into a reconcile.
+  - After the confirm it reads back PAYMENT_PENDING / PENDING and stock 3.
+  - After the reconcile it reads back CONFIRMED / SUCCESS, `confirmedAt`, the transaction key and stock 3. There is one create, one lookup and no unmatched request.
+- [x] **Scene 4: after a lost response, a reconcile finds the transaction and finishes the payment. Creates stay at 1.**
+  - The lost-response test continues into a reconcile: UNKNOWN becomes CONFIRMED / SUCCESS with the transaction key recorded. Stock stays 3, with one create and one lookup.
+- [x] **Scene 6: two reconciles, or a reconcile racing confirm's TX B, applying the same SUCCESS confirm the order once. For FAILED, the stock comes back exactly once.**
+  - Two tests, each run for SUCCESS and FAILED. The first TX B is paused inside the payment's apply while it holds the order lock. The other TX B is shown waiting (`finishesWithin(LOCK_WAIT_PROBE)` is false), then the first is released.
+  - Both answers carry the same status and the same `confirmedAt`. Stock ends at 3 for SUCCESS and 5 for FAILED; a double return would be 7. There is one create, and two lookups (two reconciles) or one (reconcile against confirm).
+  - **Mutation check:** TX B reading the order without `FOR UPDATE` fails all four rows.
+- [x] **Scene 7: the TX B bean is spied to throw once after the PG succeeded. The order stays payment pending and the payment UNKNOWN. A later reconcile confirms it once, and creates stay at 1.**
+  - A `@MockkSpyBean OrderPaymentSteps` makes `applyTransaction` run the original, flush, then throw `DataAccessResourceFailureException` once.
+  - The confirm throws. A re-read shows PAYMENT_PENDING, UNKNOWN, no transaction key and stock 3.
+  - The reconcile then confirms it: CONFIRMED / SUCCESS with the transaction key recorded, one create, one lookup.
+- [x] **Scene 8: the payment slice's create is spied to throw before sending. The payment is UNKNOWN, the stock held, and there are zero creates. After a same-key confirm replay and a reconcile that sees zero transactions, nothing has changed and creates are still zero.**
+  - The `PgTransactionService` spy throws a test `ProcessStopped` once before sending. Later calls are original, so any create would show in the count.
+  - Read back after the stop: PAYMENT_PENDING, UNKNOWN, stock 3, zero creates.
+  - A same-key replay and a reconcile that sees `[]` both answer PAYMENT_PENDING / UNKNOWN. The final read is unchanged, with zero creates, one lookup and no WARN.
+- [x] **Scene 9: a lookup that returns nothing, several transactions, another PG order ID or another amount leaves the payment and reservation unchanged, with zero creates. The several-transactions and mismatch cases log a WARN.**
+  - One test runs three cases on a payment left UNKNOWN with zero creates: several transactions, another PG order ID, and another amount.
+  - Each answers PAYMENT_PENDING / UNKNOWN and leaves the payment and the stock unchanged, with zero creates and one lookup.
+  - Each logs exactly one WARN: `PG 거래가 2개다`, `reason=PG_ORDER_ID_MISMATCH` or `reason=AMOUNT_MISMATCH`.
+  - The lookup that returns nothing is scene 8's reconcile, which logs no WARN.
+- [x] **An unavailable lookup (test PG 503 or stall) answers 202 and changes nothing.**
+  - At the port, both a 503 and a stall past the test profile's 200 ms response limit answer the stored PAYMENT_PENDING / PENDING. The state is unchanged, with one create and one lookup.
+  - Over HTTP, a 503 answers 202 with `Location`, and the body equals the first confirmation's and the detail's.
+- [x] **The HTTP test covers 202, 200, 409 `PAYMENT_NOT_STARTED` and 404 for reconcile, and the API docs describe the endpoint.**
+  - [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt):
+    - 202, then a reconcile that finds SUCCESS or FAILED answers 200 without `Location`, and a same-key confirm replays the same body. This is the transition issue 155 handed off. Stock ends at 8 or 10, with one create and one lookup.
+    - An unavailable lookup answers 202 with `Location`.
+    - A draft answers 409 `PAYMENT_NOT_STARTED` and sends nothing to the PG.
+    - A missing requester answers 401. A missing order and another user's order both answer 404 with the same body. None of them looks anything up.
+    - SUCCESS, FAILED and point-paid orders answer 200 twice, without `Location` and with the detail's body, and look nothing up.
+  - `OrderApiSpec.reconcile` documents the endpoint. The confirm description now says a reconcile that finished the payment during an unanswered create makes it 200.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes, with executed test counts checked.** 71 classes, **856 tests, 0 failures, 0 skipped**. That is issue 155's 835 plus 21 new tests.
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 31 (was 18) |
+  | `OrderConfirmationApiTest` | 45 (was 37) |
+  | `ProductCacheTest` | 16 (one test rewritten) |
+
+### Decisions made while implementing
+
+- **The stored state is read when answering.** Issue 151 left this open: "decide whether that path should read the order again."
+  - Confirm's unknown create and reconcile's null, unavailable and several-transactions answers now re-read the order and payment status. They no longer return the state read before the PG call.
+  - So a reconcile that finishes the payment during an unanswered create now shows as confirmed (200), not pending (202). Step 3's callback will open the same window.
+  - ADR 0028 rule 3 has a dated note. A test runs a reconcile during the confirmation's PG call, and the lost-response confirmation then answers CONFIRMED / SUCCESS.
+  - `ProductCacheTest` relied on no SQL after TX A ("답을 모르는 확정은 TX A가 저장한 상태로 답하므로 그 뒤에 읽는 SQL도 없다"), and the full check caught it. The test now asserts that the revision upsert is TX A's last *locking* statement, with only plain `SELECT`s after it. The lock order it guards (order → product → revision) is unchanged.
+- **Names for the spec's placeholders.** `OrderPaymentReconciler` reconciles the order's payment and matches the `/payment/reconcile` path. `PgTransactionRetriever` is not a Finder, because a PG lookup's `null` does not mean "missing".
+- **The first read is unlocked** (`OrderFinder.find`), as the spec says, and only TX B locks. Scene 6's lookup counts pin this: a locking first read would see the finished order and skip the second lookup.
+- **The several-transactions WARN logs only the order ID and the exception message**, not the PG order ID. The order slice still reads nothing of a payment but its status (ADR 0028 rule 5).
+- **WARNs are read on the `com.loopers.application` logger**, so the tests don't care which class logged.
+- **Review.** A two-axis review ran before the commit.
+  - **Spec:** no gaps. It noted that scene 8 read state only at the end, so a read right after the stop now pins "nothing changed".
+  - **Standards:** two fixes.
+    - The API doc said "PG에 결제를 다시 요청하지 않습니다", a phrase `CONTEXT.md` avoids. It now says "PG 거래의 생성을 다시 보내지 않습니다".
+    - A 401-then-404 test named its bodies `error` / `secondError` instead of `body` / `error`.
+
+    A `pgTransaction` helper duplicated in both test classes is now inlined at the HTTP test's one call site.
+  - **Kept:** the string-flag parameterizations (precedent: `deleted: String`), and the point-paid SQL bypass duplicated across four order HTTP test classes.
+
+### For later tickets
+
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** the payments design doc should carry:
+  - the reconcile contract: the status checks and the lookup's exception table
+  - the scene and test pairs for scenes 2, 4, 6, 7, 8 and 9
+  - the stored-state re-read and the `ProductCacheTest` relaxation
+  - the ports `OrderPaymentReconciler` and `PgTransactionRetriever`
+- **Not in any ticket:** a base-class helper for the point-paid SQL bypass, shared by four order HTTP test classes.
