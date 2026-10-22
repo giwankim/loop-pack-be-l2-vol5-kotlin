@@ -587,3 +587,89 @@ Three commits on `feat/order-payment` (pushed, `15fda3b..2cafc0b`), on top of is
   - the 500 on a missing payment for lists too
   - `confirmOrder`'s new home
 - **Flaky timeout.** The test profile's `pg.response-timeout` is 200 ms. At a load average around 14, with other worktrees running Gradle, the first create in a cold JVM timed out once. That left the payment `UNKNOWN` instead of `PENDING`, and it passed on rerun. Every PG scene test is exposed the same way. A warm-up or a longer limit for non-timeout scenes would fix it. No issue is filed.
+
+## Issue 152: a failed payment returns the reservation once
+
+Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152#issuecomment-6341594995) of [issue 152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152). The rules are [ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md), rules 3 and 4 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), and rules 1 and 3 of [ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md). The code is:
+
+- [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
+- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`PaymentModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentModifyService.kt)
+- [`StockRestorer`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/product/provided/StockRestorer.kt) and its implementation in [`ProductModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/product/ProductModifyService.kt)
+- [`Product.restoreStock`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/product/Product.kt)
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt)
+
+### Landed
+
+Three commits on `feat/order-payment` (pushed, `595dfc5..4ce2f98`), on top of issues 154 and 153:
+
+- [`1b67ce0`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/1b67ce0) is the code and tests:
+  - The orchestrator catches `PgRejectedException` outside any transaction and hands it to TX B's new rejection entry, `OrderPaymentSteps.applyRejection`. An accepted create whose transaction says FAILED takes the same path through `applyTransaction`.
+  - Both entries share one rule. The order changes only on `Changed`: `completePayment()` on SUCCESS, and `failPayment()` plus the return of stock on FAILED.
+  - `PaymentReconciler.reject(orderId, rejection)` applies `Payment.reject` inside TX B and logs a WARN, without card data, on `Conflicted`.
+  - The new product port `StockRestorer.restore(quantities)` locks products by id, skips missing or deleted ones, and adds the units back. It bumps the list revision only when a sold-out product becomes buyable.
+- [`db5f70a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/db5f70a) holds the dated notes:
+  - ADR 0020 rule 1 and the rule 3 table
+  - ADR 0019 rule 3
+  - catalog design 8.7
+  - `CODING_STANDARDS.md` for the new test spy
+- [`4ce2f98`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/4ce2f98) holds the review fixes: a test for a conflicting rejection, and the test hook's name.
+
+### Acceptance criteria
+
+- [x] **Scene 3 (rejected before create).** [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt): one create; the payment is FAILED with a null transaction key; the order is `PAYMENT_FAILED` with no `confirmedAt` and no `paidAmount`.
+  - Stock goes 5 → 3 → 5. The 3 is read during the PG call, between TX A's commit and TX B, so the test proves the reservation happened rather than inferring it.
+- [x] **An accepted create whose transaction is FAILED** ends the same way, and the payment keeps its transaction key.
+- [x] **A product deleted while the payment was pending stays deleted.**
+  - The delete commits during the PG call.
+  - After the failure, the kept product is back at 5.
+  - The deleted product still has its deletion time and its reserved stock of 3, both read by SQL since no port can see a deleted product.
+- [x] **Admin stock: 5 → reserve 2 → 3 → the admin sets 10 → 10 → the payment fails → 12.** The two middle values are read during the PG call.
+- [x] **A product sold out by its reservation is buyable in the customer list after the failure.**
+  - The test reads the list during the PG call. That caches the sold-out page under the revision TX A raised.
+  - After the failure, the list shows the product buyable and the revision is `before + 2`.
+  - **Mutation check:** I commented out `markChanged()` in `restore`. The final list read served the cached `soldOut = true`, and the test failed.
+  - [`ProductCacheTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/product/provided/ProductCacheTest.kt) pins TX B's upsert as its last statement, after the `orders`, `payment` and `product` UPDATEs.
+- [x] **The confirmation API returns the 200 payment-failed body.** [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt):
+  - status 200, no `Location`, `status: PAYMENT_FAILED`, `paymentStatus: FAILED`, no `paidAmount`
+  - the detail returns the same body, and the stock is back
+  - the no-leak test gained a FAILED case
+- [x] **ADR 0020 rule 1 ("여덟 쓰기") and its rule 3 table have dated notes**, with the original text kept. The rule 3 note also replaces the stale "주문 확정" row, which still listed the point account, with ADR 0028 rule 4's TX A and TX B rows.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes** on the pushed tree: 71 classes, **817 tests, 0 failures, 0 skipped**. That is issue 153's 802 plus 15 new tests.
+
+  | Class | Tests |
+  | --- | --- |
+  | `ProductTest` | 34 (was 28) |
+  | `OrderPaymentIntegrationTest` | 12 (was 6) |
+  | `ProductCacheTest` | 16 (was 15) |
+  | `OrderConfirmationApiTest` | 29 (was 27) |
+  | `OrderConfirmerConcurrencyTest` | 7 |
+
+### Decisions made while implementing
+
+- **The window between TX A and TX B is the PG call.** `OrderPaymentIntegrationTest` spies `PgTransactionService`. `whilePaymentPending { … }` runs a write or read just before the create goes out. It runs on the same thread with no `Pause`: the PG call holds no transaction, so the action's ports commit on their own. `CODING_STANDARDS.md` records the spy.
+- **The return of stock reuses the deduction's `lockAll`.** Products lock in id order, and the deleted-product filter turns a deleted product into a skip rather than a rejection. `deduct` still rejects.
+- **`Product.restoreStock` uses `Math.addExact`.** A return past `Int.MAX_VALUE` fails, and TX B rolls back with the order still pending, instead of wrapping to negative stock.
+- **Once only needs no new guard.** Stock comes back only on `Changed(to = FAILED)`, under the order lock. The end-to-end repeat needs the reconcile API.
+- **Three tests passed against existing code**: the FAILED transaction, the deleted product and the sold-out flip. Each was mutation-checked on the line it guards.
+- **Review.** A two-axis review ran before the push.
+  - **Spec:** every criterion met. It noted that a conflicting rejection had no end-to-end test. One now exists: a 422 rejection echoing another amount leaves the payment UNKNOWN, the order payment pending and the stock reserved. A mutation that fails the order on `Conflicted` makes it fail.
+  - **Standards:** no violations. `whilePaymentPending`'s parameter became `action`, since two callers only read. The `restore`/`deduct` and `reject`/`reconcile` shapes stay duplicated: two call sites each, with real differences.
+- **Rebased twice** while issues 154 and 153 landed.
+  - `ProductModifyService.deduct`'s KDoc line conflicted, because both tickets fixed the same stale "포인트 계정 잠금" wording. 154's version was kept.
+  - `CODING_STANDARDS.md` conflicted with 153's `confirmOrder` sentence. Both edits were kept.
+
+### For later tickets
+
+- **[Issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156):**
+  - The repeated-failure test needs reconcile ("a repeated failure answer returns nothing" is pinned only at the domain level for now).
+  - Scene 8 can reuse the `PgTransactionService` spy field in `OrderPaymentIntegrationTest`.
+- **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** the payments design doc should carry:
+  - TX B's failure lock order: order → products by id → revision when sold out flips
+  - the ninth list-changing write
+  - the `addExact` overflow behaviour
+- **The lists don't show a failed order yet.** Issue 153 noted that a `PAYMENT_FAILED` order already shows `paymentStatus: FAILED` in the lists through the shared assembler, but no list test has that row. That was not in this ticket's criteria and was left out.
+- **Flaky create timeout.** `OrderConfirmationApiTest` "[1] newPrice = 500" got 202 once in a full run.
+  - It was the first test in a fresh context. The stub matched and WireMock answered 202, but the test profile's 200 ms `pg.response-timeout` had already fired (`SocketTimeoutException`), so the create was outcome unknown.
+  - It passed alone and on rerun. Issue 153 saw the same thing.
+  - A drill-down follows separately.
