@@ -72,7 +72,8 @@ class PaymentGatewayTest(
     private val paymentGateway: PaymentGateway,
 ) {
     companion object {
-        private const val PG_ORDER_ID = "LP-ORD-0000000042"
+        private const val PG_ORDER_ID = "0b6f3c1e-5a2d-4c8b-9e7f-1d2a3b4c5d6e"
+        private const val OTHER_PG_ORDER_ID = "7c9d2e4f-1b3a-4d5c-8e6f-9a0b1c2d3e4f"
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
@@ -275,13 +276,13 @@ class PaymentGatewayTest(
             card = CARD,
             httpStatus = 422,
             body = """
-                {"code":"$REJECTED_BEFORE_CREATE","orderId":"LP-ORD-0000000043","amount":7001,"transactionCreated":false}
+                {"code":"$REJECTED_BEFORE_CREATE","orderId":"$OTHER_PG_ORDER_ID","amount":7001,"transactionCreated":false}
             """,
         )
 
         val exception = assertThrows<PgRejectedException> { paymentGateway.createTransaction(REQUEST) }
 
-        assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = "LP-ORD-0000000043", amount = Money(7_001)))
+        assertThat(exception.rejection).isEqualTo(PgRejection(pgOrderId = OTHER_PG_ORDER_ID, amount = Money(7_001)))
     }
 
     @ParameterizedTest
@@ -500,7 +501,7 @@ class PaymentGatewayTest(
      */
     @Test
     fun `a PG order number lookup sends the number as one exact orderId query parameter even with reserved characters`() {
-        val pgOrderId = "LP-ORD+42&orderId=43"
+        val pgOrderId = "pg-order+42&orderId=43"
         pg.hasTransactions(pgOrderId = pgOrderId)
 
         val found = paymentGateway.retrieveTransactionByPgOrderId(pgOrderId)

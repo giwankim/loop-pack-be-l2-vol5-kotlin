@@ -8,16 +8,22 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
-import java.util.Locale
 
 class PaymentTest {
     companion object {
         private const val TRANSACTION_KEY = "TEST-TX-0042"
+        private const val PG_ORDER_ID = "0b6f3c1e-5a2d-4c8b-9e7f-1d2a3b4c5d6e"
+        private const val OTHER_PG_ORDER_ID = "7c9d2e4f-1b3a-4d5c-8e6f-9a0b1c2d3e4f"
     }
 
     @Test
-    fun `a new payment is result unknown and carries its order, key and amount`() {
-        val payment = Payment(orderId = 42, idempotencyKey = "checkout-42", amount = Money(15_000))
+    fun `a started payment is result unknown and carries its order, key and amount`() {
+        val payment = Payment.start(
+            orderId = 42,
+            idempotencyKey = "checkout-42",
+            amount = Money(15_000),
+            pgOrderIdGenerator = { PG_ORDER_ID },
+        )
 
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(payment.orderId).isEqualTo(42)
@@ -25,27 +31,24 @@ class PaymentTest {
         assertThat(payment.amount).isEqualTo(Money(15_000))
     }
 
-    /** 10자리는 최소 폭이다. 더 긴 주문 식별자를 자르면 두 주문이 같은 PG 주문 번호를 갖는다. */
-    @ParameterizedTest
-    @CsvSource("1, LP-ORD-0000000001", "42, LP-ORD-0000000042", "12345678901, LP-ORD-12345678901")
-    fun `the PG order number is LP-ORD- and the order id zero-padded to 10 digits`(orderId: Long, pgOrderId: String) {
-        val payment = createPayment(orderId = orderId)
-
-        assertThat(payment.pgOrderId).isEqualTo(pgOrderId)
-    }
-
-    /** PG 주문 번호는 PG에 보내는 값이라 JVM 기본 로캘의 숫자를 따르지 않는다. 태국 숫자를 쓰는 로캘에서도 ASCII 숫자다. */
+    /** 결제를 시작하는 쪽은 PG 주문 번호를 고르지 않는다. 생성기가 결제마다 한 번 새 값을 만든다(ADR 0029). */
     @Test
-    fun `the PG order number keeps ASCII digits under a default locale with native digits`() {
-        val defaultLocale = Locale.getDefault()
-        Locale.setDefault(Locale.forLanguageTag("th-TH-u-nu-thai"))
-        try {
-            val payment = createPayment(orderId = 42)
-
-            assertThat(payment.pgOrderId).isEqualTo("LP-ORD-0000000042")
-        } finally {
-            Locale.setDefault(defaultLocale)
+    fun `start takes its PG order number from the generator and calls it once`() {
+        var calls = 0
+        val generator = PgOrderIdGenerator {
+            calls++
+            PG_ORDER_ID
         }
+
+        val payment = Payment.start(
+            orderId = 42,
+            idempotencyKey = "checkout-42",
+            amount = Money(15_000),
+            pgOrderIdGenerator = generator,
+        )
+
+        assertThat(payment.pgOrderId).isEqualTo(PG_ORDER_ID)
+        assertThat(calls).isEqualTo(1)
     }
 
     @ParameterizedTest
@@ -54,6 +57,34 @@ class PaymentTest {
         val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
 
         assertThat(exception.message).isEqualTo("멱등 키는 공백일 수 없습니다.")
+    }
+
+    /** 키는 떼거나 접지 않고 그대로 비교하므로(ADR 0025 규칙 2) 앞뒤나 가운데의 공백도 거절한다. */
+    @ParameterizedTest
+    @ValueSource(strings = ["checkout 42", " checkout-42", "checkout-42 ", "checkout\t42", "checkout\n42"])
+    fun `an idempotency key containing whitespace is rejected at creation`(idempotencyKey: String) {
+        val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
+
+        assertThat(exception.message).isEqualTo("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+    }
+
+    /** ASCII 밖의 문자는 ASCII와 닮아 보여도(전각 문자, 줄 바꿈 없는 공백) 거절한다. ASCII의 제어 문자도 보이지 않으므로 거절한다. */
+    @ParameterizedTest
+    @ValueSource(strings = ["결제-42", "café-42", "ｃｈｅｃｋｏｕｔ", "checkout 42", "checkout\u000042", "checkout\u007F42"])
+    fun `an idempotency key with a character outside visible ASCII is rejected at creation`(idempotencyKey: String) {
+        val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
+
+        assertThat(exception.message).isEqualTo("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+    }
+
+    /** 보이는 ASCII는 `!`(0x21)부터 `~`(0x7E)까지 94자다. 64자 한도 안에 들도록 두 키로 나눠 모두 받아들이는지 본다. */
+    @Test
+    fun `every visible ASCII character is allowed in an idempotency key`() {
+        val keys = ('!'..'~').joinToString("").chunked(64)
+
+        val payments = keys.map { createPayment(orderId = 42, idempotencyKey = it) }
+
+        assertThat(payments.map { it.idempotencyKey }).isEqualTo(keys)
     }
 
     @Test
@@ -145,7 +176,7 @@ class PaymentTest {
     fun `a transaction for another PG order number reports a PG order conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42)
 
-        val result = payment.reconcile(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043"))
+        val result = payment.reconcile(createPgTransaction(payment, pgOrderId = OTHER_PG_ORDER_ID))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.PG_ORDER_ID_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
@@ -217,7 +248,7 @@ class PaymentTest {
         val transaction = createPgTransaction(
             payment,
             transactionKey = if (otherKey) "TEST-TX-OTHER" else TRANSACTION_KEY,
-            pgOrderId = if (otherPgOrderId) "LP-ORD-0000000043" else null,
+            pgOrderId = if (otherPgOrderId) OTHER_PG_ORDER_ID else null,
             amount = if (otherAmount) payment.amount + Money(1) else null,
             status = PgStatus.SUCCESS,
         )
@@ -260,16 +291,16 @@ class PaymentTest {
      */
     @ParameterizedTest
     @CsvSource(
-        "LP-ORD-0000000043, 15000, PG_ORDER_ID_MISMATCH",
-        "LP-ORD-0000000042, 15001, AMOUNT_MISMATCH",
-        "LP-ORD-0000000043, 15001, PG_ORDER_ID_MISMATCH",
+        "$OTHER_PG_ORDER_ID, 15000, PG_ORDER_ID_MISMATCH",
+        "$PG_ORDER_ID, 15001, AMOUNT_MISMATCH",
+        "$OTHER_PG_ORDER_ID, 15001, PG_ORDER_ID_MISMATCH",
     )
     fun `a rejection for another PG order number or amount reports that conflict and leaves the payment unknown`(
         pgOrderId: String,
         amount: Long,
         reason: ConflictReason,
     ) {
-        val payment = createPayment(orderId = 42, amount = Money(15_000))
+        val payment = createPayment(orderId = 42, amount = Money(15_000), pgOrderId = PG_ORDER_ID)
 
         val result = payment.reject(PgRejection(pgOrderId = pgOrderId, amount = Money(amount)))
 

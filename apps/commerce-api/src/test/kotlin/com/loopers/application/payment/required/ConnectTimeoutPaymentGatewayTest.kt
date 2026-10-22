@@ -56,7 +56,7 @@ class ConnectTimeoutPaymentGatewayTest(
     private val paymentGateway: PaymentGateway,
 ) {
     companion object {
-        private const val PG_ORDER_ID = "LP-ORD-0000000042"
+        private const val PG_ORDER_ID = "0b6f3c1e-5a2d-4c8b-9e7f-1d2a3b4c5d6e"
         private const val AMOUNT = 7_000L
         private const val TRANSACTION_KEY = "TEST-TX-0042"
         private val CARD = CreditCard(type = "TEST", number = "0000-0000-0000-0000")
