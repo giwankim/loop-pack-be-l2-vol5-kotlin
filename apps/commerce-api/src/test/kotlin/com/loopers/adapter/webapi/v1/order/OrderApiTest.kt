@@ -98,6 +98,7 @@ class OrderApiTest(
         body.extractingPath("$.data.items[0].quantity").isEqualTo(5)
         body.extractingPath("$.data.items[0].lineAmount").isEqualTo(5_000)
         body.extractingPath("$.data.items[1].productId").isEqualToLong(second)
+        body.doesNotHavePath("$.data.paymentMethod")
         body.doesNotHavePath("$.data.paidAmount")
 
         val ownDetail = requestDetail(body.extractingPath("$.data.orderId").asNumber().actual().toLong())
@@ -281,7 +282,7 @@ class OrderApiTest(
             requestCreate(
                 """{
                     "items":[{"productId":$id,"quantity":2,"productName":"가짜","unitPrice":1,"lineAmount":1}],
-                    "totalAmount":1,"status":"CONFIRMED","paidAmount":1
+                    "totalAmount":1,"status":"CONFIRMED","paymentMethod":"PG","paidAmount":1
                 }""",
             ),
         ).hasStatus(HttpStatus.CREATED).bodyJson()
@@ -290,6 +291,7 @@ class OrderApiTest(
         body.extractingPath("$.data.items[0].unitPrice").isEqualTo(1_000)
         body.extractingPath("$.data.items[0].lineAmount").isEqualTo(2_000)
         body.extractingPath("$.data.totalAmount").isEqualTo(2_000)
+        body.doesNotHavePath("$.data.paymentMethod")
         body.doesNotHavePath("$.data.paidAmount")
         body.doesNotHavePath("$.data.userId")
     }
@@ -361,18 +363,12 @@ class OrderApiTest(
         assertThatThrownBy { jdbc.update(sql, *args) }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
+    /** 주문 상태와 결제수단·확정 시각의 CHECK는 [com.loopers.application.order.required.OrderRepositoryTest]가 본다. */
     @Test
-    fun `database rejects inconsistent payment state and nonpositive item values`() {
+    fun `database rejects nonpositive item values`() {
         val orderId = prepareOrder(owner).id
         val original = requestDetail(orderId)
         assertThat(original).hasStatusOk()
-        listOf(
-            "paid_amount = 1000",
-            "confirmed_at = now(6)",
-            "status = 'CONFIRMED'",
-            "status = 'CONFIRMED', paid_amount = 0, confirmed_at = now(6)",
-            "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
-        ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
         listOf("quantity = 0", "unit_price = 0").forEach { update ->
             jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
@@ -450,19 +446,21 @@ class OrderApiTest(
 
     /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 확정된 주문은 준비한 초안 위에 SQL로 덮어쓴다(설계 13). */
     @Test
-    fun `the order list shows draft and confirmed entries with their stored payment fields`() {
+    fun `the order list shows draft and confirmed entries with their payment fields`() {
         prepareProduct(price = 1_000)
         prepareOrder(owner, listOf(product))
         val confirmed = prepareOrder(owner, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = 2000, confirmed_at = now(6) where id = ?",
+            "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
             confirmed,
         )
 
         val body = assertThat(requestList()).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[0].paymentMethod").isEqualTo("POINT")
         body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
         body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[1].paymentMethod")
         body.doesNotHavePath("$.data.items[1].paidAmount")
     }
 

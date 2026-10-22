@@ -175,6 +175,7 @@ class OrderAdminApiTest(
         body.extractingPath("$.data.items.length()").isEqualTo(1)
         body.extractingPath("$.data.items[0].productId").isEqualToLong(product.id)
         body.extractingPath("$.data.items[0].quantity").isEqualTo(3)
+        body.doesNotHavePath("$.data.paymentMethod")
         body.doesNotHavePath("$.data.paidAmount")
 
         val error = assertThat(requestGetOrder(Long.MAX_VALUE)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
@@ -183,30 +184,33 @@ class OrderAdminApiTest(
     }
 
     /**
-     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제액을 그대로 싣는지만 본다. 확정된 주문은 준비한 초안 위에 SQL로 덮어쓴다
-     * (설계 13의 같은 판단). 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
+     * 확정 동작은 보지 않고, 관리자 조회가 저장된 결제수단과 그 주문의 결제액을 싣는지만 본다. 확정된 주문은 준비한 초안 위에
+     * SQL로 덮어쓴다(설계 13의 같은 판단). 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
      */
     @Test
-    fun `the list and the detail show the stored payment result of a confirmed order and omit it for a draft`() {
+    fun `the list and the detail show the payment result of a confirmed order and omit it for a draft`() {
         prepareProduct(price = 1_000)
         prepareUser()
         val draft = prepareOrder(user, listOf(product)).id
         val confirmed = prepareOrder(user, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = 2000, confirmed_at = now(6) where id = ?",
+            "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
             confirmed,
         )
 
         val body = assertThat(requestGetOrders()).hasStatusOk().bodyJson()
         body.extractingPath("$.data.items[0].orderId").isEqualToLong(confirmed)
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[0].paymentMethod").isEqualTo("POINT")
         body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
         body.extractingPath("$.data.items[1].orderId").isEqualToLong(draft)
         body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[1].paymentMethod")
         body.doesNotHavePath("$.data.items[1].paidAmount")
 
         val detail = assertThat(requestGetOrder(confirmed)).hasStatusOk().bodyJson()
         detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        detail.extractingPath("$.data.paymentMethod").isEqualTo("POINT")
         detail.extractingPath("$.data.paidAmount").isEqualTo(2_000)
         detail.doesNotHavePath("$.data.confirmedAt")
     }

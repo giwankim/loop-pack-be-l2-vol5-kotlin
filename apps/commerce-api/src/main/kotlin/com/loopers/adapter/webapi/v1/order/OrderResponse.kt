@@ -2,6 +2,7 @@ package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.order.PaymentMethod
 import java.math.BigInteger
 import java.time.Instant
 
@@ -17,6 +18,7 @@ data class OrderResponse(
     val items: List<OrderLineItemResponse>,
     val totalAmount: BigInteger,
     val createdAt: Instant,
+    val paymentMethod: PaymentMethod?,
     val paidAmount: BigInteger?,
 ) {
     companion object {
@@ -27,6 +29,7 @@ data class OrderResponse(
                 items = order.lineItems.map(OrderLineItemResponse::from),
                 totalAmount = order.totalAmount.amount,
                 createdAt = order.createdAt,
+                paymentMethod = order.paymentMethod,
                 paidAmount = order.paidAmount?.amount,
             )
         }

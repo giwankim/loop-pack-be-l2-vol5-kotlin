@@ -3,10 +3,16 @@ package com.loopers.application.order.required
 import com.loopers.adapter.persistence.order.QuerydslOrderListRepository
 import com.loopers.config.jpa.QueryDslConfig
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.order.PaymentMethod
+import com.loopers.support.assertCheckConstraintRejects
 import com.loopers.support.flushAndClear
 import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageRequest
 
@@ -175,6 +181,91 @@ class OrderRepositoryTest(
         assertThat(slice.hasNext()).isFalse()
         assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(20)
+    }
+
+    /** 상태와 결제수단·확정 시각의 짝은 DB의 `CK_ORDERS_ON_PAYMENT_STATE`도 지킨다. 준비한 확정 전 주문을 SQL로 고친다. */
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "payment_method = 'PG'",
+            "payment_method = 'POINT'",
+            "confirmed_at = now(6)",
+            "status = 'PAYMENT_PENDING'",
+            "status = 'PAYMENT_PENDING', payment_method = 'POINT'",
+            "status = 'PAYMENT_PENDING', payment_method = 'PG', confirmed_at = now(6)",
+            "status = 'PAYMENT_FAILED'",
+            "status = 'PAYMENT_FAILED', payment_method = 'POINT'",
+            "status = 'PAYMENT_FAILED', payment_method = 'PG', confirmed_at = now(6)",
+            "status = 'CONFIRMED', payment_method = 'PG'",
+            "status = 'CONFIRMED', confirmed_at = now(6)",
+        ],
+    )
+    fun `the database rejects an order whose payment method or confirmation time does not fit its status`(assignments: String) {
+        prepareOrder()
+        entityManager.flushAndClear()
+
+        entityManager.assertCheckConstraintRejects("update orders set $assignments where id = :id", "id" to order.id)
+    }
+
+    @ParameterizedTest
+    @CsvSource(
+        delimiter = '|',
+        value = [
+            "status = 'PAYMENT_PENDING', payment_method = 'PG'                         | PAYMENT_PENDING | PG",
+            "status = 'PAYMENT_FAILED', payment_method = 'PG'                          | PAYMENT_FAILED  | PG",
+            "status = 'CONFIRMED', payment_method = 'PG', confirmed_at = now(6)        | CONFIRMED       | PG",
+            "status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6)     | CONFIRMED       | POINT",
+        ],
+    )
+    fun `the database accepts each status with its payment method and reads it back`(
+        assignments: String,
+        status: OrderStatus,
+        paymentMethod: PaymentMethod,
+    ) {
+        prepareOrder()
+        entityManager.flushAndClear()
+
+        updateOrder(order.id, assignments)
+        entityManager.clear()
+
+        val found = orderRepository.findWithLineItemsById(order.id)
+        assertThat(found?.status).isEqualTo(status)
+        assertThat(found?.paymentMethod).isEqualTo(paymentMethod)
+    }
+
+    /** 결제액은 상태와 총액에서 계산하므로 열이 없다. 열과 함께 그 양수 조건도 지웠다. */
+    @Test
+    fun `the orders table has a payment method but no paid amount and one check for the payment state`() {
+        val columns = entityManager
+            .createNativeQuery(
+                "select column_name from information_schema.columns where table_schema = database() " +
+                    "and table_name = 'orders'",
+            )
+            .resultList
+        val checks = entityManager
+            .createNativeQuery(
+                "select constraint_name from information_schema.table_constraints where table_schema = database() " +
+                    "and table_name = 'orders' and constraint_type = 'CHECK'",
+            )
+            .resultList
+
+        assertThat(columns).containsExactlyInAnyOrder(
+            "id",
+            "user_id",
+            "status",
+            "payment_method",
+            "confirmed_at",
+            "created_at",
+            "updated_at",
+            "deleted_at",
+        )
+        assertThat(checks).containsExactly("CK_ORDERS_ON_PAYMENT_STATE")
+    }
+
+    private fun updateOrder(orderId: Long, assignments: String) {
+        entityManager.createNativeQuery("update orders set $assignments where id = :id")
+            .setParameter("id", orderId)
+            .executeUpdate()
     }
 
     private fun setCreatedAt(orderId: Long, createdAt: String) {
