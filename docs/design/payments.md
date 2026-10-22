@@ -82,7 +82,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 ### 2.3 대사(`reconcile`)
 
-알림, 대사 API, 받아들여진 생성 응답이 모두 `reconcile(transactions: List<PgTransaction>)`을 부른다. 위에서부터 처음 맞는 줄을 따른다.
+알림, 대사 API, 받아들여진 생성 응답이 모두 `reconcile(transactions: List<PgTransaction>)`을 부른다. 위에서부터 처음 맞는 줄을 따른다. (2026-10-22: `reconcile`은 PG 거래 하나를 받는다(`reconcile(transaction: PgTransaction)`, [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). 아래 표의 0건과 2건 이상의 줄은 없어졌고, 나머지 줄은 "1건"을 빼면 그대로다. 0건은 PG 주문 번호 조회의 `null`이라 대사를 부르지 않고, 2건 이상은 그 조회의 `MultiplePgTransactionsException`이다(3.2, 3.3). 둘 다 결제의 상태가 아니라 PG의 답에만 달린 판단이라 도메인을 떠났다.)
 
 | 받은 것 | 결과 |
 | --- | --- |
@@ -99,7 +99,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | 1건, 끝나지 않은 결제에 `SUCCESS`나 `FAILED` | 거래 키를 받고 `Changed(이전, 그 상태)` |
 
 - 줄의 차례가 규칙이다. 한 `SUCCESS` 결제가 여러 규칙을 함께 어긴 `SUCCESS`를 들으면 가장 위의 까닭을 말한다. 아래 줄에서는 같은 답이 `Unchanged`이므로, 검사의 차례가 바뀌면 충돌이 소리 없이 사라진다. `PaymentTest`의 한 테스트가 그 차례를 지킨다. 줄마다의 테스트도 `PaymentTest`에 있다.
-- 0건은 결과 미확인과 처리 중을 포함한 네 상태 모두에서 `Unchanged`다(5.4).
+- 0건은 결과 미확인과 처리 중을 포함한 네 상태 모두에서 `Unchanged`다(5.4). (2026-10-22: 0건은 이제 대사에 오지 않는다. 위의 메모.)
 - 거절로 실패한 결제의 줄은 2026-10-20 명세 리뷰에서 더했다. 맞는 생성 전 거절은 PG 거래가 없다는 증거이므로(ADR 0022 규칙 2), 그 뒤에 맞는 PG 거래가 오면 PG 상태가 무엇이든 모순이다. 그 전에는 `SUCCESS`만 `RESULT_MISMATCH`였고 `PENDING`과 `FAILED`는 아래의 "같은 최종 상태나 `PENDING`" 줄을 따라 소리 없이 `Unchanged`였다. 대사는 결제를 끝내기 전에 거래 키를 받으므로, 거래 키 없이 실패한 결제가 곧 거절로 실패한 결제다.
 
 ### 2.4 생성 전 거절(`reject`)
@@ -129,7 +129,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | `Conflicted(reason)` | 결제와 맞지 않는 답이다. 상태와 거래 키는 그대로다. |
 
 - 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다.
-- `Conflicted`는 충돌 까닭(`ConflictReason`, 여섯 값)을 돌려주고 결제를 바꾸지 않는다. 까닭과 시각을 결제에 저장하지 않는다. 원래는 재시작 뒤에도 마지막 충돌을 보려고 두 열을 뒀지만, 이를 읽는 업무 규칙이나 복구 절차가 없어 2026-10-21에 제거했다([ADR 0021 규칙 1의 날짜 메모](../adr/0021-payment-is-its-own-aggregate-and-slice.md)). 결제 행만으로 마지막 충돌을 조회할 수는 없다.
+- `Conflicted`는 충돌 까닭(`ConflictReason`, 여섯 값)을 돌려주고 결제를 바꾸지 않는다. 까닭과 시각을 결제에 저장하지 않는다. 원래는 재시작 뒤에도 마지막 충돌을 보려고 두 열을 뒀지만, 이를 읽는 업무 규칙이나 복구 절차가 없어 2026-10-21에 제거했다([ADR 0021 규칙 1의 날짜 메모](../adr/0021-payment-is-its-own-aggregate-and-slice.md)). 결제 행만으로 마지막 충돌을 조회할 수는 없다. (2026-10-22: `MULTIPLE_TRANSACTIONS`가 빠져 `ConflictReason`은 다섯 값이다(2.3).)
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다.
 - PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것).
 
@@ -159,6 +159,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | `retrieveTransaction(transactionKey)` | `PgTransaction?`. PG가 모르는 키(404)면 `null`. | `PgUnavailableException` |
 | `listTransactions(pgOrderId)` | `List<PgTransaction>`. 비어 있을 수 있다. | `PgUnavailableException` |
 
+- PG 주문 번호의 조회는 `retrieveTransactionByPgOrderId(pgOrderId)`다(2026-10-22, `listTransactions`에서 바꿨다. [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). `PgTransaction?`을 돌려준다. PG 거래가 없으면 `null`이고, 둘 이상이면 `MultiplePgTransactionsException`을 던진다. 이 예외도 `RuntimeException`을 바로 넓혀, 공통 상위 타입이 없는 PG 예외는 넷이다. 넷은 결제 슬라이스의 provided 포트(2단계)가 주문 슬라이스로 그대로 던지게 되므로, 그 포트보다 먼저 `application.payment.provided`로 옮겼다(ADR 0028 규칙 3). 표의 마지막 줄과 아래의 "세 예외"는 그 전의 원문이다.
 - 생성 입력은 포트와 같은 패키지의 `PgTransactionCreateRequest`다(2026-10-21). `pgOrderId`, `cardType`, `cardNumber`는 `@NotBlank`, `Long`인 `amount`는 `@Positive`로 검증한다. 카드 번호는 Hibernate Validator의 `@CreditCardNumber(ignoreNonDigitCharacters = true)`로 Luhn 검사를 하고, 하이픈 같은 숫자 아닌 문자는 무시한다. 카드가 발급되었거나 카드 종류와 맞는지는 이 검사로 알 수 없다. 포트 파라미터에 `@Valid`, 어댑터에 `@Validated`를 두어 잘못된 입력은 HTTP 요청 전에 `ConstraintViolationException`으로 거절한다. 이 예외는 PG의 답이 아니므로 PG 예외로 바꾸지 않는다. 트랜잭션을 더하지 않도록 `@ValidatedApplicationService`는 쓰지 않는다. 어댑터의 HTTP 본문 타입과 설정에서 오는 알림 주소는 그대로 어댑터에 둔다.
 - 생성의 이름은 `createTransaction`이다(2026-10-20, `requestPayment`에서 바꿨다). 이 호출이 PG 거래를 만들고, 거래 키는 그 응답에서 처음 생긴다. Stripe의 PaymentIntent와 Toss의 결제 승인에서 `confirm`은 PG가 먼저 만든 객체를 그 키로 승인하는 일이다. 그 두 단계는 생성과 승인 사이에 고객이 인증하는 단계가 있어서 생긴다. 테스트 PG에는 그 단계가 없어 한 번의 호출로 거래를 만든다. Toss의 키인 결제(`POST /v1/payments/key-in`), Square의 `POST /v2/payments`와 같은 모양이다. `confirm`은 고객의 요청인 주문을 확정하다의 이름으로 남긴다.
 - 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다.
@@ -186,6 +187,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 - **목록:** JSON 배열만 받는다. 객체 하나, `null`, `null` 원소는 잘 짜이지 않은 본문이다.
 - **404:** PG 계약이 404를 말하는 곳은 거래 키 조회뿐이다. 목록의 "없음"은 빈 배열이다. 그래서 목록 조회의 404는 조회 불가다.
+- **하나까지(2026-10-22):** 목록 조회는 이제 `retrieveTransactionByPgOrderId`이고 PG 거래를 하나까지 돌려준다([ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). 잘 짜인 PG 거래의 배열에서 빈 배열은 `null`, 원소 하나는 그 PG 거래, 둘 이상은 `MultiplePgTransactionsException`이다. 원소를 모두 읽은 뒤에 세므로, 둘 이상이어도 읽을 수 없는 원소가 있으면 `PgUnavailableException`이다. 위 표의 목록 조회 줄은 그 전의 원문이다.
 
 ### 3.4 왜 정확한 422만 거절인가
 
@@ -272,7 +274,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 ### 5.4 0건은 PG 거래가 없다는 증거가 아니다
 
-거래 키 조회의 404는 `null`, 목록의 빈 배열은 빈 목록이고, 대사에서 `Unchanged`다. PG 거래가 아직 보이지 않거나 생성 요청이 아직 오는 중일 수 있다. 잘못된 base URL이나 PG 앞의 무엇이 돌려준 404도 거래 키 조회에서는 `null`로 읽힌다. 대사가 0건에 아무것도 바꾸지 않으므로 받아들인다(ADR 0022 규칙 3).
+거래 키 조회의 404는 `null`, 목록의 빈 배열은 빈 목록이고, 대사에서 `Unchanged`다. PG 거래가 아직 보이지 않거나 생성 요청이 아직 오는 중일 수 있다. 잘못된 base URL이나 PG 앞의 무엇이 돌려준 404도 거래 키 조회에서는 `null`로 읽힌다. 대사가 0건에 아무것도 바꾸지 않으므로 받아들인다(ADR 0022 규칙 3). (2026-10-22: 목록의 빈 배열도 이제 `null`이다. `reconcile`이 PG 거래 하나를 받으므로 `null`이면 대사를 부르지 않고 저장된 상태로 답한다(2.3).)
 
 조회도 다시 보내지 않는다. 끊긴 GET은 PG에 한 번만 간다. 제한된 재조회는 3단계가 조회에만 씌운다(ADR 0022 규칙 7).
 

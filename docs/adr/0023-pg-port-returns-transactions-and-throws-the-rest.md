@@ -11,6 +11,7 @@ date: 2026-10-20
    - `createTransaction`은 받아들여진 생성의 `PgTransaction`을 돌려준다. 성공이 아니다. PG 상태는 그 PG 거래가 말한다.
    - `retrieveTransaction`은 `PgTransaction?`이고, PG가 그 키를 모르면(404) `null`이다. `listTransactions`는 `List<PgTransaction>`이고 비어 있을 수 있다.
    - `null`과 빈 목록은 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3). 대사에는 `listOfNotNull(…)`이나 목록을 그대로 넘긴다.
+   - (2026-10-22: [ADR 0028](./0028-order-slice-orchestrates-the-payment.md)의 결정으로 `listTransactions`는 `retrieveTransactionByPgOrderId(pgOrderId): PgTransaction?`가 되었다. 빈 배열은 `null`, 원소 하나는 그 PG 거래이고, 둘 이상이면 `MultiplePgTransactionsException`을 던진다. 이 예외도 `RuntimeException`을 바로 넓히고 공통 상위 타입이 없어, 규칙 2와 5의 세 예외는 넷이 된다. `null`은 여전히 PG 거래가 없다는 증거가 아니다. `reconcile`이 PG 거래 하나를 받으므로 찾은 PG 거래를 그대로 넘기고, `null`이면 부르지 않는다. 그래서 대가의 마지막 줄과 달리 "아직 없음"은 두 조회 모두 `null`이다. 결제 슬라이스의 provided 포트가 이 예외 넷을 주문 슬라이스로 그대로 던지게 되므로, 그 포트보다 먼저 넷 모두 `application.payment.provided`로 옮겼다(ADR 0028 규칙 3).)
 2. **나머지는 결과마다 다른 예외다.**
    - `PgRejectedException(rejection)`: 정확한 생성 전 거절. PG 거래가 없다.
    - `PgOutcomeUnknownException`: 생성의 결과 미확인. 실패가 아니다.
