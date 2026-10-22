@@ -2,6 +2,8 @@ package com.loopers.application.payment.required
 
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.application.payment.provided.PgOutcomeUnknownException
+import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
 import org.assertj.core.api.Assertions.assertThat

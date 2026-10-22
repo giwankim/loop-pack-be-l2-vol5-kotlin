@@ -3,6 +3,9 @@ package com.loopers.application.payment.required
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.adapter.integration.pg.LocalPgGatewayConfig
+import com.loopers.application.payment.provided.PgOutcomeUnknownException
+import com.loopers.application.payment.provided.PgRejectedException
+import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.config.jackson.JacksonConfig
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgRejection

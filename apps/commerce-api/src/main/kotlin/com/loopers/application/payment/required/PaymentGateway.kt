@@ -1,5 +1,8 @@
 package com.loopers.application.payment.required
 
+import com.loopers.application.payment.provided.PgOutcomeUnknownException
+import com.loopers.application.payment.provided.PgRejectedException
+import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.domain.payment.PgTransaction
 import jakarta.validation.ConstraintViolationException
 import jakarta.validation.Valid

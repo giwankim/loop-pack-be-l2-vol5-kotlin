@@ -1,4 +1,4 @@
-package com.loopers.application.payment.required
+package com.loopers.application.payment.provided
 
 /**
  * PG에게서 읽을 수 있는 조회의 답을 얻지 못했다. 시간 초과, 연결 끊김, 다른 상태 코드, 읽을 수 없는 응답이다(ADR 0022 규칙 3, ADR 0023).

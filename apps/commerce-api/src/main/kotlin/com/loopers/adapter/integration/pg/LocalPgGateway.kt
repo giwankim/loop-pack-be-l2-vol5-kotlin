@@ -1,10 +1,10 @@
 package com.loopers.adapter.integration.pg
 
+import com.loopers.application.payment.provided.PgOutcomeUnknownException
+import com.loopers.application.payment.provided.PgRejectedException
+import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.application.payment.required.PaymentGateway
-import com.loopers.application.payment.required.PgOutcomeUnknownException
-import com.loopers.application.payment.required.PgRejectedException
 import com.loopers.application.payment.required.PgTransactionCreateRequest
-import com.loopers.application.payment.required.PgUnavailableException
 import com.loopers.domain.payment.PgRejection
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction

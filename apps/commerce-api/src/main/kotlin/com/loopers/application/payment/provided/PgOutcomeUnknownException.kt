@@ -1,4 +1,4 @@
-package com.loopers.application.payment.required
+package com.loopers.application.payment.provided
 
 /**
  * 생성이 PG에서 어떻게 되었는지 모른다. PG 거래가 있을 수도, 이미 성공했을 수도 있다(ADR 0022 규칙 3, ADR 0023).

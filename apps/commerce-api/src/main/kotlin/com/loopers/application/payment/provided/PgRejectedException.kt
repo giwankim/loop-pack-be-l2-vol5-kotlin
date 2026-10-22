@@ -1,4 +1,4 @@
-package com.loopers.application.payment.required
+package com.loopers.application.payment.provided
 
 import com.loopers.domain.payment.PgRejection
 
