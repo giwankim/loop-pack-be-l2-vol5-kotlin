@@ -57,6 +57,8 @@
 | `status` | `OrderStatus` | `DRAFT`(확정 전), `PAYMENT_PENDING`(결제 중), `CONFIRMED`(확정), `PAYMENT_FAILED`(결제 실패) |
 | `paymentMethod` | `PaymentMethod?` | 결제수단. `POINT` 또는 `PG`이고 `DRAFT`에는 없다. 결제 중·결제 실패는 늘 `PG`다 |
 | `paidAmount` | `Money?` | 결제액. 열이 없고 읽을 때 계산한다. `CONFIRMED`면 총액, 아니면 없다 |
+| `paysThroughPg` | `Boolean` | 결제수단이 `PG`인지. 결제 애그리거트는 이런 주문에만 있다(ADR 0028 규칙 1). 열이 없고 읽을 때 계산한다 |
+| `productQuantities` | `Map<Long, Int>` | 상품 ID마다 품목의 수량. 확정이 이것으로 재고를 예약하고, 결제가 실패하면 같은 수량을 돌려준다(ADR 0026 규칙 2). 열이 없고 읽을 때 계산한다 |
 | `confirmedAt` | `Instant?` | 확정 시각. `CONFIRMED`에만 있다 |
 | `createdAt` | `Instant` | 생성 시각. `BaseEntity`가 저장할 때 마이크로초로 잘라 찍는다 |
 

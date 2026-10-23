@@ -520,16 +520,17 @@ stateDiagram-v2
 | 2 | 웹 경계 `@IdempotencyKey` | 헤더가 있는지, 1자에서 64자까지의 공백 없는 보이는 ASCII인지(`Payment.checkIdempotencyKey`) | 400 |
 | 3 | 웹 경계 `@Valid` | 카드 종류, 카드 번호(Luhn) | 400 |
 | 4 | TX A | 주문을 잠가 읽는다. 없거나 남의 주문 | 404 `ORDER_NOT_FOUND` |
-| 5 | TX A | 결제수단이 POINT | 409 `ORDER_ALREADY_CONFIRMED` |
-| 6 | TX A | 결제수단이 PG. 결제를 시작한 키면 재요청(12.2), 다른 키면 거절 | 409 `IDEMPOTENCY_KEY_MISMATCH` |
+| 5 | TX A | 결제수단이 PG(`Order.paysThroughPg`). 결제를 시작한 키면 재요청(12.2), 다른 키면 거절 | 409 `IDEMPOTENCY_KEY_MISMATCH` |
+| 6 | TX A | 그 밖의 주문이 확정 전인지(`Order.ensureDraft`). 결제수단이 POINT인 주문은 확정된 주문이다 | 409 `ORDER_ALREADY_CONFIRMED` |
 | 7 | TX A | 확정 전 주문에 다른 결제가 쓴 키(`PaymentValidator.validateForStart`) | 409 `IDEMPOTENCY_KEY_IN_USE` |
 | 8 | TX A | 재고 예약(`StockDeductor.deduct`). 주문할 수 없는 상품이 재고 부족보다 앞선다. | 404 `ORDER_PRODUCT_NOT_AVAILABLE`, 409 `INSUFFICIENT_STOCK` |
 | 9 | TX A | 결제 시작(`PaymentStarter.start`). PG가 받는 64비트를 넘는 금액 | 400 |
 | 10 | TX A의 결제 저장 | 같은 키로 겨룬 다른 확정 전 주문이 먼저 커밋해, 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸린다 | 409 `IDEMPOTENCY_KEY_IN_USE` |
 
 - 1–3은 주문을 읽기 전이다. 형식이 틀린 키는 없는 주문에도 같은 400이다(`confirming with a malformed Idempotency-Key returns 400 naming the broken rule before anything is reserved or sent`). 헤더 없음은 `MissingRequestHeaderException`이고 400으로 옮긴다.
+- 2의 형식은 조율하는 서비스(`OrderPaymentService.confirm`)도 TX A를 열기 전에 본다. 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 7의 `IDEMPOTENCY_KEY_IN_USE`가 된다(`a key with a trailing space is rejected as malformed before it can find the payment of the key without it`). (2026-10-23: 명세 147의 검토에서 더했다.)
 - 4–7은 상품을 읽기 전이다. 404는 재요청보다 앞서, 남의 주문에 그 주인의 키를 보내도 404다(`requester and ownership checks precede both the first confirmation and a replay of its key`).
-- 5는 `ensureDraft()`가 아니라 결제수단을 본다. `ensureDraft()`는 8 뒤의 `startPayment()` 안에서 돌기 때문이다. 그 차례라면 상품이 삭제된, 포인트로 확정된 주문이 `ORDER_PRODUCT_NOT_AVAILABLE`로 답한다([issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155)).
+- 6은 `ensureDraft()`를 7보다 먼저 부른다. 8 뒤의 `startPayment()` 안에서만 돌면 상품이 삭제된, 포인트로 확정된 주문이 `ORDER_PRODUCT_NOT_AVAILABLE`로 답한다([issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155)). 5와 6의 주문은 겹치지 않으므로 둘의 차례는 답을 바꾸지 않는다. (2026-10-23: 명세 147의 검토에서 결제수단을 두 번 견주던 TX A를 `Order.paysThroughPg`와 `ensureDraft()`로 바꾸며 5와 6의 차례를 바꿨다. 전에는 POINT를 먼저 보았다.)
 - 7은 8보다 앞서야 한다. 재고가 모자란 주문에 남이 쓴 키를 보내도 `IDEMPOTENCY_KEY_IN_USE`다. 사전 조건을 예약 뒤로 옮긴 변이 실행에서는 `INSUFFICIENT_STOCK`이 나왔다(issue 155, `confirming a draft with a key another user's order used returns 409 IDEMPOTENCY_KEY_IN_USE before reserving`의 재고 1 경우).
 - 8–10의 거절은 TX A를 되돌린다. 주문은 `updatedAt`까지 확정 전 그대로, 재고도 그대로다. 결제가 없으니 키도 쓰이지 않아 같은 키로 다시 확정할 수 있다(`a later item shortage rolls back every reservation and sends nothing, and the same key confirms after replenishment`). TX A의 쓰기가 DB에 나간 뒤에 실패해도 같다(`OrderConfirmerRollbackTest`, `OrderConfirmationApiTest`의 `a failure on TX A's last write at commit undoes its reservations and payment, sends nothing and permits retry`).
 - 10은 7을 함께 지난 두 확정 전 주문의 경합이다. 늦은 쪽의 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸려 TX A가 예약과 함께 되돌아간다. 결제의 식별자는 `IDENTITY`라 삽입은 커밋이 아니라 `PaymentStarter.start`의 저장에서 나간다. 조율하는 서비스가 `DataIntegrityViolationException`을 트랜잭션 밖에서 잡아 `validateForStart`를 다시 부른다. MySQL은 앞선 쪽이 커밋한 뒤에야 위반을 알리므로 앞선 쪽의 결제가 보이고, 7과 같은 409가 된다. 키가 여전히 비어 있으면 다른 제약의 위반이라 그대로 던진다(ADR 0025 규칙 3, `two drafts racing with one key make one payment and the loser is rejected as in use with its stock untouched`).
