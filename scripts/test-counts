@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Print the test counts of the last Gradle test run, read from its JUnit XML reports.
+
+Usage: scripts/test-counts [--results DIR] [CLASS ...]
+
+Prints the totals (classes, tests, failures, errors, skipped), then one row per CLASS,
+matched by simple class name (OrderPaymentIntegrationTest, not a suffix filter).
+Exits 1 when any test failed, errored or was skipped, when a named CLASS has no report,
+or when DIR holds no reports. Run it after `./gradlew :apps:commerce-api:cleanTest ... check`
+so stale reports from an earlier run can't leak into the counts.
+"""
+
+import argparse
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+DEFAULT_RESULTS = Path(__file__).resolve().parent.parent / "apps/commerce-api/build/test-results/test"
+FIELDS = ("tests", "failures", "errors", "skipped")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS, help="directory of TEST-*.xml reports")
+    parser.add_argument("classes", nargs="*", help="simple class names to list")
+    args = parser.parse_args()
+
+    reports = sorted(args.results.glob("TEST-*.xml"))
+    if not reports:
+        print(f"no JUnit XML reports in {args.results}", file=sys.stderr)
+        return 1
+
+    per_class = {}
+    for report in reports:
+        suite = ET.parse(report).getroot()
+        per_class[suite.get("name").rsplit(".", 1)[-1]] = {field: int(suite.get(field)) for field in FIELDS}
+
+    totals = {field: sum(counts[field] for counts in per_class.values()) for field in FIELDS}
+    print(
+        f"{len(per_class)} classes, {totals['tests']} tests, {totals['failures']} failures, "
+        f"{totals['errors']} errors, {totals['skipped']} skipped"
+    )
+
+    status = 0
+    for name in args.classes:
+        counts = per_class.get(name)
+        if counts is None:
+            print(f"{name}: no report", file=sys.stderr)
+            status = 1
+            continue
+        extra = ", ".join(f"{counts[field]} {field}" for field in FIELDS[1:] if counts[field])
+        print(f"{name} {counts['tests']}" + (f" ({extra})" if extra else ""))
+
+    if totals["failures"] or totals["errors"] or totals["skipped"]:
+        status = 1
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
