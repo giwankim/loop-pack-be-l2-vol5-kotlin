@@ -11,6 +11,7 @@ import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
+import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
@@ -27,6 +28,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.wiremock.spring.InjectWireMock
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -44,6 +46,7 @@ import java.util.UUID
 class PaymentApiTest(
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
+    private val pgLookupClock: TestClock,
 ) : BaseWebApiAdapterTest() {
     companion object {
         /** 확정이 싣는 카드. 카드 번호는 Luhn 검사를 지난다. 생성 스텁은 이 카드를 맞춘다. */
@@ -255,7 +258,7 @@ class PaymentApiTest(
 
     /**
      * 조회할 수 없으면 503 `PG_UNAVAILABLE`이다. 묻지 못했으니 PG가 다시 보내면 답이 바뀔 수 있다(ADR 0031 규칙 6). 결제와 예약은 그대로다.
-     * 조회 수는 재조회가 정하므로 세지 않는다.
+     * The lookup is retried once before the callback gives up, so the PG receives 2 lookups (ADR 0030 rule 4).
      */
     @ParameterizedTest
     @ValueSource(strings = ["503", "lost response"])
@@ -277,6 +280,45 @@ class PaymentApiTest(
         error.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
 
         assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStock(product, 8)
+    }
+
+    /**
+     * While the lookup breaker is open, a callback answers 503 `PG_UNAVAILABLE` without sending the PG a lookup, so a resending
+     * PG tries again later (ADR 0031 rule 6). The breaker opens the way it would in production: two callbacks against a PG
+     * that drops every lookup response, 4 lookups in all. The payment and the reservation stay as they were throughout. Once
+     * the 60 s wait is over and the PG answers again, the same callback probes, answers 200 and confirms the order.
+     */
+    @Test
+    fun `a callback while the lookup breaker is open answers 503 without a lookup and finishes the payment after the wait`() {
+        prepareProduct(price = 1_000, stock = 10)
+        val pgOrderId = preparePayment()
+        val pending = requestDetail()
+        assertThat(pending).hasStatusOk()
+        testPg.losesLookupResponse()
+        val json = callback(pgOrderId, status = "SUCCESS")
+        repeat(2) { assertThat(requestCallback(json)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE) }
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+
+        val error = assertThat(requestCallback(json)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
+
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+        assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)
+        assertStock(product, 8)
+
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, PgStatus.SUCCESS))
+        pgLookupClock.advance(Duration.ofSeconds(61))
+
+        assertThat(requestCallback(json)).hasStatusOk()
+
+        val detail = assertThat(requestDetail()).hasStatusOk().bodyJson()
+        detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        detail.extractingPath("$.data.paymentStatus").isEqualTo("SUCCESS")
+        assertThat(testPg.lookupCount()).isEqualTo(5)
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
         assertStock(product, 8)

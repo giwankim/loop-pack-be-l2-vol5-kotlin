@@ -62,6 +62,10 @@ resilience4j:
           - com.loopers.application.payment.provided.PgUnavailableException
         ignore-exceptions:
           - com.loopers.application.payment.provided.MultiplePgTransactionsException
+        # The health indicator reports the state but never fails: product browsing, ordering and admin keep working while
+        # the PG is down, so an open breaker must not turn commerce-api DOWN (ADR 0030 rule 7).
+        register-health-indicator: true
+        allow-health-indicator-to-fail: false
   retry:
     instances:
       pg-lookup:
@@ -74,6 +78,21 @@ resilience4j:
         ignore-exceptions:
           - io.github.resilience4j.circuitbreaker.CallNotPermittedException
           - com.loopers.application.payment.provided.MultiplePgTransactionsException
+
+# Resilience4j's health contributor is off unless enabled. It shows each breaker that registers a health indicator under the
+# circuitBreakers component. The main health endpoint shows only the overall status, so operators read the breaker's state at
+# /actuator/health/pg-lookup: a group of the breakers alone, with details, which exposes nothing about the DB or Redis.
+# The breaker metrics need no switch: the Boot module binds them to the meter registry on its own.
+management:
+  health:
+    circuitbreakers:
+      enabled: true
+  endpoint:
+    health:
+      group:
+        pg-lookup:
+          include: circuitBreakers
+          show-details: always
 
 ---
 spring:

@@ -43,8 +43,10 @@ import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.micrometer.core.instrument.MeterRegistry
 import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.ThrowingConsumer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -56,6 +58,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.aop.support.AopUtils
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.context.logging.LoggingApplicationListener
+import org.springframework.boot.actuate.endpoint.SecurityContext
+import org.springframework.boot.health.actuate.endpoint.CompositeHealthDescriptor
+import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
+import org.springframework.boot.health.actuate.endpoint.HealthEndpointGroups
+import org.springframework.boot.health.actuate.endpoint.IndicatedHealthDescriptor
+import org.springframework.boot.health.contributor.Health
+import org.springframework.boot.health.contributor.Status
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.util.AopTestUtils
@@ -90,6 +99,9 @@ class OrderPaymentIntegrationTest(
     private val paymentGateway: PaymentGateway,
     private val circuitBreakerRegistry: CircuitBreakerRegistry,
     private val pgLookupClock: TestClock,
+    private val healthEndpoint: HealthEndpoint,
+    private val healthEndpointGroups: HealthEndpointGroups,
+    private val meterRegistry: MeterRegistry,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         private const val IDEMPOTENCY_KEY = "confirm-key-1"
@@ -134,15 +146,26 @@ class OrderPaymentIntegrationTest(
 
     private val applicationLogger = LoggerFactory.getLogger("com.loopers.application") as Logger
 
+    /**
+     * Logs from the PG adapter, where the gateway's configuration logs the breaker's state transitions. The base class resets
+     * the breaker in its own `@BeforeEach`, which JUnit runs before this class's, so a WARN from that reset is never captured.
+     */
+    private val pgAdapterLogs = ListAppender<ILoggingEvent>()
+
+    private val pgAdapterLogger = LoggerFactory.getLogger("com.loopers.adapter.integration.pg") as Logger
+
     @BeforeEach
     fun captureApplicationLogs() {
         applicationLogs.start()
         applicationLogger.addAppender(applicationLogs)
+        pgAdapterLogs.start()
+        pgAdapterLogger.addAppender(pgAdapterLogs)
     }
 
     @AfterEach
     fun releaseApplicationLogs() {
         applicationLogger.detachAppender(applicationLogs)
+        pgAdapterLogger.detachAppender(pgAdapterLogs)
     }
 
     /** 과제 6절의 장면 1. 받아들여진 생성이 성공을 말하면 TX B가 주문을 확정하고 예약을 소비한다. 재고를 더 줄이지 않고 포인트도 쓰지 않는다. */
@@ -461,6 +484,91 @@ class OrderPaymentIntegrationTest(
         assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.CLOSED)
         assertThat(testPg.unmatchedRequests()).isEmpty()
         assertStillPending(order, product, stock = 3)
+    }
+
+    /**
+     * Each state transition of the breaker logs exactly one WARN (ADR 0030 rule 7). The first reconcile against the dead PG
+     * leaves the breaker CLOSED because 2 samples are below the minimum of 4, and a reconcile while OPEN never reaches the PG, so
+     * neither logs anything. Opening, probing, reopening, probing again and closing log one line each, in that order. There are
+     * two pending orders because closing takes two successful lookups after the PG is back.
+     */
+    @Test
+    fun `every state change of the lookup breaker logs one warning and a reconcile that changes no state logs none`() {
+        val first = prepareOrder()
+        val firstPayment = confirmPending(first)
+        val second = prepareOrder()
+        val secondPayment = confirmPending(second)
+        testPg.losesLookupResponse()
+
+        orderConfirmer.reconcile(first.userId, first.id)
+
+        assertBreakerWarnings()
+
+        orderConfirmer.reconcile(first.userId, first.id)
+
+        assertBreakerWarnings(CircuitBreaker.State.CLOSED to CircuitBreaker.State.OPEN)
+
+        orderConfirmer.reconcile(first.userId, first.id)
+        pgLookupClock.advance(Duration.ofSeconds(61))
+        orderConfirmer.reconcile(first.userId, first.id)
+
+        assertBreakerWarnings(
+            CircuitBreaker.State.CLOSED to CircuitBreaker.State.OPEN,
+            CircuitBreaker.State.OPEN to CircuitBreaker.State.HALF_OPEN,
+            CircuitBreaker.State.HALF_OPEN to CircuitBreaker.State.OPEN,
+        )
+
+        testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
+        testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
+        pgLookupClock.advance(Duration.ofSeconds(61))
+        orderConfirmer.reconcile(first.userId, first.id)
+        orderConfirmer.reconcile(second.userId, second.id)
+
+        assertBreakerWarnings(
+            CircuitBreaker.State.CLOSED to CircuitBreaker.State.OPEN,
+            CircuitBreaker.State.OPEN to CircuitBreaker.State.HALF_OPEN,
+            CircuitBreaker.State.HALF_OPEN to CircuitBreaker.State.OPEN,
+            CircuitBreaker.State.OPEN to CircuitBreaker.State.HALF_OPEN,
+            CircuitBreaker.State.HALF_OPEN to CircuitBreaker.State.CLOSED,
+        )
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.CLOSED)
+        assertThat(testPg.lookupCount()).isEqualTo(8)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+    }
+
+    /**
+     * The health indicator only reports the state (ADR 0030 rule 7). With the breaker open, the overall health is still UP while
+     * the `circuitBreakers` component shows `pg-lookup` as OPEN: browsing, ordering and admin work without the PG. Because the
+     * indicator may not fail, `pg-lookup` reports the custom status `CIRCUIT_OPEN` instead of DOWN, and Boot's aggregator leaves
+     * statuses outside its order out of the overall status. The Boot
+     * module's Micrometer binding exports the same state as a gauge.
+     *
+     * Operators read the state at `/actuator/health/pg-lookup`, a group of the breakers alone that always shows details; the
+     * main endpoint shows only the overall status. The management server does not start in a mock web environment, so the
+     * test reads the endpoint as a bean. The bean shows every component whatever the exposure, so the group's membership and
+     * its details setting are asserted on their own.
+     */
+    @Test
+    fun `an open lookup breaker shows in the health endpoint and the state gauge while the overall health stays UP`() {
+        prepareOrder()
+        confirmPending()
+        testPg.losesLookupResponse()
+        openPgLookupBreaker()
+
+        assertThat(healthEndpoint.health().status).isEqualTo(Status.UP)
+        val group = healthEndpointGroups.get(LocalPgGateway.PG_LOOKUP)!!
+        assertThat(group.isMember("circuitBreakers")).isTrue()
+        assertThat(group.isMember("db")).isFalse()
+        assertThat(group.showDetails(SecurityContext.NONE)).isTrue()
+        val pgLookupGroup = healthEndpoint.healthForPath(LocalPgGateway.PG_LOOKUP) as CompositeHealthDescriptor
+        val circuitBreakers = pgLookupGroup.components!!["circuitBreakers"] as IndicatedHealthDescriptor
+        assertThat(circuitBreakers.details[LocalPgGateway.PG_LOOKUP]).isInstanceOfSatisfying(Health::class.java) {
+            assertThat(it.status.code).isEqualTo("CIRCUIT_OPEN")
+            assertThat(it.details["state"]).isEqualTo(CircuitBreaker.State.OPEN)
+        }
+        assertThat(pgLookupStateGauge(CircuitBreaker.State.OPEN)).isEqualTo(1.0)
+        assertThat(pgLookupStateGauge(CircuitBreaker.State.CLOSED)).isEqualTo(0.0)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     /**
@@ -1298,7 +1406,8 @@ class OrderPaymentIntegrationTest(
 
     /**
      * 조회할 수 없으면 PG의 대사 포트는 `PG_UNAVAILABLE`을 던진다. 묻지 못했으니 PG가 알림을 다시 보내야 한다(ADR 0031 규칙 6). 같은 경우
-     * 고객의 대사는 지금처럼 저장된 상태로 답한다. 어느 쪽도 결제와 예약을 바꾸지 않는다. 조회 수는 재조회의 티켓이 정하므로 세지 않는다.
+     * 고객의 대사는 지금처럼 저장된 상태로 답한다. 어느 쪽도 결제와 예약을 바꾸지 않는다.
+     * Each side retries its lookup once, so the PG receives 2 lookups per reconcile and 4 in all (ADR 0030 rule 4).
      */
     @ParameterizedTest
     @ValueSource(strings = ["503", "stall"])
@@ -1329,12 +1438,39 @@ class OrderPaymentIntegrationTest(
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
         assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(4)
         assertThat(testPg.unmatchedRequests()).isEmpty()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
             assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(PaymentStatus.PENDING)
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
         }
+    }
+
+    /**
+     * An open breaker is unavailable too. While it is open, the PG's reconcile throws `PG_UNAVAILABLE` without a lookup, so a
+     * resending PG tries again after the wait, and the customer's reconcile of the same order answers the stored state
+     * (ADR 0030 rule 10, ADR 0031 rule 6). The breaker opens on the customer's two reconciles against a dead PG, 4 lookups,
+     * and the count stays at 4. The payment and the reservation are unchanged.
+     */
+    @Test
+    fun `the PG's reconcile throws PG_UNAVAILABLE on an open breaker without a lookup, the customer's answers stored state`() {
+        val product = prepareProduct(price = 1_000, stock = 5)
+        prepareOrder(products = listOf(product), quantity = 2)
+        confirmPending()
+        testPg.losesLookupResponse()
+        openPgLookupBreaker()
+
+        val exception = assertThrows<CoreException> { orderPaymentReconciler.reconcile(order.id) }
+        val stored = orderConfirmer.reconcile(user.id, order.id)
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.PG_UNAVAILABLE)
+        assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+        assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStillPending(order, product, stock = 3)
     }
 
     /**
@@ -1705,6 +1841,26 @@ class OrderPaymentIntegrationTest(
 
     private fun pgLookupBreaker(): CircuitBreaker {
         return circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP)
+    }
+
+    /** The breaker logged exactly one WARN per pair in [transitions], in order, each naming the breaker and both states. */
+    private fun assertBreakerWarnings(vararg transitions: Pair<CircuitBreaker.State, CircuitBreaker.State>) {
+        val requirements = transitions.map { (from, to) ->
+            ThrowingConsumer<ILoggingEvent> {
+                assertThat(it.formattedMessage).contains("name=${LocalPgGateway.PG_LOOKUP}", "from=$from", "to=$to")
+            }
+        }
+
+        assertThat(pgAdapterLogs.list.filter { it.level == Level.WARN }).satisfiesExactly(*requirements.toTypedArray())
+    }
+
+    /** The breaker's Micrometer state gauge for [state]: 1 while the breaker is in that state, 0 otherwise. */
+    private fun pgLookupStateGauge(state: CircuitBreaker.State): Double {
+        return meterRegistry.get("resilience4j.circuitbreaker.state")
+            .tag("name", LocalPgGateway.PG_LOOKUP)
+            .tag("state", state.name.lowercase())
+            .gauge()
+            .value()
     }
 
     /** 브레이커도 시간 초과도 결제를 실패로 끝내거나 예약을 돌려주지 않는다. 새 트랜잭션에서 [order]와 결제, [product]의 재고를 다시 읽는다. */
