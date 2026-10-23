@@ -108,7 +108,7 @@
 
   > 2026-10-23 TX B는 결제가 실패로 끝나면 `Order.failPayment` 뒤에 `StockRestorer.restore`로 예약을 한 번 돌려주며, 그때만 상품(id 오름차순)과 상품 목록 revision도 잠근다(ADR 0028 규칙 4). 위 첫 메모의 "TX B는 지금 주문만 잠근다"는 그 전의 것이다. 대사(`OrderPaymentReconciler.reconcile`)는 주문을 잠그지 않고 읽은 뒤 PG에 조회하고, 찾은 PG 거래를 같은 TX B로 반영한다. 확정과 대사의 흐름, 잠금, 장면은 [결제 설계](../design/payments.md) 10–14절에 있다.
 
-  > 2026-10-23 위 흐름과 메모의 `StockDeductor.deduct`와 `StockRestorer.restore`는 이제 한 포트 `StockReserver`의 `reserve`와 `release`다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모).
+  > 2026-10-23 위 흐름과 메모의 `StockDeductor.deduct`와 `StockRestorer.restore`는 이제 한 포트 `StockReserver`의 `reserve`와 `release`이고, 대사의 `OrderPaymentReconciler.reconcile`은 `OrderConfirmer.reconcile`이다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모).
 - 관리자 상세 조회: `OrderFinder.findForAdmin` → `findWithLineItemsById` → 없으면 `ORDER_NOT_FOUND`(404). 요청자 헤더도 소유권도 없다. 자격은 관리자 경계가 본다.
 - 관리자 목록 조회: `OrderFinder.findAll(OrderAdminListRequest)` → 페이지 범위 확인 → 같은 `findAll(userId, …)`에 거를 사용자를 넣거나 비운다. 주문한 사용자의 식별자를 응답에 싣고, 카탈로그가 바뀌거나 상품이 삭제되어도 저장된 이름·단가를 그대로 준다(설계 16).
 

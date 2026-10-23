@@ -393,7 +393,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
 | [155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155) | 같은 키의 재요청, `IDEMPOTENCY_KEY_MISMATCH`, `IDEMPOTENCY_KEY_IN_USE`(`PaymentValidator`), 같은 키로 겨룬 삽입의 처리. |
-| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. (2026-10-23: 명세 147의 검토에서 PG 조회와 생성의 포트를 `PgTransactionClient` 하나로 합쳤다. 11.1.) |
+| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. (2026-10-23: 명세 147의 검토에서 PG 조회와 생성의 포트를 `PgTransactionClient` 하나로 합쳤다. 그 뒤 `OrderPaymentReconciler`도 `OrderConfirmer`의 `reconcile`이 됐다. 11.1.) |
 
 ## 10. 주문과 결제의 상태
 
@@ -459,7 +459,7 @@ stateDiagram-v2
 
 | 포트 | 구현 | 트랜잭션 | 부르는 곳 |
 | --- | --- | --- | --- |
-| `OrderConfirmer.confirm`, `OrderPaymentReconciler.reconcile` | `OrderPaymentService` | `NEVER` | `OrderApi` |
+| `OrderConfirmer.confirm`, `reconcile` | `OrderPaymentService` | `NEVER` | `OrderApi` |
 | 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSteps` | 새 트랜잭션 | `OrderPaymentService` |
 | `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentService`(12.1의 10) |
 | `PaymentRecorder.start`, `reconcile`, `reject` | `PaymentModifyService` | TX A, TX B에 참여 | TX A, TX B |
@@ -468,7 +468,7 @@ stateDiagram-v2
 | `StockReserver.reserve`, `release` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
 
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
-- `PaymentRecorder`와 `StockReserver`도 같은 까닭으로 포트 하나다. 다른 슬라이스의 조율이 부르는 쓰기 포트는 구현하는 Service와 부르는 슬라이스의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
+- `PaymentRecorder`, `StockReserver`, 고객의 `OrderConfirmer`(`confirm`, `reconcile`)도 같은 까닭으로 포트 하나다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합치고, `OrderPaymentReconciler`를 `OrderConfirmer`에 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
 
 ### 11.2 잠금
 
@@ -568,7 +568,7 @@ stateDiagram-v2
 
 ## 13. 대사
 
-`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 `OrderPaymentReconciler.reconcile(userId, orderId)`이고, 확정과 같은 `OrderPaymentService`가 구현하므로 `NEVER`다.
+`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 확정과 같은 `OrderConfirmer`의 `reconcile(userId, orderId)`이고, `OrderPaymentService`가 구현하므로 `NEVER`다.
 
 ### 13.1 차례
 
@@ -695,7 +695,7 @@ stateDiagram-v2
 | `PAYMENT_PENDING`, `CONFIRMED`, `PAYMENT_FAILED` | `OrderStatus`의 같은 값 | 그대로다. `CONTEXT.md`는 결제 중인 주문, 확정된 주문, 결제에 실패한 주문이라 부른다. |
 | 이전 `POINT` 주문 | 결제수단 `PaymentMethod.POINT` | 결제수단 열이 포인트로 확정된 주문과 PG로 결제한 주문을 가른다. |
 | 가용 재고, 주문별 수량과 상태 | 팔 수 있는 재고 `Product.stock`, 결제 중인 주문의 품목 수량 | 예약 표도 예약 수량 열도 두지 않는다. 주문의 상태가 곧 예약의 상태다(ADR 0026). |
-| `POST /orders/{id}/payment/reconcile` | `POST /api/v1/orders/{orderId}/payment/reconcile`, 포트 `OrderPaymentReconciler` | 경로는 이 저장소의 `/api/v1` 아래에 그대로 두었다. PG 조회는 `PgTransactionClient.retrieve`이고 Finder가 아니다. PG 조회의 `null`은 "없음"이 아니기 때문이다. |
+| `POST /orders/{id}/payment/reconcile` | `POST /api/v1/orders/{orderId}/payment/reconcile`, 포트 `OrderConfirmer.reconcile` | 경로는 이 저장소의 `/api/v1` 아래에 그대로 두었다. PG 조회는 `PgTransactionClient.retrieve`이고 Finder가 아니다. PG 조회의 `null`은 "없음"이 아니기 때문이다. |
 | `*PaymentIntegrationTest` | `OrderPaymentIntegrationTest` | 주문 슬라이스의 provided 포트를 시험한다. 과제의 필터가 이 클래스를 찾는다. |
 
 ### 16.2 2단계의 명령
@@ -736,7 +736,7 @@ stateDiagram-v2
 
 - **알림(callback).** 과제의 `POST /payments/callback`이다. 알림의 본문은 결과가 아니라 대사할 까닭이다(`CONTEXT.md`의 대사하다). 결제의 웹 어댑터가 PG 주문 번호로 결제를 찾아 그 주문의 대사 유스케이스를 부른다(ADR 0028 규칙 6). 그러려면 다음이 필요하다.
   - `PaymentRepository`에는 PG 주문 번호로 찾는 메서드가 없다. 인덱스는 `UK_PAYMENT_ON_PG_ORDER_ID`로 이미 있다(2.1, ADR 0029 규칙 3).
-  - `OrderPaymentReconciler.reconcile(userId, orderId)`는 고객의 요청을 받는다. 알림에는 요청자가 없으므로, 주문의 사용자를 읽어 넘길지 사용자 없는 입구를 둘지 정한다.
+  - `OrderConfirmer.reconcile(userId, orderId)`는 고객의 요청을 받는다. 알림에는 요청자가 없으므로, 주문의 사용자를 읽어 넘길지 사용자 없는 입구를 둘지 정한다.
   - 알림 주소는 설정의 `pg.callback-url`에서 와 PG에 이미 보낸다(4.1). 받는 엔드포인트만 없다.
   - 알림도 대사와 같은 TX B로 반영하면 주문 잠금이 동시 반영을 한 번으로 만든다. 장면 6의 알림 쪽 절반은 알림과 대사, 알림과 확정의 TX B가 같은 답을 함께 반영하는 장면이다. 13.3의 다시 읽는 창도 알림으로 생긴다.
 - **거래 키의 인덱스.** `transaction_key`에는 인덱스가 없다(8절). PG의 거래 키 조회(`retrieveTransaction(transactionKey)`)도 부르는 곳이 없다. 알림이 거래 키로 결제를 찾거나 거래 키로 PG에 조회하게 되면 그때 인덱스를 더한다(명세 147의 Further Notes). 유일 키로 둘지도 그때 정한다.
