@@ -43,6 +43,8 @@ import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.retry.RetryRegistry
+import io.github.resilience4j.retry.event.RetryOnRetryEvent
 import io.micrometer.core.instrument.MeterRegistry
 import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
@@ -98,6 +100,7 @@ class OrderPaymentIntegrationTest(
     private val pointAccountFinder: PointAccountFinder,
     private val paymentGateway: PaymentGateway,
     private val circuitBreakerRegistry: CircuitBreakerRegistry,
+    private val retryRegistry: RetryRegistry,
     private val pgLookupClock: TestClock,
     private val healthEndpoint: HealthEndpoint,
     private val healthEndpointGroups: HealthEndpointGroups,
@@ -314,6 +317,9 @@ class OrderPaymentIntegrationTest(
      * 과제 6절의 장면 10, 제한된 재조회. 조회 불가 한 번은 100 ms 뒤 한 번 다시 시도하고, 같은 대사가 그 시도가 찾은 PG 거래로 결제를 끝낸다
      * (ADR 0030 규칙 3, 4). PG가 받은 조회는 정확히 2, 생성은 1 그대로다. 게이트웨이는 Resilience4j의 aspect가 감싼 AOP 프록시다. AspectJ가
      * 없거나 애노테이션이 조용히 꺼지면 조회가 1이고 결제가 처리 중으로 남아 이 테스트가 실패한다(규칙 8).
+     *
+     * The wait is read from the retry's own event rather than timed, so load can't make it flaky. The subscription outlives the
+     * test because Resilience4j's event publisher has no unsubscribe; later events only fill this test's discarded list.
      */
     @Test
     fun `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile`() {
@@ -321,9 +327,15 @@ class OrderPaymentIntegrationTest(
         val payment = confirmPending()
         testPg.losesFirstLookupResponses(times = 1)
         testPg.hasTransactions(payment.pgOrderId, succeeded(payment))
+        val retries = mutableListOf<RetryOnRetryEvent>()
+        retryRegistry.retry(LocalPgGateway.PG_LOOKUP).eventPublisher.onRetry { retries += it }
 
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
+        assertThat(retries).singleElement().satisfies({
+            assertThat(it.numberOfRetryAttempts).isOne()
+            assertThat(it.waitInterval).isEqualTo(Duration.ofMillis(100))
+        })
         assertThat(AopUtils.isAopProxy(paymentGateway)).isTrue()
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
