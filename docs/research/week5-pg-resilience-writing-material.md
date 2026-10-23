@@ -300,7 +300,7 @@ Two commits on `worktree-issue-164`, written on `feat/reconcile`'s `e48039f` (is
 
 ## Issue 165: the payments design doc for step 3
 
-Recorded 2026-10-23 from the closing comment of [issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165), the last step 3 ticket. The rules are the ticket's acceptance criteria and the "문서" bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The work is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165#issuecomment-6358614295) of [issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165), the last step 3 ticket. The rules are the ticket's acceptance criteria and the "문서" bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The work is:
 
 - [`docs/design/payments.md`](../design/payments.md): sections 18–23, and dated notes in sections 1–17
 - [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159): insert-only dated notes for the departures
