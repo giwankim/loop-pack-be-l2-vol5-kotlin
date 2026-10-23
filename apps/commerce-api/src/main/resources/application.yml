@@ -80,7 +80,7 @@ resilience4j:
           - com.loopers.application.payment.provided.MultiplePgTransactionsException
 
 # Resilience4j's health contributor is off unless enabled. It shows each breaker that registers a health indicator under the
-# circuitBreakers component. The main health endpoint shows only the overall status, so operators read the breaker's state at
+# circuitBreakers component. The main health endpoint shows only the overall status, so the breaker's state is read at
 # /actuator/health/pg-lookup: a group of the breakers alone, with details, which exposes nothing about the DB or Redis.
 # The breaker metrics need no switch: the Boot module binds them to the meter registry on its own.
 management:

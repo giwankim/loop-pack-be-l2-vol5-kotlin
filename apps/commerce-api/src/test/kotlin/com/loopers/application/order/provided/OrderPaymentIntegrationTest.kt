@@ -525,7 +525,7 @@ class OrderPaymentIntegrationTest(
      * statuses outside its order out of the overall status. The Boot
      * module's Micrometer binding exports the same state as a gauge.
      *
-     * Operators read the state at `/actuator/health/pg-lookup`, a group of the breakers alone that always shows details; the
+     * The state is read at `/actuator/health/pg-lookup`, a group of the breakers alone that always shows details; the
      * main endpoint shows only the overall status. The management server does not start in a mock web environment, so the
      * test reads the endpoint as a bean. The bean shows every component whatever the exposure, so the group's membership and
      * its details setting are asserted on their own.

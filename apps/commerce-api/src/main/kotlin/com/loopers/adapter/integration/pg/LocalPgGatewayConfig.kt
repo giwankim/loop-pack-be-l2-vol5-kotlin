@@ -65,7 +65,7 @@ class LocalPgGatewayConfig {
 
     /**
      * Logs one WARN per state transition of the [LocalPgGateway.PG_LOOKUP] breaker, with its name and the old and new states
-     * (ADR 0030 rule 7). Nobody watches the metrics yet, so this line is how an operator sees a PG outage begin and end. Calls
+     * (ADR 0030 rule 7). Nobody watches the metrics yet, so this line is where a PG outage shows its start and end. Calls
      * that leave the state alone log nothing.
      *
      * Resilience4j's Boot module hands every `RegistryEventConsumer` bean to the registry, which calls it for each breaker it
