@@ -426,7 +426,7 @@ class PaymentGatewayTest(
     }
 
     @Test
-    fun `a PG order number lookup answered with an empty array returns null instead of throwing PgUnavailableException`() {
+    fun `a PG order ID lookup answered with an empty array returns null instead of throwing PgUnavailableException`() {
         pg.hasTransactions(pgOrderId = PG_ORDER_ID)
 
         val found = paymentGateway.retrieveTransactionByPgOrderId(PG_ORDER_ID)
@@ -436,7 +436,7 @@ class PaymentGatewayTest(
     }
 
     @Test
-    fun `a PG order number lookup answered with one transaction returns that transaction`() {
+    fun `a PG order ID lookup answered with one transaction returns that transaction`() {
         val transaction = PgTransaction(
             transactionKey = TRANSACTION_KEY,
             pgOrderId = PG_ORDER_ID,
@@ -452,7 +452,7 @@ class PaymentGatewayTest(
 
     /** PG의 차례나 PG 상태로 하나를 고르지 않는다. 어느 것이 결제의 PG 거래인지는 PG의 답이 말하지 않는다(ADR 0028). */
     @Test
-    fun `a PG order number lookup answered with two transactions throws MultiplePgTransactionsException after one GET`() {
+    fun `a PG order ID lookup answered with two transactions throws MultiplePgTransactionsException after one GET`() {
         val failed = PgTransaction(
             transactionKey = "TEST-TX-0041",
             pgOrderId = PG_ORDER_ID,
@@ -500,7 +500,7 @@ class PaymentGatewayTest(
      * PG는 `+`를 공백으로 읽는다. 어느 쪽이든 스텁이 정확히 맞추는 `orderId`와 다르다.
      */
     @Test
-    fun `a PG order number lookup sends the number as one exact orderId query parameter even with reserved characters`() {
+    fun `a PG order ID lookup sends the number as one exact orderId query parameter even with reserved characters`() {
         val pgOrderId = "pg-order+42&orderId=43"
         pg.hasTransactions(pgOrderId = pgOrderId)
 
@@ -545,7 +545,7 @@ class PaymentGatewayTest(
 
     @ParameterizedTest
     @ValueSource(ints = [201, 204, 400, 404, 500, 503])
-    fun `a PG order number lookup answered with a status other than 200, 404 included, throws PgUnavailableException`(
+    fun `a PG order ID lookup answered with a status other than 200, 404 included, throws PgUnavailableException`(
         httpStatus: Int,
     ) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = httpStatus)
@@ -567,7 +567,7 @@ class PaymentGatewayTest(
 
     @ParameterizedTest
     @MethodSource("unreadableArrayBodies")
-    fun `a PG order number lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(
+    fun `a PG order ID lookup answered 200 with an unreadable body throws PgUnavailableException without the parse error`(
         body: String,
     ) {
         pg.answersList(pgOrderId = PG_ORDER_ID, httpStatus = 200, body = body)

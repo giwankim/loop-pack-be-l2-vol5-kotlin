@@ -366,7 +366,7 @@ class OrderConfirmationApiTest(
 
     /**
      * 결제가 끝난 주문과 포인트로 확정된 이전 주문은 PG에 조회하지 않고 저장된 상태로 200이다. 몇 번을 물어도 바뀌는 것이 없고, 실패한 결제의
-     * 반환도 다시 일어나지 않는다. 포인트 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13).
+     * 반환도 다시 일어나지 않는다. 포인트로 확정된 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13).
      */
     @ParameterizedTest
     @CsvSource("SUCCESS, 8", "FAILED, 10", "POINT, 10")
@@ -416,15 +416,16 @@ class OrderConfirmationApiTest(
 
     /** 결제가 있는 주문은 결제 중이든 끝났든 결제를 시작한 키로만 다시 물을 수 있다. 다른 키는 409이고 바뀌는 것이 없다(ADR 0025 규칙 3). */
     @ParameterizedTest
-    @CsvSource("SUCCESS, 8", "PENDING, 8", "FAILED, 10")
+    @CsvSource("SUCCESS, OK, 8", "PENDING, ACCEPTED, 8", "FAILED, OK, 10")
     fun `confirming an order that has a payment with another key returns 409 IDEMPOTENCY_KEY_MISMATCH and changes nothing`(
         pgStatus: String,
+        firstStatus: HttpStatus,
         stock: Int,
     ) {
         prepareProduct(price = 1_000, stock = 10)
         val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
         acceptCreate(amount = 2_000, pgStatus = pgStatus)
-        assertThat(requestConfirm(orderId, idempotencyKey = "first-key")).hasStatus2xxSuccessful()
+        assertThat(requestConfirm(orderId, idempotencyKey = "first-key")).hasStatus(firstStatus)
         val paidDetail = requestDetail(orderId)
         assertThat(paidDetail).hasStatusOk()
 
@@ -750,7 +751,7 @@ class OrderConfirmationApiTest(
      * TX A의 UPDATE는 대부분 커밋의 flush에서 나가고, `order_updates`가 그것을 엔티티 이름 순으로 보낸다. 주문, 상품 차례다(ADR 0018).
      * 결제의 INSERT는 식별자가 `IDENTITY`라 저장에서 그보다 먼저 나갔다. 그래서 커밋의 마지막 UPDATE는 둘째 상품의 재고다. 그것만 임시
      * CHECK로 거절해, 앞서 나간 재고·결제·주문의 쓰기까지 함께 되돌아가는지 본다(설계 18.2). 발송 기록이 커밋되지 않았으므로 PG에는
-     * 아무것도 가지 않는다(ADR 0024 규칙 2). 실패한 시도의 결제가 PG 주문 번호를 하나 가져가므로, 다시 확정한 결제는 다음 번호를 받는다.
+     * 아무것도 가지 않는다(ADR 0024 규칙 2). 실패한 확정의 결제가 PG 주문 번호를 하나 가져가므로, 다시 확정한 결제는 다음 번호를 받는다.
      */
     @Test
     fun `a failure on TX A's last write at commit undoes its reservations and payment, sends nothing and permits retry`() {

@@ -1,5 +1,6 @@
 package com.loopers.application.order.provided
 
+import com.loopers.domain.payment.CreditCard
 import jakarta.validation.constraints.NotBlank
 import org.hibernate.validator.constraints.CreditCardNumber
 
@@ -15,4 +16,9 @@ data class OrderConfirmRequest(
     @NotBlank(message = "카드 번호는 공백일 수 없습니다.")
     @CreditCardNumber(ignoreNonDigitCharacters = true, message = "카드 번호가 올바르지 않습니다.")
     val cardNo: String,
-)
+) {
+    /** PG에 넘길 카드. 함수라서 요청을 JSON으로 옮길 때 실리지 않는다. */
+    fun toCreditCard(): CreditCard {
+        return CreditCard(type = cardType, number = cardNo)
+    }
+}

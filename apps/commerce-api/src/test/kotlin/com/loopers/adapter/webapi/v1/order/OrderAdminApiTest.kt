@@ -200,6 +200,7 @@ class OrderAdminApiTest(
      * 관리자 목록과 상세도 고객 응답처럼 결제수단과 결제 상태를 싣는다. 결제 상태는 결제수단이 PG인 주문에만 있다(ADR 0028 규칙 1).
      * 결제수단이 PG인 주문은 테스트 PG로 확정하고, 포인트로 확정된 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13).
      * 항목마다 상세와 같은 응답인지 견주므로 상세도 같은 필드를 싣는다. 주문이 저장한 확정 시각은 싣지 않는다(설계 20).
+     * 목록과 상세를 읽는 것은 PG를 부르지 않는다. 테스트 PG가 받은 생성은 준비한 두 확정의 것뿐이고 조회는 없다.
      */
     @Test
     fun `the admin list and detail show the payment fields of a draft, a point-paid, a payment pending and a PG-paid order`() {
@@ -245,6 +246,8 @@ class OrderAdminApiTest(
             assertThat(adminDetail).hasStatusOk()
             assertThat(listed[index]).isEqualTo(adminDetail.json()["data"])
         }
+        assertThat(testPg.createCount()).isEqualTo(2)
+        assertThat(testPg.lookupCount()).isZero()
     }
 
     /** 결제수단이 PG인데 결제가 없는 주문은 관리자 목록과 상세에서도 고객 조회처럼 범용 500과 그 사유다(ADR 0028 규칙 1). */

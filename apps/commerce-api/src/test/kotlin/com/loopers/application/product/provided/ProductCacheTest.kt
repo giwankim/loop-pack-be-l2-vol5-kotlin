@@ -5,7 +5,6 @@ import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
@@ -241,7 +240,7 @@ class ProductCacheTest(
         testPg.losesCreateResponse(
             pgOrderId = nextPgOrderId(),
             amount = order.totalAmount.amount.longValueExact(),
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
 
         val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "sold-out-key", request) }
@@ -268,7 +267,7 @@ class ProductCacheTest(
         testPg.rejectsBeforeCreate(
             pgOrderId = nextPgOrderId(),
             amount = order.totalAmount.amount.longValueExact(),
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
 
         val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "returned-key", request) }

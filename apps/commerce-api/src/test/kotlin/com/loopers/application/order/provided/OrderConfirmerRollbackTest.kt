@@ -5,7 +5,6 @@ import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.CreditCard
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
@@ -46,8 +45,8 @@ class OrderConfirmerRollbackTest(
     private val testPg by lazy { TestPg(server) }
 
     /**
-     * 실패한 시도도 결제를 만들며 PG 주문 번호를 하나 가져갔다. 다시 확정한 결제는 다음 번호를 받으므로 생성 스텁은 그 번호에만 건다.
-     * 실패한 시도가 PG에 보냈다면 생성이 둘이거나 스텁과 맞지 않은 요청이 남는다.
+     * 실패한 확정도 결제를 만들며 PG 주문 번호를 하나 가져갔다. 다시 확정한 결제는 다음 번호를 받으므로 생성 스텁은 그 번호에만 건다.
+     * 실패한 확정이 PG에 보냈다면 생성이 둘이거나 스텁과 맞지 않은 요청이 남는다.
      */
     @Test
     fun `a confirmation failing at the order's save in TX A rolls back the reservations and the payment and sends nothing`() {
@@ -59,7 +58,7 @@ class OrderConfirmerRollbackTest(
         testPg.acceptsCreate(
             pgOrderId = nextPgOrderId(),
             amount = 5_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = "20261022:TR:rollback",
             pgStatus = "SUCCESS",
         )

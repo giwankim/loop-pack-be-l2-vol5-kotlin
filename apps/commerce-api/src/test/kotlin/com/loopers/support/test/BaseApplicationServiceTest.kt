@@ -265,7 +265,7 @@ abstract class BaseApplicationServiceTest {
         acceptNextCreate(
             testPg,
             amount = order.totalAmount.amount.longValueExact(),
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             pgStatus = pgStatus,
         )
 

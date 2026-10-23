@@ -16,6 +16,13 @@ import org.hibernate.annotations.SQLRestriction
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+/**
+ * 생성 정보는 불변이다. 다른 엔티티처럼 [BaseEntity]를 상속해 식별자와 생성·수정 시각을 물려받는다(ADR 0016).
+ * 생성 시각은 저장할 때 찍히고, 확정 시각은 [completePayment]가 스스로 찍는다.
+ *
+ * 주문을 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 주문은 없는 주문이다.
+ * 품목은 필터를 두지 않고 주문을 따른다([OrderLineItem]).
+ */
 @Entity
 @Table(
     name = "orders",
@@ -69,6 +76,14 @@ class Order(
 
     val paidAmount: Money?
         get() = if (status == OrderStatus.CONFIRMED) totalAmount else null
+
+    /** 결제수단이 PG인 주문인지. 결제 애그리거트는 이런 주문에만 있다(ADR 0028 규칙 1). */
+    val paysThroughPg: Boolean
+        get() = paymentMethod == PaymentMethod.PG
+
+    /** 상품 ID마다 그 품목의 수량. 확정은 이 수량으로 재고를 예약하고, 결제가 실패하면 같은 수량을 돌려준다(ADR 0026 규칙 2). */
+    val productQuantities: Map<Long, Int>
+        get() = _lineItems.associate { it.productId to it.quantity }
 
     var confirmedAt: Instant? = null
         protected set

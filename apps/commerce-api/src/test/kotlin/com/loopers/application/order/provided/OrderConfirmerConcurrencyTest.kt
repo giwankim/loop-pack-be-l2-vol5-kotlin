@@ -9,7 +9,6 @@ import com.loopers.application.product.provided.ProductRegister
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
@@ -254,7 +253,7 @@ class OrderConfirmerConcurrencyTest(
 
     /** 다음 결제의 [amount]원 생성을 성공한 PG 거래로 받아들인다. 모든 확정이 [request]의 카드로 결제한다. */
     private fun acceptSuccessfulCreate(amount: Long) {
-        acceptNextCreate(testPg, amount = amount, card = CreditCard(type = request.cardType, number = request.cardNo))
+        acceptNextCreate(testPg, amount = amount, card = request.toCreditCard())
     }
 
     /** 관리자의 상품 삭제가 상품에 삭제 시각을 찍은 뒤, 커밋하기 전에 멈춘다. */

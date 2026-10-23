@@ -207,8 +207,8 @@ class Payment private constructor(
 
         /**
          * Rejects an idempotency key that breaks the key rule (ADR 0025 rule 2) with an [InvalidPaymentException] naming the broken
-         * part. Creating a payment checks the key here, and so does the web boundary before the key reaches a lookup: under
-         * `utf8mb4_bin`'s PAD SPACE a key with a trailing space would find the payment of the key without it.
+         * part. Creating a payment checks the key here, and so do the web boundary and the order confirmation before the key reaches
+         * a lookup: under `utf8mb4_bin`'s PAD SPACE a key with a trailing space would find the payment of the key without it.
          */
         fun checkIdempotencyKey(idempotencyKey: String) {
             if (idempotencyKey.isBlank()) {

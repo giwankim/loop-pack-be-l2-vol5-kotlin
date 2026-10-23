@@ -15,7 +15,7 @@ class UuidPgOrderIdGeneratorTest {
     private val generator = UuidPgOrderIdGenerator()
 
     @Test
-    fun `every PG order number is at least 6 ASCII characters and no two are the same`() {
+    fun `every PG order ID is at least 6 ASCII characters and no two are the same`() {
         val pgOrderIds = List(SAMPLES) { generator.generate() }
 
         assertThat(pgOrderIds).doesNotHaveDuplicates()

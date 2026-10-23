@@ -17,7 +17,7 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.PaymentMethod
 import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.CreditCard
+import com.loopers.domain.payment.InvalidPaymentException
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -125,7 +125,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = nextPgOrderId(),
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "SUCCESS",
         )
@@ -162,7 +162,7 @@ class OrderPaymentIntegrationTest(
         testPg.losesCreateResponse(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
 
         val pending = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
@@ -210,7 +210,7 @@ class OrderPaymentIntegrationTest(
         testPg.losesCreateResponse(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
         var reconciled: OrderInfo? = null
@@ -239,7 +239,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "PENDING",
         )
@@ -279,7 +279,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "PENDING",
         )
@@ -339,7 +339,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "PENDING",
         )
@@ -388,7 +388,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = pgStatus.name,
         )
@@ -413,6 +413,7 @@ class OrderPaymentIntegrationTest(
         assertThat(testPg.unmatchedRequests()).isEmpty()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(orderStatus)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(paymentStatus)
             assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
         }
     }
@@ -429,7 +430,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "SUCCESS",
         )
@@ -569,7 +570,7 @@ class OrderPaymentIntegrationTest(
         testPg.rejectsBeforeCreate(
             pgOrderId = nextPgOrderId(),
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
         var reservedStock: Int? = null
         whilePaymentPending { reservedStock = inNewTransaction { productFinder.find(product.id).stock } }
@@ -607,7 +608,7 @@ class OrderPaymentIntegrationTest(
         testPg.answersCreate(
             pgOrderId = pgOrderId,
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             httpStatus = 422,
             body = otherAmountRejection,
         )
@@ -637,7 +638,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = nextPgOrderId(),
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "FAILED",
         )
@@ -671,7 +672,7 @@ class OrderPaymentIntegrationTest(
         testPg.rejectsBeforeCreate(
             pgOrderId = nextPgOrderId(),
             amount = 4_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
         whilePaymentPending { deleteProduct(deleted) }
 
@@ -698,7 +699,7 @@ class OrderPaymentIntegrationTest(
         testPg.acceptsCreate(
             pgOrderId = nextPgOrderId(),
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "FAILED",
         )
@@ -732,7 +733,7 @@ class OrderPaymentIntegrationTest(
         testPg.rejectsBeforeCreate(
             pgOrderId = nextPgOrderId(),
             amount = 2_000,
-            card = CreditCard(type = request.cardType, number = request.cardNo),
+            card = request.toCreditCard(),
         )
         val listRequest = ProductListRequest()
         val revisionBefore = currentListRevision()
@@ -759,7 +760,7 @@ class OrderPaymentIntegrationTest(
     fun `confirming again with the same key answers the stored state, pending before the first create and confirmed after it`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
         val request = createOrderConfirmRequest()
-        acceptNextCreate(testPg, amount = 2_000, card = CreditCard(type = request.cardType, number = request.cardNo))
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
         var replayedWhilePending: OrderInfo? = null
         whilePaymentPending { replayedWhilePending = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
 
@@ -788,7 +789,7 @@ class OrderPaymentIntegrationTest(
         val initialStock = 10
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = initialStock)), quantity = 2)
         val request = createOrderConfirmRequest()
-        acceptNextCreate(testPg, amount = 2_000, card = CreditCard(type = request.cardType, number = request.cardNo))
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
 
         val results = runConcurrently(List(5) { { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) } })
 
@@ -816,7 +817,7 @@ class OrderPaymentIntegrationTest(
     fun `confirming an order that has a payment with another key is rejected as a key mismatch and changes nothing`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
         val request = createOrderConfirmRequest()
-        val card = CreditCard(type = request.cardType, number = request.cardNo)
+        val card = request.toCreditCard()
         acceptNextCreate(testPg, amount = 2_000, card = card, pgStatus = "PENDING")
         orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
 
@@ -844,7 +845,7 @@ class OrderPaymentIntegrationTest(
         val paid = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
         val draftProduct = prepareProduct(price = 1_000, stock = 5)
         val draft = prepareOrder(products = listOf(draftProduct), quantity = 2)
-        acceptNextCreate(testPg, amount = 2_000, card = CreditCard(type = request.cardType, number = request.cardNo))
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
         orderConfirmer.confirm(paid.userId, paid.id, IDEMPOTENCY_KEY, request)
 
         val exception = assertThrows<CoreException> { orderConfirmer.confirm(draft.userId, draft.id, IDEMPOTENCY_KEY, request) }
@@ -860,11 +861,38 @@ class OrderPaymentIntegrationTest(
         }
     }
 
+    /**
+     * 키의 형식은 웹 경계를 거치지 않은 확정도 결제를 찾기 전에 본다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 뒤 공백이 붙은 키로
+     * 찾으면 공백 없는 키의 결제가 나온다. 형식을 먼저 보지 않으면 그 확정은 형식 오류 대신 `IDEMPOTENCY_KEY_IN_USE`로 거절된다.
+     */
+    @Test
+    fun `a key with a trailing space is rejected as malformed before it can find the payment of the key without it`() {
+        val request = createOrderConfirmRequest()
+        val paid = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val draftProduct = prepareProduct(price = 1_000, stock = 5)
+        val draft = prepareOrder(products = listOf(draftProduct), quantity = 2)
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
+        orderConfirmer.confirm(paid.userId, paid.id, IDEMPOTENCY_KEY, request)
+
+        val exception = assertThrows<InvalidPaymentException> {
+            orderConfirmer.confirm(draft.userId, draft.id, "$IDEMPOTENCY_KEY ", request)
+        }
+
+        assertThat(exception.message).isEqualTo("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+        assertThat(testPg.createCount()).isOne()
+        inNewTransaction {
+            val persisted = orderFinder.find(draft.userId, draft.id)
+            assertThat(persisted.status).isEqualTo(OrderStatus.DRAFT)
+            assertThat(persisted.updatedAt).isEqualTo(draft.updatedAt)
+            assertThat(productFinder.find(draftProduct.id).stock).isEqualTo(5)
+        }
+    }
+
     /** 키는 대소문자까지 그대로 견준다(ADR 0025 규칙 2). 대소문자만 다른 두 키는 다른 키라서 두 주문이 하나씩 써 저마다 확정된다. */
     @Test
     fun `keys that differ only in case are different keys, so two orders each confirm with one of them`() {
         val request = createOrderConfirmRequest()
-        val card = CreditCard(type = request.cardType, number = request.cardNo)
+        val card = request.toCreditCard()
         val upper = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 1)
         val lower = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 1)
         acceptNextCreate(testPg, amount = 1_000, card = card)
@@ -896,7 +924,7 @@ class OrderPaymentIntegrationTest(
         val loser = prepareOrder(products = listOf(loserProduct), quantity = 2)
         val winnerProduct = prepareProduct(price = 1_000, stock = 5)
         val winner = prepareOrder(products = listOf(winnerProduct), quantity = 2)
-        acceptNextCreate(testPg, amount = 2_000, card = CreditCard(type = request.cardType, number = request.cardNo))
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
         nextPgOrderId()
         pauseBeforeStartingPaymentOf(loser)
 

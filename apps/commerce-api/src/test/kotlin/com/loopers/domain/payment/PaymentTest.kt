@@ -18,7 +18,7 @@ class PaymentTest {
 
     /** 결제를 시작하는 쪽은 PG 주문 번호를 고르지 않는다. 생성기가 결제마다 한 번 새 값을 만든다(ADR 0029). */
     @Test
-    fun `start begins a result unknown payment with its order, key, amount and a PG order number from one generator call`() {
+    fun `start begins a result unknown payment with its order, key, amount and a PG order ID from one generator call`() {
         var calls = 0
         val generator = PgOrderIdGenerator {
             calls++
@@ -171,7 +171,7 @@ class PaymentTest {
 
     /** 다른 주문의 PG 거래가 이 결제를 끝내거나 거래 키를 정하지 않는다. */
     @Test
-    fun `a transaction for another PG order number reports a PG order conflict and leaves the payment unknown`() {
+    fun `a transaction for another PG order ID reports a PG order ID mismatch and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42)
 
         val result = payment.reconcile(createPgTransaction(payment, pgOrderId = OTHER_PG_ORDER_ID))
@@ -293,7 +293,7 @@ class PaymentTest {
         "$PG_ORDER_ID, 15001, AMOUNT_MISMATCH",
         "$OTHER_PG_ORDER_ID, 15001, PG_ORDER_ID_MISMATCH",
     )
-    fun `a rejection for another PG order number or amount reports that conflict and leaves the payment unknown`(
+    fun `a rejection for another PG order ID or amount reports that conflict and leaves the payment unknown`(
         pgOrderId: String,
         amount: Long,
         reason: ConflictReason,

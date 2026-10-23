@@ -42,8 +42,9 @@ interface ProductFinder {
     fun findForUpdate(productId: Long): Product
 
     /**
-     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 주문 확정의 [StockDeductor]가 품목의 상품을 처음 읽을 때 부른다(ADR 0018).
-     * 차감은 모든 상품을 잠가 읽은 뒤에야 없는 상품을 거절하므로 [findForUpdate]처럼 던지지 않는다.
+     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 재고를 예약하는 [StockDeductor]와 돌려주는 [StockRestorer]가 품목의
+     * 상품을 처음 읽을 때 부른다(ADR 0018). 예약은 모든 상품을 잠가 읽은 뒤에야 없는 상품을 거절하고, 돌려주기는 그 상품을 건너뛰므로
+     * [findForUpdate]처럼 던지지 않는다.
      *
      * 상품 행만 잠그고 브랜드를 조인하지 않는다. 브랜드 삭제가 그 브랜드의 상품을 함께 삭제하므로(ADR 0017),
      * 삭제되지 않은 상품의 브랜드는 삭제되지 않았다. 브랜드 삭제와 겹친 상품 등록이 이 성질을 깨지 않게 하는 것은

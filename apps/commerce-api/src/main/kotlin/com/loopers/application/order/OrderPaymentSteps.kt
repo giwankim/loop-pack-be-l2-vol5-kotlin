@@ -10,8 +10,6 @@ import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.product.provided.StockDeductor
 import com.loopers.application.product.provided.StockRestorer
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderAlreadyConfirmedException
-import com.loopers.domain.order.PaymentMethod
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgRejection
@@ -46,9 +44,11 @@ class OrderPaymentSteps(
      * TX A. 요청자의 주문을 잠그고 이 차례로 본다(ADR 0025 규칙 3).
      *
      * 1. 없거나 남의 주문이면 [OrderFinder.findForUpdate]가 `ORDER_NOT_FOUND`로 거절한다.
-     * 2. 포인트로 확정된 주문은 `ORDER_ALREADY_CONFIRMED`다.
-     * 3. 결제가 있는 주문에 결제를 시작한 키로 온 확정은 재요청이다. 아무것도 바꾸지 않고 저장된 상태로 답하며, 보낼 결제가 없다. 다른 키는
-     *    `IDEMPOTENCY_KEY_MISMATCH`다. 같은 주문의 뒤진 확정은 주문 잠금을 기다린 뒤 결제가 있는 주문을 읽고 여기로 온다.
+     * 2. 결제수단이 PG인 주문, 곧 결제가 있는 주문에 결제를 시작한 키로 온 확정은 재요청이다. 아무것도 바꾸지 않고 저장된 상태로 답하며,
+     *    보낼 결제가 없다. 다른 키는 `IDEMPOTENCY_KEY_MISMATCH`다. 같은 주문의 뒤진 확정은 주문 잠금을 기다린 뒤 결제가 있는 주문을 읽고
+     *    여기로 온다.
+     * 3. 그 밖의 주문은 확정 전이어야 한다. 포인트로 확정된 주문은 [Order.ensureDraft]가 `ORDER_ALREADY_CONFIRMED`로 거절한다. 2와 3의
+     *    주문은 겹치지 않으므로 포인트로 확정된 주문을 먼저 보아도 답은 같다.
      * 4. 확정 전 주문에 다른 결제가 쓴 키면 [PaymentValidator]가 `IDEMPOTENCY_KEY_IN_USE`로 거절한다.
      * 5. 재고를 예약한다. 재고 부족과 주문할 수 없는 상품은 결제를 만들기 전에 거절된다. 이 트랜잭션이 되돌아가므로 주문은 확정 전 그대로이고
      *    멱등 키도 쓰이지 않는다.
@@ -61,11 +61,7 @@ class OrderPaymentSteps(
      */
     fun startPayment(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         val order = orderFinder.findForUpdate(userId, orderId)
-        if (order.paymentMethod == PaymentMethod.POINT) {
-            throw OrderAlreadyConfirmedException()
-        }
-
-        if (order.paymentMethod == PaymentMethod.PG) {
+        if (order.paysThroughPg) {
             val payment = paymentFinder.findByOrder(order.id)
             if (!payment.isStartedWith(idempotencyKey)) {
                 throw CoreException(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
@@ -74,6 +70,7 @@ class OrderPaymentSteps(
             return StartedPayment(OrderInfo(order, payment.status), payment = null)
         }
 
+        order.ensureDraft()
         paymentValidator.validateForStart(idempotencyKey)
         reserveStock(order)
         order.startPayment()
@@ -127,7 +124,7 @@ class OrderPaymentSteps(
 
                 PaymentStatus.FAILED -> {
                     order.failPayment()
-                    stockRestorer.restore(quantitiesOf(order))
+                    stockRestorer.restore(order.productQuantities)
                 }
 
                 PaymentStatus.UNKNOWN, PaymentStatus.PENDING -> Unit
@@ -150,18 +147,14 @@ class OrderPaymentSteps(
      */
     private fun reserveStock(order: Order) {
         try {
-            stockDeductor.deduct(quantitiesOf(order))
+            stockDeductor.deduct(order.productQuantities)
         } catch (e: CoreException) {
             if (e.errorType == ErrorType.PRODUCT_NOT_FOUND) {
                 throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
             }
+
             throw e
         }
-    }
-
-    /** 예약하고 돌려주는 수량. 예약은 결제 중인 주문의 품목 수량이므로 품목마다 상품 ID와 그 수량이다(ADR 0026 규칙 2). */
-    private fun quantitiesOf(order: Order): Map<Long, Int> {
-        return order.lineItems.associate { item -> item.productId to item.quantity }
     }
 
     /**

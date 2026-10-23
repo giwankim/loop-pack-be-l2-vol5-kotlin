@@ -15,7 +15,7 @@ import com.loopers.application.payment.provided.PgTransactionCreator
 import com.loopers.application.payment.provided.PgTransactionRetriever
 import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.domain.order.OrderStatus
-import com.loopers.domain.payment.CreditCard
+import com.loopers.domain.payment.Payment
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
@@ -49,6 +49,9 @@ class OrderPaymentService(
 ) : OrderConfirmer,
     OrderPaymentReconciler {
     /**
+     * 키의 형식은 TX A를 열기 전에 본다. 웹 경계도 보지만 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD
+     * SPACE라서, 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 형식 오류 대신 `IDEMPOTENCY_KEY_IN_USE`로 거절된다.
+     *
      * 같은 키의 재요청이면 TX A가 보낼 결제 없이 저장된 상태로 답하므로, 생성도 조회도 하지 않고 그대로 돌려준다(ADR 0024 규칙 3,
      * ADR 0025 규칙 3).
      *
@@ -63,9 +66,11 @@ class OrderPaymentService(
      * 두 예외는 트랜잭션 밖에서 정확한 타입으로 잡는다. 넓게 잡으면 결과 미확인이 실패로 바뀔 수 있다.
      */
     override fun confirm(userId: Long, orderId: Long, idempotencyKey: String, request: OrderConfirmRequest): OrderInfo {
-        val started = startPaymentMappingKeyRace(userId, orderId, idempotencyKey)
+        Payment.checkIdempotencyKey(idempotencyKey)
+
+        val started = startPaymentOrRejectUsedKey(userId, orderId, idempotencyKey)
         val payment = started.payment ?: return started.info
-        val card = CreditCard(type = request.cardType, number = request.cardNo)
+        val card = request.toCreditCard()
 
         val transaction = try {
             pgTransactionCreator.create(payment, card)
@@ -128,7 +133,7 @@ class OrderPaymentService(
      * 제약의 이름을 위반에서 읽지 않고 키를 다시 묻는다. 이름은 Hibernate의 예외와 MySQL의 메시지 꼴에 기댄다. 다른 제약의 위반과 같은 키의 커밋이
      * 겹치면 그 위반도 `IDEMPOTENCY_KEY_IN_USE`가 되지만, 그 키는 이미 쓰였으므로 다시 보내도 같은 답이다.
      */
-    private fun startPaymentMappingKeyRace(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
+    private fun startPaymentOrRejectUsedKey(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         try {
             return orderPaymentSteps.startPayment(userId, orderId, idempotencyKey)
         } catch (e: DataIntegrityViolationException) {

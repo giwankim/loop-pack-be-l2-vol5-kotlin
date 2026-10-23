@@ -132,7 +132,7 @@ class PaymentRepositoryTest(
 
     /** PG 주문 번호는 주문 식별자에서 오지 않으므로 그 유일성도 주문마다 하나에서 따라 나오지 않는다(ADR 0029 규칙 3). */
     @Test
-    fun `saving a second payment with the same PG order number violates the unique key`() {
+    fun `saving a second payment with the same PG order ID violates the unique key`() {
         preparePayment()
         val otherOrder = prepareOrder()
 

@@ -142,6 +142,33 @@ class OrderTest {
     }
 
     @Test
+    fun `an order gives each line item's quantity by its product`() {
+        val products = listOf(
+            createOrderProduct(productId = 2, unitPrice = Money(1_000), quantity = 5),
+            createOrderProduct(productId = 1, unitPrice = Money(2_000), quantity = 1),
+        )
+
+        val order = createOrder(userId = 1, products = products)
+
+        assertThat(order.productQuantities).isEqualTo(mapOf(1L to 1, 2L to 5))
+    }
+
+    @Test
+    fun `a draft does not pay through the PG`() {
+        val order = createOrder(userId = 1)
+
+        assertThat(order.paysThroughPg).isFalse()
+    }
+
+    @ParameterizedTest
+    @EnumSource(names = ["PAYMENT_PENDING", "CONFIRMED", "PAYMENT_FAILED"])
+    fun `an order whose payment has started pays through the PG`(status: OrderStatus) {
+        val order = orderIn(status)
+
+        assertThat(order.paysThroughPg).isTrue()
+    }
+
+    @Test
     fun `a payment pending order passes the payment pending check and stays pending`() {
         val order = orderIn(OrderStatus.PAYMENT_PENDING)
 

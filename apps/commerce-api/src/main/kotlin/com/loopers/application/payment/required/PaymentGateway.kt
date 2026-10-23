@@ -14,8 +14,8 @@ import jakarta.validation.Valid
  * PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023). 정확한 생성 전 거절만 [PgRejectedException]이다.
  * 시간 초과, 연결 끊김, 연결 풀의 대기 초과, 정확하지 않은 422를 비롯한 다른 상태 코드, 읽을 수 없는 응답은 모두
  * 생성이면 [PgOutcomeUnknownException], 조회면 [PgUnavailableException]이다. PG 주문 번호 하나에 PG 거래가 둘 이상이면
- * [MultiplePgTransactionsException]이다. 네 예외에는 공통 상위 타입이 없다. 결제 슬라이스의 provided 포트(2단계)가 이 예외들을 주문
- * 슬라이스로 그대로 던지게 되므로, 그 포트보다 먼저 `application.payment.provided`에 두었다(ADR 0028 규칙 3).
+ * [MultiplePgTransactionsException]이다. 네 예외에는 공통 상위 타입이 없다. 결제 슬라이스의 provided 포트(`PgTransactionCreator`,
+ * `PgTransactionRetriever`)가 이 예외들을 주문 슬라이스로 그대로 던지므로 `application.payment.provided`에 둔다(ADR 0028 규칙 3).
  * 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다. 다만 구현의 컨버터 설정이 잘못된 것은
  * 결과 미확인이나 조회 불가로 보인다(`LocalPgGateway`).
  *
