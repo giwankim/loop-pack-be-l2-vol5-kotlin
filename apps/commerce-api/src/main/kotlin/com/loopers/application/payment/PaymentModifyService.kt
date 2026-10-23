@@ -1,8 +1,7 @@
 package com.loopers.application.payment
 
 import com.loopers.application.payment.provided.PaymentFinder
-import com.loopers.application.payment.provided.PaymentReconciler
-import com.loopers.application.payment.provided.PaymentStarter
+import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.payment.required.PaymentRepository
 import com.loopers.domain.payment.InvalidPaymentException
 import com.loopers.domain.payment.Payment
@@ -17,7 +16,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 private val log = KotlinLogging.logger {}
 
 /**
- * [PaymentStarter]와 [PaymentReconciler]의 구현. 둘 다 부르는 쪽의 트랜잭션(TX A, TX B)에 참여한다(ADR 0028 규칙 1).
+ * [PaymentRecorder]의 구현. 결제의 시작과 반영 모두 부르는 쪽의 트랜잭션(TX A, TX B)에 참여한다(ADR 0028 규칙 1).
  * 주문은 모르고 식별자로만 가리킨다. 바꿀 결제는 같은 슬라이스의 [PaymentFinder]로 얻는다.
  */
 @ApplicationService
@@ -25,8 +24,7 @@ class PaymentModifyService(
     private val paymentRepository: PaymentRepository,
     private val paymentFinder: PaymentFinder,
     private val pgOrderIdGenerator: PgOrderIdGenerator,
-) : PaymentStarter,
-    PaymentReconciler {
+) : PaymentRecorder {
     /**
      * PG는 금액을 64비트 정수로 받으므로(`PgTransactionCreateRequest.amount`) 그보다 큰 결제는 만들지 않는다. 주문의 합계는 그보다 클 수 있다.
      * 재고를 예약하는 TX A 안에서 거절해야 예약과 함께 되돌아간다. TX A가 커밋한 뒤 PG 요청을 만들다 실패하면 보내지 않을 결제가 결과 미확인으로

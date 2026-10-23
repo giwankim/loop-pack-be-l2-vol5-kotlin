@@ -4,8 +4,7 @@ import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.payment.provided.PaymentFinder
-import com.loopers.application.payment.provided.PaymentReconciler
-import com.loopers.application.payment.provided.PaymentStarter
+import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.product.provided.StockReserver
 import com.loopers.domain.order.Order
@@ -35,8 +34,7 @@ class OrderPaymentSteps(
     private val stockReserver: StockReserver,
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
-    private val paymentStarter: PaymentStarter,
-    private val paymentReconciler: PaymentReconciler,
+    private val paymentRecorder: PaymentRecorder,
 ) {
     /**
      * TX A. 요청자의 주문을 잠그고 이 차례로 본다(ADR 0025 규칙 3).
@@ -72,7 +70,7 @@ class OrderPaymentSteps(
         paymentValidator.validateForStart(idempotencyKey)
         reserveStock(order)
         order.startPayment()
-        val payment = paymentStarter.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
+        val payment = paymentRecorder.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
 
         val saved = orderRepository.save(order)
 
@@ -88,7 +86,7 @@ class OrderPaymentSteps(
      */
     fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
-        val result = paymentReconciler.reconcile(orderId = order.id, transaction = transaction)
+        val result = paymentRecorder.reconcile(orderId = order.id, transaction = transaction)
 
         return applyResult(order, result)
     }
@@ -99,7 +97,7 @@ class OrderPaymentSteps(
      */
     fun applyRejection(userId: Long, orderId: Long, rejection: PgRejection): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
-        val result = paymentReconciler.reject(orderId = order.id, rejection = rejection)
+        val result = paymentRecorder.reject(orderId = order.id, rejection = rejection)
 
         return applyResult(order, result)
     }
