@@ -6,12 +6,12 @@ import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
+import com.loopers.support.productStock
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -122,15 +122,15 @@ class OrderConfirmationApiTest(
         assertThat(confirmed.json()["data"]["items"]).isEqualTo(draft.json()["data"]["items"])
         assertThat(confirmed.json()["data"]["createdAt"]).isEqualTo(draft.json()["data"]["createdAt"])
         assertThat(testPg.createCount()).isOne()
-        assertStock(first, 5)
-        assertStock(second, 4)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(5)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(4)
         val confirmedDetail = requestDetail(orderId)
         assertThat(confirmedDetail).hasStatusOk()
         assertThat(confirmedDetail.json()).isEqualTo(confirmed.json())
         assertKeyMismatch(orderId)
         assertThat(testPg.createCount()).isOne()
-        assertStock(first, 5)
-        assertStock(second, 4)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(5)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(4)
     }
 
     /** PG가 받아들였지만 처리 중이면 결과가 아직 없다. 202와 함께 결과를 읽을 상세의 위치를 준다(ADR 0025 규칙 3). */
@@ -152,7 +152,7 @@ class OrderConfirmationApiTest(
         assertThat(pendingDetail).hasStatusOk()
         assertThat(pendingDetail.json()).isEqualTo(accepted.json())
         assertThat(testPg.createCount()).isOne()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /** 응답을 잃은 생성은 실패가 아니다. 결제는 결과 미확인, 주문은 결제 중인 주문으로 202이고 예약은 그대로다(ADR 0024 규칙 4). */
@@ -169,7 +169,7 @@ class OrderConfirmationApiTest(
         body.extractingPath("$.data.paymentStatus").isEqualTo("UNKNOWN")
 
         assertThat(testPg.createCount()).isOne()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /**
@@ -195,7 +195,7 @@ class OrderConfirmationApiTest(
         assertThat(failedDetail).hasStatusOk()
         assertThat(failedDetail.json()).isEqualTo(failed.json())
         assertThat(testPg.createCount()).isOne()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
     }
 
     /** 결제의 거래 키, PG 주문 번호, 카드는 주문 슬라이스가 옮기기만 하고 응답에 싣지 않는다(ADR 0028 규칙 5). 카드 번호는 숫자만 남겨서도 찾는다. */
@@ -246,7 +246,7 @@ class OrderConfirmationApiTest(
 
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isZero()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /** 결제가 끝난 주문의 재요청은 성공이든 실패든 첫 응답처럼 200이고 Location이 없으며 본문도 같다. 실패의 반환도 다시 일어나지 않는다. */
@@ -269,7 +269,7 @@ class OrderConfirmationApiTest(
 
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isZero()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /**
@@ -309,7 +309,7 @@ class OrderConfirmationApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /**
@@ -337,7 +337,7 @@ class OrderConfirmationApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isEqualTo(2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /** 요청자와 소유를 PG보다 먼저 본다. 남의 주문은 결제 중이어도 없는 주문과 같은 404이고, 어느 거절도 PG에 조회하지 않는다. */
@@ -396,7 +396,7 @@ class OrderConfirmationApiTest(
         }
 
         assertThat(testPg.lookupCount()).isZero()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /** 확정 전 주문에는 대사할 결제가 없다. PG에 아무것도 보내지 않고 409이며 주문은 그대로다. */
@@ -435,7 +435,7 @@ class OrderConfirmationApiTest(
         assertThat(requestDetail(orderId).json()).isEqualTo(paidDetail.json())
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isZero()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /**
@@ -463,7 +463,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(draftId, other.id).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isOne()
-        assertStock(draftProduct, stock)
+        assertThat(entityManager.productStock(draftProduct.id)).isEqualTo(stock)
     }
 
     @Test
@@ -479,7 +479,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
     }
 
     /**
@@ -504,7 +504,7 @@ class OrderConfirmationApiTest(
         assertThat(requestConfirm(Long.MAX_VALUE, idempotencyKey = key)).hasStatus(HttpStatus.BAD_REQUEST)
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
     }
 
     /**
@@ -531,7 +531,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
     }
 
     /**
@@ -552,15 +552,15 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(first, 10)
-        assertStock(second, 4)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(10)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(4)
         updateProductStock(quantity = 5, product = second)
         acceptCreate(amount = 7_000)
         val body = assertThat(requestConfirm(orderId, idempotencyKey = "retry-key")).hasStatusOk().bodyJson()
         body.extractingPath("$.data.paidAmount").isEqualTo(7_000)
         assertThat(testPg.createCount()).isOne()
-        assertStock(first, 8)
-        assertStock(second, 0)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(8)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(0)
     }
 
     /** 생성 스텁은 금액까지 맞추므로, 확정이 바뀐 카탈로그 가격으로 PG에 요청했다면 스텁과 맞지 않아 200이 나오지 않는다(ADR 0002). */
@@ -582,7 +582,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(confirmed.json())
         assertThat(testPg.createCount()).isOne()
-        assertStock(product, 9)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(9)
     }
 
     /**
@@ -602,7 +602,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        products.forEach { assertStock(it, Int.MAX_VALUE) }
+        products.forEach { assertThat(entityManager.productStock(it.id)).isEqualTo(Int.MAX_VALUE) }
     }
 
     @ParameterizedTest
@@ -625,8 +625,8 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(first, 10)
-        assertStock(second, 10)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(10)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(10)
     }
 
     /**
@@ -651,7 +651,7 @@ class OrderConfirmationApiTest(
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(short, 1)
+        assertThat(entityManager.productStock(short.id)).isEqualTo(1)
     }
 
     /** 주인의 키를 실어도 요청자와 소유를 먼저 본다. 남의 주문은 결제가 있어도 재요청이 아니라 없는 주문과 같은 404다. */
@@ -680,7 +680,7 @@ class OrderConfirmationApiTest(
         assertAccessDenied()
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
         acceptCreate(amount = 1_000)
         val confirmed = requestConfirm(orderId, idempotencyKey = key)
         assertThat(confirmed).hasStatusOk()
@@ -688,7 +688,7 @@ class OrderConfirmationApiTest(
         assertThat(requestConfirm(orderId, idempotencyKey = key).json()).isEqualTo(confirmed.json())
         assertThat(requestDetail(orderId).json()).isEqualTo(confirmed.json())
         assertThat(testPg.createCount()).isOne()
-        assertStock(product, 9)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(9)
     }
 
     /**
@@ -706,7 +706,7 @@ class OrderConfirmationApiTest(
         val secondId = prepareOrder(owner, listOf(product), quantity = 2).id
         acceptCreate(amount = 2_000)
         assertThat(requestConfirm(secondId)).hasStatusOk()
-        assertStock(product, 0)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(0)
         deleteBrand()
 
         repeat(2) {
@@ -720,7 +720,7 @@ class OrderConfirmationApiTest(
         }
 
         assertThat(testPg.createCount()).isEqualTo(2)
-        assertStock(product, 0)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(0)
     }
 
     /**
@@ -744,7 +744,7 @@ class OrderConfirmationApiTest(
 
         assertAlreadyConfirmed(orderId)
         assertThat(testPg.createCount()).isZero()
-        assertStock(product, 10)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(10)
     }
 
     /**
@@ -772,8 +772,8 @@ class OrderConfirmationApiTest(
 
         // A new transaction, outside the failed HTTP request, proves rollback rather than test cleanup.
         transaction.executeWithoutResult {
-            assertStock(first, 6)
-            assertStock(second, 3)
+            assertThat(entityManager.productStock(first.id)).isEqualTo(6)
+            assertThat(entityManager.productStock(second.id)).isEqualTo(3)
             assertThat(jdbc.queryForObject("select count(*) from payment where order_id = ?", Long::class.java, orderId)!!)
                 .isZero()
             assertThat(jdbc.queryForMap("select status, payment_method, confirmed_at from orders where id = ?", orderId))
@@ -785,8 +785,8 @@ class OrderConfirmationApiTest(
         assertThat(testPg.createCount()).isZero()
         assertThat(requestConfirm(orderId)).hasStatusOk()
         assertThat(testPg.createCount()).isOne()
-        assertStock(first, 1)
-        assertStock(second, 2)
+        assertThat(entityManager.productStock(first.id)).isEqualTo(1)
+        assertThat(entityManager.productStock(second.id)).isEqualTo(2)
     }
 
     /** 포인트로 확정된 주문은 다시 확정하면 예약도 생성도 없이 거절된다. 그 결과는 GET으로 읽는다. */
@@ -804,11 +804,6 @@ class OrderConfirmationApiTest(
     /** 다음 결제의 [amount]원 생성을 [CARD]로 받아들여 PG 상태 [pgStatus]의 PG 거래로 답한다. */
     private fun acceptCreate(amount: Long, pgStatus: String = "SUCCESS") {
         acceptNextCreate(testPg, amount = amount, card = CARD, pgStatus = pgStatus)
-    }
-
-    private fun assertStock(product: Product, expected: Int) {
-        assertThat(jdbc.queryForObject("select stock from product where id = ?", Int::class.java, product.id)!!)
-            .isEqualTo(expected)
     }
 
     /** 멱등 키는 확정마다 새로 만든다. `null`이면 헤더를 싣지 않는다. 본문은 [CARD]를 싣는다. */

@@ -6,13 +6,13 @@ import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
+import com.loopers.support.productStock
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -98,7 +98,7 @@ class PaymentApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /**
@@ -131,7 +131,7 @@ class PaymentApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /**
@@ -151,7 +151,7 @@ class PaymentApiTest(
         body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /**
@@ -230,7 +230,7 @@ class PaymentApiTest(
         body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /** 결제가 끝난 주문의 알림은 PG에 조회하지 않고 200이다. 늦은 알림이 끝난 결제를 되돌리지 않고, 실패의 반환도 다시 일어나지 않는다. */
@@ -253,7 +253,7 @@ class PaymentApiTest(
         body.extractingPath("$.data.status").isEqualTo(orderStatus)
         assertThat(late.response.contentAsString).isEqualTo(finished.response.contentAsString)
         assertThat(testPg.lookupCount()).isZero()
-        assertStock(product, stock)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(stock)
     }
 
     /**
@@ -283,7 +283,7 @@ class PaymentApiTest(
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isEqualTo(2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /**
@@ -308,7 +308,7 @@ class PaymentApiTest(
 
         assertThat(testPg.lookupCount()).isEqualTo(4)
         assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
 
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, PgStatus.SUCCESS))
         pgLookupClock.advance(Duration.ofSeconds(61))
@@ -321,7 +321,7 @@ class PaymentApiTest(
         assertThat(testPg.lookupCount()).isEqualTo(5)
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
-        assertStock(product, 8)
+        assertThat(entityManager.productStock(product.id)).isEqualTo(8)
     }
 
     /** 모르는 PG 주문 번호는 404 `PAYMENT_NOT_FOUND`다. DB를 한 번 읽을 뿐 PG에 조회하지 않고, 다른 결제도 바뀌지 않는다(ADR 0031 규칙 2). */
@@ -389,11 +389,6 @@ class PaymentApiTest(
     /** PG 계약의 알림 본문. 거래 키는 따로 넘기지 않으면 생성 스텁의 [TRANSACTION_KEY]다. */
     private fun callback(pgOrderId: String, status: String, transactionKey: String = TRANSACTION_KEY): String {
         return """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","status":"$status"}"""
-    }
-
-    private fun assertStock(product: Product, expected: Int) {
-        assertThat(jdbc.queryForObject("select stock from product where id = ?", Int::class.java, product.id)!!)
-            .isEqualTo(expected)
     }
 
     /** 알림은 요청자 헤더도 멱등 키도 싣지 않는다(ADR 0031 규칙 7). */
