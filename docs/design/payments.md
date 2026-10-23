@@ -644,13 +644,14 @@ stateDiagram-v2
 | 답을 모르는 확정의 다시 읽기 | `an unknown create answers the state stored when it answers, confirmed if a reconcile finished the payment meanwhile` | 1 | 생성 1, 조회 1. `CONFIRMED`, `SUCCESS`로 답한다. |
 | 같은 키의 재요청 | `confirming again with the same key answers the stored state, pending before the first create and confirmed after it` | 1 | 생성 1, 조회 0. PG 호출 동안 `PAYMENT_PENDING`, `UNKNOWN`, 그 뒤 `CONFIRMED`, `SUCCESS` |
 | 대소문자만 다른 키 | `keys that differ only in case are different keys, so two orders each confirm with one of them` | 1 | 생성 2 |
+| 끝 공백만 다른 키 | `a key with a trailing space is rejected as malformed before it can find the payment of the key without it` | 1 | 형식 오류로 거절(400). 생성 1(앞선 주문의 것). 거절된 주문은 `updatedAt`까지 `DRAFT` 그대로, 재고 5 그대로 |
 | 트랜잭션 안의 확정과 대사 | `confirming inside a transaction is refused before anything is reserved or sent`, `reconciling inside a transaction is refused before anything is looked up` | 2 | 확정은 생성 0, 대사는 조회 0 |
 | 다섯 재고를 여덟 확정이 겨룸 | `OrderConfirmerConcurrencyTest`의 `eight concurrent confirmations for five units confirm five orders through five creates and leave three drafts` | 1 | 확정 5, `INSUFFICIENT_STOCK` 3, 생성 5 |
 | TX A의 저장 실패 | `OrderConfirmerRollbackTest`의 `a confirmation failing at the order's save in TX A rolls back the reservations and the payment and sends nothing` | 1 | 생성 0. 예약과 결제가 함께 되돌아간다. |
 | PG가 받지 못하는 금액 | `OrderConfirmationApiTest`의 `confirming an order above Long MAX_VALUE is rejected with 400 before the PG and keeps the draft and the stock` | 1 | 400, 생성 0 |
 | 충전끼리의 경쟁 | `PointChargerConcurrencyTest`의 `two charges released together on one account both succeed and both reach the balance` | 1 | 10,000 + 2,000 + 3,000 = 15,000 |
 
-- `OrderPaymentIntegrationTest`의 31개는 모두 위 두 표에 있다.
+- `OrderPaymentIntegrationTest`의 32개는 모두 위 두 표에 있다.
 - HTTP 계약은 [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)(45)가 본다. 키가 없거나 형식이 틀린 400, 잘못된 카드의 400, 200·202와 `Location`, 응답의 결제 필드와 실리지 않는 비밀, 재요청의 202와 200, 409 셋, 포인트로 확정된 주문, 대사의 202·200·409·401·404, 금액 한도의 400, TX A의 늦은 실패다. 잘못된 키와 카드도 확정 전 주문, 재고, 생성 수 0을 함께 본다.
 - 목록과 관리자 조회의 결제 상태는 `OrderApiTest`(55), `OrderAdminApiTest`(12), `OrderFinderTest`(10)가 본다. 확정 전, 포인트로 확정, 결제 중, PG로 확정된 네 주문이 섞인 목록과, 결제수단이 PG인데 결제가 없는 주문의 500이다.
 - 수는 16.2의 명령이 낸 것이다.
@@ -702,7 +703,7 @@ stateDiagram-v2
 ### 16.2 2단계의 명령
 
 ```bash
-# 장면 1–9, 11(포인트로 확정된 주문의 장면은 OrderConfirmationApiTest)과 명세 147이 더한 장면: OrderPaymentIntegrationTest(31). 과제의 필터가 이 클래스를 찾는다.
+# 장면 1–9, 11(포인트로 확정된 주문의 장면은 OrderConfirmationApiTest)과 명세 147이 더한 장면: OrderPaymentIntegrationTest(32). 과제의 필터가 이 클래스를 찾는다.
 ./gradlew :apps:commerce-api:test --tests '*PaymentIntegrationTest'
 
 # HTTP 계약: OrderConfirmationApiTest(45)
@@ -714,7 +715,7 @@ stateDiagram-v2
 # 목록과 관리자 조회의 결제 상태: OrderApiTest(55), OrderAdminApiTest(12), OrderFinderTest(10)
 ./gradlew :apps:commerce-api:test --tests '*OrderApiTest' --tests '*OrderAdminApiTest' --tests '*OrderFinderTest'
 
-# 도메인과 저장소: OrderTest(21), PaymentTest(55), OrderRepositoryTest(24), PaymentRepositoryTest(14)
+# 도메인과 저장소: OrderTest(26), PaymentTest(55), OrderRepositoryTest(24), PaymentRepositoryTest(14)
 ./gradlew :apps:commerce-api:test --tests '*.OrderTest' --tests '*.PaymentTest' --tests '*OrderRepositoryTest' --tests '*PaymentRepositoryTest'
 
 # 게이트웨이와 PG 주문 번호의 조회: PaymentGatewayTest(96), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2), ConnectTimeoutPaymentGatewayTest(2)
@@ -727,7 +728,7 @@ stateDiagram-v2
 ./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check
 ```
 
-- 괄호의 수는 2026-10-23에 이 명령들을 돌려 JUnit XML 보고서에서 읽은 것이다. 모두 실패 0, 건너뜀 0이다. `ConnectTimeoutPaymentGatewayTest`도 건너뛰지 않고 돌았다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다(7.2).
+- 괄호의 수는 2026-10-23에 이 명령들을 돌려 JUnit XML 보고서에서 읽은 것이다. (2026-10-23: 명세 147의 검토 뒤 `32f6d8f`의 전체 확인에서 다시 셌다. 검토가 `OrderPaymentIntegrationTest`에 하나, `OrderTest`에 다섯을 더했다.) 모두 실패 0, 건너뜀 0이다. `ConnectTimeoutPaymentGatewayTest`도 건너뛰지 않고 돌았다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다(7.2).
 - 필터가 아무것도 찾지 못해도 Gradle은 실패하지 않는다(7.2). 그래서 수를 확인한다. `'*ProductCacheTest'`는 `BrandProductCacheTest`와 `LikeProductCacheTest`도 찾으므로 점을 붙여 `'*.ProductCacheTest'`로 쓴다. `'*.OrderTest'`와 `'*.PaymentTest'`의 점도 이름이 그렇게 끝나는 다른 클래스를 막는다.
 - 과제의 `--tests '*PaymentProviderContractTest'`는 여전히 아무것도 찾지 않는다(7.2). 게이트웨이는 위의 `'*PaymentGatewayTest'`로 돈다.
 - 명세 147은 재고 경합 장면을 `OrderPaymentIntegrationTest`로 옮긴다고 적었지만 `OrderConfirmerConcurrencyTest`에 남았다. 과제의 필터는 그 장면을 돌리지 않으므로 셋째 명령을 둔다.
