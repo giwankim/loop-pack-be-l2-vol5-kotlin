@@ -50,7 +50,7 @@ Two commits on `worktree-issue-162` (local, not yet pushed or merged into `feat/
 
 ## Issue 161: a callback reconciles its payment through the PG's own order port
 
-Recorded 2026-10-23 from the drafted closing comment of [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161). The rules are [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) and the "알림" section of spec 159. The code is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161#issuecomment-6357280134) of [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161). The rules are [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) and the "알림" section of spec 159. The code is:
 
 - [`PaymentApi`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/payment/PaymentApi.kt), [`PaymentApiSpec`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/payment/PaymentApiSpec.kt) and [`PaymentCallbackRequest`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/payment/PaymentCallbackRequest.kt)
 - [`OrderPaymentReconciler`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/provided/OrderPaymentReconciler.kt) and [`OrderPaymentOrchestrator`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentOrchestrator.kt)
@@ -60,9 +60,10 @@ Recorded 2026-10-23 from the drafted closing comment of [issue 161](https://gith
 
 ### Landed
 
-One commit on `worktree-issue-161` (local, not yet pushed or merged into `feat/reconcile`), on top of `feat/reconcile`'s `1ca3ef0`:
+Two commits pushed to `feat/reconcile` on top of `1ca3ef0` (the restart scene of issue 162):
 
 - [`e243069`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e243069) adds the endpoint, the payment lookup by PG order ID, the PG's order port with the two error types, their tests, and the dated notes.
+- [`f189f52`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f189f52) appends this section to the writing material.
 
 ### Acceptance criteria
 
