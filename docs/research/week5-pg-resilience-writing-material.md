@@ -176,16 +176,17 @@ Four commits on `feat/reconcile`, on top of issue 161's `9914568`:
 
 ## Issue 163: callbacks, reconciles and confirms converge in any order
 
-Recorded 2026-10-23 from the closing comment of [issue 163](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163). The rules are [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 8 and [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) rule 5, and the scenes are the "순서와 중복" section and 이음매 1's 장면 6 bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). This is the callback half of the assignment's scene 6. The code is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163#issuecomment-6357740985) of [issue 163](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163). The rules are [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 8 and [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) rule 5, and the scenes are the "순서와 중복" section and 이음매 1's 장면 6 bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). This is the callback half of the assignment's scene 6. The code is:
 
 - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt): the four scenes and the `afterTheCreateIsAnswered` helper
 - [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the callback-first insertion point, in the committing-test bullet under 도우미
 
 ### Landed
 
-One commit on `worktree-issue-163`, rebased onto `feat/reconcile`'s `e48039f` (issue 160's lookup breaker, on top of issue 161's callback):
+Two commits pushed to `feat/reconcile` on top of `e48039f` (issue 160's lookup breaker, which landed while this ticket was in progress; the commits were rebased onto it):
 
 - [`8b1ff0e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/8b1ff0e) adds the scenes and the standards entry. **No production code changes**, as the ticket expected: every TX B locks the order, re-reads the payment, and `Payment.reconcile` only moves forward. No scene showed a change was needed, so the parent spec gets no dated note for production code.
+- [`c09a405`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c09a405) appends this section to the writing material.
 
 ### Acceptance criteria
 
