@@ -243,7 +243,7 @@ Every scene passed on its first run, since no production change was needed. Each
 
 ## Issue 164: operators see the open lookup breaker, and the PG is told to resend
 
-Recorded 2026-10-23 from the closing comment of [issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) rule 7 and [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 6, and the scenes are the "PG 조회의 회복" section and 이음매 1's WARN and health bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The code is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164#issuecomment-6358123727) of [issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) rule 7 and [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 6, and the scenes are the "PG 조회의 회복" section and 이음매 1's WARN and health bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The code is:
 
 - [`LocalPgGatewayConfig`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGatewayConfig.kt): the state-transition WARN
 - [`application.yml`](../../apps/commerce-api/src/main/resources/application.yml): the health indicator, the contributor switch and the `pg-lookup` health group
