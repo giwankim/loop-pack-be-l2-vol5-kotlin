@@ -407,8 +407,8 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestReconcile(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("PAYMENT_NOT_STARTED")
+        val body = assertThat(requestReconcile(orderId)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("PAYMENT_NOT_STARTED")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.requestCount()).isZero()
@@ -429,8 +429,8 @@ class OrderConfirmationApiTest(
         val paidDetail = requestDetail(orderId)
         assertThat(paidDetail).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId, idempotencyKey = "second-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_MISMATCH")
+        val body = assertThat(requestConfirm(orderId, idempotencyKey = "second-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_MISMATCH")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(paidDetail.json())
         assertThat(testPg.createCount()).isOne()
@@ -458,8 +458,8 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(draftId, other.id)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(draftId, other.id, "shared-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_IN_USE")
+        val body = assertThat(requestConfirm(draftId, other.id, "shared-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("IDEMPOTENCY_KEY_IN_USE")
 
         assertThat(requestDetail(draftId, other.id).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isOne()
@@ -473,9 +473,9 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId, idempotencyKey = null)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        error.extractingPath("$.meta.message").isEqualTo("필수 요청 헤더 'Idempotency-Key'가 누락되었습니다.")
+        val body = assertThat(requestConfirm(orderId, idempotencyKey = null)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo("필수 요청 헤더 'Idempotency-Key'가 누락되었습니다.")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
@@ -497,9 +497,9 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId, idempotencyKey = key)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        error.extractingPath("$.meta.message").isEqualTo(message)
+        val body = assertThat(requestConfirm(orderId, idempotencyKey = key)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        body.extractingPath("$.meta.message").isEqualTo(message)
 
         assertThat(requestConfirm(Long.MAX_VALUE, idempotencyKey = key)).hasStatus(HttpStatus.BAD_REQUEST)
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
@@ -526,8 +526,8 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId, json = json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        val body = assertThat(requestConfirm(orderId, json = json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
@@ -597,8 +597,8 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        error.extractingPath("$.meta.message").isEqualTo("결제 금액은 ${Long.MAX_VALUE}원 이하여야 합니다.")
+        val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.message").isEqualTo("결제 금액은 ${Long.MAX_VALUE}원 이하여야 합니다.")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
@@ -620,8 +620,8 @@ class OrderConfirmationApiTest(
             deleteBrand(secondBrand)
         }
 
-        val error = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
+        val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
@@ -646,8 +646,8 @@ class OrderConfirmationApiTest(
         updateProductStock(quantity = 1, product = short)
         deleteProduct(unavailable)
 
-        val error = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
+        val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("ORDER_PRODUCT_NOT_AVAILABLE")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()

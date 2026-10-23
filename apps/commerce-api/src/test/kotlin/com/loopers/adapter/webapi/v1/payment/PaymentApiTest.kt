@@ -124,9 +124,9 @@ class PaymentApiTest(
         assertThat(requestCallback(json)).hasStatusOk()
 
         val duplicated = requestDetail()
-        val detail = assertThat(duplicated).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo(orderStatus)
-        detail.extractingPath("$.data.paymentStatus").isEqualTo(paymentStatus)
+        val body = assertThat(duplicated).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo(orderStatus)
+        body.extractingPath("$.data.paymentStatus").isEqualTo(paymentStatus)
         assertThat(duplicated.response.contentAsString).isEqualTo(finished.response.contentAsString)
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.lookupCount()).isOne()
@@ -146,9 +146,9 @@ class PaymentApiTest(
 
         assertThat(requestCallback(callback(pgOrderId, status = "SUCCESS"))).hasStatusOk()
 
-        val detail = assertThat(requestDetail()).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo("PAYMENT_PENDING")
-        detail.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
+        val body = assertThat(requestDetail()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("PAYMENT_PENDING")
+        body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
         assertStock(product, 8)
@@ -166,8 +166,8 @@ class PaymentApiTest(
 
         assertThat(requestCallback(callback(pgOrderId, status = "SUCCESS", transactionKey = "20261023:TR:forged"))).hasStatusOk()
 
-        val detail = assertThat(requestDetail()).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        val body = assertThat(requestDetail()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
         assertThat(jdbc.queryForObject("select transaction_key from payment where order_id = ?", String::class.java, order.id))
             .isEqualTo(TRANSACTION_KEY)
         assertThat(testPg.lookupCount()).isOne()
@@ -196,8 +196,8 @@ class PaymentApiTest(
 
         assertThat(requestCallback("""{"orderId":"$pgOrderId"$fields}""")).hasStatusOk()
 
-        val detail = assertThat(requestDetail()).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+        val body = assertThat(requestDetail()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
@@ -225,9 +225,9 @@ class PaymentApiTest(
 
         assertThat(requestCallback(callback(pgOrderId, status = "SUCCESS"))).hasStatusOk()
 
-        val detail = assertThat(requestDetail()).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo("PAYMENT_PENDING")
-        detail.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
+        val body = assertThat(requestDetail()).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo("PAYMENT_PENDING")
+        body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
         assertStock(product, 8)
@@ -249,8 +249,8 @@ class PaymentApiTest(
         assertThat(requestCallback(callback(pgOrderId, status = "PENDING"))).hasStatusOk()
 
         val late = requestDetail()
-        val detail = assertThat(late).hasStatusOk().bodyJson()
-        detail.extractingPath("$.data.status").isEqualTo(orderStatus)
+        val body = assertThat(late).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.status").isEqualTo(orderStatus)
         assertThat(late.response.contentAsString).isEqualTo(finished.response.contentAsString)
         assertThat(testPg.lookupCount()).isZero()
         assertStock(product, stock)
@@ -275,9 +275,9 @@ class PaymentApiTest(
             testPg.losesLookupResponse()
         }
 
-        val error = assertThat(requestCallback(callback(pgOrderId, status = "SUCCESS")))
+        val body = assertThat(requestCallback(callback(pgOrderId, status = "SUCCESS")))
             .hasStatus(HttpStatus.SERVICE_UNAVAILABLE).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
+        body.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
 
         assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)
         assertThat(testPg.createCount()).isOne()
@@ -332,9 +332,9 @@ class PaymentApiTest(
         val pending = requestDetail()
         assertThat(pending).hasStatusOk()
 
-        val error = assertThat(requestCallback(callback(UUID.randomUUID().toString(), status = "SUCCESS")))
+        val body = assertThat(requestCallback(callback(UUID.randomUUID().toString(), status = "SUCCESS")))
             .hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("PAYMENT_NOT_FOUND")
+        body.extractingPath("$.meta.errorCode").isEqualTo("PAYMENT_NOT_FOUND")
 
         assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)
         assertThat(testPg.lookupCount()).isZero()
@@ -352,8 +352,8 @@ class PaymentApiTest(
         ],
     )
     fun `a callback without a PG order ID or with a body that isn't JSON answers 400 without a lookup`(json: String) {
-        val error = assertThat(requestCallback(json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
+        val body = assertThat(requestCallback(json)).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
 
         assertThat(testPg.requestCount()).isZero()
     }
