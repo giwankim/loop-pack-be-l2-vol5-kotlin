@@ -173,3 +173,69 @@ Four commits on `feat/reconcile`, on top of issue 161's `9914568`:
 - [Issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164) adds `register-health-indicator: true`, `allow-health-indicator-to-fail: false` and the state-transition WARN under the same `pg-lookup` instance. Its "callback answers 503 while OPEN" test can open the breaker with this ticket's `openPgLookupBreaker` shape: lost lookups, then two reconciles.
 - [Issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165) owes the step 3 section of the payments design. The counts to cite: 2 lookups per unavailable lookup, 0 while OPEN, 2 probes after 60 s.
 - Any new full-context test base inherits the reset from `BaseApplicationServiceTest`. Issue 162's second context now has its own `pg-lookup` breaker too. It starts CLOSED because the scene builds a fresh context, so it needs no reset, but a scene that opens a breaker there has to read that context's registry, not the test's.
+
+## Issue 163: callbacks, reconciles and confirms converge in any order
+
+Recorded 2026-10-23 from the closing comment of [issue 163](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163). The rules are [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 8 and [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) rule 5, and the scenes are the "순서와 중복" section and 이음매 1's 장면 6 bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). This is the callback half of the assignment's scene 6. The code is:
+
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt): the four scenes and the `afterTheCreateIsAnswered` helper
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the callback-first insertion point, in the committing-test bullet under 도우미
+
+### Landed
+
+One commit on `worktree-issue-163`, rebased onto `feat/reconcile`'s `e48039f` (issue 160's lookup breaker, on top of issue 161's callback):
+
+- [`8b1ff0e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/8b1ff0e) adds the scenes and the standards entry. **No production code changes**, as the ticket expected: every TX B locks the order, re-reads the payment, and `Payment.reconcile` only moves forward. No scene showed a change was needed, so the parent spec gets no dated note for production code.
+
+### Acceptance criteria
+
+Each scene calls the PG's order port, `OrderPaymentReconciler.reconcile(orderId)`, directly. It is what `PaymentApi` calls once it has found the payment by PG order ID. The port returning normally is the callback's 200 (ADR 0031 rule 6); the HTTP mapping itself is `PaymentApiTest`'s, from issue 161. Every scene runs for a SUCCESS and a FAILED answer and asserts `unmatchedRequests()` is empty.
+
+- [x] **Callback first: confirm answers with the confirmed order (its re-read). The order is confirmed once with one `confirmedAt`, stock goes 5 → 3 and stays 3, and create is 1.** `a callback applied before the confirmation's TX B finishes the payment once and the late create answer changes nothing`, 4 rows.
+  - The callback runs after the PG accepted confirm's create and before confirm's TX B. It reads the reserved stock 3, then the callback finishes the payment, then it re-reads the order and the stock.
+  - Confirm's TX B then gets the create's answer for a finished payment, which is `Unchanged`. Confirm answers the order TX B re-read: CONFIRMED / SUCCESS with the callback's `confirmedAt`, which is also the persisted one. For FAILED it answers PAYMENT_FAILED / FAILED, and the stock goes 5 → 3 → 5 once.
+  - One create, one lookup (the callback's). The payment keeps the PG's transaction key.
+  - **Beyond the ticket:** two rows have the late create answer say PENDING while the callback's lookup said SUCCESS or FAILED. That is spec 159's "늦은 생성 응답은 결제를 되돌리지 않는다" (user story 17). The payment stays finished.
+- [x] **Lookup first: the later callback answers 200 and changes nothing.** `a callback after the customer's reconcile finished the payment sends no lookup and changes nothing`, 2 rows. The customer's reconcile finishes the payment, then the callback returns normally. `confirmedAt`, the order's `updatedAt` and the stock (3 or 5) equal what the reconcile left. The lookup count stays at 1: a finished order is not looked up again.
+- [x] **Together: one TX B waits on the other's order lock, and the order is confirmed once. With FAILED, stock goes 5 → 3 → 5 and never reaches 7.** `a callback and the customer's reconcile applying the same answer together change the order and the stock once`, 4 rows.
+  - Step 2's scene 6 probe: the first TX B to apply a transaction is paused inside `PaymentModifyService.reconcile` while it holds the order lock. The other side's call has not finished within `LOCK_WAIT_PROBE`, then the first is released.
+  - Both sides take a turn holding the lock: the callback holds and the reconcile waits, and the other way round.
+  - The customer's answer and the persisted order share one `confirmedAt`. Stock reads 3 after confirm and ends at 3 (SUCCESS) or 5 (FAILED). There are two lookups, because both sides saw a payment-pending order before either TX B ran, and one create.
+- [x] **Lost create response, then a callback: the payment ends with the PG's transaction key, and create stays at 1.** `a callback records the PG's transaction key on a payment whose create response was lost, without another create`, 2 rows. Confirm answers UNKNOWN with no transaction key stored. The callback's lookup by PG order ID finds the transaction, and the payment ends SUCCESS or FAILED with `TRANSACTION_KEY`. Stock is 3 or 5, with one create and one lookup.
+- [x] **The together scene fails when TX B's order lock read is mutated to a plain read.** `OrderPaymentSteps.applyTransaction`'s `findForUpdate` became `find`.
+  - **All 4 rows went red** at the lock-wait probe: the waiting side finished within `LOCK_WAIT_PROBE`.
+  - **With the probe assertion also removed, 3 of 4 rows still went red on the end state.** Both FAILED rows ended with stock **7**, because the reservation came back twice. The callback-holds SUCCESS row ended with a second `confirmedAt` overwriting the first. The reconcile-holds SUCCESS row passed: the reconcile was the last writer, so its answer carries the overwriting `confirmedAt`, and the callback returns no order to compare with. In that row the probe is the only guard.
+  - After the rebase onto `e48039f`, with the lookups going through issue 160's retry and breaker, the probe result was checked again: 4 of 4 red. Both mutations were reverted.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 73 classes, **913 tests (901 on `e48039f` + 12), 0 failures, 0 skipped**, on the final tree. Executed counts:
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 59 (47 + 12) |
+  | `PaymentApiTest` | 22 (unchanged) |
+  | `OrderConfirmationApiTest` | 45 (unchanged) |
+
+### Other mutation checks
+
+Every scene passed on its first run, since no production change was needed. Each was made to fail by a mutation instead, then the mutation was reverted:
+
+- **Callback first:** dropping `status.isFinished ||` from `Payment.reconcile` turned the two late-PENDING rows red (payment `PENDING`, expected `SUCCESS` or `FAILED`). No other test in the class caught it.
+- **Lookup first:** making `checkLookupNeeded` look up finished orders turned both rows red on the lookup count (2, expected 1). The state assertions still held, because TX B's `Unchanged` is a second guard behind the status skip.
+- **Lost create:** not recording the transaction key in `Payment.reconcile` turned both rows red (`null`, expected `TRANSACTION_KEY`).
+
+### Decisions made while implementing
+
+- **The callback-first scene does not pause the TX B bean.** The ticket suggested "a spy on the TX B bean" as an example. The `OrderPaymentSteps` spy sits inside the CGLIB transactional proxy, so its stub runs inside the TX B the proxy already opened. From there the PG's port, which is `NEVER`, would throw `IllegalTransactionStateException`. Instead, the existing `PgTransactionService` spy runs the callback after `callOriginal()` returns: the PG has accepted the create, and TX B has not started. `PgTransactionService` is `NEVER` too, so no transaction is open there. The scene stays single-threaded and needs no `Pause`. `whilePaymentPending` stays as it is, because it runs before the create goes out. Spec 159's 장면 6 bullet still says "(기존 `whilePaymentPending`)"; the ticket already corrected it.
+- **Both sides hold the lock in the together scene.** The ticket asked only that "one TX B waits on the other's order lock". Running both orders covers "in any order", and the mutation shows they fail differently.
+
+### Review notes left as they are
+
+- The together test has the same shape as step 2's two scene 6 tests, with only the racing calls different. It was not merged into one parameterized "two TX Bs overlap" test, so each scene keeps its own name and KDoc, as the file already does.
+- `lockHolder` is a `String`, like the `unavailable` parameter of the unavailable-lookup tests.
+- The three `PgTransactionService` stub helpers each repeat the `getUltimateTargetObject` lookup.
+- Only the `Unchanged` path of "a late create answer is `Unchanged` or a conflict" is exercised. A create answer that contradicts the callback's lookup (SUCCESS against FAILED) would be `RESULT_MISMATCH`, which `PaymentTest` covers at the domain level.
+- Two names were changed after review: the callback-first locals became `orderAfterCallback` / `stockAfterCallback`, and the lost-create test's name was reordered so it no longer reads as "lost with the key".
+
+### For later tickets
+
+- **The payments design doc ticket (165)** should pair the callback half of scene 6 with these four tests and record the mutation results above.
+- **Issue 160's breaker** landed first, and these scenes were rebased onto it. None of them has an unavailable lookup, so their lookup counts did not move, and the base class resets the breaker before each one.
