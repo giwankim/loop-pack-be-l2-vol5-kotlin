@@ -124,11 +124,12 @@ Recorded 2026-10-23 from the closing comment of [issue 160](https://github.com/g
 
 ### Landed
 
-Three commits on `feat/reconcile`, on top of issue 162's `1ca3ef0`:
+Four commits on `feat/reconcile`, on top of issue 161's `9914568`:
 
-- [`038474e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/038474e) adds the dependencies, the annotations and the fallback, the `resilience4j.*` settings, the test clock and breaker reset, `losesFirstLookupResponses`, the scene 10 tests, and the 1 → 2 counts.
-- [`2bc05a1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2bc05a1) adds the dated notes (ADR 0022 rule 7, ADR 0023 rule 5, payments design 17), the `CODING_STANDARDS.md` entry and this file.
+- [`fd6c719`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/fd6c719) adds the dependencies, the annotations and the fallback, the `resilience4j.*` settings, the test clock and breaker reset, `losesFirstLookupResponses`, the scene 10 tests, and the 1 → 2 counts.
+- [`4976d0f`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/4976d0f) adds the dated notes (ADR 0022 rule 7, ADR 0023 rule 5, payments design 17), the `CODING_STANDARDS.md` entry and this file.
 - The review commit after them tidies the scene tests after the two-axis review. The recovery scene takes fixture defaults for values it never asserts, `succeeded(payment)` builds through `createPgTransaction`, a misleading loop index is renamed, `TestClock` drops an unused constructor parameter, and a KDoc that said the base class moves the clock is corrected.
+- The last commit lists the breaker-opening setup in CODING_STANDARDS' exceptions to "never prepare through a port", and records the judgement calls kept after the review.
 
 ### Acceptance criteria
 
@@ -140,15 +141,16 @@ Three commits on `feat/reconcile`, on top of issue 162's `1ca3ef0`:
 - [x] **One unavailable lookup, then an answer, finishes the payment within one reconcile.** The first lookup's response is lost, the retry finds the successful transaction, and the order is confirmed with 2 lookups and 1 create.
 - [x] **Neither the breaker nor a timeout ever fails a payment or releases a reservation.** Every scene above reads the order, the payment and the stock in a new transaction afterwards.
 - [x] **The gateway bean is an AOP proxy**, asserted in the retry scene, and the create still sends exactly 1 request in every existing scene.
-- [x] **The unavailable-path counts go from 1 to 2:** `OrderPaymentIntegrationTest`'s unavailable reconcile (503 and stall) and `OrderConfirmationApiTest`'s 503 reconcile. The found, empty and multiple paths stay at 1.
+- [x] **The unavailable-path counts go from 1 to 2:** `OrderPaymentIntegrationTest`'s unavailable reconcile (503 and stall) and `OrderConfirmationApiTest`'s 503 reconcile. The found, empty and multiple paths stay at 1. Issue 161's unavailable callback scenes (`PaymentApiTest`, and the PG port's scene in `OrderPaymentIntegrationTest`) assert no lookup count, so nothing there moved. In the integration scene, the PG's and the customer's reconciles now make 4 failed attempts together, which opens the breaker. Both still answer as before.
 - [x] **The gateway contract tests pass unchanged:** `PaymentGatewayTest` 96, `ExhaustedPoolPaymentGatewayTest` 1, `ObservedPaymentGatewayTest` 2 and `ConnectTimeoutPaymentGatewayTest` 2 (ran, not skipped), the same counts as before. Their trimmed contexts have no Resilience4j auto-configuration, so the annotations are inert there and the tests still see one HTTP request per call.
 - [x] **Dated notes keep the original text:** ADR 0022 rule 7 and ADR 0023 rule 5 point at ADR 0030. Payments design 17's breaker bullet got one as well, since its "조회 불가" baseline of 1 is now 2. `CODING_STANDARDS.md` records the breaker reset, the test clock, and `losesFirstLookupResponses`.
-- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 72 classes, 872 tests, 0 failures, 0 skips, on the final tree (issue 162's 865 plus this ticket's 7). Executed counts for the changed classes:
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 73 classes, 901 tests, 0 failures, 0 skips, on the final tree (894 on issue 161's `9914568` plus this ticket's 7). Executed counts for the changed classes:
 
   | Class | Tests |
   | --- | --- |
-  | `OrderPaymentIntegrationTest` | 40 (33 + 7) |
+  | `OrderPaymentIntegrationTest` | 47 (40 + 7) |
   | `OrderConfirmationApiTest` | 45 |
+  | `PaymentApiTest` | 22 (issue 161, unchanged) |
   | `PaymentGatewayTest` | 96 |
   | `HexagonalArchitectureTest` | 7 |
   | `CommerceApiContextTest` | 1 |
@@ -163,6 +165,7 @@ Three commits on `feat/reconcile`, on top of issue 162's `1ca3ef0`:
 - **The test clock is a `Clock` subclass, not a bean of some other type.** No production bean injects a `Clock`, so a `TestClock` bean can't make injection ambiguous. It starts at system time and only adds an offset, so the base class resets it with `reset()`.
 - **"Fails N times, then answers" uses a WireMock scenario.** `losesFirstLookupResponses(times)` stubs priority-1 faults that advance a scenario state, then stop matching, so the scene's ordinary lookup stubs answer. `wiremock-spring-boot` calls `WireMockServer.resetAll()` before each test, which also resets scenario state.
 - **"The PG is back" relies on stub recency.** In the recovery scene the dead PG is `losesLookupResponse()`, and the later `hasTransactions` stubs have the same priority. WireMock answers with the most recently added of equally ranked stubs. The test's KDoc says so.
+- **Opening the breaker is a listed exception to "never prepare through a port".** `openPgLookupBreaker()` reconciles twice against a dead test PG, because ADR 0030 rule 8 forbids `transitionTo*`. The review found this outside CODING_STANDARDS' explicit list, so the list now names it next to `LockFailureApiTest`. The other judgement calls from the review were kept as they were: the registry lookup in both the base class and the scene test (the standard lets a test take the dependencies its assertions use), the two-line pending-answer loop in two tests (assertions are written out in order), and `losesFirstLookupResponses(times)` with only `times = 1` in use (the ticket asked for the count).
 - **Health and the WARN line are left to issue 164.** This ticket's settings are ADR 0030 rule 6 only. It sets no health properties and registers no event consumer.
 
 ### For later tickets
