@@ -111,3 +111,61 @@ Two commits pushed to `feat/reconcile` on top of `1ca3ef0` (the restart scene of
 
 - Scene 6's callback half can now call `OrderPaymentReconciler.reconcile(orderId)` directly in `OrderPaymentIntegrationTest`: callback first, reconcile first, and both at once.
 - When issue 160's breaker lands, the port's "open breaker → 503" test goes next to the unavailable test here. The open breaker's rejection already reaches the port as `PgUnavailableException`.
+
+## Issue 160: PG lookups retry once and share a circuit breaker
+
+Recorded 2026-10-23 from the closing comment of [issue 160](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) and the "PG 조회의 회복" section of spec 159. The code is:
+
+- [`LocalPgGateway`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)
+- [`application.yml`](../../apps/commerce-api/src/main/resources/application.yml) (`resilience4j.*`)
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt)
+- [`TestPg`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPg.kt), [`TestClock`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestClock.kt), [`TestPgLookupBreakerConfig`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPgLookupBreakerConfig.kt)
+- [`BaseApplicationServiceTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/test/BaseApplicationServiceTest.kt)
+
+### Landed
+
+Two commits on `feat/reconcile`, on top of `c9144f6`:
+
+- [`ff22340`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ff22340) adds the dependencies, the annotations and the fallback, the `resilience4j.*` settings, the test clock and breaker reset, `losesFirstLookupResponses`, the scene 10 tests, and the 1 → 2 counts.
+- The docs commit after it adds the dated notes (ADR 0022 rule 7, ADR 0023 rule 5, payments design 17), the `CODING_STANDARDS.md` entry and this file.
+
+### Acceptance criteria
+
+- [x] **Two reconciles against a dead PG open the breaker.** The PG receives 4 lookups, the breaker is OPEN, and both reconciles answer the stored state (`PAYMENT_PENDING`, `PENDING`). The payment stays pending and the 2 reserved units stay reserved. This runs twice, once with lost lookup responses and once with a 503 list lookup.
+- [x] **A third reconcile while OPEN sends 0 lookups** and answers the stored state. The count stays at 4.
+- [x] **The OPEN wait is crossed by the test clock.** After 59 s the reconcile sends 0 lookups and the breaker is still OPEN. After 2 s more (61 s), with the PG still dead, that reconcile sends 2 lookups (the two HALF_OPEN probes), and the breaker is OPEN again. The count goes from 4 to 6.
+- [x] **Recovery closes the breaker.** Two pending orders, with the breaker opened by the first one's reconciles. Past 60 s, with the PG back, the first order's reconcile confirms it and the breaker is HALF_OPEN. The second order's reconcile confirms that order too, and the breaker is CLOSED. That's 6 lookups and 2 creates in total.
+- [x] **Found nothing or several never opens the breaker.** Five reconciles each send exactly 1 lookup (asserted after every reconcile), the fifth still reaches the PG, and the breaker stays CLOSED. This runs once for an empty array and once for two transactions.
+- [x] **One unavailable lookup, then an answer, finishes the payment within one reconcile.** The first lookup's response is lost, the retry finds the successful transaction, and the order is confirmed with 2 lookups and 1 create.
+- [x] **Neither the breaker nor a timeout ever fails a payment or releases a reservation.** Every scene above reads the order, the payment and the stock in a new transaction afterwards.
+- [x] **The gateway bean is an AOP proxy**, asserted in the retry scene, and the create still sends exactly 1 request in every existing scene.
+- [x] **The unavailable-path counts go from 1 to 2:** `OrderPaymentIntegrationTest`'s unavailable reconcile (503 and stall) and `OrderConfirmationApiTest`'s 503 reconcile. The found, empty and multiple paths stay at 1.
+- [x] **The gateway contract tests pass unchanged:** `PaymentGatewayTest` 96, `ExhaustedPoolPaymentGatewayTest` 1, `ObservedPaymentGatewayTest` 2 and `ConnectTimeoutPaymentGatewayTest` 2 (ran, not skipped), the same counts as before. Their trimmed contexts have no Resilience4j auto-configuration, so the annotations are inert there and the tests still see one HTTP request per call.
+- [x] **Dated notes keep the original text:** ADR 0022 rule 7 and ADR 0023 rule 5 point at ADR 0030. Payments design 17's breaker bullet got one as well, since its "조회 불가" baseline of 1 is now 2. `CODING_STANDARDS.md` records the breaker reset, the test clock, and `losesFirstLookupResponses`.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 72 classes, 871 tests, 0 failures, 0 skips, on the final tree. Executed counts for the changed classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 39 (32 + 7) |
+  | `OrderConfirmationApiTest` | 45 |
+  | `PaymentGatewayTest` | 96 |
+  | `HexagonalArchitectureTest` | 7 |
+  | `CommerceApiContextTest` | 1 |
+
+### Decisions made while implementing
+
+- **The proxy check alone proves nothing here.** `LocalPgGateway` has `@Validated`, so it was already a CGLIB proxy before any Resilience4j annotation. The red run of the retry scene showed it: `AopUtils.isAopProxy` passed, and the payment stayed pending after 1 lookup. The request count is what catches inert annotations. The test keeps both checks, as ADR 0030 rule 8 asks.
+- **Mutation checks.** Deleting both `@CircuitBreaker` annotations turned 4 tests red (both dead-PG cases, the probe and the recovery). Dropping `fallbackMethod` turned 3 red, each with `CallNotPermittedException` escaping the port. The never-opens test passes either way. It guards the failure classification, not the breaker's presence.
+- **One fallback serves both lookups.** Both take one `String` and return `PgTransaction?`, and Resilience4j matches a fallback by name, the original parameter types plus one exception, and assignability. The fallback is private. Resilience4j 2.4.0 makes it accessible and invokes it on the target, not the proxy.
+- **Retry fallback only.** A fallback whose parameter is `CallNotPermittedException` matches nothing else, so the last attempt's `PgUnavailableException` and `MultiplePgTransactionsException` pass through unchanged (Resilience4j rethrows when no fallback matches).
+- **The breaker name is a constant.** `LocalPgGateway.PG_LOOKUP` is used by both annotations, the test config's customizer and the base class's reset. `application.yml` spells it out, because YAML can't reference it.
+- **The test clock is a `Clock` subclass, not a bean of some other type.** No production bean injects a `Clock`, so a `TestClock` bean can't make injection ambiguous. It starts at system time and only adds an offset, so the base class resets it with `reset()`.
+- **"Fails N times, then answers" uses a WireMock scenario.** `losesFirstLookupResponses(times)` stubs priority-1 faults that advance a scenario state, then stop matching, so the scene's ordinary lookup stubs answer. `wiremock-spring-boot` calls `WireMockServer.resetAll()` before each test, which also resets scenario state.
+- **"The PG is back" relies on stub recency.** In the recovery scene the dead PG is `losesLookupResponse()`, and the later `hasTransactions` stubs have the same priority. WireMock answers with the most recently added of equally ranked stubs. The test's KDoc says so.
+- **Health and the WARN line are left to issue 164.** This ticket's settings are ADR 0030 rule 6 only. It sets no health properties and registers no event consumer.
+
+### For later tickets
+
+- [Issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164) adds `register-health-indicator: true`, `allow-health-indicator-to-fail: false` and the state-transition WARN under the same `pg-lookup` instance. Its "callback answers 503 while OPEN" test can open the breaker with this ticket's `openPgLookupBreaker` shape: lost lookups, then two reconciles.
+- [Issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165) owes the step 3 section of the payments design. The counts to cite: 2 lookups per unavailable lookup, 0 while OPEN, 2 probes after 60 s.
+- Any new full-context test base inherits the reset from `BaseApplicationServiceTest`. Issue 162's second context now has its own `pg-lookup` breaker too. It starts CLOSED because the scene builds a fresh context, so it needs no reset, but a scene that opens a breaker there has to read that context's registry, not the test's.

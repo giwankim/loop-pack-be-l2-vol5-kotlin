@@ -23,7 +23,7 @@ date: 2026-10-20
    - 과제가 PG 호출을 트랜잭션 밖에 둔다. 예외에서는 그것이 더 무겁다. `PgOutcomeUnknownException`이 결제를 결과 미확인으로 저장한 트랜잭션(TX A)을 지나면 Spring이 그 트랜잭션을 되돌려, 생성을 보냈다는 기록이 사라진다. 같은 멱등 키로 다시 확정하면 결제가 없으니 생성이 다시 나간다.
    - `PgOutcomeUnknownException`과 `PgUnavailableException`은 저장된 상태를 돌려주는 것으로 끝낸다. 실패로 옮기지 않는다. `Exception`이나 `RuntimeException`을 잡는 catch로 PG 호출을 감싸지 않는다.
    - 2단계의 장면 테스트가 호출자마다, 생성이 결과 미확인일 때 결제가 결과 미확인으로 남는지 본다.
-5. **포트 밖으로 나가는 PG의 결과는 세 예외뿐이다.** 열린 브레이커가 거절한 조회도 포트 밖에서는 `PgUnavailableException`이다. 3단계의 브레이커와 재시도는 어댑터 안에서 조회만 감싼다(ADR 0022 규칙 7). 어느 예외를 세고 다시 시도할지와 감싸는 차례는 3단계가 정한다.
+5. **포트 밖으로 나가는 PG의 결과는 세 예외뿐이다.** 열린 브레이커가 거절한 조회도 포트 밖에서는 `PgUnavailableException`이다. 3단계의 브레이커와 재시도는 어댑터 안에서 조회만 감싼다(ADR 0022 규칙 7). 어느 예외를 세고 다시 시도할지와 감싸는 차례는 3단계가 정한다. (2026-10-23: [ADR 0030](./0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md)이 정했다. 재시도가 브레이커를 감싸 HTTP 시도 하나가 브레이커의 표본 하나다. 둘 다 `PgUnavailableException`만 실패로 세고 다시 시도한다. `null`은 성공이고, `MultiplePgTransactionsException`은 브레이커가 무시하며 다시 시도하지 않는다. 열린 브레이커의 `CallNotPermittedException`은 다시 시도하지 않고 `@Retry`의 fallback이 `PgUnavailableException("circuit open")`으로 바꾼다. Resilience4j의 타입은 어댑터 밖으로 나가지 않는다.)
 
 ## 고르지 않은 것
 
