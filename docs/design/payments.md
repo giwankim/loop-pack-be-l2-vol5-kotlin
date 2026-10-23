@@ -388,7 +388,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [148](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/148) | PG 주문 번호의 조회가 PG 거래를 하나까지 돌려준다(`retrieveTransactionByPgOrderId`, `MultiplePgTransactionsException`). `Payment.reconcile`은 PG 거래 하나를 받는다. PG 예외 넷을 `application.payment.provided`로 옮겼다. |
 | [149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149) | 주문의 네 상태, 결제수단(`PaymentMethod`), 세 전이, 계산되는 결제액, 새 `CK_ORDERS_ON_PAYMENT_STATE`. `orders.paid_amount`를 지웠다. |
 | [150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150) | `PgOrderIdGenerator`와 `Payment.start`, 멱등 키의 규칙과 `utf8mb4_bin` 열, `UK_PAYMENT_ON_PG_ORDER_ID`. |
-| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. |
+| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. (2026-10-23: 조율하는 빈은 `OrderPaymentOrchestrator`로 이름을 바꿨다. 11.1.) |
 | [152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152) | 결제가 실패하면 예약을 한 번 돌려준다(`StockRestorer`). 생성 전 거절을 TX B가 반영한다. (2026-10-23: 명세 147의 검토 뒤 `StockDeductor`와 `StockRestorer`를 `StockReserver` 하나로 합쳤다. 11.1.) |
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
@@ -459,16 +459,17 @@ stateDiagram-v2
 
 | 포트 | 구현 | 트랜잭션 | 부르는 곳 |
 | --- | --- | --- | --- |
-| `OrderConfirmer.confirm`, `reconcile` | `OrderPaymentService` | `NEVER` | `OrderApi` |
-| 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSteps` | 새 트랜잭션 | `OrderPaymentService` |
-| `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentService`(12.1의 10) |
+| `OrderConfirmer.confirm`, `reconcile` | `OrderPaymentOrchestrator` | `NEVER` | `OrderApi` |
+| 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSteps` | 새 트랜잭션 | `OrderPaymentOrchestrator` |
+| `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentOrchestrator`(12.1의 10) |
 | `PaymentRecorder.start`, `reconcile`, `reject` | `PaymentModifyService` | TX A, TX B에 참여 | TX A, TX B |
 | `PaymentFinder.findByOrder`, `findAllByOrders` | `PaymentQueryService` | 읽기 전용 | TX A, TX B, 대사, 주문 조회 |
-| `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentService` |
+| `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentOrchestrator` |
 | `StockReserver.reserve`, `release` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
 
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
 - `PaymentRecorder`, `StockReserver`, 고객의 `OrderConfirmer`(`confirm`, `reconcile`)도 같은 까닭으로 포트 하나다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합치고, `OrderPaymentReconciler`를 `OrderConfirmer`에 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
+- 조율하는 구현은 `Service`가 아니라 `Orchestrator`로 끝난다. 같은 접두어의 `OrderPaymentSteps`보다 위에서 트랜잭션 밖에 머물며 TX A, PG 호출, TX B를 차례로 부르는 빈임을 이름이 드러낸다(2026-10-23, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모).
 
 ### 11.2 잠금
 
@@ -490,7 +491,7 @@ stateDiagram-v2
 
 ### 11.3 조율하는 서비스의 `NEVER`
 
-- `OrderPaymentService`는 `@ValidatedApplicationService(propagation = Propagation.NEVER)`이고, PG를 부르는 `PgTransactionService`는 `@ApplicationService(propagation = Propagation.NEVER)`다. 두 스테레오타입에 `@Transactional`의 `propagation` 별칭을 더했다(ADR 0028 규칙 2).
+- `OrderPaymentOrchestrator`는 `@ValidatedApplicationService(propagation = Propagation.NEVER)`이고, PG를 부르는 `PgTransactionService`는 `@ApplicationService(propagation = Propagation.NEVER)`다. 두 스테레오타입에 `@Transactional`의 `propagation` 별칭을 더했다(ADR 0028 규칙 2).
 - 트랜잭션 안에서 부르면 Spring이 메서드에 들어가기 전에 `IllegalTransactionStateException`으로 거절한다. 예약도 생성도 조회도 하지 않는다(`confirming inside a transaction is refused before anything is reserved or sent`, `reconciling inside a transaction is refused before anything is looked up`).
 - PG 호출이 트랜잭션에 들면 PG가 늦는 동안 주문과 상품의 잠금을 쥐고, 결과 미확인의 예외가 그 트랜잭션을 되돌려 결제의 기록까지 지운다(ADR 0023 규칙 4, ADR 0024의 고르지 않은 것). `NEVER`는 이 실수를 KDoc이 아니라 실행이 막게 한다. `NOT_SUPPORTED`로는 막지 못한다. 부르는 쪽의 트랜잭션을 멈춰 둘 뿐이라 그 트랜잭션의 잠금이 PG 호출 동안 그대로 남는다.
 - 대가: 테스트를 트랜잭션으로 감싸는 `BaseApplicationServiceTest`와 `BaseWebApiAdapterTest`에서는 확정과 대사를 부를 수 없다. 응용 계층의 장면은 커밋하는 기반(`BaseCommittingApplicationServiceTest`)을, HTTP 테스트는 클래스의 `@Transactional(propagation = NOT_SUPPORTED)`를 쓴다(ADR 0028의 대가).
@@ -530,7 +531,7 @@ stateDiagram-v2
 | 10 | TX A의 결제 저장 | 같은 키로 겨룬 다른 확정 전 주문이 먼저 커밋해, 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸린다 | 409 `IDEMPOTENCY_KEY_IN_USE` |
 
 - 1–3은 주문을 읽기 전이다. 형식이 틀린 키는 없는 주문에도 같은 400이다(`confirming with a malformed Idempotency-Key returns 400 naming the broken rule before anything is reserved or sent`). 헤더 없음은 `MissingRequestHeaderException`이고 400으로 옮긴다.
-- 2의 형식은 조율하는 서비스(`OrderPaymentService.confirm`)도 TX A를 열기 전에 본다. 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 7의 `IDEMPOTENCY_KEY_IN_USE`가 된다(`a key with a trailing space is rejected as malformed before it can find the payment of the key without it`). (2026-10-23: 명세 147의 검토에서 더했다.)
+- 2의 형식은 조율하는 서비스(`OrderPaymentOrchestrator.confirm`)도 TX A를 열기 전에 본다. 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 7의 `IDEMPOTENCY_KEY_IN_USE`가 된다(`a key with a trailing space is rejected as malformed before it can find the payment of the key without it`). (2026-10-23: 명세 147의 검토에서 더했다.)
 - 4–7은 상품을 읽기 전이다. 404는 재요청보다 앞서, 남의 주문에 그 주인의 키를 보내도 404다(`requester and ownership checks precede both the first confirmation and a replay of its key`).
 - 6은 `ensureDraft()`를 7보다 먼저 부른다. 8 뒤의 `startPayment()` 안에서만 돌면 상품이 삭제된, 포인트로 확정된 주문이 `ORDER_PRODUCT_NOT_AVAILABLE`로 답한다([issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155)). 5와 6의 주문은 겹치지 않으므로 둘의 차례는 답을 바꾸지 않는다. (2026-10-23: 명세 147의 검토에서 결제수단을 두 번 견주던 TX A를 `Order.paysThroughPg`와 `ensureDraft()`로 바꾸며 5와 6의 차례를 바꿨다. 전에는 POINT를 먼저 보았다.)
 - 7은 8보다 앞서야 한다. 재고가 모자란 주문에 남이 쓴 키를 보내도 `IDEMPOTENCY_KEY_IN_USE`다. 사전 조건을 예약 뒤로 옮긴 변이 실행에서는 `INSUFFICIENT_STOCK`이 나왔다(issue 155, `confirming a draft with a key another user's order used returns 409 IDEMPOTENCY_KEY_IN_USE before reserving`의 재고 1 경우).
@@ -568,7 +569,7 @@ stateDiagram-v2
 
 ## 13. 대사
 
-`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 확정과 같은 `OrderConfirmer`의 `reconcile(userId, orderId)`이고, `OrderPaymentService`가 구현하므로 `NEVER`다.
+`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 확정과 같은 `OrderConfirmer`의 `reconcile(userId, orderId)`이고, `OrderPaymentOrchestrator`가 구현하므로 `NEVER`다.
 
 ### 13.1 차례
 
