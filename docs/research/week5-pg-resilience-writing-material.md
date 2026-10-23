@@ -114,7 +114,7 @@ Two commits pushed to `feat/reconcile` on top of `1ca3ef0` (the restart scene of
 
 ## Issue 160: PG lookups retry once and share a circuit breaker
 
-Recorded 2026-10-23 from the closing comment of [issue 160](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) and the "PG 조회의 회복" section of spec 159. The code is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160#issuecomment-6357618649) of [issue 160](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) and the "PG 조회의 회복" section of spec 159. The code is:
 
 - [`LocalPgGateway`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)
 - [`application.yml`](../../apps/commerce-api/src/main/resources/application.yml) (`resilience4j.*`)
