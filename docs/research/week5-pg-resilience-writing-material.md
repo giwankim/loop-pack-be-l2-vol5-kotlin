@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 162: a restarted commerce sends no create and finishes pending payments
 
-Recorded 2026-10-23 from the closing comment of [issue 162](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/162). The rules are rules 2 and 3 of [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) (TX A's commit is the send record; create is never resent), and the scene is the "재시작 (장면 8)" section of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The code is:
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/162#issuecomment-6357044670) of [issue 162](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/162). The rules are rules 2 and 3 of [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) (TX A's commit is the send record; create is never resent), and the scene is the "재시작 (장면 8)" section of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The code is:
 
 - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt): the scene and its `restarted` helper
 - [`TestPg`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TestPg.kt): `createCount(pgOrderId)`
@@ -12,10 +12,10 @@ Recorded 2026-10-23 from the closing comment of [issue 162](https://github.com/g
 
 ### Landed
 
-Two commits on `feat/reconcile`, on top of `c9144f6`:
+Two commits on `worktree-issue-162` (local, not yet pushed or merged into `feat/reconcile`), on top of `feat/reconcile`'s `c9144f6`:
 
 - [`c34f72a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c34f72a) is the test, the `TestPg` helper and the standards entry. No production code changes.
-- The commit that adds this file.
+- [`a7c94c1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/a7c94c1) creates this writing-material file.
 
 ### Acceptance criteria
 
