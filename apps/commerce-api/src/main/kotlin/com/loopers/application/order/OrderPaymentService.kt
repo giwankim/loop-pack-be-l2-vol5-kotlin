@@ -11,8 +11,7 @@ import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.payment.provided.PgOutcomeUnknownException
 import com.loopers.application.payment.provided.PgRejectedException
-import com.loopers.application.payment.provided.PgTransactionCreator
-import com.loopers.application.payment.provided.PgTransactionRetriever
+import com.loopers.application.payment.provided.PgTransactionClient
 import com.loopers.application.payment.provided.PgUnavailableException
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.payment.Payment
@@ -44,8 +43,7 @@ class OrderPaymentService(
     private val orderInfoAssembler: OrderInfoAssembler,
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
-    private val pgTransactionCreator: PgTransactionCreator,
-    private val pgTransactionRetriever: PgTransactionRetriever,
+    private val pgTransactionClient: PgTransactionClient,
 ) : OrderConfirmer,
     OrderPaymentReconciler {
     /**
@@ -73,7 +71,7 @@ class OrderPaymentService(
         val card = request.toCreditCard()
 
         val transaction = try {
-            pgTransactionCreator.create(payment, card)
+            pgTransactionClient.create(payment, card)
         } catch (e: PgRejectedException) {
             return orderPaymentSteps.applyRejection(userId, orderId, e.rejection)
         } catch (e: PgOutcomeUnknownException) {
@@ -110,7 +108,7 @@ class OrderPaymentService(
 
         val payment = paymentFinder.findByOrder(order.id)
         val transaction = try {
-            pgTransactionRetriever.retrieve(payment)
+            pgTransactionClient.retrieve(payment)
         } catch (_: PgUnavailableException) {
             null
         } catch (e: MultiplePgTransactionsException) {
