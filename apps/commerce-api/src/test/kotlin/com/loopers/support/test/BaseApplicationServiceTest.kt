@@ -1,5 +1,6 @@
 package com.loopers.support.test
 
+import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
@@ -29,12 +30,15 @@ import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.domain.user.User
 import com.loopers.support.RedisCleanUp
 import com.loopers.support.SqlCaptureConfig
+import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TestPgOrderIdGenerator
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -58,6 +62,9 @@ import java.util.UUID
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
  *
  * 테스트 PG를 쓰는 클래스는 [nextPgOrderId]로 결제가 받을 PG 주문 번호를 정한다. 쓰지 않고 남은 번호는 테스트가 끝날 때마다 버린다.
+ *
+ * 테스트가 시작할 때마다 PG 조회의 서킷 브레이커 `pg-lookup`을 CLOSED로 되돌리고, `@EnableTestPg`가 넣은 시계도 되돌린다(ADR 0030 규칙 8).
+ * 브레이커는 컨텍스트의 빈이라 같은 컨텍스트를 쓰는 테스트끼리 이어진다. 되돌리지 않으면 앞 테스트의 조회 실패가 뒤 테스트의 조회를 막는다.
  *
  * 테스트가 끝날 때마다 [RedisCleanUp]으로 테스트 Redis를 비운다. 이것을 넓힌 [BaseWebApiAdapterTest]와 [BaseCommittingApplicationServiceTest]도
  * 물려받는다. Redis를 가져오지 않는 [BaseRepositoryTest]는 비우지 않는다. 고객 목록의 캐시 키는 상품 목록
@@ -112,6 +119,13 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var pgOrderIdGenerators: ObjectProvider<TestPgOrderIdGenerator>
 
+    @Autowired
+    private lateinit var circuitBreakerRegistry: CircuitBreakerRegistry
+
+    /** PG 조회의 브레이커가 읽는 시계. `@EnableTestPg`가 가져온 컨텍스트에만 있다. */
+    @Autowired
+    private lateinit var pgLookupClocks: ObjectProvider<TestClock>
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -129,6 +143,13 @@ abstract class BaseApplicationServiceTest {
 
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
+
+    /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
+    @BeforeEach
+    fun resetPgLookupBreaker() {
+        pgLookupClocks.ifAvailable { it.reset() }
+        circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP).reset()
+    }
 
     @AfterEach
     fun cleanUpRedis() {

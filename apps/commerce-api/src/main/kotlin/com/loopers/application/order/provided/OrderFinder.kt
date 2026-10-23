@@ -56,4 +56,13 @@ interface OrderFinder {
      * 고객 쪽이 기본이기 때문이다(CONTEXT.md 고객). 목록은 [OrderAdminListRequest]가 그 일을 한다.
      */
     fun findForAdmin(orderId: Long): OrderInfo
+
+    /**
+     * PG의 대사([OrderPaymentReconciler])가 대사할 주문 하나. 사용자를 묻지 않는다. PG에는 요청자가 없고, 결제를 PG 주문 번호로 찾은 것이 소유
+     * 확인을 대신한다(ADR 0031 규칙 3). 없으면 `ORDER_NOT_FOUND`다. 결제 상태는 싣지 않는다. 대사는 주문의 상태로 PG에 물을지 정하고
+     * 결제는 결제 슬라이스에서 따로 찾는다.
+     *
+     * [findForAdmin]처럼 소유권을 묻지 않는 쪽이라 이름에 부르는 쪽을 적는다.
+     */
+    fun findForPg(orderId: Long): Order
 }

@@ -42,4 +42,11 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     IDEMPOTENCY_KEY_IN_USE(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_IN_USE", "다른 주문이 이미 쓴 멱등 키입니다."),
     PAYMENT_NOT_STARTED(HttpStatus.CONFLICT, "PAYMENT_NOT_STARTED", "결제를 시작하지 않은 주문입니다."),
     PAYMENT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "주문의 결제가 없습니다."),
+
+    /**
+     * PG의 알림. PG는 답으로 다시 보낼지를 정하므로 둘 다 code를 새로 갖는다(ADR 0031 규칙 6). 모르는 PG 주문 번호는 다시 보내도 같은 404이고,
+     * 조회할 수 없던 알림은 다시 보내면 답이 바뀔 수 있는 503이다. 고객의 대사는 조회할 수 없어도 저장된 상태로 답하므로 이 503을 받지 않는다.
+     */
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "결제를 찾을 수 없습니다."),
+    PG_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_UNAVAILABLE", "PG에 결제를 조회할 수 없습니다. 잠시 뒤 다시 보내 주세요."),
 }

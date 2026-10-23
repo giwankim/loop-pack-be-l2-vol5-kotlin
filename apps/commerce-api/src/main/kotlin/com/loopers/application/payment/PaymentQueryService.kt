@@ -29,4 +29,8 @@ class PaymentQueryService(
 
         return payments
     }
+
+    override fun findByPgOrderId(pgOrderId: String): Payment {
+        return paymentRepository.findByPgOrderId(pgOrderId) ?: throw CoreException(ErrorType.PAYMENT_NOT_FOUND)
+    }
 }

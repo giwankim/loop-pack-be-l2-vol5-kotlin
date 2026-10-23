@@ -1,5 +1,11 @@
 package com.loopers.adapter.integration.pg
 
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.core.registry.EntryAddedEvent
+import io.github.resilience4j.core.registry.EntryRemovedEvent
+import io.github.resilience4j.core.registry.EntryReplacedEvent
+import io.github.resilience4j.core.registry.RegistryEventConsumer
 import org.apache.hc.client5.http.config.ConnectionConfig
 import org.apache.hc.client5.http.config.RequestConfig
 import org.apache.hc.client5.http.impl.classic.HttpClients
@@ -10,10 +16,15 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
 
+private val log = KotlinLogging.logger {}
+
 /**
  * 로컬 테스트 PG 어댑터의 HTTP 설정(ADR 0021, ADR 0022). PG 요청이 지나는 Apache HttpClient 5를 직접 만든다.
  * Boot의 HTTP client 설정(`spring.http.clients.*`)은 재시도와 풀 대기를 다루지 않는다.
  * 게이트웨이 [LocalPgGateway]는 컴포넌트 스캔으로 등록되고, Boot의 `RestClient.Builder`에 이 request factory를 얹는다.
+ *
+ * The state log of the circuit breaker around the gateway's lookups lives here too. The breaker itself is configured under
+ * `resilience4j.*` in `application.yml` (ADR 0030).
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(PgProperties::class)
@@ -50,5 +61,43 @@ class LocalPgGatewayConfig {
             .build()
 
         return HttpComponentsClientHttpRequestFactory(httpClient)
+    }
+
+    /**
+     * Logs one WARN per state transition of the [LocalPgGateway.PG_LOOKUP] breaker, with its name and the old and new states
+     * (ADR 0030 rule 7). Nobody watches the metrics yet, so this line is where a PG outage shows its start and end. Calls
+     * that leave the state alone log nothing.
+     *
+     * Resilience4j's Boot module hands every `RegistryEventConsumer` bean to the registry, which calls it for each breaker it
+     * creates from the configuration. A replaced breaker is subscribed again, so the log survives a registry replace.
+     */
+    @Bean
+    fun pgLookupStateTransitionLogger(): RegistryEventConsumer<CircuitBreaker> {
+        return object : RegistryEventConsumer<CircuitBreaker> {
+            override fun onEntryAddedEvent(entryAddedEvent: EntryAddedEvent<CircuitBreaker>) {
+                logStateTransitions(entryAddedEvent.addedEntry)
+            }
+
+            override fun onEntryRemovedEvent(entryRemoveEvent: EntryRemovedEvent<CircuitBreaker>) {
+            }
+
+            override fun onEntryReplacedEvent(entryReplacedEvent: EntryReplacedEvent<CircuitBreaker>) {
+                logStateTransitions(entryReplacedEvent.newEntry)
+            }
+        }
+    }
+
+    private fun logStateTransitions(circuitBreaker: CircuitBreaker) {
+        if (circuitBreaker.name != LocalPgGateway.PG_LOOKUP) {
+            return
+        }
+
+        circuitBreaker.eventPublisher.onStateTransition { event ->
+            val transition = event.stateTransition
+            log.warn {
+                "PG 조회의 서킷 브레이커 상태가 바뀌었다. name=${event.circuitBreakerName}, " +
+                    "from=${transition.fromState}, to=${transition.toState}"
+            }
+        }
     }
 }

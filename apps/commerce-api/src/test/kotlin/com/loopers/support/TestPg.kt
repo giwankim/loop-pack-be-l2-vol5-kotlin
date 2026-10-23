@@ -10,12 +10,14 @@ import com.github.tomakehurst.wiremock.client.WireMock.equalTo
 import com.github.tomakehurst.wiremock.client.WireMock.equalToJson
 import com.github.tomakehurst.wiremock.client.WireMock.get
 import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath
 import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.http.Fault
+import com.github.tomakehurst.wiremock.stubbing.Scenario
 import com.github.tomakehurst.wiremock.verification.LoggedRequest
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
@@ -59,6 +61,12 @@ class TestPg(
 
         /** 두 조회의 경로. 거래 키 조회는 `/api/v1/payments/{거래 키}`, 목록 조회는 query만 다른 `/api/v1/payments`다. */
         private const val LOOKUP_PATHS = "$PAYMENTS_PATH(/[^/]+)?"
+
+        /** [losesFirstLookupResponses]의 scenario. 테스트 메서드마다 WireMock이 처음 상태로 되돌린다. */
+        private const val LOST_LOOKUPS = "lost lookups"
+
+        /** [losesFirstLookupResponses]의 우선순위. 우선순위를 주지 않은 스텁(WireMock의 기본값 5)보다 먼저 맞는다. */
+        private const val LOST_LOOKUP_PRIORITY = 1
 
         /** [stallsCreate]와 [stallsLookup]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
         private const val STALL_MILLIS = 1_500
@@ -134,6 +142,13 @@ class TestPg(
         return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).size
     }
 
+    /** PG가 받은 생성 요청 가운데 본문의 `orderId`가 PG 주문 번호 [pgOrderId]인 것의 수. 결제가 여럿인 장면이 결제마다 센다. */
+    fun createCount(pgOrderId: String): Int {
+        return server.findAll(
+            postRequestedFor(urlEqualTo(PAYMENTS_PATH)).withRequestBody(matchingJsonPath("$.orderId", equalTo(pgOrderId))),
+        ).size
+    }
+
     /** PG가 받은 모든 요청 수. 메서드와 경로가 무엇이든, 맞는 스텁이 없던 요청까지 센다. */
     fun requestCount(): Int {
         return server.findAll(anyRequestedFor(anyUrl())).size
@@ -172,6 +187,24 @@ class TestPg(
     /** 모든 조회를 받은 뒤 아무것도 답하지 않고 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청을 다 읽은 뒤에 끊는다. */
     fun losesLookupResponse() {
         server.stubFor(anyLookup().willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    }
+
+    /**
+     * 처음 [times]번의 조회를 받은 뒤 아무것도 답하지 않고 연결을 끊는다([losesLookupResponse]와 같은 `Fault.EMPTY_RESPONSE`). 그다음 조회는
+     * 장면의 다른 조회 스텁([hasTransactions] 등)이 답한다. 끊는 스텁은 우선순위가 높아 먼저 맞고, [times]번 쓰이면 WireMock scenario의 상태가
+     * 바뀌어 더는 맞지 않는다. 조회 불가 뒤의 다시 시도가 PG의 답을 받는 장면이다. 두 조회를 함께 센다.
+     */
+    fun losesFirstLookupResponses(times: Int) {
+        repeat(times) { lost ->
+            server.stubFor(
+                anyLookup()
+                    .atPriority(LOST_LOOKUP_PRIORITY)
+                    .inScenario(LOST_LOOKUPS)
+                    .whenScenarioStateIs(if (lost == 0) Scenario.STARTED else "lost $lost")
+                    .willSetStateTo("lost ${lost + 1}")
+                    .willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)),
+            )
+        }
     }
 
     /** PG가 받은 조회 수. 거래 키 조회와 목록 조회를 함께 세며, 헤더와 query가 무엇이든 센다. */
