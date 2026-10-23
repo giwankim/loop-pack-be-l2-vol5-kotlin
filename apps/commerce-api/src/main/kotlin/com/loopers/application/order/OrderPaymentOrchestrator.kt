@@ -36,7 +36,7 @@ private val log = KotlinLogging.logger {}
  * 부르기 전에 읽은 것이 아니라 답하는 때에 다시 읽은 것이다. PG 호출 동안 다른 대사가 결제를 끝냈으면 그 결과로 답한다.
  */
 @ValidatedApplicationService(propagation = Propagation.NEVER)
-class OrderPaymentService(
+class OrderPaymentOrchestrator(
     private val orderPaymentSteps: OrderPaymentSteps,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
