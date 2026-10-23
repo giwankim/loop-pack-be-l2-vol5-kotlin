@@ -287,18 +287,9 @@ class OrderPaymentIntegrationTest(
     @ValueSource(strings = ["503", "stall"])
     fun `a reconcile whose lookup is unavailable answers the stored state and changes nothing`(unavailable: String) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        val payment = confirmPending()
         if (unavailable == "503") {
-            testPg.answersList(pgOrderId, httpStatus = 503)
+            testPg.answersList(payment.pgOrderId, httpStatus = 503)
         } else {
             testPg.stallsLookup()
         }
@@ -312,9 +303,9 @@ class OrderPaymentIntegrationTest(
         assertThat(testPg.unmatchedRequests()).isEmpty()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
-            val payment = paymentFinder.findByOrder(order.id)
-            assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
-            assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            val persistedPayment = paymentFinder.findByOrder(order.id)
+            assertThat(persistedPayment.status).isEqualTo(PaymentStatus.PENDING)
+            assertThat(persistedPayment.transactionKey).isEqualTo(payment.transactionKey)
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
         }
     }
@@ -327,18 +318,9 @@ class OrderPaymentIntegrationTest(
     @Test
     fun `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        val payment = confirmPending()
         testPg.losesFirstLookupResponses(times = 1)
-        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
+        testPg.hasTransactions(payment.pgOrderId, succeeded(payment))
 
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
@@ -639,17 +621,8 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
-        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        val payment = confirmPending()
+        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
         pauseTheFirstTxBHoldingTheOrder()
 
         val first = inAnotherThread { orderConfirmer.reconcile(user.id, order.id) }
@@ -1378,17 +1351,8 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
-        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        val payment = confirmPending()
+        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
 
         orderPaymentReconciler.reconcile(order.id)
 
@@ -1397,9 +1361,9 @@ class OrderPaymentIntegrationTest(
         assertThat(testPg.unmatchedRequests()).isEmpty()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(orderStatus)
-            val payment = paymentFinder.findByOrder(order.id)
-            assertThat(payment.status).isEqualTo(paymentStatus)
-            assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            val persistedPayment = paymentFinder.findByOrder(order.id)
+            assertThat(persistedPayment.status).isEqualTo(paymentStatus)
+            assertThat(persistedPayment.transactionKey).isEqualTo(payment.transactionKey)
             assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
         }
     }
@@ -1415,18 +1379,9 @@ class OrderPaymentIntegrationTest(
         unavailable: String,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        val payment = confirmPending()
         if (unavailable == "503") {
-            testPg.answersList(pgOrderId, httpStatus = 503)
+            testPg.answersList(payment.pgOrderId, httpStatus = 503)
         } else {
             testPg.stallsLookup()
         }
@@ -1584,17 +1539,8 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
-        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        val payment = confirmPending()
+        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
         val reconciledOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
 
@@ -1637,18 +1583,9 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val request = createOrderConfirmRequest()
-        val pgOrderId = nextPgOrderId()
-        testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
-            amount = 2_000,
-            card = request.toCreditCard(),
-            transactionKey = TRANSACTION_KEY,
-            pgStatus = "PENDING",
-        )
-        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        val payment = confirmPending()
         val reservedStock = inNewTransaction { productFinder.find(product.id).stock }
-        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
         pauseTheFirstTxBHoldingTheOrder()
         var reconciled: OrderInfo? = null
         val callingBack = { orderPaymentReconciler.reconcile(order.id) }
@@ -1829,7 +1766,12 @@ class OrderPaymentIntegrationTest(
 
     /** 결제 [payment]의 PG 주문 번호, 금액, 거래 키를 가진 성공한 PG 거래. 거래 키가 다르면 결제가 충돌로 본다. */
     private fun succeeded(payment: Payment): PgTransaction {
-        return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = PgStatus.SUCCESS)
+        return transactionOf(payment, PgStatus.SUCCESS)
+    }
+
+    /** The PG transaction that matches [payment]: its PG order ID, amount and transaction key, with PG status [status]. */
+    private fun transactionOf(payment: Payment, status: PgStatus): PgTransaction {
+        return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = status)
     }
 
     /** 죽은 PG에 [order]를 두 번 대사해 브레이커를 연다. 조회는 4다. */
