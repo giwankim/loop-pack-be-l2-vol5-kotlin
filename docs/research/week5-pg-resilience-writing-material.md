@@ -417,3 +417,28 @@ A two-axis review covered everything since `ca30760`, so all of step 3 against s
 
 - Spec 159 can close once this ticket does. Every ticket under it is then done.
 - The PR into `week5` should carry section 22's limits and 23.2's commands.
+
+## Spec 159: the closing review
+
+Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159#issuecomment-6359789211) of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). It closes the spec after a two-axis review of the step 3 branch.
+
+Tickets 160–165 are closed, and the branch had a two-axis review of `origin/week5...f69a6db` (27 commits). It checked the diff against the repo's standards (`CODING_STANDARDS.md`, `CONTEXT.md`, catalog design §5, ADRs 0009–0031) and against this spec, its six tickets, and ADRs 0030/0031. `feat/reconcile` is at [`aac9401`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/aac9401). `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes: 73 classes, 917 tests, 0 failures, 0 skipped. That is the count design §23 records.
+
+### Spec
+
+All 52 user stories were checked. Every ADR 0030 rule 6 value matches `application.yml`, and the test profile still changes only the 200 ms response limit. Nothing in production code goes beyond the spec, and no requirement was found implemented wrongly.
+
+- **Stories 21 and 46: fixed.** No test read the retry's wait, so `wait-duration: 10s` would have passed. The one-unavailable-lookup scene now subscribes to the `pg-lookup` retry's events. It asserts exactly one retry, with a 100 ms wait read from the event, not timed. A temporary `wait-duration: 150ms` made it fail ("expected: 0.1S but was: 0.15S"). [`9902a1a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9902a1a), with a dated note on the design 21.3 row in [`aac9401`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/aac9401).
+- **Story 42: accepted.** `retrieveTransaction(transactionKey)` carries both annotations, but no resilience test calls it. Nothing in production calls it either (ADR 0031 rule 4). On the path that runs, the retry scene's `isAopProxy` and exact request counts already catch inert annotations.
+- **Story 19 at the callback level** rests on scene 9's shared code, as issue 165's closing comment records.
+- **Test-only commits** `5e7cd01`, `f744fb0`, `5ee477f`, `50996b4` and `f69a6db` came from issue 165's review list and change no behaviour.
+
+### Standards
+
+- **Fixed:** the first response body of a test is named `body` (`CODING_STANDARDS.md` HTTP tests). The open-breaker callback test and step 2's shortage-retry confirm test named it `error`. That finishes the `5e7cd01` sweep. [`07d524d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/07d524d)
+- **Kept after review:**
+  - **`checkLookupNeeded`:** it is the use case's "ask the PG?" decision, with an application error code; it is not an `Order` invariant.
+  - **The two private `pgTransaction` helpers:** each is used in one class only, and their defaults differ.
+  - **The breaker's WARN consumer inside `LocalPgGatewayConfig`:** issue 164's dated note chose that placement.
+  - **The string scene selectors:** that is the repo's idiom, used at six sites.
+- **Dropped (YAGNI): exact matching of the PG order ID.** Under the servers' `utf8mb4_general_ci`, a callback naming a payment's PG order ID with different case or a trailing space finds that payment. It reconciles it and answers 200 rather than 404. The outcome stays honest, because the lookup uses the payment's stored PG order ID. An exact-match fix was built and then removed: the repo follows the database's collation unless there is a definite need.
