@@ -1,11 +1,11 @@
 # 결제 설계 — 결제 애그리거트, PG 어댑터, PG로 결제하는 주문 확정
 
-5주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 `### 결제`와 대사하다를 따른다. 결정은 두 ADR에 있다. (2026-10-23: 1단계의 결정이다. 2단계의 결정 여섯은 9절에 있다.)
+5주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 `### 결제`와 대사하다를 따른다. 결정은 두 ADR에 있다. (2026-10-23: 1단계의 결정이다. 2단계의 결정 여섯은 9절에, 3단계의 결정 둘은 18절에 있다.)
 
 - [ADR 0021](../adr/0021-payment-is-its-own-aggregate-and-slice.md): 결제는 주문과 다른 애그리거트이고, PG 포트는 결제 슬라이스가 가진다.
 - [ADR 0022](../adr/0022-only-the-pre-create-rejection-proves-no-pg-transaction.md): PG 거래가 없다는 증거는 정확한 생성 전 거절뿐이고, 생성 요청은 다시 보내지 않는다.
 
-상태: 2026-10-20 1단계([명세 138](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138))를 마치고 썼다. 2·3단계가 절을 더해 이어 쓴다. 2026-10-23 2단계([명세 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147))를 마치고 9–17절을 더했다.
+상태: 2026-10-20 1단계([명세 138](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/138))를 마치고 썼다. 2·3단계가 절을 더해 이어 쓴다. 2026-10-23 2단계([명세 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147))를 마치고 9–17절을 더했다. 같은 날 3단계([명세 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159))를 마치고 18–23절을 더했다.
 
 ## 1. 근거와 범위
 
@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | 1 | 결제 애그리거트, PG 어댑터, 테스트 PG | 끝남(2026-10-20, `feat/pg-adapter`) |
 | 2 | 주문의 새 상태(과제의 `PAYMENT_PENDING`, `PAYMENT_FAILED`), 결제수단, 재고 예약, 과제의 TX A(PG를 부르기 전에 결제와 예약을 저장하는 트랜잭션)와 TX B(PG의 결과를 반영하는 트랜잭션), 확정·조회·대사 엔드포인트, 결과를 반영하는 응용 서비스. [ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md)와 [ADR 0003](../adr/0003-confirm-order-in-one-transaction.md)을 다시 연다. | 끝남(2026-10-23, `feat/order-payment`, 9절) |
-| 3 | 알림(callback), 조회의 서킷 브레이커와 제한된 재조회 | 아직 |
+| 3 | 알림(callback), 조회의 서킷 브레이커와 제한된 재조회 | 끝남(2026-10-23, `feat/reconcile`, 18절) |
 
 ### 1.2 1단계가 만든 것
 
@@ -57,7 +57,7 @@
 - PG 주문 번호는 `String.format`을 쓰지 않는다. `%d`는 JVM 기본 로캘의 숫자를 따라 `th-TH-u-nu-thai`에서 `LP-ORD-๐๐๐๐๐๐๐๐๔๒`가 됐다. `padStart`로 만들고, 테스트가 그 로캘에서 ASCII 숫자를 확인한다. (2026-10-22: [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md)가 파생 형식을 없애, `padStart`와 그 로캘 테스트도 함께 지웠다. 운영 생성기가 만드는 UUID 문자열은 `String.format`을 거치지 않는다. 생성기의 테스트가 값이 6자 이상의 ASCII이고 서로 다른지 본다.)
 - 표는 `payment`다. 이 저장소는 예약어를 피할 때만 표 이름을 적는다. `BaseEntity`를 상속하고, 애그리거트 루트라 `@SQLRestriction("deleted_at is null")`로 논리 삭제한다([ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)). 지우는 기능은 없다.
 - `payment`는 가리키는 `orders`보다 이름 차례가 뒤라, 스키마를 다시 만들 때 `scalar-foreign-keys-drop.sql`이 그 외래 키를 먼저 지운다([포인트·주문 설계](./points-orders.md) 8.2의 2026-10-19 메모). migration 도구는 [issue 145](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/145)에서 다시 본다.
-- `PaymentRepository`는 저장, 주문 식별자로 찾기, 멱등 키로 찾기만 가진다. 없으면 null이다. 거래 키나 PG 주문 번호로 찾는 것과 그 인덱스는 그것을 쓰는 단계가 더한다. (2026-10-22: PG 주문 번호의 인덱스는 2단계가 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`로 먼저 더했다. PG 주문 번호가 주문 식별자에서 오지 않으므로 유일성이 주문마다 하나에서 따라 나오지 않는다(ADR 0029 규칙 3). 그것으로 찾는 메서드는 3단계의 알림이 더한다.)
+- `PaymentRepository`는 저장, 주문 식별자로 찾기, 멱등 키로 찾기만 가진다. 없으면 null이다. 거래 키나 PG 주문 번호로 찾는 것과 그 인덱스는 그것을 쓰는 단계가 더한다. (2026-10-22: PG 주문 번호의 인덱스는 2단계가 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`로 먼저 더했다. PG 주문 번호가 주문 식별자에서 오지 않으므로 유일성이 주문마다 하나에서 따라 나오지 않는다(ADR 0029 규칙 3). 그것으로 찾는 메서드는 3단계의 알림이 더한다.) (2026-10-23: 3단계가 `PaymentRepository.findByPgOrderId`와 `PaymentFinder.findByPgOrderId`를 더했다(19.3). 거래 키로는 찾지 않아 `transaction_key`에는 인덱스를 두지 않았다(ADR 0031 규칙 4).)
 
 ### 2.2 결제 상태
 
@@ -131,7 +131,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 - 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다. (2026-10-23: TX B의 `OrderPaymentSteps`가 그렇게 한다. 10.2.)
 - `Conflicted`는 충돌 까닭(`ConflictReason`, 여섯 값)을 돌려주고 결제를 바꾸지 않는다. 까닭과 시각을 결제에 저장하지 않는다. 원래는 재시작 뒤에도 마지막 충돌을 보려고 두 열을 뒀지만, 이를 읽는 업무 규칙이나 복구 절차가 없어 2026-10-21에 제거했다([ADR 0021 규칙 1의 날짜 메모](../adr/0021-payment-is-its-own-aggregate-and-slice.md)). 결제 행만으로 마지막 충돌을 조회할 수는 없다. (2026-10-22: `MULTIPLE_TRANSACTIONS`가 빠져 `ConflictReason`은 다섯 값이다(2.3).)
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다. (2026-10-23: `PaymentModifyService`의 `reconcile`과 `reject`가 쓴다. 11.4.)
-- PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것). (2026-10-23: 저장된 상태는 답하는 때에 다시 읽는다. 13.3.)
+- PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것). (2026-10-23: 저장된 상태는 답하는 때에 다시 읽는다. 13.3.) (2026-10-23: 3단계의 알림은 `PgUnavailableException`에 저장된 상태가 아니라 503 `PG_UNAVAILABLE`로 답한다. 그 예외가 결제에 들어오지 않는 것은 같다(19.2, 20.4).)
 
 ## 3. PG 계약과 결과
 
@@ -162,10 +162,10 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 - PG 주문 번호의 조회는 `retrieveTransactionByPgOrderId(pgOrderId)`다(2026-10-22, `listTransactions`에서 바꿨다. [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). `PgTransaction?`을 돌려준다. PG 거래가 없으면 `null`이고, 둘 이상이면 `MultiplePgTransactionsException`을 던진다. 이 예외도 `RuntimeException`을 바로 넓혀, 공통 상위 타입이 없는 PG 예외는 넷이다. 넷은 결제 슬라이스의 provided 포트(2단계)가 주문 슬라이스로 그대로 던지게 되므로, 그 포트보다 먼저 `application.payment.provided`로 옮겼다(ADR 0028 규칙 3). 표의 마지막 줄과 아래의 "세 예외"는 그 전의 원문이다.
 - 생성 입력은 포트와 같은 패키지의 `PgTransactionCreateRequest`다(2026-10-21). `pgOrderId`, `cardType`, `cardNumber`는 `@NotBlank`, `Long`인 `amount`는 `@Positive`로 검증한다. 카드 번호는 Hibernate Validator의 `@CreditCardNumber(ignoreNonDigitCharacters = true)`로 Luhn 검사를 하고, 하이픈 같은 숫자 아닌 문자는 무시한다. 카드가 발급되었거나 카드 종류와 맞는지는 이 검사로 알 수 없다. 포트 파라미터에 `@Valid`, 어댑터에 `@Validated`를 두어 잘못된 입력은 HTTP 요청 전에 `ConstraintViolationException`으로 거절한다. 이 예외는 PG의 답이 아니므로 PG 예외로 바꾸지 않는다. 트랜잭션을 더하지 않도록 `@ValidatedApplicationService`는 쓰지 않는다. 어댑터의 HTTP 본문 타입과 설정에서 오는 알림 주소는 그대로 어댑터에 둔다.
 - 생성의 이름은 `createTransaction`이다(2026-10-20, `requestPayment`에서 바꿨다). 이 호출이 PG 거래를 만들고, 거래 키는 그 응답에서 처음 생긴다. Stripe의 PaymentIntent와 Toss의 결제 승인에서 `confirm`은 PG가 먼저 만든 객체를 그 키로 승인하는 일이다. 그 두 단계는 생성과 승인 사이에 고객이 인증하는 단계가 있어서 생긴다. 테스트 PG에는 그 단계가 없어 한 번의 호출로 거래를 만든다. Toss의 키인 결제(`POST /v1/payments/key-in`), Square의 `POST /v2/payments`와 같은 모양이다. `confirm`은 고객의 요청인 주문을 확정하다의 이름으로 남긴다.
-- 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다.
+- 포트는 PG가 말한 PG 거래만 돌려주고, 나머지 결과는 결과마다 다른 예외로 던진다(ADR 0023, 2026-10-20). 그 전에는 결과를 값(`Accepted`, `Rejected`, `Unknown`과 `Found`, `Unavailable`)으로 돌려주었다(ADR 0022 규칙 4). 3단계가 조회에 씌울 브레이커와 재시도가 예외를 중심으로 돌기 때문에 바꿨다. (2026-10-23: 3단계가 씌웠다. 브레이커와 재시도가 `PgUnavailableException`을 실패로 세고 다시 시도한다(20.2).)
 - 세 예외에는 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡지 못하게 하려는 것이다. 요청을 직렬화하지 못한 것 같은 프로그래밍 오류는 그 밖의 예외로 그대로 던진다. Jackson의 실패는 `HttpMessageConversionException`이고 `RestClientException`이 아니어서 어댑터의 catch를 지난다.
 - 컨버터 설정이 잘못된 것은 그대로 던지지 않는다(2026-10-21 Spring 7.0.9의 소스로 확인). 요청을 쓸 컨버터가 없으면 Spring이 `RestClientException`을 던지므로, 아무것도 보내지 않았는데도 생성은 결과 미확인이 된다. 응답을 읽을 컨버터가 없으면 `UnknownContentTypeException`이라 생성은 결과 미확인, 조회는 조회 불가가 된다. 그렇게 깨진 설정은 계약 테스트의 받아들여진 생성 장면이 모두 실패하므로 그대로 나가지 않는다. 그 전에는 "설정 누락"도 그대로 던진다고 적었지만, `pg.*` 설정이 빠지면 호출이 아니라 시작할 때 바인딩이 실패한다.
-- 예외의 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 로그와 테스트의 단언에만 쓴다. 원인 예외는 잇지 않는다(3.5). 호출자는 모든 결과 미확인과 모든 조회 불가를 각각 같게 다룬다.
+- 예외의 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 로그와 테스트의 단언에만 쓴다. 원인 예외는 잇지 않는다(3.5). 호출자는 모든 결과 미확인과 모든 조회 불가를 각각 같게 다룬다. (2026-10-23: 3단계부터 열린 브레이커가 거절한 조회의 메시지는 `circuit open`이다(20.1).)
 - 호출자는 PG 호출을 트랜잭션 안에 두지 않고, `Exception`이나 `RuntimeException`을 잡는 catch로 감싸지 않는다. 결과 미확인의 예외가 결제를 저장한 트랜잭션을 지나면 그 저장이 되돌아간다(ADR 0023 규칙 4).
 - 포트 하나가 생성과 조회를 함께 가진다. 그래서 대사가 생성을 부르지 않는다는 것을 타입이 막지 않고, ADR 0022 규칙 6·7의 테스트가 PG가 받은 생성 수로 지킨다.
 
@@ -188,6 +188,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 - **목록:** JSON 배열만 받는다. 객체 하나, `null`, `null` 원소는 잘 짜이지 않은 본문이다.
 - **404:** PG 계약이 404를 말하는 곳은 거래 키 조회뿐이다. 목록의 "없음"은 빈 배열이다. 그래서 목록 조회의 404는 조회 불가다.
 - **하나까지(2026-10-22):** 목록 조회는 이제 `retrieveTransactionByPgOrderId`이고 PG 거래를 하나까지 돌려준다([ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). 잘 짜인 PG 거래의 배열에서 빈 배열은 `null`, 원소 하나는 그 PG 거래, 둘 이상은 `MultiplePgTransactionsException`이다. 원소를 모두 읽은 뒤에 세므로, 둘 이상이어도 읽을 수 없는 원소가 있으면 `PgUnavailableException`이다. 위 표의 목록 조회 줄은 그 전의 원문이다.
+- **다시 시도(2026-10-23):** 표의 결과는 HTTP 시도 하나의 것이다. 3단계부터 `PgUnavailableException`인 조회는 100 ms 뒤 한 번 더 보내고, 브레이커가 열려 있으면 HTTP를 보내지 않고 `PgUnavailableException`이다. 생성은 그대로 한 번이다(20.2).
 
 ### 3.4 왜 정확한 422만 거절인가
 
@@ -201,7 +202,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 ### 3.5 로그와 관측
 
-게이트웨이는 로그를 쓰지 않는다(2026-10-21). 그 전에는 호출마다 한 줄을 썼다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않았다. 결과 미확인과 조회 불가는 WARN이었다. 어댑터를 줄이려고 지웠고, 나중에 다시 둘 수 있다. 지우기 전의 모양은 [76bd60e의 `LocalPgGateway`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)와 그 줄을 보던 [`PaymentGatewayTest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt)에 있다.
+게이트웨이는 로그를 쓰지 않는다(2026-10-21). 그 전에는 호출마다 한 줄을 썼다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않았다. 결과 미확인과 조회 불가는 WARN이었다. 어댑터를 줄이려고 지웠고, 나중에 다시 둘 수 있다. 지우기 전의 모양은 [76bd60e의 `LocalPgGateway`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)와 그 줄을 보던 [`PaymentGatewayTest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt)에 있다. (2026-10-23: 3단계부터 게이트웨이의 설정 클래스가 조회 브레이커의 상태가 바뀔 때마다 WARN 한 줄을 남긴다. 게이트웨이 클래스는 그대로 로그를 쓰지 않는다(20.5).)
 
 - 포트의 예외 메시지에는 Spring 예외의 메시지를 쓰지 않는다. 응답 본문의 일부를 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
@@ -230,7 +231,7 @@ dev·qa·prd에서 환경 변수가 빠지면 시작이 아니라 첫 호출에�
 - **HttpClient 5인 까닭.** 조사([RestClient 시간 한도와 숨은 재시도](../research/rest-client-timeouts-and-http-fixtures.md) §7)는 JDK client를 먼저 꼽았다. 그러나 JDK client에는 풀 크기와 풀 대기의 한도가 없고, 응답 전에 닫힌 연결에 GET을 다시 보내는 것을 끌 스위치가 없으며, 재시도 플래그는 JVM 전체의 시스템 속성이다. HttpClient 5는 풀, 풀 대기, 재전송의 스위치를 클라이언트마다 가진다. 대가는 기본값이 재전송한다는 것이고, 위의 두 스위치와 계약 테스트의 요청 수가 그것을 막는다.
 - **시간 한도는 실제 request factory가 쓰는 HttpClient에 둔다.** 연결 한도는 연결 풀의 `ConnectionConfig`가, 풀 대기와 응답 한도는 `RequestConfig`가 맡는다. factory에는 한도를 주지 않으므로 HttpClient의 설정이 그대로 쓰인다. factory는 빈이라 컨텍스트가 닫힐 때 HttpClient와 풀도 닫힌다.
 - **Boot의 `RestClient.Builder`에 request factory를 직접 준다.** `spring-boot-starter-restclient`를 들여, 게이트웨이가 Boot가 미리 설정한 `RestClient.Builder`(prototype)를 받는다(2026-10-20, 그 전에는 스타터 없이 `RestClient.builder()`로 만들었다). observation과 `RestClientCustomizer`가 그 builder로 온다. Boot의 HTTP client 설정(`spring.http.clients.*`)은 재시도와 풀 대기를 다루지 않으므로 쓰지 않고, builder의 request factory를 `pgRequestFactory`로 바꾼다. factory를 바꾸지 않으면 클래스 경로에 따라 client가 바뀐다. 테스트 클래스 경로에는 WireMock이 HttpClient 5와 Jetty client를 들이므로, 운영과 테스트가 다른 client로 돌 수 있었다(탐침 §7의 2). Boot는 builder를 줄 때마다 자기 request factory를 먼저 만들어 두므로, 쓰이지 않는 HttpClient가 하나 생긴다. 그것으로는 연결을 열지 않는다. HTTP Service Clients는 들이지 않았다([ADR 0008](../adr/0008-upgrade-to-spring-boot-4-1-ahead-of-the-template.md)의 2026-10-19 메모).
-- **게이트웨이는 컴포넌트 스캔으로 등록한다.** `LocalPgGateway`는 `@Component`이고, Boot의 `RestClient.Builder`, `pgRequestFactory`, `PgProperties`를 받아 `RestClient`를 스스로 만든다. `LocalPgGatewayConfig`에는 request factory 빈과 `PgProperties`의 등록만 남는다. builder를 받아 컴포넌트가 만드는 것은 [Boot 문서](https://docs.spring.io/spring-boot/reference/io/rest-client.html#io.rest-client.restclient)의 모양이고, `adapter.persistence`의 구현처럼 어댑터 클래스가 스스로 등록된다. kotlin-spring 플러그인은 `@Component` 클래스를 열고 `@Bean`으로만 등록한 클래스는 `final`로 두므로, 3단계가 이 빈에 프록시를 씌우게 되어도 막히지 않는다([Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)). (2026-10-20, 그 전에는 설정의 `@Bean` 메서드가 게이트웨이를, 이어서 `RestClient`를 만들었다.)
+- **게이트웨이는 컴포넌트 스캔으로 등록한다.** `LocalPgGateway`는 `@Component`이고, Boot의 `RestClient.Builder`, `pgRequestFactory`, `PgProperties`를 받아 `RestClient`를 스스로 만든다. `LocalPgGatewayConfig`에는 request factory 빈과 `PgProperties`의 등록만 남는다. builder를 받아 컴포넌트가 만드는 것은 [Boot 문서](https://docs.spring.io/spring-boot/reference/io/rest-client.html#io.rest-client.restclient)의 모양이고, `adapter.persistence`의 구현처럼 어댑터 클래스가 스스로 등록된다. kotlin-spring 플러그인은 `@Component` 클래스를 열고 `@Bean`으로만 등록한 클래스는 `final`로 두므로, 3단계가 이 빈에 프록시를 씌우게 되어도 막히지 않는다([Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)). (2026-10-20, 그 전에는 설정의 `@Bean` 메서드가 게이트웨이를, 이어서 `RestClient`를 만들었다.) (2026-10-23: 3단계가 씌웠다. Resilience4j의 aspect는 `@Validated`가 이미 만든 CGLIB 프록시에 함께 걸린다(20.1).)
 - **`retrieve()`가 아니라 `exchange`로 받는다.** 상태 코드가 결과를 정하므로 상태 코드를 값으로 읽는다. `retrieve()`는 2xx를 성공으로, 4xx·5xx를 한 가지 오류로 본다. PG 계약은 그 전제와 세 군데에서 어긋나고, Spring의 기본 예외는 3.5의 규칙과 맞지 않는다. 포트의 예외는 `onStatus` 처리기 안에서도 그대로 던질 수 있어 `retrieve()`로도 만들 수는 있다. 그러나 상태의 규칙이 처리기의 술어, Spring의 기본 처리기, catch, `body()` 뒤의 null 검사 네 군데로 흩어진다. `exchange`에서는 호출마다 응답을 읽는 함수 하나가 3.3의 표를 위에서 아래로 따른다. 호출마다 `catch (RestClientException)` 하나가 전송 예외(`ResourceAccessException`), Jackson의 해석 오류, 어댑터의 `UnreadablePgResponseException`을 결과 미확인이나 조회 불가로 옮긴다. (2026-10-21, 그 전에는 `retrieve()`의 상태 처리기 때문에 catch 하나가 결과 미확인을 실패로 바꾸기 쉽다는 까닭을 들었다. 포트가 결과를 값으로 돌려주던 ADR 0022 규칙 4의 까닭이다. ADR 0023이 포트를 예외로 바꾼 뒤 다시 견주었고, 결정은 그대로다. 아래는 Spring Framework 7.0.9의 소스로 확인했다.)
   - **성공은 202 하나다.** 기본 처리기는 4xx·5xx에만 던진다. 200·201·307의 생성 응답은 본문을 읽어 성공이 된다. 막으려면 "202가 아니면" 처리기를 다는데, `exchange`의 상태 검사를 술어로 옮긴 것일 뿐이다.
   - **거래 키 조회의 404는 결과다.** 처리기는 값을 돌려주지 못하고, 던지지 않으면 Spring이 본문을 읽는다. 그래서 404의 `null`은 `HttpClientErrorException.NotFound`를 잡는 catch가 된다. 예외의 타입이 결과를 정하는 catch이고, ADR 0022 규칙 4가 없애려던 모양이다. 기본 처리기는 404의 본문도 끝까지 읽는다. 지금의 어댑터는 읽지 않는다.
@@ -276,7 +277,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 
 거래 키 조회의 404는 `null`, 목록의 빈 배열은 빈 목록이고, 대사에서 `Unchanged`다. PG 거래가 아직 보이지 않거나 생성 요청이 아직 오는 중일 수 있다. 잘못된 base URL이나 PG 앞의 무엇이 돌려준 404도 거래 키 조회에서는 `null`로 읽힌다. 대사가 0건에 아무것도 바꾸지 않으므로 받아들인다(ADR 0022 규칙 3). (2026-10-22: 목록의 빈 배열도 이제 `null`이다. `reconcile`이 PG 거래 하나를 받으므로 `null`이면 대사를 부르지 않고 저장된 상태로 답한다(2.3).)
 
-조회도 다시 보내지 않는다. 끊긴 GET은 PG에 한 번만 간다. 제한된 재조회는 3단계가 조회에만 씌운다(ADR 0022 규칙 7).
+조회도 다시 보내지 않는다. 끊긴 GET은 PG에 한 번만 간다. 제한된 재조회는 3단계가 조회에만 씌운다(ADR 0022 규칙 7). (2026-10-23: 3단계가 씌웠다. 조회할 수 없는 조회는 100 ms 뒤 한 번 더 가서 PG가 받는 GET은 2다. HttpClient의 숨은 재전송은 여전히 꺼져 있어 시도마다 GET은 한 번이고, Resilience4j가 없는 게이트웨이의 계약 테스트는 끊긴 GET 1번을 그대로 본다(20.2, 20.6).)
 
 ## 6. 테스트 PG
 
@@ -286,7 +287,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **`@EnableTestPg`**가 `@EnableWireMock(ConfigureWireMock(name = "pg", baseUrlProperties = ["pg.base-url"], configurationCustomizers = [TestPgConfigurationCustomizer::class]))`를 감싼다. customizer는 서버를 `127.0.0.1`에 묶고 h2c를 끈다. WireMock의 기본값은 `0.0.0.0`에 묶고 h2c를 알린다. PG를 쓰는 테스트는 모두 이 애노테이션을 달아, 같은 설정끼리 컨텍스트와 서버를 나눠 쓴다.
 - 서버는 `@InjectWireMock("pg") lateinit var` 필드로 받아 `TestPg`로 감싼다. 생성자 주입의 하나뿐인 예외다. `spring.test.constructor.autowire.mode=all`이면 생성자 파라미터를 `SpringExtension`과 WireMock의 resolver가 함께 맡으려다 실패한다.
 - 스텁과 요청 기록은 테스트 메서드마다 지워진다(라이브러리 기본값).
-- 1단계의 네 게이트웨이 테스트(`PaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `ObservedPaymentGatewayTest`, `ConnectTimeoutPaymentGatewayTest`)는 운영의 `LocalPgGatewayConfig`, `LocalPgGateway`와 `supports/jackson`의 `JacksonConfig`를 그대로 읽는다. `ConnectTimeoutPaymentGatewayTest`만 테스트 PG 없이 `pg.base-url`을 라우팅되지 않는 TEST-NET-1(`192.0.2.1`, RFC 5737)로 둔다. 그 주소가 SYN을 조용히 버리지 않는 네트워크(기본 경로가 없는 오프라인 등)에서는 `@BeforeAll`의 가정이 클래스를 건너뛴다. Boot의 자동 설정은 `@ImportAutoConfiguration`으로 게이트웨이의 builder를 만드는 것만 고른다. Jackson, 컨버터, `RestClient.Builder`이고, `ObservedPaymentGatewayTest`는 RestClient의 observation을 더한다. 테스트만의 설정 클래스는 `ObservedPaymentGatewayTest`의 registry 하나이고 `@TestConfiguration`이다. PG 테스트에 설정 클래스를 더하면 그렇게 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다.
+- 1단계의 네 게이트웨이 테스트(`PaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `ObservedPaymentGatewayTest`, `ConnectTimeoutPaymentGatewayTest`)는 운영의 `LocalPgGatewayConfig`, `LocalPgGateway`와 `supports/jackson`의 `JacksonConfig`를 그대로 읽는다. `ConnectTimeoutPaymentGatewayTest`만 테스트 PG 없이 `pg.base-url`을 라우팅되지 않는 TEST-NET-1(`192.0.2.1`, RFC 5737)로 둔다. 그 주소가 SYN을 조용히 버리지 않는 네트워크(기본 경로가 없는 오프라인 등)에서는 `@BeforeAll`의 가정이 클래스를 건너뛴다. Boot의 자동 설정은 `@ImportAutoConfiguration`으로 게이트웨이의 builder를 만드는 것만 고른다. Jackson, 컨버터, `RestClient.Builder`이고, `ObservedPaymentGatewayTest`는 RestClient의 observation을 더한다. 테스트만의 설정 클래스는 `ObservedPaymentGatewayTest`의 registry 하나이고 `@TestConfiguration`이다. PG 테스트에 설정 클래스를 더하면 그렇게 둔다. 테스트 소스의 평범한 `@Configuration`은 모든 `@SpringBootTest`에 끼어든다. 탐침의 설정 클래스가 그래서 기존 테스트 368개를 깨뜨렸다. (2026-10-23: 고른 자동 설정에 Resilience4j가 없으므로 3단계의 조회 애노테이션은 이 컨텍스트에서 걸리지 않는다. 네 테스트는 HTTP 요청 하나의 계약을 보고, 수도 3단계 전과 같다(20.6). `@EnableTestPg`가 가져오는 `TestPgLookupBreakerConfig`도 `@TestConfiguration`이고, 여기서는 읽는 곳이 없어 아무것도 하지 않는다.)
 - **Jetty 판.** wiremock-spring-boot는 Jetty EE10을 12.1.6에 묶고, Boot는 Jetty core 12.1.12를 관리한다. 카탈로그가 `jettyEe10 = "12.1.12"`를 고정해 EE10 BOM을 가져오고, 설정 시점의 검사가 Boot의 `jetty.version`과 다르면 빌드를 멈춘다. Boot의 판을 읽어 쓰지 못한 것은 dependency-management 플러그인의 가져온 속성을 읽으면 그 뒤의 가져오기가 조용히 무시되기 때문이다([issue 140](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/140)).
 
 ### 6.2 장면(`TestPg`)
@@ -305,12 +306,12 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | 조회 멈춤 | `stallsLookup()` | 모든 조회에 1.5 s 뒤 본문 없는 503 |
 | 조회 응답 유실 | `losesLookupResponse()` | 모든 조회를 받은 뒤 응답 없이 끊는다. |
 
-- 수: `createCount()`(생성), `lookupCount()`(두 조회를 함께), `requestCount()`(스텁과 맞지 않은 것까지 모든 요청), `unmatchedRequests()`(스텁과 맞지 않은 요청).
+- 수: `createCount()`(생성), `lookupCount()`(두 조회를 함께), `requestCount()`(스텁과 맞지 않은 것까지 모든 요청), `unmatchedRequests()`(스텁과 맞지 않은 요청). (2026-10-23: 3단계가 `createCount(pgOrderId)`(본문의 `orderId`가 그 PG 주문 번호인 생성)와 장면 `losesFirstLookupResponses(times)`(처음 `times`번의 조회만 응답 없이 끊는다)를 더했다(20.6, 21.2).)
 - 모든 스텁은 `X-USER-ID`를 맞춘다. 생성은 정확한 JSON 본문을(`equalToJson`, 금액은 JSON 숫자), 거래 키 조회는 경로의 키를, 목록 조회는 query의 `orderId`를 정확히 맞춘다. 틀린 요청은 스텁을 찾지 못해 WireMock의 404를 받는다.
 - 생성은 그 404에 `PgOutcomeUnknownException`을 던지므로 테스트가 실패한다. 조회는 그렇지 않다. 거래 키 조회는 404를 `null`로 읽어, 기대한 결과와 같을 수 있다. 그래서 조회를 쓰는 테스트는 `unmatchedRequests()`가 비었는지 본다([`CODING_STANDARDS.md`](../../CODING_STANDARDS.md)의 단언). `PaymentGatewayTest`는 `@AfterEach`에서 본다.
 - `stallsLookup`이 404가 아니라 503인 것도 같은 까닭이다. 한도가 1.5 s보다 긴 클라이언트에게 늦은 404는 "없음"이라는 사실로 읽힌다.
 - JSON은 손으로 적는다. 필드 이름과 JSON 타입까지 PG 계약이기 때문이다. 무작위 지연은 쓰지 않는다.
-- 2·3단계의 업무 테스트가 같은 장면을 쓴다. 3단계의 재시작 장면은 같은 컨텍스트 안에서 서비스와 클라이언트를 다시 만든다. 컨텍스트 자체를 다시 띄워야 하면 그때 `wiremock-standalone`으로 바꾼다(탐침 §5).
+- 2·3단계의 업무 테스트가 같은 장면을 쓴다. 3단계의 재시작 장면은 같은 컨텍스트 안에서 서비스와 클라이언트를 다시 만든다. 컨텍스트 자체를 다시 띄워야 하면 그때 `wiremock-standalone`으로 바꾼다(탐침 §5). (2026-10-23: 재시작 장면은 컨텍스트를 다시 띄웠지만 `wiremock-standalone`은 들이지 않았다. 두 번째 컨텍스트는 테스트 안에서 띄우고 닫으므로 그동안 첫 컨텍스트의 테스트 PG가 살아 있다. 두 번째 컨텍스트의 `pg.base-url`을 그 서버로 두면 스텁과 요청 기록이 그대로 남는다(21.2).)
 
 ### 6.3 계약 테스트가 운영의 시간 한도로 도는 까닭
 
@@ -359,8 +360,8 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 - **멱등 키의 비교.** `idempotency_key`는 서버의 정렬 규칙 `utf8mb4_general_ci`를 따라, `abc`, `ABC`, `abc `가 한 키다. 유일 키와 `findByIdempotencyKey`가 모두 그렇다. 고객이 키를 보내는 모양과 함께 2단계가 정한다(ADR 0005를 다시 연다). 2026-10-22 2단계([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150))가 열을 `utf8mb4_bin`으로 바꾸고 키를 공백 없는 보이는 ASCII로 좁혔다([이행 SQL](../migrations/2026-10-22-order-payment.sql)). 이제 `abc`와 `ABC`는 다른 키이고, `abc `로는 결제가 만들어지지 않는다. `utf8mb4_bin`은 PAD SPACE라 열만으로는 끝 공백을 가르지 않는다([ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md) 규칙 2의 날짜 메모).
 - **주문의 결제액.** `orders.paid_amount`는 확정이 `paidAmount = totalAmount`로 만든 사본이다. 품목은 생성 뒤 바뀌지 않으므로 상태와 총액에서 늘 계산되고, 운영 코드에서 읽는 곳은 주문 응답 DTO 둘뿐이다. 응답의 `paidAmount`는 과제가 요구하므로 남는다([포인트·주문 설계](./points-orders.md) 2절). 열을 남길지는 2단계가 결제수단과 함께 정한다. PG로 결제한 주문은 `Payment.amount`가 청구한 금액을 이미 기록하고, 포인트로 결제한 주문은 주문의 결제액과 확정 시각이 결제의 기록이다(ADR 0006, ADR 0021). 남기면 결제수단마다 무엇을 뜻하는지 적는다. 지우면 응답이 상태와 총액에서 계산하고, `CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`와 결제 상태 CHECK의 `paid_amount` 조건이 함께 빠진다. 2026-10-22 사용자의 결정으로 그때까지 그대로 둔다. 2026-10-22 2단계([issue 149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149))가 열을 지웠다. 결제액은 확정된 주문이면 주문 금액, 아니면 없는 계산 속성이고, 주문은 결제수단을 따로 적는다([이행 SQL](../migrations/2026-10-22-order-payment.sql)).
 - **결과를 반영하는 응용 서비스(2단계)**가 지킬 것은 2.5(`to.isFinished`, 충돌의 WARN 로그)와 3.2에 있다. 모든 결과 미확인과 조회 불가를 각각 같게 다루고, PG 호출을 트랜잭션 밖에 두며, PG 예외를 넓은 catch로 잡지 않는다. 생성이 결과 미확인일 때 결제가 결과 미확인으로 남는지를 호출자마다 장면 테스트로 본다(ADR 0023 규칙 4). 2026-10-23 2단계가 지켰다. 트랜잭션 밖의 호출과 `NEVER`는 11.3에, 타입마다의 catch는 11.4와 13.2에, 생성이 결과 미확인인 장면은 14절(장면 4, 8)에 있다.
-- **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다. 2026-10-22 `pg_order_id`에는 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`가 생겼다([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150), ADR 0029 규칙 3). `transaction_key`는 그대로다. 2026-10-23 거래 키의 인덱스는 3단계로 넘겼다(17절).
-- **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 응답 시간 초과는 목록 조회로, 끊김과 연결 시간 초과는 거래 키 조회로만 시험했다. 두 조회는 같은 catch를 지난다. 2026-10-23 2단계의 장면이 더한 기준선은 17절에 있다.
+- **인덱스.** `pg_order_id`와 `transaction_key`에는 인덱스가 없다(2.1). 그것으로 결제를 찾는 단계가 더한다. 2026-10-22 `pg_order_id`에는 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`가 생겼다([issue 150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150), ADR 0029 규칙 3). `transaction_key`는 그대로다. 2026-10-23 거래 키의 인덱스는 3단계로 넘겼다(17절). 2026-10-23 3단계는 거래 키로 결제를 찾지도 PG에 조회하지도 않아 그 인덱스를 두지 않았다(ADR 0031 규칙 4, 19.4).
+- **조회의 재시도(3단계).** 지금의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 센다. 조회마다 세야 하면 나눈다. `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다. 응답 시간 초과는 목록 조회로, 끊김과 연결 시간 초과는 거래 키 조회로만 시험했다. 두 조회는 같은 catch를 지난다. 2026-10-23 2단계의 장면이 더한 기준선은 17절에 있다. 2026-10-23 3단계가 조회마다 한 번 다시 시도한다. 조회할 수 없는 조회의 기준선은 2가 됐고, 찾음, 0건, 여럿은 1 그대로다(20.2). `lookupCount()`는 나누지 않았다. 두 조회를 따로 세야 하는 장면이 없었다.
 
 ## 9. 2단계 — PG로 결제하는 주문 확정
 
@@ -376,7 +377,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 ### 9.1 근거와 범위
 
 - 과제의 3절(확정 API, `paymentAttemptKey`와 합성 카드, 이전 POINT 주문), 4절(PG의 답과 주문·재고의 표, TX A·PG 호출·TX B), 5절(조회와 회복), 6절(장면 표, 명령)과 체크리스트다.
-- 2단계의 장면은 1–9와 11, 그리고 장면 6 가운데 대사끼리, 대사와 확정의 TX B가 같은 답을 함께 반영하는 절반이다. 장면 6의 알림 쪽 절반과 장면 10(시간 한도, 서킷 브레이커, 제한된 재조회)은 3단계다(17절).
+- 2단계의 장면은 1–9와 11, 그리고 장면 6 가운데 대사끼리, 대사와 확정의 TX B가 같은 답을 함께 반영하는 절반이다. 장면 6의 알림 쪽 절반과 장면 10(시간 한도, 서킷 브레이커, 제한된 재조회)은 3단계다(17절). (2026-10-23: 21절.)
 - 조사: [결제와 재고 예약](../research/stock-reservation-with-payments.md), [멘토 질문](../research/week5-mentor-questions.md).
 - 구현 기록: 티켓마다의 닫는 댓글을 옮긴 [5주차 주문 결제 글감](../research/week5-order-payment-writing-material.md).
 - 이행 SQL: Hibernate가 표를 다시 만들지 않는 프로필을 위한 [`2026-10-22-order-payment.sql`](../migrations/2026-10-22-order-payment.sql). local과 test는 표를 다시 만든다.
@@ -393,7 +394,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
 | [155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155) | 같은 키의 재요청, `IDEMPOTENCY_KEY_MISMATCH`, `IDEMPOTENCY_KEY_IN_USE`(`PaymentValidator`), 같은 키로 겨룬 삽입의 처리. |
-| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. (2026-10-23: 명세 147의 검토에서 PG 조회와 생성의 포트를 `PgTransactionClient` 하나로 합쳤다. 그 뒤 `OrderPaymentReconciler`도 `OrderConfirmer`의 `reconcile`이 됐다. 11.1.) |
+| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. (2026-10-23: 명세 147의 검토에서 PG 조회와 생성의 포트를 `PgTransactionClient` 하나로 합쳤다. 그 뒤 `OrderPaymentReconciler`도 `OrderConfirmer`의 `reconcile`이 됐다. 11.1.) (2026-10-23: 3단계가 `OrderPaymentReconciler`라는 이름을 PG가 부르는 대사 포트에 다시 썼다. 19.3.) |
 
 ## 10. 주문과 결제의 상태
 
@@ -455,7 +456,7 @@ stateDiagram-v2
 - PG 호출 동안 요청은 트랜잭션도 행 잠금도 쥐지 않는다(ADR 0024 규칙 1). 대사(13절)에는 TX A가 없고, PG 조회와 같은 TX B만 있다.
 - TX A와 TX B는 조율하는 서비스와 다른 빈의 메서드다. 프록시를 지나므로 선언한 트랜잭션이 걸리고, 장면 테스트가 TX B만 실패시킬 수 있다(ADR 0028 규칙 2, 장면 7의 spy).
 
-포트와 트랜잭션의 자리는 이렇다. 이름은 명세 147의 자리표시를 구현에서 정한 것이다.
+포트와 트랜잭션의 자리는 이렇다. 이름은 명세 147의 자리표시를 구현에서 정한 것이다. (2026-10-23: 3단계가 포트 셋을 더했다. PG가 부르는 `OrderPaymentReconciler.reconcile`(`OrderPaymentOrchestrator`, `NEVER`, `PaymentApi`), `OrderFinder.findForPg`, `PaymentFinder.findByPgOrderId`다. 19.3.)
 
 | 포트 | 구현 | 트랜잭션 | 부르는 곳 |
 | --- | --- | --- | --- |
@@ -470,7 +471,6 @@ stateDiagram-v2
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
 - `PaymentRecorder`, `StockReserver`, 고객의 `OrderConfirmer`(`confirm`, `reconcile`)도 같은 까닭으로 포트 하나다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합치고, `OrderPaymentReconciler`를 `OrderConfirmer`에 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
 - 조율하는 구현은 `Service`가 아니라 `Orchestrator`로 끝난다. 같은 접두어의 `OrderPaymentSteps`보다 위에서 트랜잭션 밖에 머물며 TX A, PG 호출, TX B를 차례로 부르는 빈임을 이름이 드러낸다(2026-10-23, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모).
-
 ### 11.2 잠금
 
 | 경로 | 잠그는 차례 | 잠그지 않고 읽는 것 |
@@ -478,12 +478,11 @@ stateDiagram-v2
 | 확정의 TX A | 주문 → 상품(id 오름차순) → revision(품절이 되면) | 결제(재요청과 키의 판단) |
 | 같은 키의 재요청 | 주문 | 결제 |
 | PG 호출(생성, 조회) | 없음 | 없음 |
-| 대사의 첫 읽기 | 없음 | 주문, 결제 |
+| 대사의 첫 읽기 | 없음 | 주문, 결제(2026-10-23: 3단계의 알림도 같다. 어댑터가 결제를 PG 주문 번호로, PG의 대사 포트가 주문과 결제를 읽고, 잠그는 것은 같은 TX B뿐이다. 19.3) |
 | 확정과 대사의 TX B | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) | 결제 |
 
 - [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 전역 차례 맨 앞에 주문을 둔 것이다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md), ADR 0028 규칙 4). 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제)와는 상품 행에서 차례를 지킨다. 행 잠금을 3초 안에 얻지 못하면 409 `CONCURRENT_REQUEST`이고 아무것도 바뀌지 않는다(`LockFailureApiTest`).
-- 결제 행은 잠그지 않는다. 결제를 바꾸는 트랜잭션(TX A의 INSERT, TX B의 UPDATE)이 모두 주문을 먼저 잠그므로, 주문 잠금 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 본다(ADR 0028 규칙 4). 그래서 TX B는 TX A가 읽은 결제를 합치지 않고, 주문 식별자로 결제를 다시 읽어 반영한다(`PaymentRecorder`).
-- 포인트 계정은 확정도 대사도 읽지 않는다. 계정을 잠그는 것은 충전뿐이다(ADR 0027, `PointChargerConcurrencyTest`).
+- 결제 행은 잠그지 않는다. 결제를 바꾸는 트랜잭션(TX A의 INSERT, TX B의 UPDATE)이 모두 주문을 먼저 잠그므로, 주문 잠금 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 본다(ADR 0028 규칙 4). 그래서 TX B는 TX A가 읽은 결제를 합치지 않고, 주문 식별자로 결제를 다시 읽어 반영한다(`PaymentRecorder`).- 포인트 계정은 확정도 대사도 읽지 않는다. 계정을 잠그는 것은 충전뿐이다(ADR 0027, `PointChargerConcurrencyTest`).
 - 테스트가 붙드는 것:
   - 같은 주문의 확정은 주문 행에서 기다린다(`OrderConfirmerConcurrencyTest`의 `confirming an order held by another confirmation waits, then is rejected as a key mismatch and reserves nothing`).
   - 같은 답을 반영하는 두 TX B도 주문 행에서 기다린다. 앞선 TX B를 결제에 반영하기 직전에 멈추면 다른 TX B가 끝나지 않는다(장면 6). TX B의 주문 읽기에서 `FOR UPDATE`를 뺀 변이 실행에서는 장면 6의 네 경우가 모두 실패했다([issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156)).
@@ -590,13 +589,12 @@ stateDiagram-v2
 | --- | --- | --- |
 | `PgTransaction` | 확정과 같은 TX B의 PG 거래 입구 `applyTransaction` | 맞고 끝났으면 확정이나 결제 실패(200), 처리 중이면 결제 중(202)이다. 맞지 않으면 TX B 안의 `Conflicted`가 WARN을 남기고 결제 중(202)이다. |
 | `null` | 반영하지 않는다 | 저장된 상태. WARN은 없다. 0건은 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3). |
-| `PgUnavailableException` | 반영하지 않는다 | 저장된 상태 |
+| `PgUnavailableException` | 반영하지 않는다 | 저장된 상태(2026-10-23: 3단계부터 이 예외는 한 번 다시 시도한 뒤의 것이고, 열린 브레이커의 거절도 같은 예외다. 고객의 대사는 그대로 저장된 상태로 답하고, PG의 대사인 알림만 503이다. 20.4) |
 | `MultiplePgTransactionsException` | 어느 것도 고르지 않고 WARN 한 줄 | 저장된 상태 |
 
 - 대사는 생성을 보내지 않는다. 어느 줄도 결제를 실패로 끝내지 않는다. 기한이 없으므로 몇 번을 물어도 결과 미확인은 결과 미확인이다(ADR 0024 규칙 3, 4).
 - PG 거래 여럿의 WARN은 주문 식별자와 예외의 메시지(`PG 주문 번호 하나에 PG 거래가 2개다.`)만 싣는다. PG 주문 번호는 결제의 값이라 주문 슬라이스가 읽지 않는다(ADR 0028 규칙 5).
 - TX B는 다시 해도 된다. 확정의 TX B가 DB 오류로 되돌아가도 결제와 예약이 그대로 남고, 대사가 같은 PG 거래로 한 번 확정한다(ADR 0024 규칙 5, 장면 7).
-
 ### 13.3 저장된 상태는 답하는 때에 읽는다
 
 "저장된 상태로 답한다"의 상태는 PG를 부르기 전에 읽은 것이 아니라 답하는 때에 다시 읽은 주문과 결제 상태다(`OrderFinder.findInfo`). 확정의 `PgOutcomeUnknownException`, 대사의 `null`, `PgUnavailableException`, `MultiplePgTransactionsException`이 모두 그렇다(ADR 0028 규칙 3의 2026-10-23 메모).
@@ -630,7 +628,7 @@ stateDiagram-v2
 | 11 | 결제 실패의 반환이 삭제된 상품을 건너뜀 | `a failed payment skips a product deleted while it was pending, which stays deleted, and returns the other's units` | 1 | 생성 1 | 남은 상품 5. 삭제된 상품은 삭제 그대로, 재고 3 |
 
 - 장면 9의 0건은 장면 8의 대사다. PG 거래가 없는 대사는 WARN을 남기지 않는다.
-- 장면 6의 알림 쪽 절반과 장면 10은 3단계다(17절).
+- 장면 6의 알림 쪽 절반과 장면 10은 3단계다(17절). (2026-10-23: 21.1, 21.3. 재시작은 21.2가 컨텍스트를 다시 띄워 더 강하게 본다. 위의 장면 8은 같은 컨텍스트의 재요청으로 남는다.)
 
 명세 147이 더한 장면과 그 밖의 경계다.
 
@@ -640,7 +638,7 @@ stateDiagram-v2
 | 반환으로 품절이 풀림 | `a product sold out by a reservation is buyable in the customer list again after the payment fails` | 1 | 목록에서 다시 팔 수 있다. revision이 2 오른다(TX A, TX B). |
 | 실패한 PG 거래를 말하는 받아들여진 생성 | `an accepted create whose transaction failed fails the order, keeps the transaction key and returns the stock once` | 1 | `PAYMENT_FAILED`, `FAILED`, 거래 키 있음, 재고 5 |
 | 다른 금액을 되돌려 준 거절 | `a rejection echoing another amount conflicts and leaves the payment unknown and the stock reserved` | 1 | 충돌. `PAYMENT_PENDING`, `UNKNOWN`, 재고 3 |
-| 조회 불가(503, 응답 한도를 넘긴 멈춤) | `a reconcile whose lookup is unavailable answers the stored state and changes nothing` | 2 | 생성 1, 조회 1. `PAYMENT_PENDING`, `PENDING`, 재고 3 그대로 |
+| 조회 불가(503, 응답 한도를 넘긴 멈춤) | `a reconcile whose lookup is unavailable answers the stored state and changes nothing` | 2 | 생성 1, 조회 1(2026-10-23: 3단계부터 조회 2. 21.3). `PAYMENT_PENDING`, `PENDING`, 재고 3 그대로 |
 | 답을 모르는 확정의 다시 읽기 | `an unknown create answers the state stored when it answers, confirmed if a reconcile finished the payment meanwhile` | 1 | 생성 1, 조회 1. `CONFIRMED`, `SUCCESS`로 답한다. |
 | 같은 키의 재요청 | `confirming again with the same key answers the stored state, pending before the first create and confirmed after it` | 1 | 생성 1, 조회 0. PG 호출 동안 `PAYMENT_PENDING`, `UNKNOWN`, 그 뒤 `CONFIRMED`, `SUCCESS` |
 | 대소문자만 다른 키 | `keys that differ only in case are different keys, so two orders each confirm with one of them` | 1 | 생성 2 |
@@ -651,8 +649,8 @@ stateDiagram-v2
 | PG가 받지 못하는 금액 | `OrderConfirmationApiTest`의 `confirming an order above Long MAX_VALUE is rejected with 400 before the PG and keeps the draft and the stock` | 1 | 400, 생성 0 |
 | 충전끼리의 경쟁 | `PointChargerConcurrencyTest`의 `two charges released together on one account both succeed and both reach the balance` | 1 | 10,000 + 2,000 + 3,000 = 15,000 |
 
-- `OrderPaymentIntegrationTest`의 32개는 모두 위 두 표에 있다.
-- HTTP 계약은 [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)(45)가 본다. 키가 없거나 형식이 틀린 400, 잘못된 카드의 400, 200·202와 `Location`, 응답의 결제 필드와 실리지 않는 비밀, 재요청의 202와 200, 409 셋, 포인트로 확정된 주문, 대사의 202·200·409·401·404, 금액 한도의 400, TX A의 늦은 실패다. 잘못된 키와 카드도 확정 전 주문, 재고, 생성 수 0을 함께 본다.
+- `OrderPaymentIntegrationTest`의 32개는 모두 위 두 표에 있다. (2026-10-23: 3단계 뒤 62개다. 더한 30개는 21.1–21.4의 표에 있다.)
+- HTTP 계약은 [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)(45)가 본다. 키가 없거나 형식이 틀린 400, 잘못된 카드의 400, 200·202와 `Location`, 응답의 결제 필드와 실리지 않는 비밀, 재요청의 202와 200, 409 셋, 포인트로 확정된 주문, 대사의 202·200·409·401·404, 금액 한도의 400, TX A의 늦은 실패다. 잘못된 키와 카드도 확정 전 주문, 재고, 생성 수 0을 함께 본다. (2026-10-23: 3단계 뒤에도 45다. `reconciling while the PG lookup is unavailable returns 202 with the location and changes nothing`의 조회 수만 1에서 2가 됐다.)
 - 목록과 관리자 조회의 결제 상태는 `OrderApiTest`(55), `OrderAdminApiTest`(12), `OrderFinderTest`(10)가 본다. 확정 전, 포인트로 확정, 결제 중, PG로 확정된 네 주문이 섞인 목록과, 결제수단이 PG인데 결제가 없는 주문의 500이다.
 - 수는 16.2의 명령이 낸 것이다.
 
@@ -666,12 +664,12 @@ stateDiagram-v2
 - 생성이 PG에 닿지 않았거나 PG가 잃은 결제(5.2, 5.3).
 - 조회가 계속 0건이거나, 조회할 수 없거나, 충돌만 얻는 결제(장면 8의 대사, 조회 불가의 장면, 장면 9).
 
-커밋 뒤 POST 전에 멈춘 것과 응답을 잃은 것은 DB로 가를 수 없으므로 어느 길도 생성을 다시 보내지 않는다(ADR 0024 규칙 2, 3). 재요청과 대사는 저장된 상태로 답할 뿐이다. 그런 결제를 찾는 지표나 화면, 손으로 끝내는 절차는 없다(ADR 0024의 대가와 다시 볼 조건). 남는 흔적은 생성의 결과 미확인과 충돌의 WARN뿐이다(11.4, 장면 4와 9의 테스트). PR에 알려진 한계로 적는다.
+커밋 뒤 POST 전에 멈춘 것과 응답을 잃은 것은 DB로 가를 수 없으므로 어느 길도 생성을 다시 보내지 않는다(ADR 0024 규칙 2, 3). 재요청과 대사는 저장된 상태로 답할 뿐이다. 그런 결제를 찾는 지표나 화면, 손으로 끝내는 절차는 없다(ADR 0024의 대가와 다시 볼 조건). 남는 흔적은 생성의 결과 미확인과 충돌의 WARN뿐이다(11.4, 장면 4와 9의 테스트). PR에 알려진 한계로 적는다. (2026-10-23: 3단계 뒤에도 그대로다. 22.4.)
 
 ### 15.2 기한도 스케줄러도 없다
 
 - 결과 미확인과 처리 중에는 기한이 없다. 시간이 지나도, 재시작해도, 조회가 0건이어도 예약을 돌려주지 않는다(ADR 0024 규칙 4, 과제 체크리스트).
-- 대사는 고객이 부를 때만 돈다. 끝나지 않은 결제를 주기적으로 대사하는 스케줄러는 없다(명세 147의 Out of Scope). 3단계의 알림은 대사할 까닭을 하나 더할 뿐 기한을 두지 않는다.
+- 대사는 고객이 부를 때만 돈다. 끝나지 않은 결제를 주기적으로 대사하는 스케줄러는 없다(명세 147의 Out of Scope). 3단계의 알림은 대사할 까닭을 하나 더할 뿐 기한을 두지 않는다. (2026-10-23: 그렇게 됐다. 3단계도 스케줄러를 두지 않았다(22.5).)
 - 조사한 상거래 시스템의 예약은 모두 기한이 있다. 그 시스템들은 늦게 온 성공을 자동 취소나 환불로 되돌릴 길을 가진다. 테스트 PG에는 그 길이 없어, 돌려준 뒤에 성공이 오면 재고 없이 돈을 받은 주문이 된다(ADR 0024의 고르지 않은 것, [조사](../research/stock-reservation-with-payments.md)).
 - 기한을 두려면 예약을 따로 기록해야 한다. 지금의 예약은 결제 중인 주문의 품목이라 기한을 걸 곳이 없다(ADR 0026의 대가).
 
@@ -728,7 +726,7 @@ stateDiagram-v2
 ./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check
 ```
 
-- 괄호의 수는 2026-10-23에 이 명령들을 돌려 JUnit XML 보고서에서 읽은 것이다. (2026-10-23: 명세 147의 검토 뒤 `32f6d8f`의 전체 확인에서 다시 셌다. 검토가 `OrderPaymentIntegrationTest`에 하나, `OrderTest`에 다섯을 더했다.) 모두 실패 0, 건너뜀 0이다. `ConnectTimeoutPaymentGatewayTest`도 건너뛰지 않고 돌았다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다(7.2).
+- 괄호의 수는 2026-10-23에 이 명령들을 돌려 JUnit XML 보고서에서 읽은 것이다. (2026-10-23: 명세 147의 검토 뒤 `32f6d8f`의 전체 확인에서 다시 셌다. 검토가 `OrderPaymentIntegrationTest`에 하나, `OrderTest`에 다섯을 더했다.) 모두 실패 0, 건너뜀 0이다. `ConnectTimeoutPaymentGatewayTest`도 건너뛰지 않고 돌았다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개 규칙도 함께 돌고, 위의 수는 그것을 뺀 것이다(7.2). (2026-10-23: 3단계 뒤 첫 명령의 `OrderPaymentIntegrationTest`는 62다. 다른 명령의 수는 그대로다(23.2).)
 - 필터가 아무것도 찾지 못해도 Gradle은 실패하지 않는다(7.2). 그래서 수를 확인한다. `'*ProductCacheTest'`는 `BrandProductCacheTest`와 `LikeProductCacheTest`도 찾으므로 점을 붙여 `'*.ProductCacheTest'`로 쓴다. `'*.OrderTest'`와 `'*.PaymentTest'`의 점도 이름이 그렇게 끝나는 다른 클래스를 막는다.
 - 과제의 `--tests '*PaymentProviderContractTest'`는 여전히 아무것도 찾지 않는다(7.2). 게이트웨이는 위의 `'*PaymentGatewayTest'`로 돈다.
 - 명세 147은 재고 경합 장면을 `OrderPaymentIntegrationTest`로 옮긴다고 적었지만 `OrderConfirmerConcurrencyTest`에 남았다. 과제의 필터는 그 장면을 돌리지 않으므로 셋째 명령을 둔다.
@@ -742,12 +740,390 @@ stateDiagram-v2
   - 알림 주소는 설정의 `pg.callback-url`에서 와 PG에 이미 보낸다(4.1). 받는 엔드포인트만 없다.
   - 알림도 대사와 같은 TX B로 반영하면 주문 잠금이 동시 반영을 한 번으로 만든다. 장면 6의 알림 쪽 절반은 알림과 대사, 알림과 확정의 TX B가 같은 답을 함께 반영하는 장면이다. 13.3의 다시 읽는 창도 알림으로 생긴다.
   - (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 엔드포인트는 `PaymentApi`이고, `PaymentRepository.findByPgOrderId`와 `PaymentFinder.findByPgOrderId`(없으면 404 `PAYMENT_NOT_FOUND`)가 생겼다. 요청자 문제는 사용자 없는 입구로 정했다. PG가 부르는 provided 포트 `OrderPaymentReconciler.reconcile(orderId)`가 주문의 사용자를 TX B에만 넘긴다([ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 3). 그 대사는 답하는 때에 다시 읽지 않으므로 13.3의 창은 알림의 답에 생기지 않는다. 같은 TX B를 쓰는 것은 그대로다. 장면 6의 알림 쪽 절반은 아직 없다.)
-- **거래 키의 인덱스.** `transaction_key`에는 인덱스가 없다(8절). PG의 거래 키 조회(`retrieveTransaction(transactionKey)`)도 부르는 곳이 없다. 알림이 거래 키로 결제를 찾거나 거래 키로 PG에 조회하게 되면 그때 인덱스를 더한다(명세 147의 Further Notes). 유일 키로 둘지도 그때 정한다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 알림은 거래 키를 읽지 않고 PG 주문 번호로 조회한다([ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 4). 인덱스도 거래 키 조회도 더하지 않았다.)
+  - (2026-10-23: [issue 163](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163)이 장면 6의 알림 쪽 절반을 더했고 운영 코드는 바뀌지 않았다(21.1). 알림의 계약, 답, 차례는 19절에 있다. 열린 브레이커에서 알림이 503으로 답하는 것은 [issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164)가 확인했다(20.4).)
+- **거래 키의 인덱스.** `transaction_key`에는 인덱스가 없다(8절). PG의 거래 키 조회(`retrieveTransaction(transactionKey)`)도 부르는 곳이 없다. 알림이 거래 키로 결제를 찾거나 거래 키로 PG에 조회하게 되면 그때 인덱스를 더한다(명세 147의 Further Notes). 유일 키로 둘지도 그때 정한다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 알림은 거래 키를 읽지 않고 PG 주문 번호로 조회한다([ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 4). 인덱스도 거래 키 조회도 더하지 않았다.) (2026-10-23: 3단계의 정리는 19.4에 있다. 이 항목은 닫혔고, 다시 볼 조건은 ADR 0031의 "PG가 거래 키로만 결제를 가리키게 되면"이다.)
 - **서킷 브레이커와 제한된 재조회.**
   - 조회에만 씌운다. 어댑터 안에서 조회 메서드만 감싸고, 열린 브레이커가 거절한 조회도 포트 밖에서는 `PgUnavailableException`이다(ADR 0022 규칙 7, ADR 0023 규칙 5). 대사는 이미 그 예외에 저장된 상태로 답하므로(13.2) 대체 응답이 결과를 정하지 않는다.
   - 생성은 감싸지 않는다. 어댑터 안의 브레이커는 TX A 뒤에 돌아, 거절해도 결과 미확인인 결제가 예약을 쥔 채 남는다. 생성 앞에 브레이커를 두려면 TX A 앞에서 묻고, 그 거절은 결과 미확인과 다른 예외로 둔다(ADR 0023의 다시 볼 조건).
   - 재조회는 조회만 다시 보낸다. 생성은 어떤 길로도 다시 보내지 않는다(ADR 0024 규칙 3). 조회 수 1을 단언하는 장면(장면 2, 4, 7, 8, 9, 조회 불가)과 1단계의 "끊긴 GET 1번"이 재시도 없는 기준선이다. `lookupCount()`는 두 조회를 함께 세고, `stallsLookup`과 `losesLookupResponse`는 모든 조회에 걸린다(8절).
   - 시간 한도의 장면을 더할 때는 test 프로필의 응답 한도가 200 ms이고 게이트웨이의 계약 테스트만 1 s라는 것(4.1, 6.3), 컨텍스트마다의 준비 요청(16.2)을 함께 본다. 라이브러리는 [Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md)에서 고른다.
   - (2026-10-23: [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md)이 Resilience4j의 Boot 4 모듈 애노테이션으로 정했고 [issue 160](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160)이 들였다. 위의 기준선 가운데 조회 불가 장면의 조회 수는 1에서 2가 되었다. 찾음, 0건, 여럿의 장면은 다시 시도하지 않으므로 1 그대로다. 설정은 `application.yml`의 `resilience4j.*`에 있다. 3단계의 절은 설계 문서의 티켓이 더한다.)
-- **재시작 장면.** 2단계의 재시작은 같은 DB와 테스트 PG에 새 요청을 보내는 것이다(장면 8). 컨텍스트를 다시 띄워야 하면 `wiremock-standalone`으로 바꾼다(6.2).
-- **오래 남은 결과 미확인.** 15.1의 결제를 찾는 지표와 손으로 끝내는 절차는 2단계에 두지 않았다. 사람이 다뤄야 하면 다시 본다(ADR 0024의 다시 볼 조건).
+  - (2026-10-23: 20절과 21.3이다. 생성은 감싸지 않았다(20.1). 시간 한도의 장면은 test 프로필의 200 ms에서 돌고, 걸린 시간이 아니라 PG가 받은 조회 수로 단언한다. 컨텍스트마다의 준비 요청은 게이트웨이를 지나지 않아 브레이커의 표본이 아니다(20.6).)
+- **재시작 장면.** 2단계의 재시작은 같은 DB와 테스트 PG에 새 요청을 보내는 것이다(장면 8). 컨텍스트를 다시 띄워야 하면 `wiremock-standalone`으로 바꾼다(6.2). (2026-10-23, [issue 162](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/162): 같은 DB와 테스트 PG 위에 두 번째 실제 컨텍스트를 띄웠다. 첫 컨텍스트의 테스트 PG가 그동안 살아 있어 `wiremock-standalone`은 들이지 않았다(21.2). 운영 코드는 바뀌지 않았다. 2단계의 장면 8은 같은 컨텍스트의 재요청으로 남는다.)
+- **오래 남은 결과 미확인.** 15.1의 결제를 찾는 지표와 손으로 끝내는 절차는 2단계에 두지 않았다. 사람이 다뤄야 하면 다시 본다(ADR 0024의 다시 볼 조건). (2026-10-23: 3단계에도 두지 않았다(명세 159의 Out of Scope). 15.1의 결제는 3단계 뒤에도 그대로 남는다(22.4).)
+
+## 18. 3단계 — PG의 알림과 조회의 회복
+
+2026-10-23 3단계([명세 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159))를 마치고 썼다. 과제의 마지막 단계다. PG가 결과를 알릴 엔드포인트를 두고, PG 조회에 재시도와 서킷 브레이커를 씌우고, 재시작을 컨텍스트를 다시 띄워 확인했다. 결정은 두 ADR에 있다.
+
+- [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md): PG 조회에만 재시도 한 번과 서킷 브레이커를 Resilience4j의 애노테이션으로 씌운다.
+- [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md): 알림은 본문을 믿지 않고, 그 PG 주문 번호의 조회로 대사한다.
+
+### 18.1 근거와 범위
+
+- 과제의 3절(알림 엔드포인트), 5절(알림의 본문과 확인, 순서와 중복, 시간 한도와 대체 응답, 서킷 브레이커, 제한된 재조회), 6절(장면 6, 8, 10, 실제 컨트롤러를 거치는 알림, 재시작의 재생성)과 체크리스트다. 17절이 넘긴 항목을 받는다.
+- 3단계의 장면은 장면 6의 알림 쪽 절반, 컨텍스트를 다시 띄우는 장면 8, 장면 10이다(21절). 2단계의 장면은 그대로 돌고, 바뀐 수는 조회할 수 없는 장면의 조회 수뿐이다(20.2).
+- 조사: [Boot 4의 회복 라이브러리](../research/resilience-on-boot4.md). 그 §7은 코드로 감싸는 길을 권했고, ADR 0030은 Boot 모듈의 애노테이션을 골랐다.
+- 구현 기록: 티켓마다의 닫는 댓글을 옮긴 [5주차 PG 회복 글감](../research/week5-pg-resilience-writing-material.md).
+- 스키마는 바뀌지 않아 이행 SQL이 없다. 알림이 결제를 찾는 유일 키 `UK_PAYMENT_ON_PG_ORDER_ID`는 2단계에 생겼다(2.1).
+- 하지 않은 것은 22.5에 있다.
+
+### 18.2 3단계가 만든 것
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [160](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/160) | `resilience4j-spring-boot4` 2.4.0과 `spring-boot-starter-aspectj`. 두 조회의 `@Retry`·`@CircuitBreaker`(`pg-lookup`)와 `@Retry`의 fallback, `application.yml`의 `resilience4j.*`. 테스트 시계(`TestClock`, `TestPgLookupBreakerConfig`), 기반 클래스의 브레이커 되돌리기, `TestPg.losesFirstLookupResponses`. 장면 10. |
+| [161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161) | 알림 엔드포인트(`PaymentApi`, `PaymentCallbackRequest`), `PaymentFinder.findByPgOrderId`와 404 `PAYMENT_NOT_FOUND`, PG가 부르는 대사 포트 `OrderPaymentReconciler.reconcile(orderId)`와 503 `PG_UNAVAILABLE`, `OrderFinder.findForPg`. `PaymentApiTest`. |
+| [162](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/162) | 두 번째 실제 컨텍스트로 보는 재시작(`restarted`), `TestPg.createCount(pgOrderId)`. 운영 코드는 바뀌지 않았다. |
+| [163](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/163) | 장면 6의 알림 쪽 절반 네 장면(`afterTheCreateIsAnswered`). 운영 코드는 바뀌지 않았다. |
+| [164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164) | 브레이커의 상태가 바뀔 때의 WARN, 헬스 지표와 헬스 그룹 `pg-lookup`, 열린 브레이커에서 알림의 503. |
+| [165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165) | 이 문서의 18–23절과 앞 절들의 날짜 메모, [명세 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159)의 날짜 메모. |
+
+## 19. 알림
+
+`POST /api/v1/payments/callback`은 PG가 PG 거래가 바뀌었다고 보내는 요청을 받는다(`CONTEXT.md`의 알림). 알림은 결과가 아니라 대사할 까닭이다. 알림이 주문을 바꾸는 길은 고객의 대사와 같은 PG 주문 번호 조회와 같은 TX B 하나다(ADR 0031).
+
+### 19.1 계약
+
+| 무엇 | 계약 |
+| --- | --- |
+| 경로 | `POST /api/v1/payments/callback`. 어댑터가 PG 거래를 만들 때마다 PG에 알리는 설정의 `pg.callback-url`이다(4.1). |
+| 본문 | `{transactionKey, orderId, status}`. 이름은 PG의 것이라 `orderId`가 PG 주문 번호다(3.1). |
+| 읽는 것 | `orderId`뿐이다. 없거나 `null`이거나 비었거나 공백뿐이면 400이다(`@NotBlank`). |
+| 읽지 않는 것 | `transactionKey`와 `status`. 없어도, `null`이어도, 낯선 값이어도 받는다. PG 상태의 enum으로 읽지 않고, 모르는 필드도 받는다. |
+| 헤더 | 요청자(`X-USER-ID`)도 멱등 키도 서명도 받지 않는다(ADR 0031 규칙 7). |
+| 답의 본문 | 200은 `data`가 없는 `ApiResponse`이고 `meta.result`가 `SUCCESS`다. 오류는 기존 advice가 `ErrorType`으로 옮긴 본문이고 `meta.errorCode`가 그 코드다. |
+
+- 요청 DTO `PaymentCallbackRequest`는 다른 요청과 달리 application이 아니라 웹 어댑터에 있다. 포트는 본문이 아니라 PG 주문 번호와 주문 식별자를 받고, 본문의 셋 가운데 둘은 읽지 않는다. 본문과 유스케이스의 입력이 갈리면 웹에 요청 DTO를 둔다는 것이 [카탈로그 설계](./catalog.md) 5.17의 대가다.
+- 본문은 결과를 정하지 못한다. `SUCCESS`를 싣고 와도 PG 조회가 처리 중이라 하면 주문은 결제 중 그대로이고 예약도 그대로다. 본문의 거래 키가 PG의 것과 달라도 조회가 찾은 PG 거래로 반영되어, 결제는 PG의 거래 키로 끝난다.
+
+### 19.2 답
+
+PG에 답하는 것은 다시 보낼 값이 있는지다(ADR 0031 규칙 6).
+
+| 경우 | 답 | PG가 받는 조회 | 까닭 |
+| --- | --- | --- | --- |
+| 본문의 형식이 틀렸다(`orderId` 없음·`null`·빔·공백, JSON 아님) | 400 | 0 | 고칠 것은 PG 쪽이다. 결제를 찾기 전이다. |
+| 모르는 PG 주문 번호 | 404 `PAYMENT_NOT_FOUND` | 0 | DB를 한 번 읽을 뿐이다. PG 주문 번호는 UUID라 404가 알려 주는 것이 없다. |
+| 조회할 수 없다 | 503 `PG_UNAVAILABLE` | 2(한 번 다시 시도한다). 열린 브레이커면 0 | 묻지 못했으니 다시 받으면 답이 바뀔 수 있다. |
+| 찾은 PG 거래를 반영했다(성공, 실패) | 200 | 1 | 대사가 끝났다. |
+| 반영할 것이 없었다(PG 상태가 처리 중, PG 거래 없음, 여럿, 맞지 않는 PG 거래) | 200 | 1 | 알림은 대사할 까닭이었고 대사는 끝났다. 다시 받아도 같은 답이다. 여럿과 충돌은 WARN을 남긴다. 고객의 대사와 같은 코드이고, 장면 9가 본다. |
+| 결제가 끝난 주문 | 200 | 0 | 늦은 알림이 끝난 결제를 되돌리지 않는다. |
+
+- 503의 메시지는 "PG에 결제를 조회할 수 없습니다. 잠시 뒤 다시 보내 주세요."다.
+- 확정 전 주문이면 409 `PAYMENT_NOT_STARTED`이지만 웹으로는 닿지 않는다. 결제를 만드는 TX A가 주문을 결제 중으로 바꾸므로, PG 주문 번호로 결제를 찾은 주문은 확정 전 주문일 수 없다.
+- Toss는 10초 안의 200만 받은 것으로 보고, 그렇지 않으면 1분부터 최대 7번 다시 보낸다. 조회 하나의 위 끝 3.5 s(20.3)는 그 10초 안이고, 열린 브레이커의 60 s는 첫 재전송보다 짧다(ADR 0031 규칙 6). 테스트 PG는 알림을 보내지도 다시 보내지도 않는다.
+
+### 19.3 차례
+
+| 차례 | 자리 | 하는 것 | 답 |
+| --- | --- | --- | --- |
+| 1 | 웹 경계 `@Valid` | 본문의 `orderId`를 본다. | 400 |
+| 2 | `PaymentFinder.findByPgOrderId` | 결제를 PG 주문 번호로 잠그지 않고 찾는다. `UK_PAYMENT_ON_PG_ORDER_ID`를 탄다. | 없으면 404 `PAYMENT_NOT_FOUND` |
+| 3 | `OrderPaymentReconciler.reconcile(orderId)` | 결제의 주문을 사용자 없이, 잠그지 않고 읽는다(`OrderFinder.findForPg`). | |
+| 4 | 같은 자리 | 확정 전 주문은 409 `PAYMENT_NOT_STARTED`로 거절하고, 결제가 끝난 주문과 포인트로 확정된 주문은 PG에 묻지 않고 돌아간다. | 200 |
+| 5 | `PgTransactionClient.retrieve` | 결제 중인 주문의 결제를 PG 주문 번호로 조회한다. 조회할 수 없으면(`PgUnavailableException`) 조율하는 서비스가 `CoreException(PG_UNAVAILABLE)`을 던진다. PG 거래가 여럿이면 조율하는 서비스가 WARN 한 줄을 남기고, 여럿과 `null`은 반영하지 않고 돌아간다. | 503, 200 |
+| 6 | TX B `OrderPaymentSteps.applyTransaction` | 고객의 대사, 확정과 같은 TX B다. 주문을 잠그고 결제를 다시 읽어 `Payment.reconcile`로 반영한다. | 200 |
+
+- 1, 2, 4는 PG에 아무것도 보내지 않는다.
+- 3–6은 `OrderPaymentOrchestrator`가 구현하므로 `NEVER`다. 트랜잭션 안에서 부르면 들어가기 전에 거절된다(11.3).
+- 사용자는 TX B에만 넘긴다. TX B의 잠그는 읽기(`findForUpdate`)가 사용자를 받기 때문이다. 웹 경계의 요청자가 아니라 주문 슬라이스가 자기 주문에서 읽은 값이다. 결제를 PG 주문 번호로 찾은 것이 소유 확인을 대신한다.
+- 답하는 때에 다시 읽지 않는다. 포트가 `Unit`이라 PG에 돌려줄 주문 정보가 없다. 13.3의 다시 읽기는 확정과 고객의 대사에만 있다.
+
+두 대사를 견주면 이렇다.
+
+| | 고객의 대사 | PG의 대사 |
+| --- | --- | --- |
+| 포트 | `OrderConfirmer.reconcile(userId, orderId)` | `OrderPaymentReconciler.reconcile(orderId)` |
+| 부르는 곳 | `OrderApi`, `POST /api/v1/orders/{orderId}/payment/reconcile` | `PaymentApi`, `POST /api/v1/payments/callback` |
+| 주문 읽기 | `OrderFinder.find(userId, orderId)`. 남의 주문은 404 | `OrderFinder.findForPg(orderId)`. 소유를 보지 않는다 |
+| 조회와 반영 | PG 주문 번호 조회, TX B | 같다 |
+| 조회할 수 없을 때와 열린 브레이커 | 저장된 상태로 답한다(결제 중이면 202) | `PG_UNAVAILABLE`을 던진다(503) |
+| 돌려주는 것 | 답하는 때에 다시 읽은 `OrderInfo` | 없음 |
+
+- 두 대사는 private 단계 둘을 함께 쓴다. `checkLookupNeeded`가 주문 상태로 물을지 정하고(차례 4), `retrieveTransaction`이 결제를 찾아 조회하고 여럿을 WARN과 `null`로 바꾼다(차례 5). 다른 것은 조회할 수 없을 때의 답뿐이다(ADR 0031 규칙 6).
+- 포트를 따로 둔 것은 부르는 쪽이 다르기 때문이다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다(ADR 0013의 2026-10-23 메모). 주문의 사용자로 고객의 대사를 부르면 포트는 늘지 않지만 PG가 고객인 척하는 것이다(ADR 0031의 고르지 않은 것).
+- `OrderPaymentReconciler`는 2단계에서 고객의 대사 포트의 이름이었고, 명세 147의 검토에서 `OrderConfirmer.reconcile`로 합쳤다(9.2). 3단계가 그 이름을 PG의 포트에 다시 썼다.
+
+11.1의 포트 표에 더한 줄이다.
+
+| 포트 | 구현 | 트랜잭션 | 부르는 곳 |
+| --- | --- | --- | --- |
+| `OrderPaymentReconciler.reconcile` | `OrderPaymentOrchestrator` | `NEVER` | `PaymentApi` |
+| `OrderFinder.findForPg` | `OrderQueryService` | 읽기 전용 | PG의 대사 |
+| `PaymentFinder.findByPgOrderId` | `PaymentQueryService` | 읽기 전용 | `PaymentApi` |
+
+- 저장소의 `PaymentRepository.findByPgOrderId`는 없으면 null이고, Finder가 404로 던진다.
+- `PaymentApi`가 결제 슬라이스의 Finder와 주문 슬라이스의 포트를 함께 부르므로 두 슬라이스 사이에 고리가 생기지 않는다(ADR 0028 규칙 6).
+- 결제를 두 번 읽는다. 어댑터가 PG 주문 번호로, 포트가 주문 식별자로 읽는다. `order_id`가 유일해 지금은 같은 행이다. 실패 뒤 다시 결제해 주문마다 결제가 여럿이 되면 옛 결제의 알림이 지금의 결제를 대사하게 되므로, 그때 포트의 입력을 다시 본다(ADR 0029 규칙 5).
+
+### 19.4 꾸민 알림, 순서와 중복
+
+- **꾸민 알림.** 본문의 거래 키와 PG 상태는 어느 판단에도 들지 않는다. 확인은 조회의 답으로 한다. 어댑터가 모든 조회에 PG 계약이 정한 계정 `X-USER-ID: 135135`를 싣고(4.1), `Payment.reconcile`이 찾은 PG 거래를 결제의 PG 주문 번호, 금액, 이미 아는 거래 키와 견준다(2.3). 다르면 충돌의 WARN만 남는다(ADR 0031 규칙 5). 그래서 꾸민 알림이 할 수 있는 것은 결제 중인 실제 결제 하나를 정직하게 한 번 조회하게 하는 것이다. 모르는 PG 주문 번호는 DB를 한 번 읽게 할 뿐이다.
+- **순서와 중복.** 알림, 고객의 대사, 확정의 TX B는 모두 주문을 잠근 뒤 결제를 다시 읽고 앞으로만 간다(11.2, ADR 0031 규칙 8). 새 잠금도, 중복을 거르는 열쇠의 저장도 더하지 않았다.
+  - 알림이 먼저 끝내면 확정의 늦은 생성 응답은 끝난 결제에 `Unchanged`다. 처리 중을 말하는 늦은 생성 응답도 결제를 되돌리지 않는다. 확정은 TX B가 다시 읽은 끝난 주문으로 답한다.
+  - 고객의 대사가 먼저 끝내면 뒤의 알림은 결제가 끝난 주문을 보고 PG에 묻지 않는다.
+  - 함께 오면 둘 다 결제 중인 주문을 보고 조회한다. 뒤진 TX B가 주문 잠금을 기다린 뒤 끝난 결제를 읽어 `Unchanged`다. 13.1의 두 대사와 같다.
+  - 같은 알림이 두 번 오면 뒤의 것은 끝난 결제를 본다. 확정은 한 번이고, 예약을 돌려주는 것도 한 번이다.
+- **응답을 잃은 결제.** 알림은 거래 키가 아니라 PG 주문 번호로 조회하므로, 거래 키를 모르는 결제에 온 알림도 PG 거래를 찾아 결제를 끝내고 그 거래 키를 기록한다. 생성은 다시 보내지 않는다(ADR 0031 규칙 4).
+- **거래 키 조회.** 알림도 거래 키로 조회하지 않는다. 그래서 `PaymentGateway.retrieveTransaction(transactionKey)`는 여전히 부르는 곳이 없고 `transaction_key`에는 인덱스가 없다. 거래 키 조회는 같은 PG 주문 번호의 두 번째 PG 거래를 가린다. 길이 하나라 알림이 먼저든 조회가 먼저든 구조가 같다.
+
+## 20. 조회의 회복
+
+### 20.1 자리와 차례
+
+- `LocalPgGateway`의 두 조회 `retrieveTransaction`과 `retrieveTransactionByPgOrderId`에 `@Retry(name = PG_LOOKUP, fallbackMethod = "rejectedByOpenBreaker")`와 `@CircuitBreaker(name = PG_LOOKUP)`를 단다. `PG_LOOKUP`은 `"pg-lookup"`이고, 테스트 설정과 기반 클래스도 이 상수를 쓴다. `application.yml`만 이름을 글자로 적는다. 생성 `createTransaction`에는 어느 것도 달지 않는다(ADR 0030 규칙 2, 9).
+- 두 조회가 브레이커 하나를 나눠 쓴다. 같은 PG 호스트에 묻는 읽기라 함께 멈춘다. 운영 코드가 부르는 것은 PG 주문 번호 조회뿐이다(19.4).
+- 재시도가 브레이커를 감싼다. Resilience4j의 기본 차례 `Retry(CircuitBreaker(조회))`이고, HTTP 시도 하나가 브레이커의 표본 하나다(ADR 0030 규칙 3).
+- 열린 브레이커의 거절 `CallNotPermittedException`은 다시 시도하지 않고, `@Retry`의 fallback이 `PgUnavailableException("circuit open")`으로 바꾼다. fallback의 매개변수가 `CallNotPermittedException`이라 다른 예외에는 맞지 않고, 마지막 시도의 `PgUnavailableException`과 `MultiplePgTransactionsException`은 그대로 지나간다. `@CircuitBreaker`에는 fallback이 없다. 있으면 재시도 안에서 돌아, 바꾼 예외를 재시도가 열린 브레이커에 다시 시도한다(ADR 0030 규칙 5). 그래서 Resilience4j의 타입은 포트 밖으로 나가지 않는다(ADR 0023 규칙 5).
+- fallback은 private 메서드 하나가 두 조회를 맡는다. Resilience4j는 이름, 원래 매개변수에 예외 하나를 더한 모양, 할당 가능성으로 fallback을 고르고, 2.4.0은 private 메서드도 열어 프록시가 아니라 대상에서 부른다.
+- 의존성은 버전 카탈로그에 고정한 `resilience4j-spring-boot4` 2.4.0과 Boot BOM이 관리하는 `spring-boot-starter-aspectj`다. Boot 4.1의 BOM에는 Resilience4j가 없고, `resilience4j-bom` 2.4.0은 boot4 모듈을 빠뜨린다. AspectJ는 JPA를 거쳐서도 들어오지만, 없으면 애노테이션이 debug 로그 한 줄만 남기고 꺼지므로 commerce-api에 직접 선언했다(ADR 0030 규칙 1).
+- 게이트웨이는 `@Validated`(3.2) 때문에 3단계 전부터 CGLIB 프록시였다. kotlin-spring 플러그인이 `@Component` 클래스를 열어 두므로(4.2) Resilience4j의 aspect가 같은 프록시에 걸린다. 같은 클래스 안에서 조회 메서드를 부르지 않는다. 자기 호출은 aspect를 건너뛴다.
+
+### 20.2 실패의 조건
+
+| 조회의 결과 | 브레이커 | 재시도 | 조율하는 서비스가 받는 것 |
+| --- | --- | --- | --- |
+| PG 거래 하나 | 성공 | 하지 않는다 | `PgTransaction` |
+| `null`(거래 키 조회의 404, PG 주문 번호 조회의 빈 배열) | 성공 | 하지 않는다 | `null` |
+| `MultiplePgTransactionsException` | 무시한다. 성공도 실패도 아니다. | 하지 않는다 | 그 예외 |
+| `PgUnavailableException`(응답 시간 초과, 끊긴 연결, 연결 시간 초과, 풀 대기 초과, 예상하지 않은 상태 코드, 읽을 수 없는 본문) | 실패 | 100 ms 뒤 한 번 | 두 시도가 모두 실패하면 그 예외 |
+| 열린 브레이커의 `CallNotPermittedException` | 표본이 아니다 | 하지 않는다 | fallback이 바꾼 `PgUnavailableException("circuit open")` |
+
+- 설정의 `record-exceptions`, `ignore-exceptions`, `retry-exceptions`가 이 표다. 느린 호출의 규칙은 없다. 응답 한도가 느린 호출을 이미 조회 불가로 만든다(ADR 0030 규칙 4).
+- PG의 400처럼 다시 해도 같은 답도 실패로 세고 다시 시도한다. 조회는 다시 해도 안전하고, 상태 코드를 가르는 것보다 단순하다.
+- 조회할 수 없는 조회 하나에 PG가 받는 조회는 1에서 2가 됐다. 찾음, 0건, 여럿은 1 그대로이고, 열린 브레이커는 0이다.
+- HttpClient의 숨은 재전송은 여전히 꺼져 있다(4.2). 시도마다 GET은 한 번이고, 다시 보내는 것은 Resilience4j의 재시도뿐이다. 생성은 어떤 길로도 다시 보내지 않는다(ADR 0024 규칙 3).
+
+### 20.3 설정값과 예산
+
+설정은 `application.yml`의 `resilience4j.*`에 모든 프로필 공통으로 둔다. test 프로필도 바꾸지 않는다. 까닭은 ADR 0030 규칙 6의 표에 있다.
+
+| 설정 | 값 | 기본값 |
+| --- | --- | --- |
+| 브레이커 `sliding-window-type` | `COUNT_BASED` | 같다 |
+| 브레이커 `sliding-window-size` | 10 | 100 |
+| 브레이커 `minimum-number-of-calls` | 4 | 100 |
+| 브레이커 `failure-rate-threshold` | 50 | 같다 |
+| 브레이커 `wait-duration-in-open-state` | 60 s | 같다 |
+| 브레이커 `permitted-number-of-calls-in-half-open-state` | 2 | 10 |
+| 브레이커 `automatic-transition-from-open-to-half-open-enabled` | false | 같다 |
+| 재시도 `max-attempts` | 2 | 3 |
+| 재시도 `wait-duration` | 100 ms 고정 | 500 ms |
+
+- 죽은 PG에 대사를 두 번 하면 시도 넷이 모두 실패해 브레이커가 열린다. 첫 대사의 시도 둘은 최소 호출 4에 못 미쳐 판정하지 않는다.
+- 열린 동안은 PG에 묻지 않는다. 60 s가 지난 뒤의 첫 호출이 HALF_OPEN으로 옮긴다. 옮기는 스케줄러 스레드는 없다.
+- HALF_OPEN의 탐색은 둘이고, 조회 하나가 시도 둘이다. 두 시도가 모두 실패한 조회 하나가 다시 열고, 성공한 조회 둘이 닫는다.
+
+예산은 조회 하나가 요청 스레드를 쥐는 시간이다(ADR 0030 규칙 6).
+
+| 경우 | 운영(응답 한도 1 s) | test 프로필(응답 한도 200 ms) |
+| --- | --- | --- |
+| PG가 연결을 받고 답하지 않는다 | 2 × 1 s + 100 ms = 2.1 s | 2 × 200 ms + 100 ms = 0.5 s |
+| 위 끝. 시도마다 풀 대기 200 ms, 연결 500 ms, 응답 한도를 다 쓴다 | 2 × (200 ms + 500 ms + 1 s) + 100 ms = 3.5 s | 2 × (200 ms + 500 ms + 200 ms) + 100 ms = 1.9 s |
+| 열린 브레이커 | PG에 묻지 않는다 | 같다 |
+
+- 응답 한도는 읽기마다의 한도라, 조금씩 보내는 PG는 위 끝을 넘길 수 있다(5.1).
+- 재시도의 대기는 테스트에서도 실제로 잔다. 조회할 수 없는 장면 하나에 0.5 s 남짓이다.
+- 확정은 1단계의 시간 한도만 가진다. 생성 앞에는 브레이커가 없다(ADR 0030 규칙 9).
+
+### 20.4 조회할 수 없을 때의 답
+
+| 부르는 쪽 | 조회 불가(두 시도가 실패) | 열린 브레이커 | 결제와 예약 |
+| --- | --- | --- | --- |
+| 고객의 대사 | 저장된 상태(결제 중이면 202). 조회 2 | 저장된 상태. 조회 0 | 그대로 |
+| 알림 | 503 `PG_UNAVAILABLE`. 조회 2 | 503 `PG_UNAVAILABLE`. 조회 0 | 그대로 |
+
+- 어느 쪽도 결제를 실패로 끝내지 않고 예약을 돌려주지 않는다. 대체 응답이 결과를 정하지 않는다(과제 5절, ADR 0030 규칙 10).
+- 고객의 대사 응답은 2단계 그대로다. 과제의 "확인 불가"는 응답의 구분이 아니라, 결제와 주문이 그대로라는 것과 브레이커의 WARN·상태로 나타난다(22.3).
+- 알림만 503인 것은 PG가 다시 보낼 수 있기 때문이다(19.2).
+
+### 20.5 로그, 헬스, 지표
+
+- **WARN.** 브레이커의 상태가 바뀔 때마다 한 줄이다. `PG 조회의 서킷 브레이커 상태가 바뀌었다. name=pg-lookup, from=CLOSED, to=OPEN`의 모양이다. `LocalPgGatewayConfig`의 `RegistryEventConsumer<CircuitBreaker>` 빈이, registry가 설정으로 `pg-lookup`을 만들거나 바꿔 넣을 때 그 브레이커의 상태 전이를 구독한다. 상태를 바꾸지 않는 호출은 로그를 남기지 않는다. 게이트웨이 클래스는 그대로 로그를 쓰지 않는다(3.5).
+- **헬스.** `register-health-indicator: true`와 `allow-health-indicator-to-fail: false`에 더해, 기여자를 켜는 `management.health.circuitbreakers.enabled: true`가 있다. 이 값에는 기본값이 없어, 없으면 기여자 빈이 생기지 않는다. 열린 브레이커는 DOWN이 아니라 `CIRCUIT_OPEN`을 알린다. Boot의 `SimpleStatusAggregator`가 자기 차례(DOWN, OUT_OF_SERVICE, UP, UNKNOWN)에 없는 상태를 빼므로 `circuitBreakers`는 UNKNOWN으로 모이고 전체 헬스는 UP이다. PG가 멈춰도 상품 조회, 주문 생성, 관리자 기능은 돈다(ADR 0030 규칙 7). 2.4.0에서는 `allow-health-indicator-to-fail`을 적지 않아도 실패하지 않았지만, ADR대로 적었다.
+- **`/actuator/health/pg-lookup`.** 관리 포트(8081)의 `/actuator/health`는 전체 상태만 보인다. `monitoring.yml`에 `show-details`가 없고 Boot의 기본값은 `never`다. 그래서 commerce-api의 `application.yml`에 `circuitBreakers`만 담고 늘 자세히 보이는 헬스 그룹 `pg-lookup`을 둔다. DB와 Redis의 자세한 정보는 그대로 숨고, `supports/monitoring`은 바꾸지 않았다.
+- **지표.** Boot 모듈이 들이는 `resilience4j-micrometer`가 브레이커의 지표를 낸다. 열려 있으면 `resilience4j.circuitbreaker.state{name=pg-lookup,state=open}`이 1, `state=closed`가 0이다. 지표를 볼 화면은 없다.
+
+### 20.6 테스트 기반
+
+- **실제 aspect.** 장면은 `BaseCommittingApplicationServiceTest`와 `@EnableTestPg`의 전체 컨텍스트에서, 알림의 HTTP 계약은 `BaseWebApiAdapterTest`의 MockMvc에서 돈다. 두 컨텍스트 모두 Resilience4j의 자동 설정과 aspect를 운영처럼 들인다.
+- **되돌리기.** 브레이커는 컨텍스트의 빈이라 같은 컨텍스트를 쓰는 테스트끼리 상태가 이어진다. `BaseApplicationServiceTest`와 그것을 넓힌 두 기반이 `@BeforeEach`에서 시계를 되돌리고, registry로 `pg-lookup`을 CLOSED로 되돌린다. OPEN에서 되돌리면 OPEN → CLOSED의 WARN이 나가지만, JUnit이 상위 클래스의 `@BeforeEach`를 먼저 돌려 테스트 클래스가 붙이는 `ListAppender`보다 앞선다.
+- **테스트 시계.** `@EnableTestPg`가 가져오는 `@TestConfiguration` `TestPgLookupBreakerConfig`가 `CircuitBreakerConfigCustomizer`로 `TestClock`을 `pg-lookup`에 넣는다. PG를 쓰는 테스트의 컨텍스트 설정이 하나로 남아 컨텍스트 캐시가 갈라지지 않는다. 테스트는 시계를 옮겨 OPEN의 60 s를 잠 없이 넘고, `transitionTo*`는 부르지 않는다(ADR 0030 규칙 8). `TestClock`은 시스템 시각에서 시작해 차이만 더한다. 운영 빈은 `Clock`을 받지 않아 주입이 모호해지지 않는다.
+- **실제 실패로 연다.** `openPgLookupBreaker()`는 조회 응답을 잃는 테스트 PG에 대사를 두 번 한다. 준비하려고 포트를 부르지 않는다는 규칙의 예외로 `CODING_STANDARDS.md`에 적었다.
+- **몇 번 실패한 뒤 답하는 PG.** `TestPg.losesFirstLookupResponses(times)`는 WireMock 시나리오로 처음 `times`번의 조회를 끊고, 그 뒤로는 장면의 조회 스텁이 답하게 한다. 복구 장면의 "PG가 살아났다"는, 우선순위가 같은 스텁 가운데 나중에 더한 것이 답한다는 WireMock의 규칙에 기댄다.
+- **준비 요청은 표본이 아니다.** `@EnableTestPg`가 컨텍스트마다 보내는 준비 요청(16.2)은 `TestPgWarmUpConfig`가 JDK `HttpClient`로 `/__admin/health`에 보낸다. 게이트웨이를 지나지 않아 브레이커의 표본이 아니고, 관리 API의 요청이라 WireMock의 요청 기록에도 남지 않는다.
+- **수로 본다.** 걸린 시간은 단언하지 않는다. PG가 받은 요청 수(`createCount()`, `lookupCount()`, `requestCount()`, `unmatchedRequests()`), 브레이커의 상태, WARN, 헬스를 본다.
+- **프록시 검사만으로는 모자라다.** 게이트웨이는 `@Validated` 때문에 이미 프록시라, 애노테이션이 걸리지 않은 빨간 실행에서도 `AopUtils.isAopProxy`는 통과했다. 그때 조회는 1이고 결제는 처리 중으로 남았다. 꺼진 애노테이션을 잡는 것은 조회 수 2다. 테스트는 ADR 0030 규칙 8대로 둘을 함께 본다.
+- **게이트웨이의 계약 테스트는 그대로다.** 6.1의 네 테스트는 `@ImportAutoConfiguration`으로 builder를 만드는 자동 설정만 골라 Resilience4j가 없다. 애노테이션은 걸리지 않고, 테스트는 HTTP 요청 하나의 계약을 본다(6.1의 날짜 메모).
+- **헬스를 읽는 법.** `@SpringBootTest`의 기본인 모의 웹 환경에서는 관리 서버가 뜨지 않아, 헬스는 `HealthEndpoint` 빈으로 읽는다. 그 빈은 노출 설정과 상관없이 모든 구성 요소를 보이므로, 그룹이 무엇을 담고 자세히 보이는지는 `HealthEndpointGroups`로 따로 본다.
+
+## 21. 3단계의 장면과 테스트
+
+장면 번호는 과제 6절의 표를 따른다. 따로 적지 않은 테스트는 `OrderPaymentIntegrationTest`의 것이다(14절의 머리말). "실행"은 그 테스트가 도는 수이고, 2026-10-23의 실행이다. 알림의 장면은 PG의 대사 포트 `OrderPaymentReconciler.reconcile(orderId)`를 바로 부른다. `PaymentApi`가 결제를 찾은 뒤 부르는 그 포트이고, 포트가 돌아오면 알림의 200이다. HTTP로 옮기는 것은 `PaymentApiTest`가 본다(21.5). 조회가 있는 장면은 모두 `unmatchedRequests()`가 비었는지 본다.
+
+### 21.1 장면 6의 알림 쪽 절반
+
+| 장면 | 과제가 보는 것 | 테스트 | 실행 | PG가 받은 것 | 끝의 주문·결제·재고 |
+| --- | --- | --- | --- | --- | --- |
+| 알림이 먼저 | 확정의 생성이 오가는 동안 알림이 결제를 끝내고, 늦은 생성 응답은 되돌리지 않는다 | `a callback applied before the confirmation's TX B finishes the payment once and the late create answer changes nothing` | 4(조회 SUCCESS에 생성 응답 SUCCESS·PENDING, 조회 FAILED에 생성 응답 FAILED·PENDING) | 생성 1, 조회 1 | 확정의 답이 알림 뒤의 주문과 확정 시각까지 같다. 재고 5 → 3, 실패면 5 → 3 → 5 |
+| 대사가 먼저 | 고객의 대사가 끝낸 뒤의 알림은 아무것도 바꾸지 않는다 | `a callback after the customer's reconcile finished the payment sends no lookup and changes nothing` | 2(SUCCESS, FAILED) | 생성 1, 조회 1(대사의 것) | 확정 시각과 `updatedAt`이 대사가 남긴 그대로. 재고 3, 실패면 5 |
+| 함께 | 한쪽의 TX B를 잠금 안에서 멈추고 다른 쪽의 잠금 대기를 본다 | `a callback and the customer's reconcile applying the same answer together change the order and the stock once` | 4(잠금을 쥔 쪽 알림·대사 × SUCCESS·FAILED) | 생성 1, 조회 2 | 확정 시각 하나. 재고 3, 실패면 5. 두 번 돌려주면 7이다 |
+| 응답을 잃은 결제의 알림 | 거래 키를 모르는 결제를 같은 PG 거래로 끝내고 생성은 1 그대로 | `a callback records the PG's transaction key on a payment whose create response was lost, without another create` | 2(SUCCESS, FAILED) | 생성 1, 조회 1 | 확정 또는 결제 실패, 거래 키 기록. 재고 3, 실패면 5 |
+
+- 알림이 먼저인 장면은 PG 호출의 spy가 생성의 답을 받은 뒤, 확정의 TX B 앞에서 알림을 넣는다(`afterTheCreateIsAnswered`). TX B의 빈을 spy하면 stub이 프록시가 연 TX B 안에서 돌아, `NEVER`인 PG의 대사 포트를 부를 수 없다(명세 159의 날짜 메모). 생성 응답이 처리 중을 말하는 두 줄이 명세 159의 "늦은 생성 응답은 결제를 되돌리지 않는다"다.
+- 함께인 장면은 2단계의 장면 6처럼 먼저 PG 거래를 반영하는 TX B를 주문을 잠근 채 멈추고, 다른 쪽이 `LOCK_WAIT_PROBE` 안에 끝나지 않는 것을 본다. 알림이 쥐고 대사가 기다리는 경우와 그 반대를 모두 돈다.
+- 변이 실행. 모두 되돌렸다.
+  - TX B의 주문 읽기에서 `FOR UPDATE`를 빼면 함께인 장면의 네 줄이 모두 잠금 대기의 탐침에서 실패했다. 탐침의 단언까지 빼면 넷 중 셋이 끝 상태에서 실패했다. 실패의 두 줄은 재고 7(두 번 돌려줌)이었고, 알림이 잠금을 쥔 성공 줄은 확정 시각이 덮어쓰였다. 대사가 잠금을 쥔 성공 줄은 탐침만이 지킨다.
+  - `Payment.reconcile`에서 `status.isFinished ||`를 빼면 알림이 먼저인 장면의 늦은 PENDING 두 줄이 실패했다. 결제가 처리 중으로 돌아갔다.
+  - `checkLookupNeeded`가 끝난 주문도 조회하게 하면 대사가 먼저인 장면의 두 줄이 조회 수 2에서 실패했다. 끝 상태는 TX B의 `Unchanged`가 지켰다.
+  - `Payment.reconcile`이 거래 키를 기록하지 않게 하면 응답을 잃은 결제의 두 줄이 실패했다.
+- 2단계의 장면 6(대사끼리, 대사와 확정의 TX B)은 14절 그대로다.
+
+### 21.2 장면 8, 다시 만든 서비스와 클라이언트
+
+| 장면 | 과제가 보는 것 | 테스트 | 실행 | PG가 받은 것 | 끝의 주문·결제·재고 |
+| --- | --- | --- | --- | --- | --- |
+| 8 재시작 | 서비스와 클라이언트를 다시 만들되 같은 DB와 PG 거래를 쓴다. 시작이 생성을 보내지 않고, 결제와 예약이 그대로이며, 새 컨텍스트의 대사가 같은 PG 거래로 결제를 끝낸다 | `a restarted context sends nothing on start and its reconcile finishes the payment whose create response was lost` | 1 | 시작하며 0. 생성은 보내지 못한 결제 0, 응답을 잃은 결제 1. 조회 2(새 컨텍스트의 대사 둘) | 응답을 잃은 결제는 `CONFIRMED`, `SUCCESS`, 거래 키 기록, 재고 3. 보내지 못한 결제는 `PAYMENT_PENDING`, `UNKNOWN`, 재고 3 |
+
+- 첫 컨텍스트에 결제 중인 주문 둘을 남긴다. 하나는 TX A가 커밋한 뒤 생성을 보내기 전에 멈췄고, 하나는 생성의 응답을 잃었다.
+- `restarted`가 `SpringApplicationBuilder`로 운영의 애플리케이션 클래스와 테스트의 Testcontainers 설정을 띄우고, 장면이 끝나면 닫는다. DB, Redis, 테스트 PG는 첫 컨텍스트의 것이다. 테스트 PG의 스텁과 요청 기록이 남으므로 서버를 따로 띄우지 않는다(6.2의 날짜 메모).
+- 명령줄 인자로 넷을 덮는다. builder의 `properties(…)`는 가장 낮은 기본값이라 프로필의 yml에 지기 때문이다.
+  - `spring.jpa.hibernate.ddl-auto=none`. 없으면 test 프로필의 `create`가 공유 DB의 표를 다시 만든다. 빨간 실행에서 "주문의 결제가 없습니다"로 실패했다. 운영의 재시작도 스키마를 다시 만들지 않는다.
+  - `pg.base-url`은 첫 컨텍스트의 테스트 PG다.
+  - `server.port`와 `management.server.port`는 0이다. 두 번째 컨텍스트는 실제 Tomcat을 띄운다.
+- `LoggingApplicationListener`를 뺀다. 로깅은 JVM에 하나이고 첫 컨텍스트가 가진다. 두면 두 번째 컨텍스트를 닫을 때 공유 logback의 초기화 표지가 지워진다.
+- 새 컨텍스트의 `OrderConfirmer`와 `PaymentGateway`가 첫 컨텍스트의 것과 다른 인스턴스임을 `AopTestUtils.getUltimateTargetObject`로 프록시의 대상끼리 견준다.
+- 2단계의 장면 8(같은 컨텍스트의 재요청과 0건 대사)은 14절 그대로다.
+
+### 21.3 장면 10, 시간 한도·회로 OPEN·복구
+
+| 장면 | 과제가 보는 것 | 테스트 | 실행 | PG가 받은 조회 | 브레이커와 끝 |
+| --- | --- | --- | --- | --- | --- |
+| 제한된 재조회 | 조회 불가 한 번 뒤의 성공이 같은 대사에서 결제를 끝낸다. 게이트웨이는 AOP 프록시 | `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile` | 1 | 2 | `CONFIRMED`, `SUCCESS`, 재고 3, 생성 1 |
+| 시간 초과 | 응답 한도를 넘긴 조회도 한 번 다시 시도하고 저장된 상태로 답한다 | `a reconcile whose lookup is unavailable answers the stored state and changes nothing` | 2(503, 응답 한도를 넘긴 멈춤) | 2(2단계에는 1) | 브레이커의 상태는 보지 않는다. 표본 둘이 열지 않는 것은 21.4의 WARN 장면의 첫 대사가 본다. `PAYMENT_PENDING`, `PENDING`, 재고 3 |
+| 회로 OPEN | 죽은 PG에 대사 둘이면 열리고, 셋째는 PG에 묻지 않는다 | `two reconciles against a dead PG open the lookup breaker and a third answers the stored state without a lookup` | 2(응답 유실, 503) | 4, 셋째 뒤에도 4 | OPEN. 세 대사 모두 `PAYMENT_PENDING`, `PENDING`. 재고 3 |
+| 재차단 | 60 s 안에는 묻지 않고, 넘긴 뒤 여전히 죽은 PG에 탐색 둘이 실패해 다시 연다 | `the open breaker sends no lookup within its 60 s wait and a probe against a still dead PG opens it again` | 1 | 4 → 59 s 뒤 4 → 61 s 뒤 6 | OPEN. `PAYMENT_PENDING`, `PENDING`, 재고 3 |
+| 복구 | 넘긴 뒤 살아난 PG에 탐색한 대사가 결제를 끝내고, 성공한 조회가 둘이면 닫힌다 | `after the wait a probe finishes its payment once the PG is back and a second successful lookup closes the breaker` | 1 | 6(연 대사 둘의 4, 탐색 둘) | HALF_OPEN → CLOSED. 결제 중인 두 주문이 모두 `CONFIRMED`. 생성 2 |
+| 실패의 조건 | PG 거래 없음과 여럿은 다시 시도하지 않고 브레이커를 열지 않는다 | `lookups that find no transaction or several are not retried and never open the breaker` | 2(없음, 여럿) | 대사마다 1, 다섯 대사에 5 | CLOSED. `PAYMENT_PENDING`, `PENDING`, 재고 3 |
+
+- 어느 장면에서도 결제는 실패로 끝나지 않고 예약도 그대로다. 장면마다 주문, 결제, 재고를 새 트랜잭션에서 다시 읽는다.
+- 죽은 PG는 `losesLookupResponse()`(응답 유실)나 `answersList(…, httpStatus = 503)`이고, 시간 초과는 응답 한도 200 ms를 넘기는 `stallsLookup()`이다. 시계는 59 s와 2 s, 또는 61 s를 옮긴다.
+- 실패의 조건은 대사마다 조회 수를 본다. 다섯 번째 대사가 최소 호출 4를 넘기고도 PG에 닿는 것이 "열리지 않았다"의 증거다.
+- 변이 실행. 모두 되돌렸다.
+  - `@CircuitBreaker` 둘을 지우면 넷이 실패했다. 죽은 PG의 두 경우, 재차단, 복구다.
+  - `fallbackMethod`를 빼면 셋이 `CallNotPermittedException`이 포트 밖으로 새어 실패했다.
+  - 실패의 조건 장면은 두 변이에서 모두 통과한다. 그 장면은 브레이커가 있는지가 아니라 실패의 분류를 지킨다.
+  - 애노테이션이 걸리지 않으면 제한된 재조회의 장면이 조회 1과 처리 중인 결제로 실패한다. 프록시 검사는 통과한다(20.6).
+
+### 21.4 PG의 대사 포트, 로그와 헬스
+
+| 무엇 | 테스트 | 실행 | 결과 |
+| --- | --- | --- | --- |
+| PG의 대사가 찾은 PG 거래로 끝낸다 | `the PG's reconcile finishes a pending payment with the transaction its lookup finds` | 2(SUCCESS, FAILED) | 생성 1, 조회 1. 재고 3, 실패면 5 |
+| 조회할 수 없으면 PG의 대사는 던지고 고객의 대사는 저장된 상태로 답한다 | `the PG's reconcile throws PG_UNAVAILABLE on an unavailable lookup while the customer's answers the stored state` | 2(503, 멈춤) | `PG_UNAVAILABLE`과 `PAYMENT_PENDING`, `PENDING`. 조회 4(대사마다 2). 결제와 재고 그대로 |
+| 열린 브레이커도 같다 | `the PG's reconcile throws PG_UNAVAILABLE on an open breaker without a lookup, the customer's answers stored state` | 1 | 연 대사 둘의 조회 4에서 늘지 않는다. 결제와 재고 그대로 |
+| 끝난 결제 | `the PG's reconcile of a finished payment sends no lookup and changes nothing` | 2(SUCCESS, FAILED) | 두 번 불러도 조회 0. 재고 3, 실패면 5 |
+| 확정 전 주문 | `the PG's reconcile of a draft is rejected as payment not started without a lookup` | 1 | `PAYMENT_NOT_STARTED`, PG가 받은 요청 0 |
+| 상태가 바뀔 때마다 WARN 한 줄 | `every state change of the lookup breaker logs one warning and a reconcile that changes no state logs none` | 1 | CLOSED → OPEN, OPEN → HALF_OPEN, HALF_OPEN → OPEN, OPEN → HALF_OPEN, HALF_OPEN → CLOSED의 다섯 줄. 첫 대사와 열린 동안의 대사는 남기지 않는다. 조회 8 |
+| 열려도 헬스는 UP | `an open lookup breaker shows in the health endpoint and the state gauge while the overall health stays UP` | 1 | 전체 UP. 그룹 `pg-lookup`의 `circuitBreakers`에 `pg-lookup`이 `CIRCUIT_OPEN`, `state: OPEN`. 그룹은 `db`를 담지 않고 자세히 보인다. 게이지는 open 1, closed 0 |
+
+- WARN의 장면은 결제 중인 주문 둘로 한 바퀴를 돈다. 닫으려면 PG가 살아난 뒤 성공한 조회가 둘 필요하기 때문이다. 어댑터 패키지의 로거에 붙인 `ListAppender`의 WARN 전체를 차례대로 견주므로, 상태를 바꾸지 않은 대사의 "없음"까지 본다.
+
+### 21.5 알림의 HTTP 계약
+
+[`PaymentApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/payment/PaymentApiTest.kt)(23)가 MockMvc, 클래스의 `@Transactional(propagation = NOT_SUPPORTED)`, `@EnableTestPg`로 실제 컨트롤러에 알림을 보낸다(11.3의 대가). 알림을 받을 결제는 실제 확정 요청으로 만든다. 상품 하나(1,000원, 재고 10)를 2개 주문한다.
+
+| 무엇 | 테스트 | 실행 | 결과 |
+| --- | --- | --- | --- |
+| 형식이 틀린 본문 | `a callback without a PG order ID or with a body that isn't JSON answers 400 without a lookup` | 5(`orderId` 없음, `null`, 빔, 공백, JSON 아님) | 400, PG가 받은 요청 0 |
+| 모르는 PG 주문 번호 | `a callback for an unknown PG order ID answers 404 PAYMENT_NOT_FOUND without a lookup` | 1 | 404, 조회 0. 다른 결제의 상세가 그대로 |
+| 조회할 수 없다 | `a callback whose lookup is unavailable answers 503 PG_UNAVAILABLE and leaves the payment unchanged` | 2(503, 응답 유실) | 503, 조회 2. 주문 상세가 바이트까지 그대로, 재고 8 |
+| 열린 브레이커 | `a callback while the lookup breaker is open answers 503 without a lookup and finishes the payment after the wait` | 1 | 알림 둘이 연다(조회 4). 셋째는 503이고 조회 4 그대로, 재고 8. 61 s 뒤 같은 알림이 200, `CONFIRMED`, 조회 5 |
+| 반영 | `a callback confirms a pending payment the PG's lookup reports successful and answers 200 without a requester` | 1 | 요청자 헤더 없이 200, `data` 없음. `CONFIRMED`, 재고 8 |
+| 중복 | `two identical callbacks change the order and the stock once` | 2(SUCCESS, FAILED) | 둘째 알림 뒤의 상세가 첫 알림 뒤와 같다. 조회 1. 실패면 재고 10이고, 두 번 돌려주면 12다 |
+| 본문의 PG 상태 | `a callback saying SUCCESS while the PG's lookup says PENDING leaves the order payment pending and the stock reserved` | 1 | 200, `PAYMENT_PENDING`, 재고 8 |
+| 본문의 거래 키 | `a callback naming another transaction key applies the transaction the PG's lookup finds` | 1 | 200, `CONFIRMED`. 결제는 PG의 거래 키 |
+| 읽지 않는 필드 | `a callback whose transaction key or status is missing, null, unknown or joined by extra fields still reconciles` | 4 | 200, `CONFIRMED` |
+| 반영할 것 없음 | `a callback whose lookup finds no, several or a mismatched transaction answers 200 and changes nothing` | 3(없음, 여럿, 다른 금액) | 200, `PAYMENT_PENDING`, 재고 8 |
+| 끝난 결제 | `a callback for a finished payment answers 200 without a lookup and changes nothing` | 2(SUCCESS, FAILED) | 200, 조회 0. 상세가 그대로 |
+
+- `OrderPaymentIntegrationTest`의 62개는 14절의 32개와 3단계가 더한 30개다. 30개는 21.1–21.4의 표에 있고, 21.3의 시간 초과 줄(2)은 14절의 조회 불가 장면을 다시 적은 것이다. `PaymentApiTest`의 23개는 모두 위 표에 있다.
+- 알림을 받을 결제는 기반의 `confirmOrder`가 아니라 확정 요청으로 만든다. 알림의 본문과 조회 스텁에 결제의 PG 주문 번호와 거래 키가 들어가야 하는데, `confirmOrder`는 거래 키를 매번 새로 뽑고 PG 주문 번호를 돌려주지 않는다.
+
+## 22. 3단계의 받아들인 한계
+
+PR에 알려진 한계로 적는다.
+
+### 22.1 알림 엔드포인트에 닿는 누구나 실제 결제의 조회를 부르게 할 수 있다
+
+알림은 인증하지 않는다(ADR 0031 규칙 7). 계약에 서명이 없고, `135135`는 커머스가 PG를 부를 때의 계정이다. 결제 중인 실제 결제의 PG 주문 번호를 아는 누구나 그 결제를 PG에 조회하게 할 수 있다. 결과는 바꾸지 못한다. 확인은 조회의 답으로만 하기 때문이다(19.4). 결제가 끝난 주문은 조회하지 않고, 모르는 PG 주문 번호는 DB를 한 번 읽을 뿐이다. 죽은 PG에 조회를 쏟게 하는 것은 브레이커가 묶는다. PG가 서명을 붙이면 서명을 먼저 확인한다(ADR 0031의 다시 볼 조건).
+
+### 22.2 조회 하나가 요청 스레드를 최대 3.5 s 쥔다
+
+알림과 고객의 대사가 그렇다(20.3). 조회는 트랜잭션도 행 잠금도 쥐지 않는다(11.2). 조금씩 보내는 PG는 이를 넘길 수 있다(5.1). TimeLimiter와 Bulkhead는 들이지 않았다.
+
+### 22.3 고객의 대사는 조회 불가와 PG 거래 없음을 가르지 않는다
+
+둘 다 저장된 상태로 답한다(결제 중이면 202). 과제의 "확인 불가"와 다른 점이다(ADR 0030 규칙 10). 고객이 할 일은 어느 쪽이든 나중에 다시 묻는 것이고, 조회 불가는 WARN과 헬스로 드러난다(20.5). 알림은 둘을 가른다(503과 200). 그러나 조회가 0건인 알림은 200이라, 다시 보내는 PG도 그 알림을 다시 보내지 않는다. 그 결제는 고객의 대사나 다음 알림을 기다린다(ADR 0031의 대가).
+
+### 22.4 2단계의 결과 미확인은 그대로 남는다
+
+15.1의 결제는 3단계 뒤에도 결과 미확인이나 처리 중으로, 예약을 쥔 채 남는다. 보내지 않았거나, PG가 받지 못했거나, 조회가 계속 0건이거나 불가이거나 충돌만 얻는 결제다. 알림은 대사할 까닭을 하나 더할 뿐 기한을 두지 않고, 재시도는 조회만 다시 보내며, 재시작은 아무것도 보내지 않는다(21.2). 그런 결제를 찾는 지표와 손으로 끝내는 절차는 여전히 없다(ADR 0024의 다시 볼 조건).
+
+### 22.5 하지 않은 것
+
+명세 159의 Out of Scope다.
+
+- 생성 앞의 브레이커. TX A 앞에서 묻고, 그 거절을 결과 미확인과 다른 예외로 두어야 한다(ADR 0023의 다시 볼 조건, ADR 0030 규칙 9).
+- 끝나지 않은 결제를 주기적으로 대사하는 스케줄러. 과제가 선택으로 두었다. 고객의 대사와 알림이 복구의 길이다.
+- 알림의 서명·비밀 값·인증, 그리고 거래 키 조회와 `transaction_key`의 인덱스(ADR 0031 규칙 4, 7).
+- TimeLimiter, Bulkhead, RateLimiter.
+- 실패 뒤 다시 결제, 환불, 정산, 사용자 취소, 카드 저장. 과제가 뺐다.
+- 알림을 보내거나 다시 보내는 테스트 PG. 테스트는 컨트롤러에 알림을 직접 보내고, 다시 보내기는 시험하지 않는다.
+
+## 23. 3단계의 이름과 명령
+
+### 23.1 과제의 이름과 이 저장소의 이름
+
+7.1과 16.1의 줄은 그대로다. `paymentAttemptKey`도 16.1대로 헤더 `Idempotency-Key`와 결제의 `idempotencyKey`이고, 알림은 멱등 키를 받지 않는다. 3단계가 더한 것이다.
+
+| 과제 | 이 저장소 | 까닭 |
+| --- | --- | --- |
+| `POST /payments/callback` | `POST /api/v1/payments/callback`, `PaymentApi.callback` | 경로는 이 저장소의 `/api/v1` 아래에 그대로 두었다. |
+| 알림 본문의 `providerOrderId` | 본문의 `orderId`, 결제의 `pgOrderId` | `providerOrderId`는 개념의 이름이다. PG와 주고받는 본문은 PG의 다른 메시지처럼 `orderId`라 부르고(ADR 0031 규칙 1), 코드와 문서는 16.1대로 PG 주문 번호 `pgOrderId`라 부른다. |
+| 알림 본문의 `transactionKey`, `status` | `PaymentCallbackRequest`의 읽지 않는 두 필드 | 결과는 조회로만 안다. 필드가 바뀌어도 알림을 잃지 않도록 enum이 아니라 문자열로 받는다. |
+| 해당 거래의 권위 조회 | PG 주문 번호 조회 `PgTransactionClient.retrieve`, 게이트웨이의 `retrieveTransactionByPgOrderId` | 거래 키 조회가 아니다(ADR 0031 규칙 4). |
+| 같은 결과 적용 경계 | TX B `OrderPaymentSteps.applyTransaction` | 확정, 고객의 대사, 알림이 같은 입구를 쓴다. |
+| 제공자 계정의 확인 | 모든 조회의 `X-USER-ID: 135135` | 어댑터가 싣는다(3.1). |
+| 알림이 결제를 찾는 것 | `PaymentFinder.findByPgOrderId`, 없으면 `PAYMENT_NOT_FOUND` | |
+| 알림의 대사 | `OrderPaymentReconciler.reconcile(orderId)` | 고객의 `OrderConfirmer.reconcile`과 부르는 쪽이 달라 포트를 따로 둔다(19.3). |
+| PG 조회 한 경로의 서킷 브레이커 | `pg-lookup`(`LocalPgGateway.PG_LOOKUP`) | 두 조회가 나눠 쓴다(20.1). |
+| 제한된 재조회 | `@Retry(name = "pg-lookup")`, 시도 2번 | 재시도의 이름은 브레이커와 같다. |
+| 확인 불가 | 고객의 대사는 저장된 상태(202), 알림은 503 `PG_UNAVAILABLE` | 고객의 응답은 바꾸지 않았다(22.3). |
+| 서비스와 클라이언트를 다시 만드는 재시작 | 두 번째 `ApplicationContext`(`OrderPaymentIntegrationTest`의 `restarted`) | |
+| 실제 컨트롤러를 거치는 알림 | `PaymentApiTest` | 웹 어댑터 `PaymentApi`의 HTTP 테스트라 이 저장소의 이름 규칙을 따른다. |
+
+### 23.2 3단계의 명령
+
+```bash
+# 장면 6의 알림 쪽 절반, 장면 8의 재시작, 장면 10, PG의 대사 포트, 로그와 헬스, 2단계의 장면: OrderPaymentIntegrationTest(62). 과제의 필터가 이 클래스를 찾는다.
+./gradlew :apps:commerce-api:test --tests '*PaymentIntegrationTest'
+
+# 알림의 HTTP 계약: PaymentApiTest(23)
+./gradlew :apps:commerce-api:test --tests '*PaymentApiTest'
+
+# 확정과 고객의 대사의 HTTP 계약. 조회할 수 없는 대사의 조회가 2다: OrderConfirmationApiTest(45)
+./gradlew :apps:commerce-api:test --tests '*OrderConfirmationApiTest'
+
+# 게이트웨이의 HTTP 계약. Resilience4j가 없는 컨텍스트라 3단계 전과 같다: PaymentGatewayTest(96), ExhaustedPoolPaymentGatewayTest(1), ObservedPaymentGatewayTest(2), ConnectTimeoutPaymentGatewayTest(2)
+./gradlew :apps:commerce-api:test --tests '*PaymentGatewayTest'
+
+# 끝의 전체 확인. 수는 cleanTest부터 돈 실행에서 읽는다.
+./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check
+```
+
+- 괄호의 수는 2026-10-23 `9119ce7`의 트리에서 끝의 명령을 돌려 JUnit XML 보고서에서 읽은 것이다. 73개 클래스, 917개 테스트, 실패 0, 건너뜀 0이다. `ConnectTimeoutPaymentGatewayTest`도 건너뛰지 않았다.
+- 첫 두 필터는 함께 돌려 `OrderPaymentIntegrationTest`(62), `PaymentApiTest`(23)와 `HexagonalArchitectureTest`(7)만 도는 것을 확인했다. `--tests`로 거른 실행은 언제나 `HexagonalArchitectureTest`의 7개도 함께 돌고, 위의 수는 그것을 뺀 것이다(7.2).
+- 3단계가 더한 테스트는 53개다. `OrderPaymentIntegrationTest`에 30개, 새 `PaymentApiTest`에 23개이고, 다른 클래스의 수는 바뀌지 않았다. 16.2의 수도 첫 명령(32 → 62)만 바뀌었다.
+- 과제의 `--tests '*PaymentProviderContractTest'`는 여전히 아무것도 찾지 않는다(7.2). 게이트웨이는 위의 `'*PaymentGatewayTest'`로 돈다.
