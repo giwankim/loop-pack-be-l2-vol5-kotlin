@@ -471,6 +471,7 @@ stateDiagram-v2
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
 - `PaymentRecorder`, `StockReserver`, 고객의 `OrderConfirmer`(`confirm`, `reconcile`)도 같은 까닭으로 포트 하나다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합치고, `OrderPaymentReconciler`를 `OrderConfirmer`에 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
 - 조율하는 구현은 `Service`가 아니라 `Orchestrator`로 끝난다. 같은 접두어의 `OrderPaymentSteps`보다 위에서 트랜잭션 밖에 머물며 TX A, PG 호출, TX B를 차례로 부르는 빈임을 이름이 드러낸다(2026-10-23, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모).
+
 ### 11.2 잠금
 
 | 경로 | 잠그는 차례 | 잠그지 않고 읽는 것 |
@@ -595,6 +596,7 @@ stateDiagram-v2
 - 대사는 생성을 보내지 않는다. 어느 줄도 결제를 실패로 끝내지 않는다. 기한이 없으므로 몇 번을 물어도 결과 미확인은 결과 미확인이다(ADR 0024 규칙 3, 4).
 - PG 거래 여럿의 WARN은 주문 식별자와 예외의 메시지(`PG 주문 번호 하나에 PG 거래가 2개다.`)만 싣는다. PG 주문 번호는 결제의 값이라 주문 슬라이스가 읽지 않는다(ADR 0028 규칙 5).
 - TX B는 다시 해도 된다. 확정의 TX B가 DB 오류로 되돌아가도 결제와 예약이 그대로 남고, 대사가 같은 PG 거래로 한 번 확정한다(ADR 0024 규칙 5, 장면 7).
+
 ### 13.3 저장된 상태는 답하는 때에 읽는다
 
 "저장된 상태로 답한다"의 상태는 PG를 부르기 전에 읽은 것이 아니라 답하는 때에 다시 읽은 주문과 결제 상태다(`OrderFinder.findInfo`). 확정의 `PgOutcomeUnknownException`, 대사의 `null`, `PgUnavailableException`, `MultiplePgTransactionsException`이 모두 그렇다(ADR 0028 규칙 3의 2026-10-23 메모).
