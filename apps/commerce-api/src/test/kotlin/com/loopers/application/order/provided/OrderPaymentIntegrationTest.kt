@@ -70,11 +70,14 @@ import java.time.Duration
  * 커밋하는 기반을 쓰므로 TX A와 TX B가 정말 커밋하고, 실제 어댑터가 HTTP로 테스트 PG에 닿는다. 장면마다 PG가 받은 생성 수와 조회 수를 세고,
  * 주문·결제·재고·잔액을 새 트랜잭션에서 다시 읽는다. 결제가 받을 PG 주문 번호는 확정 전에 `nextPgOrderId`로 정해 생성과 조회의 스텁에 넣는다.
  * 결제 중인 주문 곁의 쓰기와 읽기(관리자의 재고 수정, 상품 삭제, 예약된 재고, 고객 목록, 대사)는 PG 호출을 spy해 생성을 보내기 바로 앞에 넣고,
- * 생성을 보내기 전에 멈춘 프로세스도 그 spy가 흉내 낸다. 확정의 TX B보다 먼저 오는 알림은 같은 spy가 생성의 답을 받은 바로 뒤에 넣는다.
- * 같은 키로 겨루는 두 확정은 결제를 만드는 Service를 spy해 늦은 쪽을 결제 삽입 앞에서, 같은 답을 반영하는 두 TX B(대사와 대사, 대사와 확정,
- * 알림과 대사)는 같은 Service를 spy해 앞선 쪽을 주문을 잠근 채 멈춘다. 외부 성공 뒤 내부 저장의 실패는 TX B의 빈을 spy해 넣는다.
- * PG의 알림은 웹 어댑터가 PG 주문 번호로 결제를 찾은 뒤 부르는 [OrderPaymentReconciler]로 들어온다.
+ * 생성을 보내기 전에 멈춘 프로세스도 그 spy가 흉내 낸다. 같은 키로 겨루는 두 확정은 결제를 만드는 Service를 spy해 늦은 쪽을 결제 삽입 앞에서,
+ * 같은 답을 반영하는 두 TX B는 같은 Service를 spy해 앞선 쪽을 주문을 잠근 채 멈춘다. 외부 성공 뒤 내부 저장의 실패는 TX B의 빈을 spy해 넣는다.
  * 재시작은 같은 DB와 테스트 PG 위에 두 번째 실제 컨텍스트를 띄워 그 안의 새 Service로 본다([restarted]).
+ *
+ * A PG callback enters through [OrderPaymentReconciler], the port the web adapter calls once it has found the payment by its
+ * PG order ID. The scenes where a callback meets a reconcile or confirm's own TX B reuse the spies above. A callback that beats
+ * TX B runs from the PG-call spy right after the create is answered ([afterTheCreateIsAnswered]). A callback racing the
+ * customer's reconcile is paused by the payment-modifying spy while it holds the order lock, like two racing reconciles.
  */
 @EnableTestPg
 class OrderPaymentIntegrationTest(
@@ -94,8 +97,9 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 결제 중인 주문 곁의 쓰기와 읽기를 넣는 자리([whilePaymentPending])이자, 확정의 TX B보다 먼저 오는 알림을 넣는 자리([afterTheCreateIsAnswered]).
-     * stub이 없으면 실제 PG 호출 그대로다.
+     * Where a scene runs something beside a payment-pending order: writes and reads before the create goes out
+     * ([whilePaymentPending]), or a callback after the create is answered ([afterTheCreateIsAnswered]). Unstubbed, it is the
+     * real PG call.
      */
     @MockkSpyBean
     private lateinit var pgTransactionService: PgTransactionService
@@ -1367,9 +1371,11 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 과제 6절의 장면 6, 알림이 먼저. PG가 확정의 생성을 받아들인 뒤, 확정의 TX B가 그 답을 반영하기 전에 알림이 온다. 알림의 조회와 TX B가
-     * 결제를 끝내고, 늦게 TX B에 닿은 생성의 답은 끝난 결제에 `Unchanged`다(ADR 0031 규칙 8). 생성이 처리 중이라 했어도 결제를 되돌리지 않는다.
-     * 확정은 TX B가 다시 읽은 끝난 주문으로 답한다. 성공이면 확정 시각이 하나이고 재고는 5 → 3에서 그대로, 실패면 5 → 3 → 5로 한 번만 돌아온다.
+     * Scene 6 of the assignment, callback first. The callback arrives after the PG accepted confirm's create but before confirm's
+     * TX B applies it. The callback's lookup and TX B finish the payment, so the create's answer reaches a finished payment and is
+     * `Unchanged` (ADR 0031 rule 8). A create that said PENDING doesn't move the payment back either. Confirm answers with the
+     * finished order its TX B re-read. On SUCCESS there is one `confirmedAt` and the stock stays at 3 after 5 → 3; on FAILED it
+     * goes 5 → 3 → 5 once.
      */
     @ParameterizedTest
     @CsvSource(
@@ -1429,8 +1435,9 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 과제 6절의 장면 6, 대사가 먼저. 고객의 대사가 결제를 끝낸 뒤 온 알림은 PG에 묻지 않고 돌아가며 아무것도 바꾸지 않는다(ADR 0031 규칙 6, 8).
-     * 확정 시각도 주문의 수정 시각도 대사가 남긴 그대로이고, 실패한 결제의 예약도 다시 돌아오지 않는다.
+     * Scene 6 of the assignment, lookup first. A callback that arrives after the customer's reconcile finished the payment returns
+     * without asking the PG and changes nothing (ADR 0031 rules 6 and 8). `confirmedAt` and the order's `updatedAt` stay as the
+     * reconcile left them, and a failed payment's reservation is not returned a second time.
      */
     @ParameterizedTest
     @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 3", "FAILED, PAYMENT_FAILED, FAILED, 5")
@@ -1473,10 +1480,11 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 과제 6절의 장면 6, 알림과 대사가 함께. 둘 다 결제 중인 주문을 보고 같은 PG 거래를 찾는다. 앞선 쪽의 TX B를 주문을 잠근 채 결제에 반영하기
-     * 앞에서 멈추면 다른 쪽의 TX B는 주문 잠금에서 기다리고, 풀린 뒤 끝난 결제를 다시 읽어 `Unchanged`다(ADR 0031 규칙 8, ADR 0024 규칙 5).
-     * 어느 쪽이 잠금을 먼저 쥐어도 주문은 한 번 바뀐다. 성공이면 확정 시각이 하나이고, 실패면 재고가 5 → 3 → 5로 한 번만 돌아온다. 두 번 돌려주면
-     * 7이다.
+     * Scene 6 of the assignment, a callback and the customer's reconcile together. Both see a payment-pending order and find the
+     * same PG transaction. The first TX B is paused while it holds the order lock, just before it applies the transaction, so the
+     * other TX B waits on that lock. Once released, it re-reads a finished payment and gets `Unchanged` (ADR 0031 rule 8, ADR 0024
+     * rule 5). Whichever side takes the lock first, the order changes once: one `confirmedAt` on SUCCESS, and on FAILED the stock
+     * goes 5 → 3 → 5. Returning the reservation twice would leave 7.
      */
     @ParameterizedTest
     @CsvSource(
@@ -1535,8 +1543,9 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 생성의 응답을 잃어 커머스는 거래 키를 모른다. 그래도 알림은 PG 주문 번호로 조회하므로 그 PG 거래를 찾아 결제를 끝내고, 결제는 PG의 거래 키를
-     * 남긴다(ADR 0031 규칙 4). 생성은 1 그대로다. 실패면 예약이 한 번 돌아와 재고는 5다.
+     * The create's response was lost, so the commerce never learned the transaction key. The callback looks the payment up by its
+     * PG order ID, not by a key, so it still finds the transaction, finishes the payment and records the PG's transaction key
+     * (ADR 0031 rule 4). Create stays at 1. On FAILED the reservation comes back once and the stock is 5.
      */
     @ParameterizedTest
     @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 3", "FAILED, PAYMENT_FAILED, FAILED, 5")
@@ -1624,9 +1633,10 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 확정의 PG 호출이 생성의 답을 받은 바로 뒤, 그 답을 TX B에 넘기기 앞에서 [action]을 한다. PG에는 PG 거래가 생겼고 확정의 TX B는 아직이다.
-     * PG 호출은 어느 트랜잭션에도 들지 않으므로 [action]이 부른 포트는 자기 트랜잭션에서 돈다. [whilePaymentPending]은 생성을 보내기 앞이라
-     * 이 자리가 아니다. Service는 CGLIB 프록시이므로 프록시가 감싼 spy에 stub한다.
+     * Runs [action] right after confirm's create is answered, before the answer goes to TX B: the PG holds a transaction and TX B
+     * hasn't started. The PG call is outside any transaction, so whatever port [action] calls runs in its own, and a `NEVER` port
+     * is allowed. A stub on the TX B bean would run inside the transaction its proxy opened. [whilePaymentPending] runs before the
+     * create goes out, too early for this. The Service is a CGLIB proxy, so the stub goes on the spy it wraps.
      */
     private fun afterTheCreateIsAnswered(action: () -> Unit) {
         val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
