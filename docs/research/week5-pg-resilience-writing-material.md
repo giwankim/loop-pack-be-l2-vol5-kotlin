@@ -124,10 +124,11 @@ Recorded 2026-10-23 from the closing comment of [issue 160](https://github.com/g
 
 ### Landed
 
-Two commits on `feat/reconcile`, on top of `c9144f6`:
+Three commits on `feat/reconcile`, on top of issue 162's `1ca3ef0`:
 
-- [`ff22340`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ff22340) adds the dependencies, the annotations and the fallback, the `resilience4j.*` settings, the test clock and breaker reset, `losesFirstLookupResponses`, the scene 10 tests, and the 1 → 2 counts.
-- The docs commit after it adds the dated notes (ADR 0022 rule 7, ADR 0023 rule 5, payments design 17), the `CODING_STANDARDS.md` entry and this file.
+- [`038474e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/038474e) adds the dependencies, the annotations and the fallback, the `resilience4j.*` settings, the test clock and breaker reset, `losesFirstLookupResponses`, the scene 10 tests, and the 1 → 2 counts.
+- [`2bc05a1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2bc05a1) adds the dated notes (ADR 0022 rule 7, ADR 0023 rule 5, payments design 17), the `CODING_STANDARDS.md` entry and this file.
+- The review commit after them tidies the scene tests after the two-axis review. The recovery scene takes fixture defaults for values it never asserts, `succeeded(payment)` builds through `createPgTransaction`, a misleading loop index is renamed, `TestClock` drops an unused constructor parameter, and a KDoc that said the base class moves the clock is corrected.
 
 ### Acceptance criteria
 
@@ -142,11 +143,11 @@ Two commits on `feat/reconcile`, on top of `c9144f6`:
 - [x] **The unavailable-path counts go from 1 to 2:** `OrderPaymentIntegrationTest`'s unavailable reconcile (503 and stall) and `OrderConfirmationApiTest`'s 503 reconcile. The found, empty and multiple paths stay at 1.
 - [x] **The gateway contract tests pass unchanged:** `PaymentGatewayTest` 96, `ExhaustedPoolPaymentGatewayTest` 1, `ObservedPaymentGatewayTest` 2 and `ConnectTimeoutPaymentGatewayTest` 2 (ran, not skipped), the same counts as before. Their trimmed contexts have no Resilience4j auto-configuration, so the annotations are inert there and the tests still see one HTTP request per call.
 - [x] **Dated notes keep the original text:** ADR 0022 rule 7 and ADR 0023 rule 5 point at ADR 0030. Payments design 17's breaker bullet got one as well, since its "조회 불가" baseline of 1 is now 2. `CODING_STANDARDS.md` records the breaker reset, the test clock, and `losesFirstLookupResponses`.
-- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 72 classes, 871 tests, 0 failures, 0 skips, on the final tree. Executed counts for the changed classes:
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 72 classes, 872 tests, 0 failures, 0 skips, on the final tree (issue 162's 865 plus this ticket's 7). Executed counts for the changed classes:
 
   | Class | Tests |
   | --- | --- |
-  | `OrderPaymentIntegrationTest` | 39 (32 + 7) |
+  | `OrderPaymentIntegrationTest` | 40 (33 + 7) |
   | `OrderConfirmationApiTest` | 45 |
   | `PaymentGatewayTest` | 96 |
   | `HexagonalArchitectureTest` | 7 |

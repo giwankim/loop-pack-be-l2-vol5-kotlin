@@ -11,9 +11,9 @@ import java.time.ZoneId
  * PG 조회의 서킷 브레이커가 OPEN의 기다림을 이 시계로 잰다([TestPgLookupBreakerConfig]). 그래서 테스트가 잠 없이 기다림을 넘는다(ADR 0030 규칙 8).
  * 다른 스레드의 호출도 같은 시계를 읽으므로 옮긴 양은 `@Volatile`이다.
  */
-class TestClock(
-    private val base: Clock = Clock.systemUTC(),
-) : Clock() {
+class TestClock : Clock() {
+    private val base: Clock = systemUTC()
+
     @Volatile
     private var offset: Duration = Duration.ZERO
 

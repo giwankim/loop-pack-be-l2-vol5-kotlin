@@ -25,6 +25,7 @@ import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
+import com.loopers.domain.payment.createPgTransaction
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
@@ -396,9 +397,9 @@ class OrderPaymentIntegrationTest(
      */
     @Test
     fun `after the wait a probe finishes its payment once the PG is back and a second successful lookup closes the breaker`() {
-        val first = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val first = prepareOrder()
         val firstPayment = confirmPending(first)
-        val second = prepareOrder(products = listOf(prepareProduct(price = 3_000, stock = 5)), quantity = 1)
+        val second = prepareOrder()
         val secondPayment = confirmPending(second)
         testPg.losesLookupResponse()
         openPgLookupBreaker(first)
@@ -427,11 +428,11 @@ class OrderPaymentIntegrationTest(
      */
     @ParameterizedTest
     @ValueSource(strings = ["no transaction", "several transactions"])
-    fun `lookups that find no transaction or several are not retried and never open the breaker`(answer: String) {
+    fun `lookups that find no transaction or several are not retried and never open the breaker`(found: String) {
         val product = prepareProduct(price = 1_000, stock = 5)
         prepareOrder(products = listOf(product), quantity = 2)
         val payment = confirmPending()
-        if (answer == "no transaction") {
+        if (found == "no transaction") {
             testPg.hasTransactions(payment.pgOrderId)
         } else {
             testPg.hasTransactions(
@@ -441,11 +442,11 @@ class OrderPaymentIntegrationTest(
             )
         }
 
-        repeat(5) { reconciles ->
+        (1..5).forEach { reconciled ->
             val stored = orderConfirmer.reconcile(user.id, order.id)
 
             assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
-            assertThat(testPg.lookupCount()).isEqualTo(reconciles + 1)
+            assertThat(testPg.lookupCount()).isEqualTo(reconciled)
         }
 
         assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.CLOSED)
@@ -1452,14 +1453,9 @@ class OrderPaymentIntegrationTest(
         return inNewTransaction { paymentFinder.findByOrder(order.id) }
     }
 
-    /** 결제 [payment]의 PG 주문 번호, 금액, 거래 키를 가진 성공한 PG 거래. */
+    /** 결제 [payment]의 PG 주문 번호, 금액, 거래 키를 가진 성공한 PG 거래. 거래 키가 다르면 결제가 충돌로 본다. */
     private fun succeeded(payment: Payment): PgTransaction {
-        return PgTransaction(
-            transactionKey = payment.transactionKey!!,
-            pgOrderId = payment.pgOrderId,
-            amount = payment.amount,
-            status = PgStatus.SUCCESS,
-        )
+        return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = PgStatus.SUCCESS)
     }
 
     /** 죽은 PG에 [order]를 두 번 대사해 브레이커를 연다. 조회는 4다. */

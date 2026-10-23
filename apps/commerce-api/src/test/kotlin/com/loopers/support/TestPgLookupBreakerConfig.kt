@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Bean
  * 설정이 하나로 남고, 컨텍스트 캐시가 갈라지지 않는다.
  *
  * Resilience4j의 Boot 모듈은 `resilience4j.circuitbreaker.*` 설정으로 브레이커를 만들 때 이 customizer를 얹는다. 설정에는 시계를 적을 자리가
- * 없다. 테스트는 [TestClock]을 받아 옮겨 OPEN의 60 s를 잠 없이 넘는다. 시계를 옮기고 되돌리는 것은 테스트 기반 클래스가 맡는다.
+ * 없다. 테스트는 [TestClock]을 받아 옮겨 OPEN의 60 s를 잠 없이 넘는다. 옮긴 시계를 테스트마다 되돌리는 것은 테스트 기반 클래스가 맡는다.
  * Resilience4j의 자동 설정을 들이지 않는 게이트웨이 테스트의 컨텍스트에서는 이 빈들을 읽는 곳이 없어 아무것도 하지 않는다.
  */
 @TestConfiguration(proxyBeanMethods = false)
