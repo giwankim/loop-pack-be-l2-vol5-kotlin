@@ -389,7 +389,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149) | 주문의 네 상태, 결제수단(`PaymentMethod`), 세 전이, 계산되는 결제액, 새 `CK_ORDERS_ON_PAYMENT_STATE`. `orders.paid_amount`를 지웠다. |
 | [150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150) | `PgOrderIdGenerator`와 `Payment.start`, 멱등 키의 규칙과 `utf8mb4_bin` 열, `UK_PAYMENT_ON_PG_ORDER_ID`. |
 | [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. |
-| [152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152) | 결제가 실패하면 예약을 한 번 돌려준다(`StockRestorer`). 생성 전 거절을 TX B가 반영한다. |
+| [152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152) | 결제가 실패하면 예약을 한 번 돌려준다(`StockRestorer`). 생성 전 거절을 TX B가 반영한다. (2026-10-23: 명세 147의 검토 뒤 `StockDeductor`와 `StockRestorer`를 `StockReserver` 하나로 합쳤다. 11.1.) |
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
 | [155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155) | 같은 키의 재요청, `IDEMPOTENCY_KEY_MISMATCH`, `IDEMPOTENCY_KEY_IN_USE`(`PaymentValidator`), 같은 키로 겨룬 삽입의 처리. |
@@ -430,7 +430,7 @@ stateDiagram-v2
 | 결제를 시작한다 | TX A | 확정 전 주문이 검사를 모두 지난다(12.1) | `startPayment()`: 결제 중, 결제수단 PG | `Payment.start`: 결과 미확인으로 새로 만든다 | 품목 수량만큼 뺀다(예약) |
 | PG 거래를 알게 된다 | TX B | `Changed(UNKNOWN, PENDING)` | 그대로 | 처리 중, 거래 키 | 그대로 |
 | 성공 | TX B | `Changed(_, SUCCESS)` | `completePayment()`: 확정, 확정 시각 | 성공, 거래 키 | 그대로. 예약을 소비한다. |
-| 실패 | TX B | `Changed(_, FAILED)` | `failPayment()`: 결제 실패 | 실패. 거래 키는 PG 거래가 있을 때만 있다. | `StockRestorer.restore`가 품목 수량을 한 번 더한다 |
+| 실패 | TX B | `Changed(_, FAILED)` | `failPayment()`: 결제 실패 | 실패. 거래 키는 PG 거래가 있을 때만 있다. | `StockReserver.release`가 품목 수량을 한 번 더한다 |
 | 바뀌지 않음, 충돌 | TX B | `Unchanged`, `Conflicted` | 그대로 | 그대로. 충돌은 WARN을 남긴다. | 그대로 |
 
 - 주문은 `Changed`의 `to`가 성공이나 실패일 때만 바뀐다(`OrderPaymentSteps.applyResult`, 2.5). `Changed(UNKNOWN, PENDING)`도 `Changed`이지만 주문을 바꾸지 않는다.
@@ -462,13 +462,13 @@ stateDiagram-v2
 | `OrderConfirmer.confirm`, `OrderPaymentReconciler.reconcile` | `OrderPaymentService` | `NEVER` | `OrderApi` |
 | 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSteps` | 새 트랜잭션 | `OrderPaymentService` |
 | `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentService`(12.1의 10) |
-| `PaymentStarter.start` | `PaymentModifyService` | TX A에 참여 | TX A |
-| `PaymentReconciler.reconcile`, `reject` | `PaymentModifyService` | TX B에 참여 | TX B |
+| `PaymentRecorder.start`, `reconcile`, `reject` | `PaymentModifyService` | TX A, TX B에 참여 | TX A, TX B |
 | `PaymentFinder.findByOrder`, `findAllByOrders` | `PaymentQueryService` | 읽기 전용 | TX A, TX B, 대사, 주문 조회 |
 | `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentService` |
-| `StockDeductor.deduct`, `StockRestorer.restore` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
+| `StockReserver.reserve`, `release` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
 
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
+- `PaymentRecorder`와 `StockReserver`도 같은 까닭으로 포트 하나다. 다른 슬라이스의 조율이 부르는 쓰기 포트는 구현하는 Service와 부르는 슬라이스의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
 
 ### 11.2 잠금
 
@@ -481,7 +481,7 @@ stateDiagram-v2
 | 확정과 대사의 TX B | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) | 결제 |
 
 - [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 전역 차례 맨 앞에 주문을 둔 것이다([ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md), ADR 0028 규칙 4). 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제)와는 상품 행에서 차례를 지킨다. 행 잠금을 3초 안에 얻지 못하면 409 `CONCURRENT_REQUEST`이고 아무것도 바뀌지 않는다(`LockFailureApiTest`).
-- 결제 행은 잠그지 않는다. 결제를 바꾸는 트랜잭션(TX A의 INSERT, TX B의 UPDATE)이 모두 주문을 먼저 잠그므로, 주문 잠금 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 본다(ADR 0028 규칙 4). 그래서 TX B는 TX A가 읽은 결제를 합치지 않고, 주문 식별자로 결제를 다시 읽어 반영한다(`PaymentReconciler`).
+- 결제 행은 잠그지 않는다. 결제를 바꾸는 트랜잭션(TX A의 INSERT, TX B의 UPDATE)이 모두 주문을 먼저 잠그므로, 주문 잠금 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 본다(ADR 0028 규칙 4). 그래서 TX B는 TX A가 읽은 결제를 합치지 않고, 주문 식별자로 결제를 다시 읽어 반영한다(`PaymentRecorder`).
 - 포인트 계정은 확정도 대사도 읽지 않는다. 계정을 잠그는 것은 충전뿐이다(ADR 0027, `PointChargerConcurrencyTest`).
 - 테스트가 붙드는 것:
   - 같은 주문의 확정은 주문 행에서 기다린다(`OrderConfirmerConcurrencyTest`의 `confirming an order held by another confirmation waits, then is rejected as a key mismatch and reserves nothing`).
@@ -525,8 +525,8 @@ stateDiagram-v2
 | 5 | TX A | 결제수단이 PG(`Order.paysThroughPg`). 결제를 시작한 키면 재요청(12.2), 다른 키면 거절 | 409 `IDEMPOTENCY_KEY_MISMATCH` |
 | 6 | TX A | 그 밖의 주문이 확정 전인지(`Order.ensureDraft`). 결제수단이 POINT인 주문은 확정된 주문이다 | 409 `ORDER_ALREADY_CONFIRMED` |
 | 7 | TX A | 확정 전 주문에 다른 결제가 쓴 키(`PaymentValidator.validateForStart`) | 409 `IDEMPOTENCY_KEY_IN_USE` |
-| 8 | TX A | 재고 예약(`StockDeductor.deduct`). 주문할 수 없는 상품이 재고 부족보다 앞선다. | 404 `ORDER_PRODUCT_NOT_AVAILABLE`, 409 `INSUFFICIENT_STOCK` |
-| 9 | TX A | 결제 시작(`PaymentStarter.start`). PG가 받는 64비트를 넘는 금액 | 400 |
+| 8 | TX A | 재고 예약(`StockReserver.reserve`). 주문할 수 없는 상품이 재고 부족보다 앞선다. | 404 `ORDER_PRODUCT_NOT_AVAILABLE`, 409 `INSUFFICIENT_STOCK` |
+| 9 | TX A | 결제 시작(`PaymentRecorder.start`). PG가 받는 64비트를 넘는 금액 | 400 |
 | 10 | TX A의 결제 저장 | 같은 키로 겨룬 다른 확정 전 주문이 먼저 커밋해, 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸린다 | 409 `IDEMPOTENCY_KEY_IN_USE` |
 
 - 1–3은 주문을 읽기 전이다. 형식이 틀린 키는 없는 주문에도 같은 400이다(`confirming with a malformed Idempotency-Key returns 400 naming the broken rule before anything is reserved or sent`). 헤더 없음은 `MissingRequestHeaderException`이고 400으로 옮긴다.
@@ -535,7 +535,7 @@ stateDiagram-v2
 - 6은 `ensureDraft()`를 7보다 먼저 부른다. 8 뒤의 `startPayment()` 안에서만 돌면 상품이 삭제된, 포인트로 확정된 주문이 `ORDER_PRODUCT_NOT_AVAILABLE`로 답한다([issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155)). 5와 6의 주문은 겹치지 않으므로 둘의 차례는 답을 바꾸지 않는다. (2026-10-23: 명세 147의 검토에서 결제수단을 두 번 견주던 TX A를 `Order.paysThroughPg`와 `ensureDraft()`로 바꾸며 5와 6의 차례를 바꿨다. 전에는 POINT를 먼저 보았다.)
 - 7은 8보다 앞서야 한다. 재고가 모자란 주문에 남이 쓴 키를 보내도 `IDEMPOTENCY_KEY_IN_USE`다. 사전 조건을 예약 뒤로 옮긴 변이 실행에서는 `INSUFFICIENT_STOCK`이 나왔다(issue 155, `confirming a draft with a key another user's order used returns 409 IDEMPOTENCY_KEY_IN_USE before reserving`의 재고 1 경우).
 - 8–10의 거절은 TX A를 되돌린다. 주문은 `updatedAt`까지 확정 전 그대로, 재고도 그대로다. 결제가 없으니 키도 쓰이지 않아 같은 키로 다시 확정할 수 있다(`a later item shortage rolls back every reservation and sends nothing, and the same key confirms after replenishment`). TX A의 쓰기가 DB에 나간 뒤에 실패해도 같다(`OrderConfirmerRollbackTest`, `OrderConfirmationApiTest`의 `a failure on TX A's last write at commit undoes its reservations and payment, sends nothing and permits retry`).
-- 10은 7을 함께 지난 두 확정 전 주문의 경합이다. 늦은 쪽의 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸려 TX A가 예약과 함께 되돌아간다. 결제의 식별자는 `IDENTITY`라 삽입은 커밋이 아니라 `PaymentStarter.start`의 저장에서 나간다. 조율하는 서비스가 `DataIntegrityViolationException`을 트랜잭션 밖에서 잡아 `validateForStart`를 다시 부른다. MySQL은 앞선 쪽이 커밋한 뒤에야 위반을 알리므로 앞선 쪽의 결제가 보이고, 7과 같은 409가 된다. 키가 여전히 비어 있으면 다른 제약의 위반이라 그대로 던진다(ADR 0025 규칙 3, `two drafts racing with one key make one payment and the loser is rejected as in use with its stock untouched`).
+- 10은 7을 함께 지난 두 확정 전 주문의 경합이다. 늦은 쪽의 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸려 TX A가 예약과 함께 되돌아간다. 결제의 식별자는 `IDENTITY`라 삽입은 커밋이 아니라 `PaymentRecorder.start`의 저장에서 나간다. 조율하는 서비스가 `DataIntegrityViolationException`을 트랜잭션 밖에서 잡아 `validateForStart`를 다시 부른다. MySQL은 앞선 쪽이 커밋한 뒤에야 위반을 알리므로 앞선 쪽의 결제가 보이고, 7과 같은 409가 된다. 키가 여전히 비어 있으면 다른 제약의 위반이라 그대로 던진다(ADR 0025 규칙 3, `two drafts racing with one key make one payment and the loser is rejected as in use with its stock untouched`).
   - 위반에서 제약의 이름을 읽지 않는다. 그 이름은 Hibernate의 예외와 MySQL의 메시지 꼴에 기댄다.
   - 대가가 하나 있다. 다른 제약의 위반과 같은 키의 커밋이 겹치면 그 위반도 `IDEMPOTENCY_KEY_IN_USE`가 된다. 그 키는 이미 쓰였으므로 틀린 답은 아니다.
 - 9는 2단계에서 더한 거절이다(15.3).

@@ -4,7 +4,7 @@
 
 표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
-이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockDeductor`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockReserver`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ## 브랜드 (Brand)
 
@@ -75,7 +75,7 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockDeductor.deduct`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 확정의 TX A에서 주문과 결제의 변경과 같은 트랜잭션이다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 포인트는 건드리지 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 확정은 상품을 읽지 않는다. `deduct`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 차감한 상품 가운데 하나라도 품절이 되면 `deduct`가 고객 상품 목록이 바뀌었다고 표시한다. 확정은 표시하지 않는다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
+주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockReserver.reserve`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 확정의 TX A에서 주문과 결제의 변경과 같은 트랜잭션이다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 포인트는 건드리지 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 확정은 상품을 읽지 않는다. `reserve`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 예약한 상품 가운데 하나라도 품절이 되면 `reserve`가 고객 상품 목록이 바뀌었다고 표시한다. 확정은 표시하지 않는다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
