@@ -26,6 +26,11 @@ dependencies {
     implementation(libs.springBootStarterRestclient)
     implementation(libs.httpclient5)
 
+    // PG lookup resilience: 두 조회에만 재시도 한 번과 서킷 브레이커 pg-lookup을 애노테이션으로 씌운다(ADR 0030)
+    // AspectJ는 지금 JPA를 거쳐서만 들어오는데, 없으면 애노테이션이 조용히 꺼지므로 직접 선언한다
+    implementation(libs.resilience4j.springBoot4)
+    implementation(libs.springBootStarterAspectj)
+
     // admin boundary: 통합 테스트 전용(src/test AdminSecurityConfig), 운영 코드에는 Spring Security 없음
     testImplementation(libs.springBootStarterSecurity)
     testImplementation(libs.springBootStarterSecurityTest)

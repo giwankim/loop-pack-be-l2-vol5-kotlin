@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.CommerceApiApplication
+import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.order.OrderPaymentSteps
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
@@ -20,13 +21,16 @@ import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.PaymentMethod
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.payment.InvalidPaymentException
+import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.product.InsufficientStockException
+import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
+import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -36,6 +40,8 @@ import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -46,6 +52,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
+import org.springframework.aop.support.AopUtils
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.context.logging.LoggingApplicationListener
 import org.springframework.context.ConfigurableApplicationContext
@@ -53,6 +60,7 @@ import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import org.wiremock.spring.InjectWireMock
+import java.time.Duration
 
 /**
  * 고객의 확정이 PG로 결제하는 장면과, 대사가 끝나지 않은 결제의 결과를 되찾는 장면을 실제 MySQL과 테스트 PG로 확인한다(ADR 0024, 0028).
@@ -74,6 +82,8 @@ class OrderPaymentIntegrationTest(
     private val productFinder: ProductFinder,
     private val pointAccountFinder: PointAccountFinder,
     private val paymentGateway: PaymentGateway,
+    private val circuitBreakerRegistry: CircuitBreakerRegistry,
+    private val pgLookupClock: TestClock,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         private const val IDEMPOTENCY_KEY = "confirm-key-1"
@@ -237,7 +247,8 @@ class OrderPaymentIntegrationTest(
 
     /**
      * 조회할 수 없는 것은 PG 거래가 없다는 뜻이 아니다(ADR 0022 규칙 3). 대사는 PG가 503으로 답하든 응답 한도를 넘겨 멈추든 결제와 예약을
-     * 그대로 두고 저장된 상태로 답한다(ADR 0028 규칙 3). 조회도 생성도 다시 보내지 않는다.
+     * 그대로 두고 저장된 상태로 답한다(ADR 0028 규칙 3). 생성은 다시 보내지 않는다. 조회는 한 번 다시 시도하므로 PG가 받은 조회는 2다
+     * (ADR 0030 규칙 4). 브레이커가 열리기에는 표본이 모자라다.
      */
     @ParameterizedTest
     @ValueSource(strings = ["503", "stall"])
@@ -264,7 +275,7 @@ class OrderPaymentIntegrationTest(
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
         assertThat(testPg.createCount()).isOne()
-        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
@@ -273,6 +284,173 @@ class OrderPaymentIntegrationTest(
             assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
         }
+    }
+
+    /**
+     * 과제 6절의 장면 10, 제한된 재조회. 조회 불가 한 번은 100 ms 뒤 한 번 다시 시도하고, 같은 대사가 그 시도가 찾은 PG 거래로 결제를 끝낸다
+     * (ADR 0030 규칙 3, 4). PG가 받은 조회는 정확히 2, 생성은 1 그대로다. 게이트웨이는 Resilience4j의 aspect가 감싼 AOP 프록시다. AspectJ가
+     * 없거나 애노테이션이 조용히 꺼지면 조회가 1이고 결제가 처리 중으로 남아 이 테스트가 실패한다(규칙 8).
+     */
+    @Test
+    fun `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile`() {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = "PENDING",
+        )
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        testPg.losesFirstLookupResponses(times = 1)
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
+
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
+
+        assertThat(AopUtils.isAopProxy(paymentGateway)).isTrue()
+        assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(PaymentStatus.SUCCESS)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(3)
+        }
+    }
+
+    /**
+     * 과제 6절의 장면 10, timeout과 회로 OPEN. 죽은 PG에 대사를 두 번 하면 두 조회의 시도 넷이 모두 실패해 브레이커 `pg-lookup`이 열린다
+     * (최소 호출 4, 실패율 50 %). 열린 동안의 대사는 PG에 묻지 않는다. 세 대사 모두 저장된 상태로 답하고 결제와 예약은 그대로다(ADR 0030 규칙 6, 10).
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["lost response", "503"])
+    fun `two reconciles against a dead PG open the lookup breaker and a third answers the stored state without a lookup`(
+        dead: String,
+    ) {
+        val product = prepareProduct(price = 1_000, stock = 5)
+        prepareOrder(products = listOf(product), quantity = 2)
+        val payment = confirmPending()
+        if (dead == "503") {
+            testPg.answersList(payment.pgOrderId, httpStatus = 503)
+        } else {
+            testPg.losesLookupResponse()
+        }
+
+        val againstDeadPg = List(2) { orderConfirmer.reconcile(user.id, order.id) }
+
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
+
+        val whileOpen = orderConfirmer.reconcile(user.id, order.id)
+
+        (againstDeadPg + whileOpen).forEach { answer ->
+            assertThat(answer.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            assertThat(answer.paymentStatus).isEqualTo(PaymentStatus.PENDING)
+        }
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStillPending(order, product, stock = 3)
+    }
+
+    /**
+     * 과제 6절의 장면 10, 재차단. 열린 브레이커는 60 s 동안 PG에 묻지 않는다. 테스트 시계를 59 s 옮긴 대사도 조회 0이다. 60 s를 넘긴 뒤의 대사가
+     * HALF_OPEN의 탐색 둘을 쓰고, PG가 여전히 죽었으면 두 탐색이 모두 실패해 브레이커가 다시 열린다(ADR 0030 규칙 6, 8). 결제는 실패로 끝나지 않는다.
+     */
+    @Test
+    fun `the open breaker sends no lookup within its 60 s wait and a probe against a still dead PG opens it again`() {
+        val product = prepareProduct(price = 1_000, stock = 5)
+        prepareOrder(products = listOf(product), quantity = 2)
+        confirmPending()
+        testPg.losesLookupResponse()
+        openPgLookupBreaker()
+
+        pgLookupClock.advance(Duration.ofSeconds(59))
+        val withinWait = orderConfirmer.reconcile(user.id, order.id)
+
+        assertThat(testPg.lookupCount()).isEqualTo(4)
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
+
+        pgLookupClock.advance(Duration.ofSeconds(2))
+        val probing = orderConfirmer.reconcile(user.id, order.id)
+
+        listOf(withinWait, probing).forEach { answer ->
+            assertThat(answer.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            assertThat(answer.paymentStatus).isEqualTo(PaymentStatus.PENDING)
+        }
+        assertThat(testPg.lookupCount()).isEqualTo(6)
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStillPending(order, product, stock = 3)
+    }
+
+    /**
+     * 과제 6절의 장면 10, 복구. 60 s를 넘긴 뒤 PG가 살아났으면 탐색한 대사가 결제를 끝내고 브레이커는 HALF_OPEN에 머문다. 결제 중인 다른 주문의
+     * 대사가 두 번째로 성공한 조회가 되면 브레이커가 닫힌다(ADR 0030 규칙 6). PG가 살아난 것은 두 PG 주문 번호의 목록 조회 스텁이다. 끊는 스텁과
+     * 우선순위가 같으면 WireMock은 나중에 더한 스텁으로 답한다.
+     */
+    @Test
+    fun `after the wait a probe finishes its payment once the PG is back and a second successful lookup closes the breaker`() {
+        val first = prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val firstPayment = confirmPending(first)
+        val second = prepareOrder(products = listOf(prepareProduct(price = 3_000, stock = 5)), quantity = 1)
+        val secondPayment = confirmPending(second)
+        testPg.losesLookupResponse()
+        openPgLookupBreaker(first)
+        testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
+        testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
+        pgLookupClock.advance(Duration.ofSeconds(61))
+
+        val probed = orderConfirmer.reconcile(first.userId, first.id)
+
+        assertThat(probed.order.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(probed.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.HALF_OPEN)
+
+        val closing = orderConfirmer.reconcile(second.userId, second.id)
+
+        assertThat(closing.order.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.CLOSED)
+        assertThat(testPg.lookupCount()).isEqualTo(6)
+        assertThat(testPg.createCount()).isEqualTo(2)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+    }
+
+    /**
+     * 실패의 조건. PG 거래가 없다는 답(`null`)과 PG 거래가 여럿이라는 답은 PG가 답한 것이라 조회 불가가 아니다. 다시 시도하지 않으므로 대사마다
+     * 조회는 1이고, 브레이커의 실패가 아니므로 최소 호출 4를 넘긴 다섯 번째 대사도 PG에 닿는다(ADR 0030 규칙 4). 결제는 처리 중 그대로다.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["no transaction", "several transactions"])
+    fun `lookups that find no transaction or several are not retried and never open the breaker`(answer: String) {
+        val product = prepareProduct(price = 1_000, stock = 5)
+        prepareOrder(products = listOf(product), quantity = 2)
+        val payment = confirmPending()
+        if (answer == "no transaction") {
+            testPg.hasTransactions(payment.pgOrderId)
+        } else {
+            testPg.hasTransactions(
+                payment.pgOrderId,
+                succeeded(payment),
+                pgTransaction(payment.pgOrderId, amount = 2_000, status = PgStatus.SUCCESS, transactionKey = "20261022:TR:other"),
+            )
+        }
+
+        repeat(5) { reconciles ->
+            val stored = orderConfirmer.reconcile(user.id, order.id)
+
+            assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
+            assertThat(testPg.lookupCount()).isEqualTo(reconciles + 1)
+        }
+
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.CLOSED)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        assertStillPending(order, product, stock = 3)
     }
 
     /**
@@ -1262,6 +1440,46 @@ class OrderPaymentIntegrationTest(
     private fun stopBeforeSendingTheCreate() {
         val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
         every { target.create(any(), any()) } throws ProcessStopped() andThenAnswer { callOriginal() }
+    }
+
+    /**
+     * [order]를 처리 중인 PG 거래로 받아들여진 생성으로 확정해 결제 중인 주문으로 두고, 새 트랜잭션에서 읽은 그 결제를 돌려준다. 거래 키와
+     * PG 주문 번호는 결제에서 읽는다.
+     */
+    private fun confirmPending(order: Order = this.order): Payment {
+        confirmOrder(testPg, order, pgStatus = "PENDING")
+
+        return inNewTransaction { paymentFinder.findByOrder(order.id) }
+    }
+
+    /** 결제 [payment]의 PG 주문 번호, 금액, 거래 키를 가진 성공한 PG 거래. */
+    private fun succeeded(payment: Payment): PgTransaction {
+        return PgTransaction(
+            transactionKey = payment.transactionKey!!,
+            pgOrderId = payment.pgOrderId,
+            amount = payment.amount,
+            status = PgStatus.SUCCESS,
+        )
+    }
+
+    /** 죽은 PG에 [order]를 두 번 대사해 브레이커를 연다. 조회는 4다. */
+    private fun openPgLookupBreaker(order: Order = this.order) {
+        repeat(2) { orderConfirmer.reconcile(order.userId, order.id) }
+
+        assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
+    }
+
+    private fun pgLookupBreaker(): CircuitBreaker {
+        return circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP)
+    }
+
+    /** 브레이커도 시간 초과도 결제를 실패로 끝내거나 예약을 돌려주지 않는다. 새 트랜잭션에서 [order]와 결제, [product]의 재고를 다시 읽는다. */
+    private fun assertStillPending(order: Order, product: Product, stock: Int) {
+        inNewTransaction {
+            assertThat(orderFinder.find(order.userId, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(PaymentStatus.PENDING)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
     }
 
     /** PG 주문 번호 [pgOrderId]로 조회되는 [amount]원 PG 거래. 거래 키는 따로 넘기지 않으면 장면의 생성 스텁이 쓰는 [TRANSACTION_KEY]다. */

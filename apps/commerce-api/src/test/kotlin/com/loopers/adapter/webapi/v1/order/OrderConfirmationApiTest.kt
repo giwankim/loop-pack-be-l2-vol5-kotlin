@@ -314,7 +314,7 @@ class OrderConfirmationApiTest(
 
     /**
      * PG를 조회할 수 없는 것은 PG 거래가 없다는 뜻이 아니다. 대사는 아무것도 바꾸지 않고 결제 중인 주문으로 202와 `Location`을 돌려주며,
-     * 본문은 첫 확정과 상세와 같다(ADR 0028 규칙 3). 생성은 다시 보내지 않는다.
+     * 본문은 첫 확정과 상세와 같다(ADR 0028 규칙 3). 생성은 다시 보내지 않는다. 조회는 한 번 다시 시도하므로 PG가 받은 조회는 2다(ADR 0030 규칙 4).
      */
     @Test
     fun `reconciling while the PG lookup is unavailable returns 202 with the location and changes nothing`() {
@@ -335,7 +335,7 @@ class OrderConfirmationApiTest(
         assertThat(reconciled.json()).isEqualTo(accepted.json())
         assertThat(requestDetail(orderId).json()).isEqualTo(accepted.json())
         assertThat(testPg.createCount()).isOne()
-        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
         assertStock(product, 8)
     }

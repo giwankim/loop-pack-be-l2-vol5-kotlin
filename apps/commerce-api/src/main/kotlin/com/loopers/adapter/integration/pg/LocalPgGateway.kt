@@ -11,6 +11,9 @@ import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
 import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker
+import io.github.resilience4j.retry.annotation.Retry
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -41,6 +44,12 @@ import tools.jackson.module.kotlin.jacksonMapperBuilder
  * [RestClientException], so the call surfaces as outcome unknown or unavailable although the fault is ours. Port exceptions
  * thrown inside `exchange` also show up as errors on that call's observation.
  *
+ * Each lookup is retried once and both share one circuit breaker, [PG_LOOKUP] (ADR 0030). The create is wrapped by neither, so
+ * it is still sent at most once. The Resilience4j aspects proxy this bean, so nothing inside the class calls the lookups: a
+ * self-invocation would skip them. The retry wraps the breaker, Resilience4j's default aspect order, so every HTTP attempt is
+ * one breaker sample. An open breaker's [CallNotPermittedException] is not retried and leaves through [rejectedByOpenBreaker]
+ * as a [PgUnavailableException], so no Resilience4j type crosses the port.
+ *
  * The `RestClient` is built from Boot's preconfigured `RestClient.Builder`, which already records PG calls as observations
  * when an observation registry is present. On top of it go the base URL, the `X-USER-ID` header, the request factory from
  * [LocalPgGatewayConfig] and a strict PG-only mapper.
@@ -53,6 +62,12 @@ class LocalPgGateway(
     properties: PgProperties,
 ) : PaymentGateway {
     companion object {
+        /**
+         * The retry and the circuit breaker the two lookups share (ADR 0030). Their settings are under `resilience4j.*` in
+         * `application.yml`.
+         */
+        const val PG_LOOKUP = "pg-lookup"
+
         /** Carries the synthetic account the PG contract requires. Sent on every request. */
         private const val USER_ID_HEADER = "X-USER-ID"
 
@@ -122,6 +137,8 @@ class LocalPgGateway(
         throw PgOutcomeUnknownException("HTTP $status")
     }
 
+    @Retry(name = PG_LOOKUP, fallbackMethod = "rejectedByOpenBreaker")
+    @CircuitBreaker(name = PG_LOOKUP)
     override fun retrieveTransaction(transactionKey: String): PgTransaction? {
         return try {
             restClient.get()
@@ -149,6 +166,8 @@ class LocalPgGateway(
         return response.readPgTransaction()
     }
 
+    @Retry(name = PG_LOOKUP, fallbackMethod = "rejectedByOpenBreaker")
+    @CircuitBreaker(name = PG_LOOKUP)
     override fun retrieveTransactionByPgOrderId(pgOrderId: String): PgTransaction? {
         return try {
             restClient.get()
@@ -176,6 +195,16 @@ class LocalPgGateway(
         }
 
         return transactions.singleOrNull()
+    }
+
+    /**
+     * The retry's fallback for both lookups. Resilience4j picks it only for a [CallNotPermittedException], the open breaker's
+     * rejection, which the retry does not retry. Every other exception, a [PgUnavailableException] after the last attempt
+     * included, matches no fallback and passes through as is. The breaker has no fallback of its own: one would run inside the
+     * retry and turn the rejection into an exception the retry retries.
+     */
+    private fun rejectedByOpenBreaker(lookupKey: String, rejection: CallNotPermittedException): PgTransaction? {
+        throw PgUnavailableException("circuit open")
     }
 }
 
