@@ -7,8 +7,7 @@ import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentReconciler
 import com.loopers.application.payment.provided.PaymentStarter
 import com.loopers.application.payment.provided.PaymentValidator
-import com.loopers.application.product.provided.StockDeductor
-import com.loopers.application.product.provided.StockRestorer
+import com.loopers.application.product.provided.StockReserver
 import com.loopers.domain.order.Order
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
@@ -33,8 +32,7 @@ class OrderPaymentSteps(
     private val orderRepository: OrderRepository,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
-    private val stockDeductor: StockDeductor,
-    private val stockRestorer: StockRestorer,
+    private val stockReserver: StockReserver,
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
     private val paymentStarter: PaymentStarter,
@@ -56,7 +54,7 @@ class OrderPaymentSteps(
      *    보낸다(ADR 0024 규칙 2).
      *
      * 1–4는 상품을 읽기 전이다. 잠금은 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 바뀌면)의 차례다(ADR 0028 규칙 4). 상품은
-     * [StockDeductor]가, revision은 커밋 앞의 훅이 잠근다. 결제는 잠그지 않는다. 결제를 바꾸는 트랜잭션이 모두 주문을 먼저 잠그므로 주문 잠금
+     * [StockReserver.reserve]가, revision은 커밋 앞의 훅이 잠근다. 결제는 잠그지 않는다. 결제를 바꾸는 트랜잭션이 모두 주문을 먼저 잠그므로 주문 잠금
      * 뒤의 일반 읽기가 가장 최근에 커밋된 결제를 보고, 새 결제는 새 행으로 들어간다.
      */
     fun startPayment(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
@@ -114,7 +112,7 @@ class OrderPaymentSteps(
      *   결제에 실패한 주문으로 가는 것은 한 번이고, 끝난 결제는 같은 답에 `Unchanged`라 다시 실패로 가지 않는다(ADR 0026 규칙 3).
      * - 처리 중, 바뀌지 않음, 충돌이면 주문은 그대로다.
      *
-     * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockRestorer]가,
+     * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockReserver.release]가,
      * revision은 커밋 앞의 훅이 잠근다. 결제는 주문 잠금 뒤의 일반 읽기로 가장 최근에 커밋된 것을 본다.
      */
     private fun applyResult(order: Order, result: ReconcileResult): OrderInfo {
@@ -124,7 +122,7 @@ class OrderPaymentSteps(
 
                 PaymentStatus.FAILED -> {
                     order.failPayment()
-                    stockRestorer.restore(order.productQuantities)
+                    stockReserver.release(order.productQuantities)
                 }
 
                 PaymentStatus.UNKNOWN, PaymentStatus.PENDING -> Unit
@@ -137,7 +135,7 @@ class OrderPaymentSteps(
     }
 
     /**
-     * 품목의 재고를 상품 슬라이스가 한 번에 예약한다. 예약은 재고에서 미리 빼 두는 것이라 차감과 같은 포트를 쓴다(ADR 0026).
+     * 품목의 재고를 상품 슬라이스가 한 번에 예약한다. 예약은 재고에서 미리 빼 두는 것이다(ADR 0026).
      * 상품 행의 잠금과 없는 상품의 거절은 그 슬라이스가 맡으므로 확정은 상품을 읽지 않는다(ADR 0018). 삭제와 재고 부족이 함께면 품목 차례와 무관하게
      * 없는 상품의 거절이 앞선다(설계 15).
      *
@@ -147,7 +145,7 @@ class OrderPaymentSteps(
      */
     private fun reserveStock(order: Order) {
         try {
-            stockDeductor.deduct(order.productQuantities)
+            stockReserver.reserve(order.productQuantities)
         } catch (e: CoreException) {
             if (e.errorType == ErrorType.PRODUCT_NOT_FOUND) {
                 throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)

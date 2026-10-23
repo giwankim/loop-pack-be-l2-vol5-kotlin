@@ -23,7 +23,7 @@ interface ProductFinder {
     /**
      * [productId]가 가리키는 상품. 없거나 삭제됐으면 null이다. 주문 생성이 품목의 상품을 읽을 때 부른다(포인트·주문 설계 2).
      * 주문은 없음을 정상 결과로 받아 자기 오류로 옮기므로 [find]처럼 던지지 않고, null일 수 있다는 것을 이름이 말한다(ADR 0014).
-     * 생성은 상품을 바꾸지 않으므로 잠그지 않는다. 확정은 상품을 읽지 않고, 확정의 [StockDeductor]가 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
+     * 생성은 상품을 바꾸지 않으므로 잠그지 않는다. 확정은 상품을 읽지 않고, 확정의 [StockReserver.reserve]가 [findForUpdateOrNull]로 상품 행을 잠가 읽는다(ADR 0018).
      *
      * 브랜드를 보지 않는 까닭은 [findForUpdateOrNull]과 같다. 삭제되지 않은 상품의 브랜드는 삭제되지 않았다.
      * [find]처럼 브랜드는 지연 프록시로 남는다. 주문은 상품의 이름과 단가만 쓴다.
@@ -42,7 +42,7 @@ interface ProductFinder {
     fun findForUpdate(productId: Long): Product
 
     /**
-     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 재고를 예약하는 [StockDeductor]와 돌려주는 [StockRestorer]가 품목의
+     * [productId] 상품을 잠가 읽는다. 없거나 삭제됐으면 null이다. 재고를 예약하고 돌려주는 [StockReserver]가 품목의
      * 상품을 처음 읽을 때 부른다(ADR 0018). 예약은 모든 상품을 잠가 읽은 뒤에야 없는 상품을 거절하고, 돌려주기는 그 상품을 건너뛰므로
      * [findForUpdate]처럼 던지지 않는다.
      *
