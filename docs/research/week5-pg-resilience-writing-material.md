@@ -240,3 +240,60 @@ Every scene passed on its first run, since no production change was needed. Each
 
 - **The payments design doc ticket (165)** should pair the callback half of scene 6 with these four tests and record the mutation results above.
 - **Issue 160's breaker** landed first, and these scenes were rebased onto it. None of them has an unavailable lookup, so their lookup counts did not move, and the base class resets the breaker before each one.
+
+## Issue 164: operators see the open lookup breaker, and the PG is told to resend
+
+Recorded 2026-10-23 from the closing comment of [issue 164](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/164). The rules are [ADR 0030](../adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) rule 7 and [ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) rule 6, and the scenes are the "PG 조회의 회복" section and 이음매 1's WARN and health bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The code is:
+
+- [`LocalPgGatewayConfig`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGatewayConfig.kt): the state-transition WARN
+- [`application.yml`](../../apps/commerce-api/src/main/resources/application.yml): the health indicator, the contributor switch and the `pg-lookup` health group
+- [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt) and [`PaymentApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/payment/PaymentApiTest.kt)
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): reading the WARN, the health view and the group, and the callbacks that open the breaker
+
+### Landed
+
+Two commits on `worktree-issue-164`, written on `feat/reconcile`'s `e48039f` (issue 160) and rebased onto `80431bc` (issue 163):
+
+- [`6a7b657`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/6a7b657) is the WARN consumer, the health settings and group, the tests and the standards entries.
+- The commit after it appends this section.
+
+### Acceptance criteria
+
+- [x] **Each transition logs exactly one WARN, and a reconcile that changes no state logs none.** One scene walks two pending orders through the whole cycle against a dead PG and then a recovered one. The first dead reconcile (2 samples, under the minimum of 4) and the reconcile while OPEN (no lookup) log nothing. The WARNs are, in order, CLOSED → OPEN, OPEN → HALF_OPEN, HALF_OPEN → OPEN, OPEN → HALF_OPEN and HALF_OPEN → CLOSED, each with `name=pg-lookup`, `from=` and `to=`. `satisfiesExactly` over every WARN on the adapter package's logger is what proves "none" for the quiet reconciles. 8 lookups in all.
+- [x] **With the breaker OPEN, overall health is UP and `pg-lookup` reports OPEN.** `HealthEndpoint.health()` is UP. Under the `pg-lookup` group, the `circuitBreakers` component shows `pg-lookup` with status `CIRCUIT_OPEN` and `state: OPEN`.
+- [x] **The meter registry has the state gauge.** `resilience4j.circuitbreaker.state{name=pg-lookup,state=open}` is 1.0 and `state=closed` is 0.0.
+- [x] **A callback during OPEN answers 503 `PG_UNAVAILABLE` with 0 lookups, leaving the payment and the reservation unchanged; after the wait the same callback answers 200 and finishes the payment.** In `PaymentApiTest`, two callbacks against a PG that loses lookup responses open the breaker (4 lookups). A third answers 503 `PG_UNAVAILABLE` and the count stays at 4. The order detail is byte-for-byte unchanged and the stock stays at 8 of 10. After 61 s on the test clock, with the PG answering SUCCESS, the same callback answers 200. The order is CONFIRMED, there are 5 lookups and 1 create, and the stock is 8.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes:** 73 classes, **905 tests, 0 failures, 0 skipped** (901 on `e48039f` plus 4, before the rebase onto issue 163). Rebased onto `80431bc`, the same command runs 73 classes, **917 tests** (913 plus 4), 0 failures, 0 skipped, with `OrderPaymentIntegrationTest` at 62. Executed counts for the changed classes:
+
+  | Class | Tests |
+  | --- | --- |
+  | `OrderPaymentIntegrationTest` | 50 (47 + 3) |
+  | `PaymentApiTest` | 23 (22 + 1) |
+  | `OrderConfirmationApiTest` | 45 |
+  | `PaymentGatewayTest` | 96 |
+  | `HexagonalArchitectureTest` | 7 |
+  | `CommerceApiContextTest` | 1 |
+
+### Decisions made while implementing
+
+- **The WARN is a `RegistryEventConsumer<CircuitBreaker>` bean in `LocalPgGatewayConfig`.** The Boot module gathers every such bean into the registry's composite consumer, and the registry calls it for each breaker it creates from `resilience4j.circuitbreaker.instances`. The consumer subscribes to `onStateTransition` only for `pg-lookup`, and again on a replaced entry. The log message is Korean like its neighbours, and the KDoc is English.
+- **The base class's reset never reaches the captured log.** `CircuitBreaker.reset()` from OPEN publishes an OPEN → CLOSED transition, so the reset in `BaseApplicationServiceTest`'s `@BeforeEach` does log a WARN. JUnit runs the superclass's `@BeforeEach` first, and the test class attaches its `ListAppender` in its own `@BeforeEach`, so the line falls before the capture.
+- **Health needs two switches and has one non-default.** `management.health.circuitbreakers.enabled` has no default, so without it the contributor bean is never created and `healthForPath("circuitBreakers")` is `null` (the red run). `register-health-indicator: true` puts `pg-lookup` in it. **Red check:** the health test also passed with `allow-health-indicator-to-fail` unset, so in 2.4.0 the effective default already does not fail. It is set to `false` anyway, as ADR 0030 rule 7 says.
+- **Why OPEN does not turn health DOWN.** With failing disallowed, the indicator reports `CIRCUIT_OPEN` (and `CIRCUIT_HALF_OPEN`), not DOWN. Boot's `SimpleStatusAggregator` drops statuses outside its DOWN / OUT_OF_SERVICE / UP / UNKNOWN order. So `circuitBreakers` rolls up to UNKNOWN, and the overall status stays UP.
+- **Operators read the state at `/actuator/health/pg-lookup`.** The spec review pointed out that the main endpoint on the management port (8081) shows only `{"status":"UP"}`. `monitoring.yml` sets no `show-components` or `show-details` there, and Boot's default is `never`. The user chose a dedicated group over details on the main endpoint. The group includes only `circuitBreakers`, with `show-details: always`, in commerce-api's `application.yml`, so DB and Redis details stay hidden and `supports/monitoring` is untouched. The `HealthEndpoint` bean shows every component whatever the exposure, so the test also checks the group through `HealthEndpointGroups`: it holds `circuitBreakers`, not `db`, and shows details to an anonymous caller.
+- **Metrics needed no change.** `CircuitBreakerMetricsAutoConfiguration` binds `TaggedCircuitBreakerMetricsPublisher` whenever a `MeterRegistry` exists. The gauge assertion is a characterization test.
+- **The 503 during OPEN needed no change either.** Issue 160's retry fallback already turns `CallNotPermittedException` into `PgUnavailableException`, and issue 161's port turns that into `PG_UNAVAILABLE`. The tests pin it at both seams. The port-level side by side (the PG's reconcile throws while the customer's answers the stored state, 0 new lookups) was added after the spec review, as the open-breaker case that issue 161's notes left for after the breaker.
+- **Two stale deferrals were closed.** Issue 161's unavailable callback and PG-reconcile scenes said the lookup count was left to the retry ticket. Issue 160 had landed, so they now assert 2 and 4.
+- **New comments are in English.** The user said mid-ticket that code comments should be English. The new KDoc and `application.yml` comments are written that way. Existing Korean comments were left alone.
+
+### Review notes left as they are
+
+- **Divergent change in `LocalPgGatewayConfig`:** it now builds the HTTP request factory and also hosts the breaker log. The ticket asked for the consumer "next to the gateway's configuration", and the class KDoc says so.
+- **The empty `onEntryRemovedEvent`** is forced by the interface.
+- **The cumulative WARN lists** in the transition scene repeat the earlier pairs. Each check states the full expected log so far.
+- **`Duration.ofSeconds(61)`** now appears in four tests as "the 60 s wait plus one". It was not extracted to a constant.
+
+### For later tickets
+
+- **[Issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165)** should carry the operator view in the step 3 design section: the WARN format, `/actuator/health/pg-lookup` and why the overall health stays UP, and the `resilience4j.circuitbreaker.state` gauge. Counts to cite: the transition scene's 8 lookups, and the OPEN callback's 4 → 4 → 5.
+- **Issue 163 landed first.** Its scenes and this ticket's touch different parts of `OrderPaymentIntegrationTest` and `CODING_STANDARDS.md`, and the rebase replayed the code commit without a conflict. Only the two appends to this file met, and this section now follows issue 163's.
