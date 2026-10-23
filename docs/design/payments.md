@@ -1002,7 +1002,7 @@ PG에 답하는 것은 다시 보낼 값이 있는지다(ADR 0031 규칙 6).
 
 | 장면 | 과제가 보는 것 | 테스트 | 실행 | PG가 받은 조회 | 브레이커와 끝 |
 | --- | --- | --- | --- | --- | --- |
-| 제한된 재조회 | 조회 불가 한 번 뒤의 성공이 같은 대사에서 결제를 끝낸다. 게이트웨이는 AOP 프록시 | `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile` | 1 | 2 | `CONFIRMED`, `SUCCESS`, 재고 3, 생성 1 |
+| 제한된 재조회 | 조회 불가 한 번 뒤의 성공이 같은 대사에서 결제를 끝낸다. 게이트웨이는 AOP 프록시 | `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile` | 1 | 2 | `CONFIRMED`, `SUCCESS`, 재고 3, 생성 1 (2026-10-23, 명세 159의 검토: 재시도의 이벤트가 하나이고 그 대기가 100 ms인 것도 본다. 시간을 재지 않고 이벤트에서 읽는다.) |
 | 시간 초과 | 응답 한도를 넘긴 조회도 한 번 다시 시도하고 저장된 상태로 답한다 | `a reconcile whose lookup is unavailable answers the stored state and changes nothing` | 2(503, 응답 한도를 넘긴 멈춤) | 2(2단계에는 1) | 브레이커의 상태는 보지 않는다. 표본 둘이 열지 않는 것은 21.4의 WARN 장면의 첫 대사가 본다. `PAYMENT_PENDING`, `PENDING`, 재고 3 |
 | 회로 OPEN | 죽은 PG에 대사 둘이면 열리고, 셋째는 PG에 묻지 않는다 | `two reconciles against a dead PG open the lookup breaker and a third answers the stored state without a lookup` | 2(응답 유실, 503) | 4, 셋째 뒤에도 4 | OPEN. 세 대사 모두 `PAYMENT_PENDING`, `PENDING`. 재고 3 |
 | 재차단 | 60 s 안에는 묻지 않고, 넘긴 뒤 여전히 죽은 PG에 탐색 둘이 실패해 다시 연다 | `the open breaker sends no lookup within its 60 s wait and a probe against a still dead PG opens it again` | 1 | 4 → 59 s 뒤 4 → 61 s 뒤 6 | OPEN. `PAYMENT_PENDING`, `PENDING`, 재고 3 |
