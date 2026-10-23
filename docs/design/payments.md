@@ -393,7 +393,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
 | [155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155) | 같은 키의 재요청, `IDEMPOTENCY_KEY_MISMATCH`, `IDEMPOTENCY_KEY_IN_USE`(`PaymentValidator`), 같은 키로 겨룬 삽입의 처리. |
-| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. |
+| [156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156) | 대사 API(`OrderPaymentReconciler`, `PgTransactionRetriever`)와 `PAYMENT_NOT_STARTED`. 저장된 상태를 답하는 때에 다시 읽는다. (2026-10-23: 명세 147의 검토에서 PG 조회와 생성의 포트를 `PgTransactionClient` 하나로 합쳤다. 11.1.) |
 
 ## 10. 주문과 결제의 상태
 
@@ -448,7 +448,7 @@ stateDiagram-v2
 | 단계 | 자리 | 트랜잭션 | 잠그는 것 | 쓰는 것 | 실패하면 |
 | --- | --- | --- | --- | --- | --- |
 | TX A | `OrderPaymentSteps.startPayment` | 새 트랜잭션 | 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 되면) | 상품 재고, 주문의 상태와 결제수단, 결제(새 행), revision | 모두 되돌아간다. 주문은 확정 전, 재고는 그대로이고 결제가 없어 키도 쓰이지 않았다. PG에는 아무것도 가지 않는다. |
-| PG 호출 | `PgTransactionCreator.create` | 없음(`NEVER`) | 없음 | PG에 생성 한 번 | 예외의 타입마다 갈린다(11.4). |
+| PG 호출 | `PgTransactionClient.create` | 없음(`NEVER`) | 없음 | PG에 생성 한 번 | 예외의 타입마다 갈린다(11.4). |
 | TX B | `OrderPaymentSteps.applyTransaction`, `applyRejection` | 새 트랜잭션 | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) | 결제의 상태와 거래 키, 주문의 상태와 확정 시각, 실패면 상품 재고와 revision | 모두 되돌아간다. 결제와 주문은 TX A가 남긴 그대로이고, 대사가 같은 PG 거래로 다시 반영한다(장면 7). |
 
 - TX A의 커밋이 발송 기록이다. 결과 미확인 결제를 커밋한 요청만 생성을 보내고, "보냈다"는 따로 적지 않는다(ADR 0024 규칙 2).
@@ -465,8 +465,10 @@ stateDiagram-v2
 | `PaymentStarter.start` | `PaymentModifyService` | TX A에 참여 | TX A |
 | `PaymentReconciler.reconcile`, `reject` | `PaymentModifyService` | TX B에 참여 | TX B |
 | `PaymentFinder.findByOrder`, `findAllByOrders` | `PaymentQueryService` | 읽기 전용 | TX A, TX B, 대사, 주문 조회 |
-| `PgTransactionCreator.create`, `PgTransactionRetriever.retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentService` |
+| `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentService` |
 | `StockDeductor.deduct`, `StockRestorer.restore` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
+
+- 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
 
 ### 11.2 잠금
 
@@ -576,7 +578,7 @@ stateDiagram-v2
 | 2 | 주문을 잠그지 않고 읽는다(`OrderFinder.find`). 없거나 남의 주문 | 404 `ORDER_NOT_FOUND` |
 | 3 | 확정 전 주문 | 409 `PAYMENT_NOT_STARTED` |
 | 4 | 확정된 주문(PG든 포인트든), 결제에 실패한 주문 | 200, 저장된 상태. PG를 부르지 않는다. |
-| 5 | 결제 중인 주문 | 결제를 찾아(없으면 500 `PAYMENT_MISSING`) PG 주문 번호로 조회한다(`PgTransactionRetriever.retrieve`, `NEVER`). |
+| 5 | 결제 중인 주문 | 결제를 찾아(없으면 500 `PAYMENT_MISSING`) PG 주문 번호로 조회한다(`PgTransactionClient.retrieve`, `NEVER`). |
 
 - 1–4는 PG에 아무것도 보내지 않는다(`reconciling without a requester, a missing order or another user's order is rejected before any lookup`, `reconciling a draft returns 409 PAYMENT_NOT_STARTED and sends nothing to the PG`, `reconciling a finished or point-paid order returns 200 with the stored state and sends no lookup`).
 - 첫 읽기는 잠그지 않고, 잠그는 것은 TX B뿐이다(명세 147). 두 대사가 함께 오면 둘 다 조회하고, 뒤진 TX B가 주문 잠금을 기다린 뒤 끝난 결제를 읽어 아무것도 바꾸지 않는다. 첫 읽기를 잠갔다면 뒤진 대사는 끝난 주문을 보고 조회하지 않았을 것이다. 장면 6의 조회 수 2가 이것을 붙든다.
@@ -693,7 +695,7 @@ stateDiagram-v2
 | `PAYMENT_PENDING`, `CONFIRMED`, `PAYMENT_FAILED` | `OrderStatus`의 같은 값 | 그대로다. `CONTEXT.md`는 결제 중인 주문, 확정된 주문, 결제에 실패한 주문이라 부른다. |
 | 이전 `POINT` 주문 | 결제수단 `PaymentMethod.POINT` | 결제수단 열이 포인트로 확정된 주문과 PG로 결제한 주문을 가른다. |
 | 가용 재고, 주문별 수량과 상태 | 팔 수 있는 재고 `Product.stock`, 결제 중인 주문의 품목 수량 | 예약 표도 예약 수량 열도 두지 않는다. 주문의 상태가 곧 예약의 상태다(ADR 0026). |
-| `POST /orders/{id}/payment/reconcile` | `POST /api/v1/orders/{orderId}/payment/reconcile`, 포트 `OrderPaymentReconciler` | 경로는 이 저장소의 `/api/v1` 아래에 그대로 두었다. PG 조회의 포트는 `PgTransactionRetriever`이고 Finder가 아니다. PG 조회의 `null`은 "없음"이 아니기 때문이다. |
+| `POST /orders/{id}/payment/reconcile` | `POST /api/v1/orders/{orderId}/payment/reconcile`, 포트 `OrderPaymentReconciler` | 경로는 이 저장소의 `/api/v1` 아래에 그대로 두었다. PG 조회는 `PgTransactionClient.retrieve`이고 Finder가 아니다. PG 조회의 `null`은 "없음"이 아니기 때문이다. |
 | `*PaymentIntegrationTest` | `OrderPaymentIntegrationTest` | 주문 슬라이스의 provided 포트를 시험한다. 과제의 필터가 이 클래스를 찾는다. |
 
 ### 16.2 2단계의 명령

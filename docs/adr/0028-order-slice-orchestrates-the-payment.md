@@ -10,7 +10,7 @@ date: 2026-10-22
 1. **주문 슬라이스의 확정과 대사가 조율한다.** 결제 슬라이스는 다음 provided 포트를 내주고, 주문 슬라이스를 모른다.
    - 결제를 만든다. TX A에 참여한다.
    - 결제를 찾는다. 주문 하나의 결제(`findByOrder`, 없으면 데이터 불일치로 500 `PAYMENT_MISSING`)와 목록의 결제(`findAllByOrders`)다. 주문의 결제수단이 PG일 때만 부른다. (2026-10-22: 목록의 결제도 받은 주문 가운데 결제가 없는 것이 있으면 `PAYMENT_MISSING`이다. 그 주문만 빼고 돌려주면 목록이 결제수단이 PG인데 결제 상태가 없는 주문을 실어 불일치를 감춘다. 목록은 한 조각에 있는, 결제수단이 PG인 주문의 결제를 한 문장으로 읽고, 그런 주문이 없는 조각은 결제를 읽지 않는다. 관리자 상세도 고객 상세처럼 `findByOrder`를 부른다.)
-   - 트랜잭션 밖에서 PG 거래를 만들고, PG 주문 번호로 조회한다.
+   - 트랜잭션 밖에서 PG 거래를 만들고, PG 주문 번호로 조회한다. (2026-10-23: 둘은 provided 포트 `PgTransactionClient` 하나의 `create`와 `retrieve`다. 처음에는 `PgTransactionCreator`와 `PgTransactionRetriever`로 나눴으나, 구현, 부르는 조율 서비스, 트랜잭션 밖이라는 조건이 같아 명세 147의 검토에서 합쳤다.)
    - PG 거래나 생성 전 거절을 결제에 반영하고 `ReconcileResult`를 돌려준다. TX B에 참여한다.
 
    사가의 조율자는 그 절차의 주인 곁에 둔다. Eventuate Tram의 예제에서 `CreateOrderSaga`는 주문 서비스에 있고, 참여자는 주문을 식별자로만 안다. 결제는 일반 하위 도메인이라 나중에 포인트 충전을 카드로 받더라도 의존은 결제를 향한다. 지금의 확정도 이미 `StockDeductor`와 `PointDeductor`를 조율한다.
