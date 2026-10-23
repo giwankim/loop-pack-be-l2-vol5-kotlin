@@ -70,8 +70,10 @@ import java.time.Duration
  * 커밋하는 기반을 쓰므로 TX A와 TX B가 정말 커밋하고, 실제 어댑터가 HTTP로 테스트 PG에 닿는다. 장면마다 PG가 받은 생성 수와 조회 수를 세고,
  * 주문·결제·재고·잔액을 새 트랜잭션에서 다시 읽는다. 결제가 받을 PG 주문 번호는 확정 전에 `nextPgOrderId`로 정해 생성과 조회의 스텁에 넣는다.
  * 결제 중인 주문 곁의 쓰기와 읽기(관리자의 재고 수정, 상품 삭제, 예약된 재고, 고객 목록, 대사)는 PG 호출을 spy해 생성을 보내기 바로 앞에 넣고,
- * 생성을 보내기 전에 멈춘 프로세스도 그 spy가 흉내 낸다. 같은 키로 겨루는 두 확정은 결제를 만드는 Service를 spy해 늦은 쪽을 결제 삽입 앞에서,
- * 같은 답을 반영하는 두 TX B는 같은 Service를 spy해 앞선 쪽을 주문을 잠근 채 멈춘다. 외부 성공 뒤 내부 저장의 실패는 TX B의 빈을 spy해 넣는다.
+ * 생성을 보내기 전에 멈춘 프로세스도 그 spy가 흉내 낸다. 확정의 TX B보다 먼저 오는 알림은 같은 spy가 생성의 답을 받은 바로 뒤에 넣는다.
+ * 같은 키로 겨루는 두 확정은 결제를 만드는 Service를 spy해 늦은 쪽을 결제 삽입 앞에서, 같은 답을 반영하는 두 TX B(대사와 대사, 대사와 확정,
+ * 알림과 대사)는 같은 Service를 spy해 앞선 쪽을 주문을 잠근 채 멈춘다. 외부 성공 뒤 내부 저장의 실패는 TX B의 빈을 spy해 넣는다.
+ * PG의 알림은 웹 어댑터가 PG 주문 번호로 결제를 찾은 뒤 부르는 [OrderPaymentReconciler]로 들어온다.
  * 재시작은 같은 DB와 테스트 PG 위에 두 번째 실제 컨텍스트를 띄워 그 안의 새 Service로 본다([restarted]).
  */
 @EnableTestPg
@@ -91,7 +93,10 @@ class OrderPaymentIntegrationTest(
         private const val TRANSACTION_KEY = "20261022:TR:9577c5"
     }
 
-    /** 결제 중인 주문 곁의 쓰기와 읽기를 넣는 자리([whilePaymentPending]). stub이 없으면 실제 PG 호출 그대로다. */
+    /**
+     * 결제 중인 주문 곁의 쓰기와 읽기를 넣는 자리([whilePaymentPending])이자, 확정의 TX B보다 먼저 오는 알림을 넣는 자리([afterTheCreateIsAnswered]).
+     * stub이 없으면 실제 PG 호출 그대로다.
+     */
     @MockkSpyBean
     private lateinit var pgTransactionService: PgTransactionService
 
@@ -1362,6 +1367,215 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
+     * 과제 6절의 장면 6, 알림이 먼저. PG가 확정의 생성을 받아들인 뒤, 확정의 TX B가 그 답을 반영하기 전에 알림이 온다. 알림의 조회와 TX B가
+     * 결제를 끝내고, 늦게 TX B에 닿은 생성의 답은 끝난 결제에 `Unchanged`다(ADR 0031 규칙 8). 생성이 처리 중이라 했어도 결제를 되돌리지 않는다.
+     * 확정은 TX B가 다시 읽은 끝난 주문으로 답한다. 성공이면 확정 시각이 하나이고 재고는 5 → 3에서 그대로, 실패면 5 → 3 → 5로 한 번만 돌아온다.
+     */
+    @ParameterizedTest
+    @CsvSource(
+        "SUCCESS, SUCCESS, CONFIRMED, SUCCESS, 3",
+        "PENDING, SUCCESS, CONFIRMED, SUCCESS, 3",
+        "FAILED, FAILED, PAYMENT_FAILED, FAILED, 5",
+        "PENDING, FAILED, PAYMENT_FAILED, FAILED, 5",
+    )
+    fun `a callback applied before the confirmation's TX B finishes the payment once and the late create answer changes nothing`(
+        createStatus: PgStatus,
+        lookupStatus: PgStatus,
+        orderStatus: OrderStatus,
+        paymentStatus: PaymentStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = createStatus.name,
+        )
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = lookupStatus))
+        var reservedStock: Int? = null
+        var orderAfterCallback: Order? = null
+        var stockAfterCallback: Int? = null
+        afterTheCreateIsAnswered {
+            reservedStock = inNewTransaction { productFinder.find(product.id).stock }
+            orderPaymentReconciler.reconcile(order.id)
+            orderAfterCallback = inNewTransaction { orderFinder.find(user.id, order.id) }
+            stockAfterCallback = inNewTransaction { productFinder.find(product.id).stock }
+        }
+
+        val confirmed = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+
+        assertThat(reservedStock).isEqualTo(3)
+        assertThat(orderAfterCallback?.status).isEqualTo(orderStatus)
+        assertThat(stockAfterCallback).isEqualTo(stock)
+        assertThat(confirmed.order.status).isEqualTo(orderStatus)
+        assertThat(confirmed.paymentStatus).isEqualTo(paymentStatus)
+        assertThat(confirmed.order.confirmedAt).isEqualTo(orderAfterCallback?.confirmedAt)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            val persisted = orderFinder.find(user.id, order.id)
+            assertThat(persisted.status).isEqualTo(orderStatus)
+            assertThat(persisted.confirmedAt).isEqualTo(orderAfterCallback?.confirmedAt)
+            val payment = paymentFinder.findByOrder(order.id)
+            assertThat(payment.status).isEqualTo(paymentStatus)
+            assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /**
+     * 과제 6절의 장면 6, 대사가 먼저. 고객의 대사가 결제를 끝낸 뒤 온 알림은 PG에 묻지 않고 돌아가며 아무것도 바꾸지 않는다(ADR 0031 규칙 6, 8).
+     * 확정 시각도 주문의 수정 시각도 대사가 남긴 그대로이고, 실패한 결제의 예약도 다시 돌아오지 않는다.
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 3", "FAILED, PAYMENT_FAILED, FAILED, 5")
+    fun `a callback after the customer's reconcile finished the payment sends no lookup and changes nothing`(
+        pgStatus: PgStatus,
+        orderStatus: OrderStatus,
+        paymentStatus: PaymentStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = "PENDING",
+        )
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
+        val reconciledOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
+
+        orderPaymentReconciler.reconcile(order.id)
+
+        assertThat(reconciled.order.status).isEqualTo(orderStatus)
+        assertThat(reconciled.paymentStatus).isEqualTo(paymentStatus)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            val persisted = orderFinder.find(user.id, order.id)
+            assertThat(persisted.status).isEqualTo(orderStatus)
+            assertThat(persisted.confirmedAt).isEqualTo(reconciledOrder.confirmedAt)
+            assertThat(persisted.updatedAt).isEqualTo(reconciledOrder.updatedAt)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(paymentStatus)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /**
+     * 과제 6절의 장면 6, 알림과 대사가 함께. 둘 다 결제 중인 주문을 보고 같은 PG 거래를 찾는다. 앞선 쪽의 TX B를 주문을 잠근 채 결제에 반영하기
+     * 앞에서 멈추면 다른 쪽의 TX B는 주문 잠금에서 기다리고, 풀린 뒤 끝난 결제를 다시 읽어 `Unchanged`다(ADR 0031 규칙 8, ADR 0024 규칙 5).
+     * 어느 쪽이 잠금을 먼저 쥐어도 주문은 한 번 바뀐다. 성공이면 확정 시각이 하나이고, 실패면 재고가 5 → 3 → 5로 한 번만 돌아온다. 두 번 돌려주면
+     * 7이다.
+     */
+    @ParameterizedTest
+    @CsvSource(
+        "callback, SUCCESS, CONFIRMED, SUCCESS, 3",
+        "callback, FAILED, PAYMENT_FAILED, FAILED, 5",
+        "reconcile, SUCCESS, CONFIRMED, SUCCESS, 3",
+        "reconcile, FAILED, PAYMENT_FAILED, FAILED, 5",
+    )
+    fun `a callback and the customer's reconcile applying the same answer together change the order and the stock once`(
+        lockHolder: String,
+        pgStatus: PgStatus,
+        orderStatus: OrderStatus,
+        paymentStatus: PaymentStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = "PENDING",
+        )
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        val reservedStock = inNewTransaction { productFinder.find(product.id).stock }
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+        pauseTheFirstTxBHoldingTheOrder()
+        var reconciled: OrderInfo? = null
+        val callingBack = { orderPaymentReconciler.reconcile(order.id) }
+        val reconciling = { reconciled = orderConfirmer.reconcile(user.id, order.id) }
+        val (holdingCall, waitingCall) = if (lockHolder == "callback") callingBack to reconciling else reconciling to callingBack
+
+        val holding = inAnotherThread(holdingCall)
+        pause.awaitHeld()
+        val waiting = inAnotherThread(waitingCall)
+
+        assertThat(waiting.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
+        pause.release()
+        holding.await()
+        waiting.await()
+        assertThat(reservedStock).isEqualTo(3)
+        assertThat(reconciled?.order?.status).isEqualTo(orderStatus)
+        assertThat(reconciled?.paymentStatus).isEqualTo(paymentStatus)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            val persisted = orderFinder.find(user.id, order.id)
+            assertThat(persisted.status).isEqualTo(orderStatus)
+            assertThat(persisted.confirmedAt).isEqualTo(reconciled?.order?.confirmedAt)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(paymentStatus)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /**
+     * 생성의 응답을 잃어 커머스는 거래 키를 모른다. 그래도 알림은 PG 주문 번호로 조회하므로 그 PG 거래를 찾아 결제를 끝내고, 결제는 PG의 거래 키를
+     * 남긴다(ADR 0031 규칙 4). 생성은 1 그대로다. 실패면 예약이 한 번 돌아와 재고는 5다.
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 3", "FAILED, PAYMENT_FAILED, FAILED, 5")
+    fun `a callback records the PG's transaction key on a payment whose create response was lost, without another create`(
+        pgStatus: PgStatus,
+        orderStatus: OrderStatus,
+        paymentStatus: PaymentStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.losesCreateResponse(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+        )
+        val pending = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
+        inNewTransaction {
+            assertThat(paymentFinder.findByOrder(order.id).transactionKey).isNull()
+        }
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+
+        orderPaymentReconciler.reconcile(order.id)
+
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(orderStatus)
+            val payment = paymentFinder.findByOrder(order.id)
+            assertThat(payment.status).isEqualTo(paymentStatus)
+            assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /**
      * 조율하는 Service는 `NEVER`라서 트랜잭션 안에서 부르면 Spring이 들어가기 전에 거절한다(ADR 0028 규칙 2). 트랜잭션 안에서 PG를 부르면
      * 결과 미확인의 예외가 결제의 저장까지 되돌리므로, 그 실수를 실행이 막는다.
      */
@@ -1406,6 +1620,20 @@ class OrderPaymentIntegrationTest(
         every { target.create(any(), any()) } answers {
             action()
             callOriginal()
+        }
+    }
+
+    /**
+     * 확정의 PG 호출이 생성의 답을 받은 바로 뒤, 그 답을 TX B에 넘기기 앞에서 [action]을 한다. PG에는 PG 거래가 생겼고 확정의 TX B는 아직이다.
+     * PG 호출은 어느 트랜잭션에도 들지 않으므로 [action]이 부른 포트는 자기 트랜잭션에서 돈다. [whilePaymentPending]은 생성을 보내기 앞이라
+     * 이 자리가 아니다. Service는 CGLIB 프록시이므로 프록시가 감싼 spy에 stub한다.
+     */
+    private fun afterTheCreateIsAnswered(action: () -> Unit) {
+        val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
+        every { target.create(any(), any()) } answers {
+            val transaction = callOriginal()
+            action()
+            transaction
         }
     }
 
