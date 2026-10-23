@@ -297,3 +297,123 @@ Two commits on `worktree-issue-164`, written on `feat/reconcile`'s `e48039f` (is
 
 - **[Issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165)** should carry the operator view in the step 3 design section: the WARN format, `/actuator/health/pg-lookup` and why the overall health stays UP, and the `resilience4j.circuitbreaker.state` gauge. Counts to cite: the transition scene's 8 lookups, and the OPEN callback's 4 → 4 → 5.
 - **Issue 163 landed first.** Its scenes and this ticket's touch different parts of `OrderPaymentIntegrationTest` and `CODING_STANDARDS.md`, and the rebase replayed the code commit without a conflict. Only the two appends to this file met, and this section now follows issue 163's.
+
+## Issue 165: the payments design doc for step 3
+
+Recorded 2026-10-23 from the closing comment of [issue 165](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/165), the last step 3 ticket. The rules are the ticket's acceptance criteria and the "문서" bullets of [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159). The work is:
+
+- [`docs/design/payments.md`](../design/payments.md): sections 18–23, and dated notes in sections 1–17
+- [spec 159](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/159): insert-only dated notes for the departures
+
+### Landed
+
+One commit on `feat/reconcile`, on top of issue 164's `9119ce7`:
+
+- [`6a24f1e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/6a24f1e) adds the step 3 sections and the dated notes. **No code changes.**
+- The commit after it appends this section.
+- Spec 159's body was edited on GitHub. It gained eight dated notes, next to the one issue 163 added.
+
+### Acceptance criteria
+
+- [x] **The step 3 sections carry everything the ticket lists, and every count matches a full `cleanTest check` run with 0 skipped.**
+  - **Section 19, the callback:** the contract (19.1) and the answer table (19.2). 19.3 has the order of checks, the two reconciles side by side and the three new ports. 19.4 covers forged callbacks, ordering and duplicates.
+  - **Section 20, resilience:**
+    - where the annotations go and in what order (20.1), and the failure rules (20.2)
+    - the settings and the per-lookup budget (20.3), and the answers when a lookup fails (20.4)
+    - logs, health and metrics (20.5), and the test base (20.6)
+  - **Section 21, scenes and tests:**
+    - scene 6's callback half (21.1), scene 8 in a second context (21.2) and scene 10 (21.3)
+    - the PG's reconcile port with the log and health scenes (21.4), and the callback's HTTP contract (21.5)
+    - Every row names a real test method and its parameter-row count.
+  - **Section 22, limits:** the four the ticket names, plus what step 3 left out (22.5).
+  - **Section 23, names and commands:** 23.1 maps the assignment's names to the repo's: `POST /payments/callback`, `providerOrderId`, the authoritative lookup, "확인 불가" and the rest. `paymentAttemptKey` stays as 16.1 has it. 23.2 has the commands.
+  - **Counts.** `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check` on `9119ce7` ran 73 classes and **917 tests, 0 failures, 0 skipped**, read from the JUnit XML:
+
+    | Class | Tests |
+    | --- | --- |
+    | `OrderPaymentIntegrationTest` | 62 |
+    | `PaymentApiTest` | 23 |
+    | `OrderConfirmationApiTest` | 45 |
+    | `PaymentGatewayTest` | 96 |
+    | `ExhaustedPoolPaymentGatewayTest` | 1 |
+    | `ObservedPaymentGatewayTest` | 2 |
+    | `ConnectTimeoutPaymentGatewayTest` | 2 (ran) |
+
+    The other counts in step 2's commands (16.2) are unchanged. A separate `--tests '*PaymentIntegrationTest' --tests '*PaymentApiTest'` run found exactly those two classes, plus `HexagonalArchitectureTest`'s 7 rules.
+- [x] **Every §17 item has a dated note, and spec 159 has insert-only dated notes for each departure.**
+  - **§17.** Each item's note says where step 3 settled it:
+    - the callback: issues 163 and 164 finished it (§19, 20.4)
+    - the transaction-key index: closed (19.4)
+    - the breaker and the bounded retry: §20 and 21.3
+    - the restart: issue 162, with no `wiremock-standalone`
+    - stale outcome-unknown payments: unchanged (22.4)
+  - **Original text kept.** A script checked that every pre-existing line of the doc survives in order inside its new version. The one exception is the 1.1 status cell (아직 → 끝남). Step 2 changed its own row the same way.
+  - **Spec 159.** Eight notes, each appended to an existing line:
+    - the placeholder names: `PaymentApi`, `PaymentCallbackRequest`, `PaymentApiTest`, `OrderFinder.findForPg` and the test helpers
+    - the test profile's budget: 0.5 s is the common case, and the upper bound is 1.9 s
+    - the health contributor switch and the `pg-lookup` group
+    - where the WARN consumer lives
+    - the second context's four overrides and its two payments
+    - the customer's reconcile now sharing two private steps with the PG's
+    - where the design doc's step 3 sections are
+    - the proxy check, which proves nothing on its own
+  - **Edit history.** GitHub's edit history shows lines added and none removed.
+  - **Earlier sections.** Statements step 3 made stale got notes too:
+    - the gateway's lookup counts (3.3, 5.4, 6.1, 8) and 6.2's restart sentence
+    - 2.1's "the callback adds the lookup", 2.5's stored-state rule, 3.2's exception message and 4.2's proxy
+    - 9.1, 9.2, 11.1, 11.2 and 13.2
+    - 14: the unavailable scene's lookup count, and the 32 → 62 total
+    - 15.1, 15.2 and 16.2
+- [x] **The doc uses `CONTEXT.md`'s vocabulary.**
+  - There is no 콜백 or 웹훅 and no bare "PG 주문", and 슬라이스 always means an application slice.
+  - The only 조각 left are step 2's list pages, which is the meaning CODING_STANDARDS keeps for that word.
+  - The review also caught 제공자 and 운영자, both on `_Avoid_` lists. The new text no longer uses either, except 제공자 in §23.1's assignment column, which quotes the assignment.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes.** This is the run above. This ticket changes no code.
+
+### Decisions made while implementing
+
+- **Sections 18–23 follow the shape of 9–16.** 18 is the overview and tickets, 19 the callback, 20 resilience, 21 scenes, 22 limits, and 23 names and commands. There is no "for the next step" section, because step 3 is the last. What it left out is in 22.5, next to the ADRs' revisit conditions.
+- **The budget table shows two cases.** Spec 159 put the upper bound at 3.5 s in production and 0.5 s in the test profile. But 0.5 s is ADR 0030's common case: the PG accepts the connection and never answers. If both attempts also use up the pool wait and the connect timeout, the test profile's bound is 1.9 s. 20.3 has both rows, and the spec got a note.
+- **The doc only claims what a test asserts.** A draft made four claims no test checks:
+  - the timeout scene leaves the breaker CLOSED
+  - so does the retry scene
+  - the second context's breaker starts CLOSED
+  - a half-open breaker reports `CIRCUIT_HALF_OPEN`
+  
+  All four came out. The timeout row now points at the WARN scene. Its first reconcile is what shows that 2 samples don't open the breaker.
+- **Two step 2 scenes are recorded again on purpose.**
+  - §14 keeps step 2's scene 8 (a replay in the same context). 21.2 is the second context.
+  - 21.3 lists step 2's unavailable scene again as scene 10's timeout row, because its lookup count changed. The 62 = 32 + 30 sum says so.
+- **Mutation results sit next to their scenes** (21.1, 21.3). They come from the closing comments of issues 160 and 163.
+
+### Review
+
+A two-axis review covered everything since `ca30760`, so all of step 3 against spec 159. It included the doc while it was still uncommitted.
+
+- **Spec.** Doc errors, all fixed before the commit:
+  - The callback-first row described its parameter rows wrong.
+  - A §17 note cited 20.6 for the warm-up request, but 20.6 didn't mention it. It does now: the warm-up uses a separate JDK `HttpClient` to `/__admin/health`, so it is never a breaker sample.
+  - Three claims had no test behind them.
+  - The 62 = 32 + 30 sum was wrong.
+  - 19.3 put the `PG_UNAVAILABLE` throw and the WARN on `PgTransactionClient.retrieve`. The orchestrator does both.
+
+  The review also found that the customer's reconcile refactor had no spec note. One is added. Last, the HTTP tests don't check a callback whose lookup names another PG order ID, or its WARN. The doc now says those rows rely on the shared code that scene 9 tests.
+- **Standards, in the doc.** All fixed:
+  - 제공자 and 운영자 came from `_Avoid_` lists.
+  - 끝점 was used where the doc says 엔드포인트.
+  - Four bullets held only a dated note. They moved into the sentence or table row they amend.
+- **Standards, in the code of issues 160–164.** Not fixed here; they are left for the user to decide:
+  - `PaymentApiTest` names its only response body `detail` in six tests. CODING_STANDARDS asks for `body`.
+  - `PaymentApiTest.preparePayment` confirms over HTTP instead of calling the base `confirmOrder`. That was issue 161's documented choice. The class KDoc explains it, but CODING_STANDARDS' exception list doesn't. `OrderPaymentIntegrationTest` also repeats the accept-and-confirm setup in five tests.
+  - `assertStock` is copied between `PaymentApiTest` and `OrderConfirmationApiTest`. A helper that two classes use belongs in `com.loopers.support`.
+  - New KDoc and yml comments from issues 160–162, and part of 164, are Korean. They were written before the 2026-10-23 English-comments correction, and existing comments aren't swept without asking.
+  - 운영자 and "operators" in CODING_STANDARDS and in comments collide with 관리자's `_Avoid_` list.
+  - Kept as judgement calls:
+    - The two unread DTO fields stay, because ADR 0031 rule 1 asks for them.
+    - `checkLookupNeeded` keeps the name issue 161's review chose.
+    - `PaymentApiTest` compares whole bodies as strings. It is a byte-for-byte check by design.
+
+### For later
+
+- Spec 159 can close once this ticket does. Every ticket under it is then done.
+- The PR into `week5` should carry section 22's limits and 23.2's commands.
