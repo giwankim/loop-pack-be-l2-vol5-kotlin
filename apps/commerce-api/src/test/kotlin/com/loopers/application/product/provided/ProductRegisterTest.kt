@@ -16,7 +16,7 @@ import org.junit.jupiter.api.assertThrows
 
 /**
  * [ProductRegister]를 실제 MySQL 위에서 확인한다. 정리와 flush/clear의 까닭은 [com.loopers.application.brand.provided.BrandRegisterTest]와 같다.
- * 결과는 같은 조각의 [ProductFinder]로 읽는다.
+ * 결과는 같은 슬라이스의 [ProductFinder]로 읽는다.
  */
 class ProductRegisterTest(
     private val productRegister: ProductRegister,

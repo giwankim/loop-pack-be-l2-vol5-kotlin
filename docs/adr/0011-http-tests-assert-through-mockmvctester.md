@@ -27,4 +27,4 @@ HTTP 테스트 11개(`*MockMvcTest`, 3,461줄)는 MockMvc의 Kotlin DSL(`mockMvc
 
 - Kotlin DSL보다 길다. Framework 7.0.9에는 `MockMvcTester`용 Kotlin DSL이 없다.
 - Java API의 가정이 Kotlin에서 함정이 된다. `Integer`와 `Long`의 불일치는 테스트가 실패해서 드러나지만 도우미를 거쳐야 한다. 게으른 빌더는 단언하지 않은 요청을 말없이 보내지 않는다. 둘 다 위 규칙이 막고, `/code-review`가 `CODING_STANDARDS.md`에 비추어 지킨다.
-- 11개 파일을 옮기는 동안 두 스타일이 섞여 있다. 브랜드 테스트가 먼저 옮겨 규칙을 세우고, 나머지 조각이 그 뒤를 따른다.
+- 11개 파일을 옮기는 동안 두 스타일이 섞여 있다. 브랜드 테스트가 먼저 옮겨 규칙을 세우고, 나머지 슬라이스가 그 뒤를 따른다.

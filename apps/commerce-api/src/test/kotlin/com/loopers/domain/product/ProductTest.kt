@@ -188,4 +188,42 @@ class ProductTest {
 
         assertThat(product.isSoldOut()).isTrue()
     }
+
+    @ParameterizedTest
+    @ValueSource(ints = [0, -1, Int.MIN_VALUE])
+    fun `restoreStock rejects nonpositive quantities without changing stock`(quantity: Int) {
+        val product = createProduct(createBrand(), stock = 5)
+
+        assertThrows<InvalidStockException> { product.restoreStock(quantity) }
+
+        assertThat(product.stock).isEqualTo(5)
+    }
+
+    @Test
+    fun `restoreStock adds the quantity on top of the stock`() {
+        val product = createProduct(createBrand(), stock = 10)
+
+        product.restoreStock(2)
+
+        assertThat(product.stock).isEqualTo(12)
+    }
+
+    @Test
+    fun `restoreStock makes a sold out product buyable again`() {
+        val product = createProduct(createBrand(), stock = 0)
+
+        product.restoreStock(2)
+
+        assertThat(product.isSoldOut()).isFalse()
+    }
+
+    /** 재고는 `Int`라서 더한 수량이 그 범위를 넘으면 음수로 돌아간다. 조용히 음수가 되지 않고 실패한다. */
+    @Test
+    fun `restoreStock past Int MAX_VALUE throws ArithmeticException and keeps the stock`() {
+        val product = createProduct(createBrand(), stock = Int.MAX_VALUE - 1)
+
+        assertThrows<ArithmeticException> { product.restoreStock(2) }
+
+        assertThat(product.stock).isEqualTo(Int.MAX_VALUE - 1)
+    }
 }

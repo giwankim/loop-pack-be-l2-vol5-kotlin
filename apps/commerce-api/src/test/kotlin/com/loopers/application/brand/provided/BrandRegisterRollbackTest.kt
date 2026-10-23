@@ -1,5 +1,6 @@
 package com.loopers.application.brand.provided
 
+import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.product.provided.ProductFinder
@@ -8,6 +9,8 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
+import com.loopers.support.EnableTestPg
+import com.loopers.support.TestPg
 import com.loopers.support.brandDeletedAt
 import com.loopers.support.productDeletedAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
@@ -17,6 +20,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.dao.DataAccessResourceFailureException
+import org.wiremock.spring.InjectWireMock
 import java.time.Instant
 
 /**
@@ -31,7 +35,9 @@ import java.time.Instant
  * UPDATE를 MySQL에 실제로 보내므로, 예외는 변경 SQL이 나간 뒤에 난다. 운영 코드는 flush하지 않는다.
  * 저장소는 CGLIB 프록시인 Service와 달리 JDK 프록시이므로 stub은 spy에 바로 건다. 기반의 `prepare`도 이 저장소를 거치므로
  * stub은 준비를 마친 뒤에 건다. stub이 없는 정상 테스트에서 spy는 원래 동작을 부른다.
+ * 과거 주문은 PG로 결제해 확정하므로 테스트 PG를 띄운다.
  */
+@EnableTestPg
 class BrandRegisterRollbackTest(
     private val brandRegister: BrandRegister,
     private val brandFinder: BrandFinder,
@@ -40,6 +46,12 @@ class BrandRegisterRollbackTest(
 ) : BaseCommittingApplicationServiceTest() {
     @MockkSpyBean
     private lateinit var brandRepository: BrandRepository
+
+    /** 생성자 주입의 하나뿐인 예외다. 까닭은 `OrderPaymentIntegrationTest`의 같은 필드에 있다. */
+    @InjectWireMock(TestPg.NAME)
+    private lateinit var server: WireMockServer
+
+    private val testPg by lazy { TestPg(server) }
 
     /** 삭제하는 브랜드. 브랜드를 둘 준비하므로 기반의 `brand` 필드 대신 읽는다. */
     private lateinit var brandToDelete: Brand
@@ -83,7 +95,7 @@ class BrandRegisterRollbackTest(
 
     /**
      * 과제의 준비. 재고 있는 상품과 재고 0인 상품을 가진 브랜드, 다른 브랜드의 상품을 등록한다. 첫 브랜드의 재고 있는 상품을 담은
-     * 주문은 그 합계만큼 충전해 확정한다. 포트마다 자기 트랜잭션에서 커밋한다.
+     * 주문은 테스트 PG가 성공을 알리는 결제로 확정한다. 포트마다 자기 트랜잭션에서 커밋한다.
      */
     private fun prepareBrandWithPastOrder() {
         brandToDelete = prepareBrand()
@@ -91,8 +103,7 @@ class BrandRegisterRollbackTest(
         soldOut = prepareProduct(brandToDelete, stock = 0)
         otherBrandProduct = prepareProduct(prepareBrand())
         prepareOrder(products = listOf(inStock))
-        charge(amount = order.totalAmount.amount)
-        confirmOrder()
+        confirmOrder(testPg)
     }
 
     /**

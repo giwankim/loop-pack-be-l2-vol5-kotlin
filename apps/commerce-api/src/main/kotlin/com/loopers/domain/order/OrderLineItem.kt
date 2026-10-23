@@ -46,13 +46,15 @@ class OrderLineItem internal constructor(
     val productName: String = product.productName
 
     @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "unit_price", nullable = false, updatable = false))
+    @AttributeOverride(
+        name = "amount",
+        column = Column(name = "unit_price", nullable = false, updatable = false, precision = 65, scale = 0),
+    )
     val unitPrice: Money = product.unitPrice
 
     @Column(nullable = false, updatable = false)
     val quantity: Int = product.quantity
 
-    /** 단가 × 수량. 같은 행의 두 열에서 바로 나오므로 저장하지 않는다. 넘침은 주문이 총액을 셀 때 생성에서 거절된다. */
     val lineAmount: Money
         get() = unitPrice * quantity
 }

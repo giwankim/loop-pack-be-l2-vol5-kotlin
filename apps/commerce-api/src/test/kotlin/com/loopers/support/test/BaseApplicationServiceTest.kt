@@ -5,6 +5,8 @@ import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreator
+import com.loopers.application.order.provided.OrderInfo
+import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -15,7 +17,9 @@ import com.loopers.domain.brand.createBrandAdminRegisterRequest
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.createLikeRequest
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.order.createOrderCreateRequest
+import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.Product
@@ -25,28 +29,35 @@ import com.loopers.domain.product.createProductAdminUpdateRequest
 import com.loopers.domain.user.User
 import com.loopers.support.RedisCleanUp
 import com.loopers.support.SqlCaptureConfig
+import com.loopers.support.TestPg
+import com.loopers.support.TestPgOrderIdGenerator
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.AfterEach
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 /**
  * provided 포트 테스트의 기반. 전체 컨텍스트를 실제 MySQL·Redis 위에 띄우고, 테스트 트랜잭션이 포트의 트랜잭션을 감싸
  * 테스트마다 롤백으로 정리한다. `@Import`가 [com.loopers.CommerceApiContextTest]와 같아 그 컨텍스트를 나눠 쓴다.
  * [SqlCaptureConfig]는 `com.loopers.support`의 `captureSql`이 블록 안의 SQL을 잡게 한다. 블록 밖에서는 아무것도 하지 않는다.
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소,
- * 캐시 writer를 spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`뿐이다(ADR 0012).
+ * 캐시 writer를 spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
+ * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`뿐이다(ADR 0012).
  *
- * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 조각의 provided 포트로 만든다.
+ * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 슬라이스의 provided 포트로 만든다.
  * 포트가 엔티티를 돌려주면 그대로 쓰고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다(ADR 0014).
  * 포트가 없는 데이터(사용자, 포인트 계정)와 포트가 막는 상태는 저장소에 엔티티를 저장해 만들고,
  * 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.
  * 마지막으로 준비한 엔티티는 타입마다 필드에 남고, 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾼다.
  * 테스트가 필드를 읽어도 되는 경우는 `CODING_STANDARDS.md`의 Fixture 절에 있다.
+ *
+ * 테스트 PG를 쓰는 클래스는 [nextPgOrderId]로 결제가 받을 PG 주문 번호를 정한다. 쓰지 않고 남은 번호는 테스트가 끝날 때마다 버린다.
  *
  * 테스트가 끝날 때마다 [RedisCleanUp]으로 테스트 Redis를 비운다. 이것을 넓힌 [BaseWebApiAdapterTest]와 [BaseCommittingApplicationServiceTest]도
  * 물려받는다. Redis를 가져오지 않는 [BaseRepositoryTest]는 비우지 않는다. 고객 목록의 캐시 키는 상품 목록
@@ -94,6 +105,13 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var orderConfirmer: OrderConfirmer
 
+    @Autowired
+    private lateinit var orderRepository: OrderRepository
+
+    /** `@EnableTestPg`가 가져온 컨텍스트에만 있다. 테스트 PG를 쓰지 않는 컨텍스트에서는 비어 있다. */
+    @Autowired
+    private lateinit var pgOrderIdGenerators: ObjectProvider<TestPgOrderIdGenerator>
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -115,6 +133,12 @@ abstract class BaseApplicationServiceTest {
     @AfterEach
     fun cleanUpRedis() {
         redisCleanUp.truncateAll()
+    }
+
+    /** 테스트가 정해 두고 쓰지 않은 PG 주문 번호가 다음 테스트의 결제에 가지 않게 한다. */
+    @AfterEach
+    fun clearPgOrderIds() {
+        pgOrderIdGenerators.ifAvailable { it.clear() }
     }
 
     protected fun prepareBrand(name: String? = null): Brand {
@@ -179,6 +203,14 @@ abstract class BaseApplicationServiceTest {
         return orderCreator.create(user.id, request).also { order = it }
     }
 
+    /**
+     * 결제를 만들지 않고 [order]의 결제를 시작해, 결제수단이 PG인데 결제가 없는 결제 중인 주문으로 둔다. 확정은 결제와 함께만 결제를 시작하므로
+     * 이 데이터의 불일치는 포트로 만들 수 없어 저장소로 만들고, 바꾼 주문을 명시적으로 저장한다. 주문 조회가 `PAYMENT_MISSING`인 장면만 쓴다(ADR 0028 규칙 1).
+     */
+    protected fun startPaymentWithoutPayment(order: Order = this.order) {
+        orderRepository.save(order.apply { startPayment() })
+    }
+
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
     }
@@ -201,8 +233,42 @@ abstract class BaseApplicationServiceTest {
         pointCharger.charge(user.id, createPointChargeRequest(amount = amount))
     }
 
-    /** 주문한 사용자가 주문을 확정한다. 품목의 재고와 그 사용자의 잔액이 넉넉해야 한다. */
-    protected fun confirmOrder(order: Order = this.order) {
-        orderConfirmer.confirm(order.userId, order.id)
+    /**
+     * 다음에 시작하는 결제가 받을 PG 주문 번호를 정해 돌려준다. 테스트 PG의 생성 스텁에 넣는다(ADR 0029 규칙 4).
+     * 결제마다 하나씩 정하고, 정한 차례대로 결제가 가져간다. 클래스에 `@EnableTestPg`가 있어야 한다.
+     */
+    protected fun nextPgOrderId(): String {
+        return pgOrderIdGenerators.getObject().next()
+    }
+
+    /**
+     * 다음 결제가 받을 PG 주문 번호를 정하고, 테스트 PG [testPg]가 그 번호와 [card]로 온 [amount]원 생성을 받아들여 PG 상태 [pgStatus]의
+     * PG 거래로 답하게 한다. 거래 키는 매번 새로 뽑는다. 거래 키를 단언하는 테스트는 `TestPg.acceptsCreate`를 직접 부른다.
+     */
+    protected fun acceptNextCreate(testPg: TestPg, amount: Long, card: CreditCard, pgStatus: String = "SUCCESS") {
+        testPg.acceptsCreate(
+            pgOrderId = nextPgOrderId(),
+            amount = amount,
+            card = card,
+            transactionKey = UUID.randomUUID().toString(),
+            pgStatus = pgStatus,
+        )
+    }
+
+    /**
+     * 주문한 사용자가 [order]를 확정하고, 테스트 PG [testPg]는 그 생성을 PG 상태 [pgStatus]의 PG 거래로 받아들인다. 확정의 결과를 돌려준다.
+     * 성공이면 확정된 주문, 처리 중(`PENDING`)이면 결제 중인 주문이다. 품목의 재고가 넉넉해야 하고, 클래스에 `@EnableTestPg`가 있어야 한다.
+     * 확정은 트랜잭션 밖에서만 돌므로(ADR 0028 규칙 2) 테스트 트랜잭션에서 빠진 클래스만 부른다. 커밋하는 기반과 `NOT_SUPPORTED`를 단 MockMvc 클래스다.
+     */
+    protected fun confirmOrder(testPg: TestPg, order: Order = this.order, pgStatus: String = "SUCCESS"): OrderInfo {
+        val request = createOrderConfirmRequest()
+        acceptNextCreate(
+            testPg,
+            amount = order.totalAmount.amount.longValueExact(),
+            card = request.toCreditCard(),
+            pgStatus = pgStatus,
+        )
+
+        return orderConfirmer.confirm(order.userId, order.id, idempotencyKey = UUID.randomUUID().toString(), request = request)
     }
 }

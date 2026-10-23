@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0024
 date: 2026-09-18
 ---
 
 # 주문 확정은 여러 애그리거트를 하나의 트랜잭션에서 변경한다
+
+> 2026-10-22 [ADR 0024](./0024-confirm-calls-the-pg-between-two-transactions.md)로 대체했다. 확정은 이제 포인트 대신 PG로 결제하고, 한 트랜잭션이 아니라 TX A(주문 잠금, 재고 예약, 결제 시작), 트랜잭션 밖의 PG 호출, TX B(PG의 답을 결제와 주문에 반영)의 세 단계다. 확정은 포인트 계정을 읽지도 바꾸지도 않는다([ADR 0027](./0027-point-payment-path-is-deleted.md)). 조율하는 쪽과 잠금의 차례는 [ADR 0028](./0028-order-slice-orchestrates-the-payment.md)이 정한다. 아래는 포인트로 결제하던 확정의 기록으로 남긴다. "생성과 확정의 차이"의 DRAFT 생성 줄은 그대로 유효하다.
 
 주문 확정은 주문 상태·결제 결과, 모든 품목의 재고, 포인트 잔액과 성공 이력을 함께 반영해야 한다. `Order`와 그 안의 `OrderLineItem`, 사용자별 `PointAccount`, 재고를 가진 `Product`의 책임은 나누되, application이 하나의 DB 트랜잭션에서 각 애그리거트의 행위를 호출하고 결과를 저장한다. 이것은 카탈로그 설계의 단일 애그리거트 변경 원칙에 대한 명시적인 주문 확정 예외다.
 
@@ -11,7 +13,7 @@ date: 2026-09-18
 
 애그리거트를 합치면 사용자 잔액과 여러 주문이 공유하는 상품 재고까지 Order의 변경 경계로 묶인다. 별도 트랜잭션으로 나누면 일부 차감만 성공한 중간 상태를 다루는 보상·복구 흐름이 필요하다. 이번 설계는 독립된 도메인 책임과 확정의 원자성을 함께 유지하기 위해 여러 애그리거트에 걸친 로컬 트랜잭션을 선택한다.
 
-대가는 application의 확정 유스케이스가 여러 애그리거트와 저장소를 조율한다는 점이다. Order가 Product나 PointAccount의 상태 변경 메서드를 직접 호출하지 않으며, 각 도메인은 자기 상태와 규칙을 책임진다. 기존 `domainSlicesOnlyReadEachOther` 규칙을 완화할 필요는 없다. 2026-10-08 [ADR 0013](./0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 조율은 각 조각의 포트를 거친다. 확정은 자기 주문만 바꾸고, 재고는 상품 조각의 `StockDeductor`가, 잔액은 포인트 조각의 `PointDeductor`가 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 한 트랜잭션으로 묶는 결정은 그대로다.
+대가는 application의 확정 유스케이스가 여러 애그리거트와 저장소를 조율한다는 점이다. Order가 Product나 PointAccount의 상태 변경 메서드를 직접 호출하지 않으며, 각 도메인은 자기 상태와 규칙을 책임진다. 기존 `domainSlicesOnlyReadEachOther` 규칙을 완화할 필요는 없다. 2026-10-08 [ADR 0013](./0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 조율은 각 슬라이스의 포트를 거친다. 확정은 자기 주문만 바꾸고, 재고는 상품 슬라이스의 `StockDeductor`가, 잔액은 포인트 슬라이스의 `PointDeductor`가 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 한 트랜잭션으로 묶는 결정은 그대로다.
 
 ## 생성과 확정의 차이
 

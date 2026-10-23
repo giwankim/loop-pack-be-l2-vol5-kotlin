@@ -2,7 +2,6 @@ package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
 import com.loopers.domain.order.OrderAlreadyConfirmedException
-import com.loopers.domain.point.InsufficientPointsException
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
 import com.loopers.support.error.CoreException
@@ -13,6 +12,7 @@ import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -33,12 +33,6 @@ class ApiControllerAdvice {
     fun handleInsufficientStock(e: InsufficientStockException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.INSUFFICIENT_STOCK)
-    }
-
-    @ExceptionHandler
-    fun handleInsufficientPoints(e: InsufficientPointsException): ResponseEntity<ApiResponse<*>> {
-        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
-        return failureResponse(errorType = ErrorType.INSUFFICIENT_POINTS)
     }
 
     @ExceptionHandler
@@ -106,6 +100,12 @@ class ApiControllerAdvice {
         val name = e.parameterName
         val type = e.parameterType
         val message = "필수 요청 파라미터 '$name' (타입: $type)가 누락되었습니다."
+        return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message)
+    }
+
+    @ExceptionHandler
+    fun handleMissingRequestHeader(e: MissingRequestHeaderException): ResponseEntity<ApiResponse<*>> {
+        val message = "필수 요청 헤더 '${e.headerName}'가 누락되었습니다."
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message)
     }
 

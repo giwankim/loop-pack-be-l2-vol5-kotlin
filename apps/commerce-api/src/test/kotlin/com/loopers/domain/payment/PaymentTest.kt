@@ -8,44 +8,36 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
-import java.util.Locale
 
 class PaymentTest {
     companion object {
         private const val TRANSACTION_KEY = "TEST-TX-0042"
+        private const val PG_ORDER_ID = "0b6f3c1e-5a2d-4c8b-9e7f-1d2a3b4c5d6e"
+        private const val OTHER_PG_ORDER_ID = "7c9d2e4f-1b3a-4d5c-8e6f-9a0b1c2d3e4f"
     }
 
+    /** 결제를 시작하는 쪽은 PG 주문 번호를 고르지 않는다. 생성기가 결제마다 한 번 새 값을 만든다(ADR 0029). */
     @Test
-    fun `a new payment is result unknown and carries its order, key and amount`() {
-        val payment = Payment(orderId = 42, idempotencyKey = "checkout-42", amount = Money(15_000))
+    fun `start begins a result unknown payment with its order, key, amount and a PG order ID from one generator call`() {
+        var calls = 0
+        val generator = PgOrderIdGenerator {
+            calls++
+            PG_ORDER_ID
+        }
+
+        val payment = Payment.start(
+            orderId = 42,
+            idempotencyKey = "checkout-42",
+            amount = Money(15_000),
+            pgOrderIdGenerator = generator,
+        )
 
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(payment.orderId).isEqualTo(42)
         assertThat(payment.idempotencyKey).isEqualTo("checkout-42")
         assertThat(payment.amount).isEqualTo(Money(15_000))
-    }
-
-    /** 10자리는 최소 폭이다. 더 긴 주문 식별자를 자르면 두 주문이 같은 PG 주문 번호를 갖는다. */
-    @ParameterizedTest
-    @CsvSource("1, LP-ORD-0000000001", "42, LP-ORD-0000000042", "12345678901, LP-ORD-12345678901")
-    fun `the PG order number is LP-ORD- and the order id zero-padded to 10 digits`(orderId: Long, pgOrderId: String) {
-        val payment = createPayment(orderId = orderId)
-
-        assertThat(payment.pgOrderId).isEqualTo(pgOrderId)
-    }
-
-    /** PG 주문 번호는 PG에 보내는 값이라 JVM 기본 로캘의 숫자를 따르지 않는다. 태국 숫자를 쓰는 로캘에서도 ASCII 숫자다. */
-    @Test
-    fun `the PG order number keeps ASCII digits under a default locale with native digits`() {
-        val defaultLocale = Locale.getDefault()
-        Locale.setDefault(Locale.forLanguageTag("th-TH-u-nu-thai"))
-        try {
-            val payment = createPayment(orderId = 42)
-
-            assertThat(payment.pgOrderId).isEqualTo("LP-ORD-0000000042")
-        } finally {
-            Locale.setDefault(defaultLocale)
-        }
+        assertThat(payment.pgOrderId).isEqualTo(PG_ORDER_ID)
+        assertThat(calls).isEqualTo(1)
     }
 
     @ParameterizedTest
@@ -54,6 +46,34 @@ class PaymentTest {
         val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
 
         assertThat(exception.message).isEqualTo("멱등 키는 공백일 수 없습니다.")
+    }
+
+    /** 키는 떼거나 접지 않고 그대로 비교하므로(ADR 0025 규칙 2) 앞뒤나 가운데의 공백도 거절한다. */
+    @ParameterizedTest
+    @ValueSource(strings = ["checkout 42", " checkout-42", "checkout-42 ", "checkout\t42", "checkout\n42"])
+    fun `an idempotency key containing whitespace is rejected at creation`(idempotencyKey: String) {
+        val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
+
+        assertThat(exception.message).isEqualTo("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+    }
+
+    /** ASCII 밖의 문자는 ASCII와 닮아 보여도(전각 문자, 줄 바꿈 없는 공백) 거절한다. ASCII의 제어 문자도 보이지 않으므로 거절한다. */
+    @ParameterizedTest
+    @ValueSource(strings = ["결제-42", "café-42", "ｃｈｅｃｋｏｕｔ", "checkout\u00A042", "checkout\u000042", "checkout\u007F42"])
+    fun `an idempotency key with a character outside visible ASCII is rejected at creation`(idempotencyKey: String) {
+        val exception = assertThrows<InvalidPaymentException> { createPayment(orderId = 42, idempotencyKey = idempotencyKey) }
+
+        assertThat(exception.message).isEqualTo("멱등 키는 공백 없는 보이는 ASCII 문자여야 합니다.")
+    }
+
+    /** 보이는 ASCII는 `!`(0x21)부터 `~`(0x7E)까지 94자다. 64자 한도 안에 들도록 두 키로 나눠 모두 받아들이는지 본다. */
+    @Test
+    fun `every visible ASCII character is allowed in an idempotency key`() {
+        val keys = ('!'..'~').joinToString("").chunked(64)
+
+        val payments = keys.map { createPayment(orderId = 42, idempotencyKey = it) }
+
+        assertThat(payments.map { it.idempotencyKey }).isEqualTo(keys)
     }
 
     @Test
@@ -68,6 +88,15 @@ class PaymentTest {
         val payment = createPayment(orderId = 42, idempotencyKey = "k".repeat(64))
 
         assertThat(payment.idempotencyKey).hasSize(64)
+    }
+
+    /** 재요청인지는 결제를 시작한 키와 그대로 견주어 정한다. 대소문자만 다른 키는 다른 키다(ADR 0025 규칙 2). */
+    @ParameterizedTest
+    @CsvSource("Checkout-42, true", "checkout-42, false", "CHECKOUT-42, false", "Checkout-43, false")
+    fun `a payment is started only with exactly its own idempotency key`(idempotencyKey: String, startedWith: Boolean) {
+        val payment = createPayment(orderId = 42, idempotencyKey = "Checkout-42")
+
+        assertThat(payment.isStartedWith(idempotencyKey)).isEqualTo(startedWith)
     }
 
     /** 음수는 [Money]가 먼저 거절하므로 결제가 거절하는 것은 0원이다. */
@@ -85,29 +114,12 @@ class PaymentTest {
         assertThat(payment.amount).isEqualTo(Money(1))
     }
 
-    /**
-     * 대사에서 PG 거래를 찾지 못한 것은 "결제되지 않았다"가 아니다(`CONTEXT.md` 결과 미확인). 처리 중 결제도 결과 미확인으로
-     * 돌아가지 않는다.
-     */
-    @ParameterizedTest
-    @EnumSource(PaymentStatus::class)
-    fun `reconciling no transaction leaves a payment of any status unchanged`(status: PaymentStatus) {
-        val payment = paymentIn(status)
-        val transactionKey = payment.transactionKey
-
-        val result = payment.reconcile(emptyList())
-
-        assertThat(result).isEqualTo(ReconcileResult.Unchanged)
-        assertThat(payment.status).isEqualTo(status)
-        assertThat(payment.transactionKey).isEqualTo(transactionKey)
-    }
-
     @Test
     fun `a pending transaction moves an unknown payment to pending and gives it the transaction key`() {
         val payment = createPayment(orderId = 42)
         val transaction = createPgTransaction(payment, status = PgStatus.PENDING)
 
-        val result = payment.reconcile(listOf(transaction))
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Changed(from = PaymentStatus.UNKNOWN, to = PaymentStatus.PENDING))
         assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
@@ -118,9 +130,7 @@ class PaymentTest {
     fun `a pending transaction leaves a pending payment unchanged`() {
         val payment = paymentIn(PaymentStatus.PENDING)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(PaymentStatus.PENDING)
@@ -137,7 +147,7 @@ class PaymentTest {
         val payment = paymentIn(from)
         val transaction = createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)
 
-        val result = payment.reconcile(listOf(transaction))
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Changed(from = from, to = to))
         assertThat(payment.status).isEqualTo(to)
@@ -152,35 +162,19 @@ class PaymentTest {
     ) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
         assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
     }
 
-    /** PG 주문 번호 하나에 PG 거래가 둘 이상이면 어느 것이 이 결제인지 모르므로 고르지 않는다. */
-    @Test
-    fun `two transactions report a multiple transactions conflict and leave the payment unknown`() {
-        val payment = createPayment(orderId = 42)
-        val transactions = listOf(
-            createPgTransaction(payment, status = PgStatus.SUCCESS),
-            createPgTransaction(payment, status = PgStatus.SUCCESS),
-        )
-
-        val result = payment.reconcile(transactions)
-
-        assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.MULTIPLE_TRANSACTIONS))
-        assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(payment.transactionKey).isNull()
-    }
-
     /** 다른 주문의 PG 거래가 이 결제를 끝내거나 거래 키를 정하지 않는다. */
     @Test
-    fun `a transaction for another PG order number reports a PG order conflict and leaves the payment unknown`() {
+    fun `a transaction for another PG order ID reports a PG order ID mismatch and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, pgOrderId = "LP-ORD-0000000043")))
+        val result = payment.reconcile(createPgTransaction(payment, pgOrderId = OTHER_PG_ORDER_ID))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.PG_ORDER_ID_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
@@ -191,7 +185,7 @@ class PaymentTest {
     fun `a transaction for another amount reports an amount conflict and leaves the payment unknown`() {
         val payment = createPayment(orderId = 42, amount = Money(15_000))
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, amount = Money(15_001))))
+        val result = payment.reconcile(createPgTransaction(payment, amount = Money(15_001)))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.AMOUNT_MISMATCH))
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
@@ -209,9 +203,7 @@ class PaymentTest {
     ) {
         val payment = paymentIn(known)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = "TEST-TX-OTHER", status = PgStatus.SUCCESS)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = "TEST-TX-OTHER", status = PgStatus.SUCCESS))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_KEY_MISMATCH))
         assertThat(payment.status).isEqualTo(known)
@@ -227,7 +219,7 @@ class PaymentTest {
     ) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.RESULT_MISMATCH))
         assertThat(payment.status).isEqualTo(finished)
@@ -240,30 +232,26 @@ class PaymentTest {
      */
     @ParameterizedTest
     @CsvSource(
-        "2, true, true, true, MULTIPLE_TRANSACTIONS",
-        "1, true, true, true, PG_ORDER_ID_MISMATCH",
-        "1, false, true, true, AMOUNT_MISMATCH",
-        "1, false, false, true, TRANSACTION_KEY_MISMATCH",
+        "true, true, true, PG_ORDER_ID_MISMATCH",
+        "false, true, true, AMOUNT_MISMATCH",
+        "false, false, true, TRANSACTION_KEY_MISMATCH",
     )
     fun `an answer that breaks several rules reports the first broken rule in table order`(
-        count: Int,
         otherPgOrderId: Boolean,
         otherAmount: Boolean,
         otherKey: Boolean,
         reason: ConflictReason,
     ) {
         val payment = paymentIn(PaymentStatus.SUCCESS)
-        val transactions = List(count) {
-            createPgTransaction(
-                payment,
-                transactionKey = if (otherKey) "TEST-TX-OTHER-$it" else TRANSACTION_KEY,
-                pgOrderId = if (otherPgOrderId) "LP-ORD-0000000043" else null,
-                amount = if (otherAmount) payment.amount + Money(1) else null,
-                status = PgStatus.SUCCESS,
-            )
-        }
+        val transaction = createPgTransaction(
+            payment,
+            transactionKey = if (otherKey) "TEST-TX-OTHER" else TRANSACTION_KEY,
+            pgOrderId = if (otherPgOrderId) OTHER_PG_ORDER_ID else null,
+            amount = if (otherAmount) payment.amount + Money(1) else null,
+            status = PgStatus.SUCCESS,
+        )
 
-        val result = payment.reconcile(transactions)
+        val result = payment.reconcile(transaction)
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(reason))
         assertThat(payment.status).isEqualTo(PaymentStatus.SUCCESS)
@@ -276,9 +264,7 @@ class PaymentTest {
     fun `a late pending transaction leaves a finished payment unchanged without a conflict`(finished: PaymentStatus) {
         val payment = paymentIn(finished)
 
-        val result = payment.reconcile(
-            listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING)),
-        )
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = PgStatus.PENDING))
 
         assertThat(result).isEqualTo(ReconcileResult.Unchanged)
         assertThat(payment.status).isEqualTo(finished)
@@ -303,16 +289,16 @@ class PaymentTest {
      */
     @ParameterizedTest
     @CsvSource(
-        "LP-ORD-0000000043, 15000, PG_ORDER_ID_MISMATCH",
-        "LP-ORD-0000000042, 15001, AMOUNT_MISMATCH",
-        "LP-ORD-0000000043, 15001, PG_ORDER_ID_MISMATCH",
+        "$OTHER_PG_ORDER_ID, 15000, PG_ORDER_ID_MISMATCH",
+        "$PG_ORDER_ID, 15001, AMOUNT_MISMATCH",
+        "$OTHER_PG_ORDER_ID, 15001, PG_ORDER_ID_MISMATCH",
     )
-    fun `a rejection for another PG order number or amount reports that conflict and leaves the payment unknown`(
+    fun `a rejection for another PG order ID or amount reports that conflict and leaves the payment unknown`(
         pgOrderId: String,
         amount: Long,
         reason: ConflictReason,
     ) {
-        val payment = createPayment(orderId = 42, amount = Money(15_000))
+        val payment = createPayment(orderId = 42, amount = Money(15_000), pgOrderId = PG_ORDER_ID)
 
         val result = payment.reject(PgRejection(pgOrderId = pgOrderId, amount = Money(amount)))
 
@@ -347,7 +333,7 @@ class PaymentTest {
         val payment = createPayment(orderId = 42)
         payment.reject(PgRejection(pgOrderId = payment.pgOrderId, amount = payment.amount))
 
-        val result = payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        val result = payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         assertThat(result).isEqualTo(ReconcileResult.Conflicted(ConflictReason.TRANSACTION_AFTER_REJECTION))
         assertThat(payment.status).isEqualTo(PaymentStatus.FAILED)
@@ -392,7 +378,7 @@ class PaymentTest {
             PaymentStatus.SUCCESS -> PgStatus.SUCCESS
             PaymentStatus.FAILED -> PgStatus.FAILED
         }
-        payment.reconcile(listOf(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus)))
+        payment.reconcile(createPgTransaction(payment, transactionKey = TRANSACTION_KEY, status = pgStatus))
 
         return payment
     }

@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.domain.shared.Money
 import com.loopers.support.test.BaseRepositoryTest
@@ -55,7 +56,7 @@ class OrderFixturesTest : BaseRepositoryTest() {
 
         assertThat(lines).allSatisfy { line ->
             assertThat(line.productName).hasSizeBetween(2, 100)
-            assertThat(line.unitPrice.amount).isBetween(1, 1_000_000_000)
+            assertThat(line.unitPrice.amount).isBetween(1.toBigInteger(), 1_000_000_000.toBigInteger())
             assertThat(line.quantity).isBetween(1, 10)
         }
     }
@@ -68,8 +69,8 @@ class OrderFixturesTest : BaseRepositoryTest() {
     }
 
     /**
-     * 진짜 생성자로 만들므로 만들어지는 것이 곧 검사다. 상품이 겹치면 [InvalidOrderException], 합계가 넘치면
-     * [com.loopers.domain.shared.InvalidMoneyException]이 난다. 품목 1..5개, 품목 금액 10,000,000,000원 이하라 합계는
+     * 진짜 생성자로 만들므로 만들어지는 것이 곧 검사다. 상품이 겹치면 [InvalidOrderException]이 난다.
+     * 품목 1..5개, 품목 금액 10,000,000,000원 이하라 합계는
      * 50,000,000,000원 이하다.
      */
     @Test
@@ -82,7 +83,7 @@ class OrderFixturesTest : BaseRepositoryTest() {
             assertThat(order.status).isEqualTo(OrderStatus.DRAFT)
             assertThat(order.lineItems).hasSizeBetween(1, 5)
             assertThat(order.lineItems.map { it.productId }).doesNotHaveDuplicates()
-            assertThat(order.totalAmount.amount).isBetween(1, 50_000_000_000)
+            assertThat(order.totalAmount.amount).isBetween(1.toBigInteger(), 50_000_000_000.toBigInteger())
         }
     }
 
@@ -138,5 +139,22 @@ class OrderFixturesTest : BaseRepositoryTest() {
             OrderCreateRequest.Item(productId = 3, quantity = 5),
             OrderCreateRequest.Item(productId = 1, quantity = 11),
         )
+    }
+
+    @Test
+    fun `createOrderConfirmRequest satisfies the request's own constraints with a card type the test PG takes`() {
+        val requests = List(SAMPLES) { createOrderConfirmRequest() }
+
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests.map { it.cardType }).allSatisfy { cardType ->
+            assertThat(cardType).isIn("SAMSUNG", "KB", "HYUNDAI")
+        }
+    }
+
+    @Test
+    fun `createOrderConfirmRequest uses the card type and number it is given`() {
+        val request = createOrderConfirmRequest(cardType = "KB", cardNo = "1234-5678-9814-1451")
+
+        assertThat(request).isEqualTo(OrderConfirmRequest(cardType = "KB", cardNo = "1234-5678-9814-1451"))
     }
 }

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [PointAccountFinder]를 실제 MySQL 위에서 확인한다. 잔액은 기반 클래스의 `charge`로 같은 조각의 [PointCharger]를 거쳐 채운다.
+ * [PointAccountFinder]를 실제 MySQL 위에서 확인한다. 잔액은 기반 클래스의 `charge`로 같은 슬라이스의 [PointCharger]를 거쳐 채운다.
  * 정리와 flush/clear, 계정을 테이블에서 SQL로 세는 까닭은 [PointChargerTest]와 같다.
  */
 class PointAccountFinderTest(

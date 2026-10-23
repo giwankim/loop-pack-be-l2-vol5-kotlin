@@ -1,10 +1,15 @@
 package com.loopers.adapter.webapi.v1.order
 
+import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.product.Product
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.EnableTestPg
+import com.loopers.support.TestPg
 import com.loopers.support.assertCheckConstraintRejects
+import com.loopers.support.captureSql
+import com.loopers.support.error.ErrorType
 import com.loopers.support.isEqualToLong
 import com.loopers.support.test.BaseWebApiAdapterTest
 import jakarta.persistence.EntityManagerFactory
@@ -23,10 +28,15 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.wiremock.spring.InjectWireMock
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 
-/** No test transaction: every HTTP request commits or rolls back before the next request reads it. */
+/**
+ * No test transaction: every HTTP request commits or rolls back before the next request reads it.
+ * The test PG lets the list scenes confirm orders through the PG the way customers do.
+ */
+@EnableTestPg
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class OrderApiTest(
     private val objectMapper: ObjectMapper,
@@ -65,6 +75,12 @@ class OrderApiTest(
      */
     private lateinit var owner: User
 
+    /** 생성자 주입의 하나뿐인 예외다. 까닭은 `OrderPaymentIntegrationTest`의 같은 필드에 있다. */
+    @InjectWireMock(TestPg.NAME)
+    private lateinit var server: WireMockServer
+
+    private val testPg by lazy { TestPg(server) }
+
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
@@ -98,8 +114,8 @@ class OrderApiTest(
         body.extractingPath("$.data.items[0].quantity").isEqualTo(5)
         body.extractingPath("$.data.items[0].lineAmount").isEqualTo(5_000)
         body.extractingPath("$.data.items[1].productId").isEqualToLong(second)
+        body.doesNotHavePath("$.data.paymentMethod")
         body.doesNotHavePath("$.data.paidAmount")
-        body.doesNotHavePath("$.data.confirmedAt")
 
         val ownDetail = requestDetail(body.extractingPath("$.data.orderId").asNumber().actual().toLong())
         assertThat(ownDetail).hasStatusOk()
@@ -215,14 +231,15 @@ class OrderApiTest(
     }
 
     @Test
-    fun `order amount overflow rolls back every item`() {
+    fun `order totals beyond Long MAX_VALUE are created and read exactly`() {
         prepareBrand()
         val products = List(5) { prepareProduct(brand, price = 1_000_000_000).id }
         val entries = products.joinToString { """{"productId":$it,"quantity":2147483647}""" }
-        val body = assertThat(requestCreate("""{"items":[$entries]}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
-        assertNoOrders()
+        val body = assertThat(requestCreate("""{"items":[$entries]}""")).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.totalAmount").isEqualTo("10737418235000000000".toBigInteger())
+        val orderId = body.extractingPath("$.data.orderId").asNumber().actual().toLong()
+        assertThat(requestDetail(orderId)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.totalAmount").isEqualTo("10737418235000000000".toBigInteger())
     }
 
     @Test
@@ -281,7 +298,7 @@ class OrderApiTest(
             requestCreate(
                 """{
                     "items":[{"productId":$id,"quantity":2,"productName":"가짜","unitPrice":1,"lineAmount":1}],
-                    "totalAmount":1,"status":"CONFIRMED","paidAmount":1
+                    "totalAmount":1,"status":"CONFIRMED","paymentMethod":"PG","paidAmount":1
                 }""",
             ),
         ).hasStatus(HttpStatus.CREATED).bodyJson()
@@ -290,21 +307,21 @@ class OrderApiTest(
         body.extractingPath("$.data.items[0].unitPrice").isEqualTo(1_000)
         body.extractingPath("$.data.items[0].lineAmount").isEqualTo(2_000)
         body.extractingPath("$.data.totalAmount").isEqualTo(2_000)
+        body.doesNotHavePath("$.data.paymentMethod")
         body.doesNotHavePath("$.data.paidAmount")
         body.doesNotHavePath("$.data.userId")
     }
 
     @Test
-    fun `line amount overflow is rejected with no partial order`() {
+    fun `line amounts beyond Long MAX_VALUE are created and read exactly`() {
         val id = prepareProduct().id
-        // Valid catalog prices cannot overflow one line; a DB fixture exercises the Long multiplication guard.
+        // Valid catalog prices are capped; a stored fixture exercises arbitrary-precision line multiplication.
         jdbc.update("update product set price = ? where id = ?", Long.MAX_VALUE, id)
-        val body = assertThat(requestCreate(item(id, 2))).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
-        assertNoOrders()
-        jdbc.update("update product set price = 1000 where id = ?", id)
-        assertThat(requestCreate(item(id))).hasStatus(HttpStatus.CREATED)
+        val body = assertThat(requestCreate(item(id, 2))).hasStatus(HttpStatus.CREATED).bodyJson()
+        body.extractingPath("$.data.items[0].lineAmount").isEqualTo("18446744073709551614".toBigInteger())
+        val orderId = body.extractingPath("$.data.orderId").asNumber().actual().toLong()
+        assertThat(requestDetail(orderId)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.items[0].lineAmount").isEqualTo("18446744073709551614".toBigInteger())
     }
 
     @Test
@@ -362,18 +379,12 @@ class OrderApiTest(
         assertThatThrownBy { jdbc.update(sql, *args) }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 
+    /** 주문 상태와 결제수단·확정 시각의 CHECK는 [com.loopers.application.order.required.OrderRepositoryTest]가 본다. */
     @Test
-    fun `database rejects inconsistent payment state and nonpositive item values`() {
+    fun `database rejects nonpositive item values`() {
         val orderId = prepareOrder(owner).id
         val original = requestDetail(orderId)
         assertThat(original).hasStatusOk()
-        listOf(
-            "paid_amount = 1000",
-            "confirmed_at = now(6)",
-            "status = 'CONFIRMED'",
-            "status = 'CONFIRMED', paid_amount = 0, confirmed_at = now(6)",
-            "status = 'CONFIRMED', paid_amount = null, confirmed_at = now(6)",
-        ).forEach { update -> jdbc.assertCheckConstraintRejects("update orders set $update where id = ?", orderId) }
         listOf("quantity = 0", "unit_price = 0").forEach { update ->
             jdbc.assertCheckConstraintRejects("update order_line_item set $update where order_id = ?", orderId)
         }
@@ -449,25 +460,101 @@ class OrderApiTest(
         assertThat(foreignList.single()["orderId"].longValue()).isEqualTo(foreign)
     }
 
-    /** 저장된 두 상태가 목록에서도 상세와 같은 모양이다. 정해 둔 확정 시각은 포트가 만들 수 없으므로 준비한 초안 위에 SQL로 덮어쓴다(설계 13). */
+    /**
+     * 목록은 주문마다 결제수단과 결제 상태를 싣는다. 결제 상태는 결제수단이 PG인 주문에만 있다(ADR 0028 규칙 1). 그런 주문은 테스트 PG로 확정하고,
+     * 포인트로 확정된 주문은 이제 만들 길이 없어 준비한 초안 위에 SQL로 덮어쓴다(설계 13). 항목마다 상세와 같은 응답인지도 견준다.
+     * 목록과 상세를 읽는 것은 PG를 부르지 않는다. 테스트 PG가 받은 생성은 준비한 두 확정의 것뿐이고 조회는 없다.
+     */
     @Test
-    fun `the order list shows draft and confirmed entries with their stored payment fields`() {
+    fun `the order list shows the payment fields of a draft, a point-paid order, a payment pending order and a PG-paid order`() {
         prepareProduct(price = 1_000)
-        prepareOrder(owner, listOf(product))
-        val confirmed = prepareOrder(owner, listOf(product), quantity = 2).id
+        val draft = prepareOrder(owner, listOf(product)).id
+        val pointPaid = prepareOrder(owner, listOf(product), quantity = 2).id
         jdbc.update(
-            "update orders set status = 'CONFIRMED', paid_amount = 2000, " +
-                "confirmed_at = '2026-09-18 00:00:00.123456' where id = ?",
-            confirmed,
+            "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
+            pointPaid,
         )
+        val pending = confirmOrder(testPg, prepareOrder(owner, listOf(product)), pgStatus = "PENDING").order.id
+        val confirmed = confirmOrder(testPg, prepareOrder(owner, listOf(product), quantity = 4)).order.id
 
-        val body = assertThat(requestList()).hasStatusOk().bodyJson()
+        val orders = requestList()
+        val body = assertThat(orders).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items.length()").isEqualTo(4)
+        body.extractingPath("$.data.items[0].orderId").isEqualToLong(confirmed)
         body.extractingPath("$.data.items[0].status").isEqualTo("CONFIRMED")
-        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(2_000)
-        body.extractingPath("$.data.items[0].confirmedAt").isEqualTo("2026-09-18T00:00:00.123456Z")
-        body.extractingPath("$.data.items[1].status").isEqualTo("DRAFT")
+        body.extractingPath("$.data.items[0].paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.items[0].paymentStatus").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.items[0].paidAmount").isEqualTo(4_000)
+        body.extractingPath("$.data.items[1].orderId").isEqualToLong(pending)
+        body.extractingPath("$.data.items[1].status").isEqualTo("PAYMENT_PENDING")
+        body.extractingPath("$.data.items[1].paymentMethod").isEqualTo("PG")
+        body.extractingPath("$.data.items[1].paymentStatus").isEqualTo("PENDING")
         body.doesNotHavePath("$.data.items[1].paidAmount")
-        body.doesNotHavePath("$.data.items[1].confirmedAt")
+        body.extractingPath("$.data.items[2].orderId").isEqualToLong(pointPaid)
+        body.extractingPath("$.data.items[2].status").isEqualTo("CONFIRMED")
+        body.extractingPath("$.data.items[2].paymentMethod").isEqualTo("POINT")
+        body.doesNotHavePath("$.data.items[2].paymentStatus")
+        body.extractingPath("$.data.items[2].paidAmount").isEqualTo(2_000)
+        body.extractingPath("$.data.items[3].orderId").isEqualToLong(draft)
+        body.extractingPath("$.data.items[3].status").isEqualTo("DRAFT")
+        body.doesNotHavePath("$.data.items[3].paymentMethod")
+        body.doesNotHavePath("$.data.items[3].paymentStatus")
+        body.doesNotHavePath("$.data.items[3].paidAmount")
+
+        val listed = orders.json()["data"]["items"]
+        listOf(confirmed, pending, pointPaid, draft).forEachIndexed { index, orderId ->
+            val ownDetail = requestDetail(orderId)
+            assertThat(ownDetail).hasStatusOk()
+            assertThat(listed[index]).isEqualTo(ownDetail.json()["data"])
+        }
+        assertThat(testPg.createCount()).isEqualTo(2)
+        assertThat(testPg.lookupCount()).isZero()
+    }
+
+    /**
+     * 목록은 한 쪽에 있는, 결제수단이 PG인 주문의 결제를 한 문장으로 읽는다. 주문마다 읽으면 쪽 크기만큼 문장이 는다. 확정 전 주문과 포인트로 결제한 주문만 있는
+     * 쪽은 결제를 읽지 않는다(ADR 0028 규칙 1). 결제를 읽는 문장은 결제 표에서 고르는 문장으로 센다.
+     */
+    @Test
+    fun `a page of orders paying through the PG reads their payments in one statement and a page without one reads none`() {
+        prepareProduct()
+        prepareOrder(owner, listOf(product))
+        val pointPaid = prepareOrder(owner, listOf(product)).id
+        jdbc.update(
+            "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
+            pointPaid,
+        )
+        repeat(3) { confirmOrder(testPg, prepareOrder(owner, listOf(product))) }
+
+        val pgPage = captureSql { requestList("size" to "3") }
+        val body = assertThat(pgPage.result).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.items[*].paymentStatus").asArray().hasSize(3).containsOnly("SUCCESS")
+        assertThat(pgPage.statements.filter(::readsPayment)).hasSize(1)
+
+        val otherPage = captureSql { requestList("page" to "1", "size" to "3") }
+        val list = assertThat(otherPage.result).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items.length()").isEqualTo(2)
+        list.extractingPath("$.data.items[0].paymentMethod").isEqualTo("POINT")
+        list.doesNotHavePath("$.data.items[1].paymentMethod")
+        assertThat(otherPage.statements.filter(::readsPayment)).isEmpty()
+    }
+
+    /**
+     * 결제수단이 PG인 주문에 결제가 없는 것은 데이터의 불일치라 상세도 목록도 내부 오류다. 포인트 계정이 없는 사용자처럼 범용 500에
+     * 그 사유를 싣는다(ADR 0028 규칙 1). 결제수단이 PG인데 결제가 없는 주문은 포트로 만들 수 없어 기반의 우회 도우미가 만든다.
+     */
+    @Test
+    fun `an order paying through the PG without its payment answers 500 PAYMENT_MISSING on the detail and the list`() {
+        prepareOrder(owner)
+        startPaymentWithoutPayment()
+
+        val body = assertThat(requestDetail(order.id)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("Internal Server Error")
+        body.extractingPath("$.meta.message").isEqualTo(ErrorType.PAYMENT_MISSING.message)
+
+        val error = assertThat(requestList()).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("Internal Server Error")
+        error.extractingPath("$.meta.message").isEqualTo(ErrorType.PAYMENT_MISSING.message)
     }
 
     /**
@@ -547,6 +634,10 @@ class OrderApiTest(
 
     private fun items(productIds: List<Long>): String {
         return productIds.joinToString(prefix = """{"items":[""", postfix = "]}") { """{"productId":$it,"quantity":1}""" }
+    }
+
+    private fun readsPayment(sql: String): Boolean {
+        return sql.startsWith("select") && " from payment " in sql
     }
 
     private fun assertNoOrders() {

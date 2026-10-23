@@ -1,6 +1,6 @@
 # 포인트·주문 설계 인터뷰
 
-상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-10-03 같은 상품의 수량 합산(Q3)을 철회했다(5.2, #55). 같은 상품이 두 번 있는 주문 요청은 400이다. 같은 날 엄격한 JSON 입력(Q20)도 철회했다(5.10, #55). 포인트·주문 본문도 카탈로그처럼 Jackson 기본대로 읽는다. 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
+상태: 2026-09-28 사용자의 결정으로 요청 멱등성(Q5·Q9·Q15·Q16·Q22)을 철회했다(17절, ADR 0005). 같은 날 포인트 이력(Q6·Q11)도 철회했다(18절, ADR 0006). 2026-10-03 같은 상품의 수량 합산(Q3)을 철회했다(5.2, #55). 같은 상품이 두 번 있는 주문 요청은 400이다. 같은 날 엄격한 JSON 입력(Q20)도 철회했다(5.10, #55). 포인트·주문 본문도 카탈로그처럼 Jackson 기본대로 읽는다. 2026-10-21 주문 응답에서 `confirmedAt`을 뺐다(20절, Q19의 일부). 주문은 확정 시각을 그대로 저장한다. 2026-10-23 5주차 2단계에서 확정은 포인트가 아니라 PG로 결제한다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 포인트로 결제하는 길은 지웠고 충전과 잔액 조회만 남았다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 확정을 포인트 결제로 적은 절마다 날짜 메모를 달았다. 지금의 확정은 [결제 설계](./payments.md) 9–17절에 있다. 2026-09-18 인터뷰 Q1–Q23 답변을 반영하고, 사용자의 to-spec 요청에 따라 [구현 명세 Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)을 ready-for-agent로 게시했다. 포인트 이력은 채택하되 구현 복잡도가 커지면 재검토한다. 동시 실행의 race condition 처리(Q8)와 DB migration 검토(Q23)는 사용자의 지시로 이번 단계에서 보류했다. 물리 FK(Q21), 주문·충전 이력을 활용한 성공 응답 재생(Q22)은 확정 사항이다. 아래 클래스·저장 구조·응답 필드 초안을 게시 명세에 정리했으며, 애플리케이션 코드는 이 인터뷰에서 변경하지 않았다.
 
 ## 1. 근거와 범위
 
@@ -9,12 +9,14 @@
 - 기존 설계: [카탈로그 설계](./catalog.md), [카탈로그 도메인](../domain/catalog.md), [ADR 0001](../adr/0001-soft-delete-catalog-hard-delete-like.md).
 - [1주차 주문 할인 계약](../week1/order-discount-contract.md)은 쿠폰 장면의 설계 기록이다. 2주차 기본 기능 목록에 쿠폰 API는 없고, Q1에서 이번 구현 범위에서 제외했다.
 - 가격 보존 정책: [ADR 0002](../adr/0002-preserve-order-creation-price.md).
-- 애그리거트와 트랜잭션 경계: [ADR 0003](../adr/0003-confirm-order-in-one-transaction.md).
+- 애그리거트와 트랜잭션 경계: [ADR 0003](../adr/0003-confirm-order-in-one-transaction.md). (2026-10-23 [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)가 대체했다.)
 - 성공 응답 재생과 업무 기록의 보존: [ADR 0004](../adr/0004-replay-success-from-business-records.md).
 
 과제에 명시된 내용, 인터뷰에서 선택한 정책, 구현을 위한 구체화 초안을 구분한다. 보류한 항목을 권장안 채택으로 해석하지 않는다.
 
 ## 2. 과제에서 확인한 요구
+
+> 2026-10-23 표의 주문 확정, "확정 시 재고나 잔액이 부족하면 거절한다", 연결 검증의 "7,000원을 결제한 뒤 잔액 3,000원"은 2주차 과제의 것이다. 5주차 과제가 확정을 PG로 결제하는 확정으로 바꿨다. 확정은 재고를 예약하고 포인트를 쓰지 않으며, 잔액은 확정의 거절 사유가 아니다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), [결제 설계](./payments.md) 10–13절).
 
 | 기능 | API | 명시된 계약 |
 | --- | --- | --- |
@@ -56,11 +58,13 @@
 
 ## 4. 결정 트리
 
+> 2026-10-23 Q7, Q12, Q18이 말하는 확정은 포인트로 결제하던 때의 것이다. 5주차 2단계에서 확정은 PG로 결제하고 포인트를 쓰지 않으며, 잔액 부족은 확정의 거절 사유가 아니다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
+
 Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 사용자의 지시로 보류했다. 잠금 방식·동시 재요청 복구·migration 도구 선택을 추가 인터뷰 질문으로 이어 가지 않는다. 현재 범위에서 남은 업무 정책 질문은 없으며, 11절에 전체 설계와 명세 게시 결과를 정리했다.
 
 | ID | 결정한 것 | 사용자의 선택 | 후속 결정 |
 | --- | --- | --- | --- |
-| Q1 | 이번 조각의 기능 범위 | 위 고객·관리자 API와 필요한 사용자 fixture를 포함한다. 쿠폰·취소·환불·만료·예약·외부 결제는 이번 조각에서 제외한다. | 사용자 준비 방식, 목록·상세 계약 |
+| Q1 | 이번 슬라이스의 기능 범위 | 위 고객·관리자 API와 필요한 사용자 fixture를 포함한다. 쿠폰·취소·환불·만료·예약·외부 결제는 이번 슬라이스에서 제외한다. | 사용자 준비 방식, 목록·상세 계약 |
 | Q2 | DRAFT에 저장된 단가의 효력 | 생성 시 상품 가격으로 단가를 기록하고 확정에도 그대로 쓴다. 가격 변경 시 확정 거절 대안도 비교했으며 결정은 ADR 0002에 명시한다. | Q10에서 이름 등 스냅샷 범위도 확정 |
 | Q3 | 같은 상품이 요청에 여러 번 있을 때의 의미 | 상품별 수량을 합산해 한 품목으로 기록한다. | Q13에서 수량·입력 품목 수와 넘침 거절도 확정 **5.2에서 철회(#55).** |
 | Q4 | 여러 품목 중 하나라도 확정에 실패했을 때의 결과 | 해당 확정 시도의 차감을 모두 취소하고 주문은 DRAFT로 유지한다. 같은 주문으로 재시도할 수 있다. | 트랜잭션 경계(Q7), 동시성(Q8), 실패 기록(Q11) |
@@ -84,7 +88,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 | Q16 | Q5, Q9 | 충전·생성 성공 재요청의 응답 내용 | 첫 성공의 HTTP status와 업무 응답을 재생한다. 충전 당시 잔액과 최초 DRAFT 응답을 보관하며 현재 상태는 GET으로 조회한다. **17절에서 철회(Q24).** |
 | Q17 | Q1, Q7 | 사용자 fixture와 포인트 계정의 초기 상태 | 사용자 fixture를 준비할 때 잔액 0인 계정을 함께 만든다. 조회나 첫 주문이 계정을 생성하지 않는다. |
 | Q18 | Q4, Q9 | 소유권·입력·업무 거절의 오류 계약 | 식별 누락·미존재 사용자는 401, 없거나 남의 주문은 404, 입력 오류는 400, 재고·잔액 부족과 키 내용 충돌은 409. 기존 응답 모양을 유지하고 포인트·주문의 업무 오류는 구별 가능한 meta.errorCode를 부여한다. |
-| Q19 | Q1, Q5, Q10 | 주문 조회·성공 응답 계약 | 생성 201, 확정·조회 200. 기존 Slice 형태·page/size·최신순을 사용하고 목록·상세에 품목을 포함한다. 관리자는 userId로 필터 가능하다. DRAFT에는 paidAmount·confirmedAt을 생략하고 CONFIRMED에는 저장된 값을 제공한다. |
+| Q19 | Q1, Q5, Q10 | 주문 조회·성공 응답 계약 | 생성 201, 확정·조회 200. 기존 Slice 형태·page/size·최신순을 사용하고 목록·상세에 품목을 포함한다. 관리자는 userId로 필터 가능하다. DRAFT에는 paidAmount·confirmedAt을 생략하고 CONFIRMED에는 저장된 값을 제공한다. **confirmedAt은 20절에서 철회.** |
 | Q20 | Q3, Q13 | JSON 정수와 품목 배열의 허용 표현 | 금액·수량에는 정수 표기의 JSON 숫자만 허용하고 숫자 문자열·소수·지수 표기는 거절한다. items는 배열만 허용한다. 기존 카탈로그의 전역 바인딩 계약은 변경하지 않는다. **5.10에서 철회(#55).** |
 
 | ID | 선행 결정 | 4차 질문 | 사용자의 선택 |
@@ -106,7 +110,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 - 주문 생성 시 서버가 상품 가격을 단가로 기록하고 이후 가격 변경을 확정 거절 사유로 삼지 않는다. 단가 × 수량의 품목 금액과 그 합계로 주문 금액을 보존한다.
 - 사용자가 직접 제시한 대안은 현재 가격과 다르면 검증 실패로 거절하는 방식이다. 이번에는 생성 시 가격을 사용하며 [ADR 0002](../adr/0002-preserve-order-creation-price.md)에 선택과 대가를 남겼다.
 - 가격 상승·하락 모두 같은 정책이다. 생성 시 10,000원이면 이후 12,000원이나 8,000원이 되어도 10,000원을 사용한다. 주문 만료가 없는 현재 범위에서는 오래된 DRAFT에도 적용된다.
-- 가격 보존은 재고 예약이 아니다. 상품 삭제·재고 부족·잔액 부족은 여전히 확정을 거절할 수 있다.
+- 가격 보존은 재고 예약이 아니다. 상품 삭제·재고 부족·잔액 부족은 여전히 확정을 거절할 수 있다. (2026-10-23 5주차 2단계에서 잔액 부족은 확정의 거절 사유가 아니다. 포인트로 결제하는 길을 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 재고 예약은 이제 확정의 TX A가 한다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md)).)
 - Q10에서 이름 등의 스냅샷 보존과 상품 참조를 함께 채택했다. 주문 품목의 정식 이름은 사용자가 선택한 OrderLineItem이다.
 
 ### 5.2 중복 품목 합산 — Q3
@@ -122,6 +126,8 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 > 2026-09-28 CONFIRMED 재요청의 성공 재생과 마지막 항목(충전·생성의 키)을 17절에서 철회했다. 이미 확정된 주문은 409 `ORDER_ALREADY_CONFIRMED`다.
 >
 > 2026-09-28 결제 성공 이력을 18절에서 철회했다. 결제의 성공 기록은 확정된 주문의 결제액과 확정 시각이다.
+>
+> 2026-10-23 첫 확정의 포인트 차감과 "충전 후 같은 주문을 다시 확정"은 5주차 2단계에서 사라졌다. 확정은 TX A에서 재고를 예약하고 PG로 결제하며 포인트를 쓰지 않는다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). PG를 부르기 전의 거절(재고 부족, 주문할 수 없는 상품)만 주문을 확정 전으로 남기고, 결제에 실패한 주문은 끝난 상태다([결제 설계](./payments.md) 10절, 12.1).
 
 
 - 첫 확정 시도는 모든 품목의 재고 차감, 포인트 차감, 결제 성공 기록, 주문의 CONFIRMED 전환이 함께 성공하거나 함께 실패해야 한다.
@@ -144,6 +150,8 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 ### 5.5 생성·확정의 변경 대상 — Q7
 
 > 2026-09-28 확정과 충전의 "같은 성공에 딸린 기록"에 있던 포인트 이력을 18절에서 철회했다.
+>
+> 2026-10-23 표의 주문 확정 줄은 5주차 2단계에서 바뀌었다. 확정은 `PointAccount`를 읽지도 바꾸지도 않는다. 주문, 상품, 결제를 TX A와 TX B로 나눠 바꾸고, 그 사이에 트랜잭션 밖에서 PG를 부른다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), [결제 설계](./payments.md) 11절).
 
 테이블 수나 읽은 엔티티 수는 변경한 애그리거트 수와 같지 않다. OrderLineItem은 Order의 구성원이고 상품 참조는 상품을 변경할 권한을 뜻하지 않는다.
 
@@ -167,6 +175,8 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 > 총액은 저장한다. 여러 품목 행의 합이라 한 행의 CHECK가 품목에서 계산할 수 없는데, `paid_amount = total_amount` CHECK가 결제액을 이 값에 묶는다. 품목별 할인·세금처럼 품목 금액이 단가 × 수량에서 벗어나면, 그때는 기록할 사실이므로 열을 다시 둔다. 이름은 `lineAmount`를 지킨다. 다른 금액 필드(`totalAmount`·`paidAmount`·`chargeAmount`)와 같은 `<qualifier>Amount` 모양이고, [CONTEXT.md](../../CONTEXT.md)에 품목 금액으로 올렸다.
 >
 > 2026-10-12 위 둘째 문단을 뒤집어 총액도 저장하지 않는다. `orders.total_amount` 열과 `CK_ORDERS_ON_TOTAL_AMOUNT_POSITIVE`를 지우고, `CK_ORDERS_ON_PAYMENT_STATE`에서 `paid_amount = total_amount`를 뺐다. `Order.totalAmount`는 읽을 때 품목 금액을 더한다. 까닭은 품목 금액과 같다. 총액은 생성 뒤 바뀌지 않는 품목에서 나오는데, 저장한 총액이 품목의 합과 같은지는 여러 행에 걸친 일이라 어느 CHECK도 보지 못했다. 그러니 `paid_amount = total_amount`가 결제액을 묶던 값도 검사되지 않은 사본이었다. 총액을 읽는 곳은 모두 품목을 함께 읽으므로([ADR 0014](../adr/0014-finders-load-whole-aggregates.md), 목록 조회의 fetch join) 조회가 늘지 않는다. 결제액이 총액과 같다는 것은 이제 `Order.confirm` 한 곳이 지킨다. 총액의 양수 조건과 결제액 = 총액이 함께 막던 0원 결제는 결제액의 양수 조건(`CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`)이 막는다. 넘침은 생성자가 총액을 한 번 세어 여전히 생성에서 거절한다. 주문 단위 할인처럼 총액이 품목 금액의 합에서 벗어나면, 그때 벗어나게 한 사실(할인액 같은 것)을 열로 둔다.
+>
+> 2026-10-23 위 메모의 `Order.confirm`은 5주차 2단계에서 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 결제액 열과 `CK_ORDERS_ON_PAID_AMOUNT_POSITIVE`도 2026-10-22에 지웠다. 결제액은 확정된 주문이면 주문 금액으로 계산한다([결제 설계](./payments.md) 10.1).
 
 ### 5.7 DRAFT 생성과 범위 — Q12, Q13
 
@@ -195,9 +205,9 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 
 - 사용자 fixture를 준비할 때 잔액 0인 PointAccount를 함께 만든다. 기존 User를 재사용하며 사용자 생성 API는 추가하지 않는다. 잔액 조회·주문 생성이 계정을 뒤늦게 만들지 않는다.
 - 기존 `UserIdHeader`의 누락 401과 application의 사용자 존재 검사를 재사용한다. 없는 주문과 타인의 주문은 같은 404로 응답한다. (2026-10-08 [ADR 0015](../adr/0015-web-boundary-accepts-the-requester.md)로 두 401 모두 웹 경계의 `@RequesterId`가 낸다. application은 사용자를 확인하지 않는다.)
-- 재고·잔액 부족, 같은 키의 다른 의도는 409다. 입력 오류는 400이다. 새로운 포인트·주문 업무 오류에 구분 가능한 `meta.errorCode`를 주되 기존 카탈로그 코드 문자열은 바꾸지 않는다.
+- 재고·잔액 부족, 같은 키의 다른 의도는 409다. (2026-10-23 잔액 부족은 확정의 거절 사유에서 빠졌다. 포인트로 결제하는 길을 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).) 입력 오류는 400이다. 새로운 포인트·주문 업무 오류에 구분 가능한 `meta.errorCode`를 주되 기존 카탈로그 코드 문자열은 바꾸지 않는다.
 - 생성 성공은 201, 확정·조회는 200이다. 목록은 기존 Slice 응답과 최신순을 사용한다. 고객은 자기 주문만 조회하고, 관리자는 전체 또는 `userId`로 필터한다.
-- 목록·상세 모두 스냅샷 품목을 포함한다. DRAFT에는 `paidAmount`와 `confirmedAt`이 없고 CONFIRMED에는 저장된 값이 있다.
+- 목록·상세 모두 스냅샷 품목을 포함한다. DRAFT에는 `paidAmount`와 `confirmedAt`이 없고 CONFIRMED에는 저장된 값이 있다. (2026-10-21 20절로 `confirmedAt`은 응답에서 뺐다. 이제 CONFIRMED에만 있는 필드는 `paidAmount`다.)
 
 ### 5.10 엄격한 JSON 입력 — Q20
 
@@ -231,6 +241,8 @@ application이 각각의 저장소와 애그리거트 행동을 조율한다. Or
 > 2026-10-03 JSON 형태·필수 값 오류의 전용 code를 5.10과 함께 철회했다(#55). 그 오류는 다른 엔드포인트와 같은 범용 `Bad Request`다.
 >
 > 2026-10-09 잠금 실패의 409 `CONCURRENT_REQUEST` 행을 오류 표에 더했다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 충전이나 확정이 행 잠금을 3초 넘게 기다리면 이 code로 답하고, 아무것도 반영하지 않는다. 확정에서는 상품 행의 잠금 조회와, 커밋 때 보내는 포인트 계정 등의 UPDATE가 기다릴 수 있다.
+>
+> 2026-10-23 확정의 줄, 확정 응답의 예와 그 뒤의 잔액 3,000원, 오류 표의 `INSUFFICIENT_POINTS` 행과 그 JSON은 포인트로 결제하던 때의 것이다. 5주차 2단계에서 확정은 `Idempotency-Key` 헤더와 카드(`{cardType, cardNo}`)를 받아 PG로 결제하고, 결제 중이면 202를 돌려준다. 포인트를 쓰지 않으므로 잔액이 줄지 않고, `INSUFFICIENT_POINTS`는 지웠다. 확정이 기다리는 행에 포인트 계정은 없다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), [결제 설계](./payments.md) 12절).
 
 
 상태 코드·조회 범위·페이지 계약은 확정 사항이다. 아래 필드 이름과 응답 조합은 그 계약을 구체화한 초안이다. 응답은 기존 `ApiResponse`를 사용하며 null 필드는 기존 Jackson 정책에 따라 생략한다.
@@ -288,7 +300,7 @@ Content-Type: application/json
 }
 ```
 
-확정 응답은 위 값에 `status: CONFIRMED`, `paidAmount: 7000`, 저장된 `confirmedAt`을 반영한다. 확정 응답에는 현재 잔액을 포함하지 않는 초안이다. 이후 잔액 GET은 3,000원이지만 charge-001 재요청 응답은 10,000원이며 order-001 재요청 응답은 위의 DRAFT다.
+확정 응답은 위 값에 `status: CONFIRMED`, `paidAmount: 7000`, 저장된 `confirmedAt`을 반영한다. (2026-10-21 20절로 `confirmedAt`은 뺐다.) 확정 응답에는 현재 잔액을 포함하지 않는 초안이다. 이후 잔액 GET은 3,000원이지만 charge-001 재요청 응답은 10,000원이며 order-001 재요청 응답은 위의 DRAFT다.
 
 오류 이름의 구체화 초안:
 
@@ -319,6 +331,8 @@ domain의 부족 예외를 웹 어댑터의 `ApiControllerAdvice`에서 구체�
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 이 절의 패키지와 확정의 조율 방식을 바꿨다. layer-first 패키지 대신 splearn의 헥사고날 구조(`adapter.webapi`, `adapter.persistence`, `application/{기능}/provided`·`required`)를 쓴다. `PointService`와 `OrderService`는 기능마다 Query Service와 Modify Service(`PointQueryService`·`PointModifyService`, `OrderQueryService`·`OrderModifyService`)로 나뉘었고, 컨트롤러와 다른 기능은 provided 포트를 부른다. 확정은 더 이상 각 domain 저장소와 행동을 직접 조율하지 않는다. `OrderModifyService.confirm`이 자기 주문만 읽고 바꾸며, 재고는 상품 기능의 `StockDeductor`로, 잔액은 포인트 기능의 `PointDeductor`로 차감한다. 두 포트가 확정의 트랜잭션에 참여하므로 별도로 커밋하지 않는다는 것은 그대로다(ADR 0003). 저장소 포트는 `required`의 Spring Data 인터페이스이고, 주문 목록만 순수 포트 `OrderListRepository`와 `adapter.persistence`의 구현으로 나뉜다. 응답 DTO는 `adapter.webapi`에 있다.
 >
 > 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 아래 표의 "조회 application" 줄이 바뀌었다. 조회는 엔티티를 HTTP까지 내준다. 주문의 Finder와 쓰기 포트는 품목을 엔티티 그래프로 함께 읽은 `Order`를, 포인트의 Finder와 충전은 `PointAccount`를 돌려주고, 응답 DTO가 엔티티에서 옮긴다. `OrderInfo`와 `PointAccountInfo`는 없다. 트랜잭션 밖에서 지연 로딩할 것이 남지 않는다는 것은 그대로다. 애그리거트 안의 연관을 조회가 함께 읽기 때문이다.
+>
+> 2026-10-23 다이어그램의 `Order.confirm()`과 `PointAccount.pay`, 표의 PointAccount·OrderService 줄의 결제, 상태 불변식의 "별도 Payment 애그리거트는 두지 않는 초안"은 포인트로 결제하던 때의 것이다. 결제는 5주차에 주문과 다른 애그리거트(`Payment`)가 되었고([ADR 0021](../adr/0021-payment-is-its-own-aggregate-and-slice.md)), 2단계에서 확정은 PG로 결제한다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). `pay`와 `confirm()`은 지웠고([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)), 주문의 전이는 `startPayment()`, `completePayment()`, `failPayment()`다([결제 설계](./payments.md) 10절).
 
 기존 layer-first 패키지를 유지한다. `domain/{기능}`, `application/{기능}`, `infrastructure/{기능}`, `interfaces/api/v1/{기능}`을 사용한다. 새로운 domain Service나 전체 패키지 재배치는 필요하지 않다.
 
@@ -462,6 +476,8 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 > 2026-09-28 충전과 확정의 이력 저장을 18절에서 철회했다. 지금의 흐름은 18.3에 있다.
 >
 > 2026-10-03 충전 1단계의 금액 토큰 확인을 5.10과 함께 철회했다(#55). HTTP는 본문을 Jackson 기본대로 읽는다.
+>
+> 2026-10-23 아래 주문 확정의 흐름은 포인트로 결제하던 때의 것이다. 지금의 확정은 TX A(주문을 잠가 읽기 → 키 검사 → 재고 예약 → 결제 시작), 트랜잭션 밖의 PG 호출, TX B(주문을 잠가 읽기 → PG의 답을 결제에 반영 → 성공이면 확정, 실패면 결제 실패와 예약 반환)이고 포인트를 쓰지 않는다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), [결제 설계](./payments.md) 11–12절).
 
 
 ### 충전
@@ -501,6 +517,8 @@ Q21의 물리 FK 요구와 Q14의 스칼라 식별자 참조는 그대로 유지
 > 2026-10-03 금액·수량 행의 합산 수량 넘침과 원본 품목 행의 합산 사례를 철회했다(#55, 5.2). 같은 상품이 두 번 있는 요청은 400이며 아무것도 저장하지 않는다.
 >
 > 2026-10-03 JSON HTTP 경계 행의 문자열·소수·지수 거절과 단일 items 객체 거절을 철회했다(#55, 5.10).
+>
+> 2026-10-23 대표 TDD 규칙(`PointAccount.pay`), 재고 부족·재시도 행의 잔액, 전체 연결의 잔액 3,000원은 포인트로 결제하던 때의 검증이다. 5주차 2단계에서 `pay`와 그 테스트를 지웠고, 확정은 잔액을 바꾸지 않는다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 지금의 장면과 테스트는 [결제 설계](./payments.md) 14절에 있다.
 
 
 아래는 앞으로 작성·실행할 검증 목록이다. 현재 테스트가 구현되었거나 통과했다는 뜻이 아니다.
@@ -535,6 +553,8 @@ domain 단위 테스트, 실제 DB를 사용하는 application/repository 테스
 > 2026-10-03 가격·품목 행의 같은 상품 수량 합산을 철회했다(#55, 5.2).
 >
 > 2026-10-03 경계·검증 행의 엄격한 정수 JSON을 철회했다(#55, 5.10).
+>
+> 2026-10-23 상태·일관성 행의 포인트 차감은 5주차 2단계에서 사라졌다. 확정은 재고를 예약하고 PG로 결제한다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 없이 명세를 작성·게시하는 to-spec을 요청해, 다음 내용을 [Issue #11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/11)에 정리했다. ready-for-agent 라벨과 게시된 본문이 작성한 명세와 일치함을 확인했다.
 
@@ -553,7 +573,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ## 12. 구현 기록 — #12 충전과 잔액 조회
 
-2026-09-18에 [#12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/12)를 구현하며 8절의 초안을 코드로 옮길 때 정한 것이다. 규칙은 [포인트 도메인](../domain/points-orders.md)에, 용어는 `CONTEXT.md`에 있다. 주문 조각(#13–#16)은 아직이며 이 절은 충전과 잔액 조회만 다룬다.
+2026-09-18에 [#12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/12)를 구현하며 8절의 초안을 코드로 옮길 때 정한 것이다. 규칙은 [포인트 도메인](../domain/points-orders.md)에, 용어는 `CONTEXT.md`에 있다. 주문 슬라이스(#13–#16)는 아직이며 이 절은 충전과 잔액 조회만 다룬다.
 
 ### 12.1 사용자 참조와 물리 FK의 자리
 
@@ -569,7 +589,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
 - `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
 - 만들어진 제약은 `FK_POINT_ACCOUNT_ON_USER_ID`, `UK_POINT_ACCOUNT_ON_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다. 2026-10-08에 그때 빠진 주문의 두 인덱스 이름도 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`, `IDX_ORDERS_ON_CREATED_AT_AND_ID`로 맞췄다. 살아 있는 제약과 인덱스의 이름은 모두 대문자다.)
-- 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
+- 이번 슬라이스에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
 
 다시 볼 조건: 사용자에 삭제 상태가 생겨 `@SQLRestriction`이 붙으면, 계정 조회가 삭제된 사용자의 계정을 숨기게 되므로 스칼라 `userId` + 명시적 schema로 옮길지 정한다. OrderLineItem→Product의 FK(#13)는 이 방식으로는 만들 수 없어 그때 초기화 방법을 다시 정한다.
 
@@ -607,7 +627,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 > 2026-10-03 본문 행의 전용 code를 5.10과 함께 철회했다(#55). 그 행은 이제 범용 `Bad Request`다. 충전도 Controller가 Request를 `@Valid`로 받으므로, 아래 끝 문단이 적은 카탈로그 설계 5.18과의 차이도 사라졌다. HTTP 요청의 충전액 0은 `MethodArgumentNotValidException`으로 거절되며 응답은 같은 400과 메시지다.
 
 
-6절의 초안 가운데 이번 조각이 쓴 행과 그 자리다.
+6절의 초안 가운데 이번 슬라이스가 쓴 행과 그 자리다.
 
 | 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
 | --- | --- | --- | --- |
@@ -637,7 +657,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 **#12 시점의 선택: `PointHistoryType`은 `CHARGE`뿐이고 `charge_key`는 `not null`이다.** #14에서 결제 이력(`PAYMENT`), `order_id`, `charge_key`의 nullable 전환을 추가했다(15절).
 
-- 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 조각에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
+- 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 슬라이스에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
 - `PointHistory`의 생성자는 private이고 `PointAccount.charge`가 `PointHistory.charge` 팩토리로 만든다. "이력의 잔액은 그 충전 직후의 잔액"을 계정이 지키게 하려는 것이다. 계정은 이력 컬렉션을 갖지 않는다(7절).
 - Hibernate가 `type` 열을 MySQL `enum('CHARGE')`로 만든다. `PAYMENT`를 더하면 `ddl-auto=create`가 열 정의를 다시 만든다.
 
@@ -780,6 +800,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 > 2026-09-28 PAYMENT 이력, `uk_point_history_order_id`, 이력 저장 경계에 넣던 늦은 실패를 18절에서 철회했다. 늦은 실패는 커밋의 마지막 UPDATE에 넣는다(18.2).
 >
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 확정이 다른 애그리거트를 바꾸는 길이 바뀌었다. `OrderService.confirm`이 `Product.deductStock`과 `PointAccount.pay`를 직접 부르던 것을, 이제 `OrderModifyService.confirm`이 상품 기능의 `StockDeductor`와 포인트 기능의 `PointDeductor`로 부른다. `PointService`를 호출하지 않는다는 부분은 뒤집혔다. 다만 `PointDeductor`는 트랜잭션을 새로 열지 않고 확정의 트랜잭션에 참여하므로, 다른 트랜잭션에서 결제하지 않는다는 것과 실패가 주문·재고·잔액을 모두 되돌린다는 것은 그대로다(ADR 0003). 판매 가능 확인을 차감보다 먼저 한 번에 끝내는 차례도 그대로다. 아래의 `OrderService.create`는 지금의 `OrderModifyService.create`(`OrderCreator`)다.
+>
+> 2026-10-23 이 절의 확정은 포인트로 결제하던 때의 구현이다. `PointAccount.pay`, `PointDeductor`, `InsufficientPointsException`, `INSUFFICIENT_POINTS`, `Order.confirm`은 5주차 2단계에서 지웠고, 확정은 TX A, PG 호출, TX B로 나뉘었다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md), [결제 설계](./payments.md) 11–12절). 주문할 수 없는 상품이 재고 부족보다 앞서는 차례는 그대로다.
 
 
 `POST /api/v1/orders/{orderId}/confirm`은 요청자·소유권을 확인하고 저장된 CONFIRMED 결과를 200으로 반환한다. 별도 키나 본문이 필요하지 않다. 이미 확정된 주문이면 현재 상품·브랜드·재고·잔액을 읽기 전에 결과를 재생한다.
@@ -799,7 +821,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ## 16. 관리자 주문 조회 구현 — Issue #16
 
-[Issue #16](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/16)은 `GET /api-admin/v1/orders`와 `GET /api-admin/v1/orders/{orderId}`를 구현한다. 주문 확정(#14)과 고객 목록(#15)은 week2에 이미 있고, 이 조각은 그 주문을 읽기만 한다. 관리자가 주문을 조회한다는 것은 `CONTEXT.md`에 이미 적혀 있어 새 낱말을 정하지 않았다.
+[Issue #16](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/16)은 `GET /api-admin/v1/orders`와 `GET /api-admin/v1/orders/{orderId}`를 구현한다. 주문 확정(#14)과 고객 목록(#15)은 week2에 이미 있고, 이 슬라이스는 그 주문을 읽기만 한다. 관리자가 주문을 조회한다는 것은 `CONTEXT.md`에 이미 적혀 있어 새 낱말을 정하지 않았다.
 
 낱말 하나를 도메인 문서에 맞췄다. 2절과 6절의 표가 주문한 사람을 "구매자"라고 불렀는데 `CONTEXT.md`에 없는 말이었고, 도메인 문서는 `Order.userId`를 "주문한 사용자"라고 적는다. 용어집에 새 항목을 만드는 대신 이미 있는 말로 맞추기로 해서, 이 구현의 KDoc과 Swagger 설명은 물론 2절·6절의 표현까지 함께 고쳤다. `CONTEXT.md`의 고객 항목이 "이름이 필요한 자리에는 사용자(User)를 쓴다"이므로 새 역할 이름을 만들 까닭이 없다. 이제 저장소에 "구매자"는 없다.
 
@@ -831,6 +853,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 아래 표의 자리가 바뀌었다. 목록 `findAll(userId, pageable)`은 Spring Data 포트 `OrderRepository`가 아니라 순수 포트 `OrderListRepository`(`application/order/required`)에 있고, `adapter.persistence`의 `QuerydslOrderListRepository`가 구현한다. `findAll(OrderAdminListRequest)`와 `findForAdmin(orderId)`는 `OrderService`가 아니라 provided 포트 `OrderFinder`에 있고 `OrderQueryService`가 구현한다. `OrderInfo`는 `application/order/provided`에 있다. 끝 문단이 적은 "`application/order`가 `application/product`를 참조하지 않는 것"은 더는 사실이 아니다. 주문 기능은 생성과 확정에서 상품 기능의 `ProductFinder`와 `StockDeductor`를 부른다. 페이지 상수를 주문 기능 안에서만 나눠 갖는 선택은 그대로다.
 >
 > 2026-10-08 [ADR 0014](../adr/0014-finders-load-whole-aggregates.md)로 `OrderInfo`가 없어졌다. 두 응답은 같은 `Order` 엔티티를 읽어 각자 내보낼 필드를 고르고, `userId`는 `Order.userId`에서 온다. 단건 조회는 품목을 엔티티 그래프로 함께 읽는 `findWithLineItemsById`, `findWithLineItemsByIdAndUserId`로 이름이 바뀌었다. 소유자를 묻는 쪽과 묻지 않는 쪽이 이름에 남는다는 까닭은 그대로다.
+>
+> 2026-10-22 [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) 규칙 5로 `OrderInfo`가 다시 생겼다. 이번에는 주문과 그 결제 상태를 담아 애그리거트를 건너는 Info다([ADR 0014](../adr/0014-finders-load-whole-aggregates.md)가 두는 경우). 고객 상세에 이어 고객 목록, 관리자 목록, 관리자 상세가 그것을 돌려주므로 두 응답은 다시 같은 `OrderInfo`를 읽어 각자 내보낼 필드를 고른다. `userId`는 여전히 `Order.userId`에서 온다. 결제 상태는 결제수단이 PG인 주문에만 있고, 목록은 한 조각에 있는 그런 주문의 결제를 한 문장으로 읽는다. `findForAdmin`은 이름을 그대로 두고 `OrderInfo`를 돌려준다.
 
 | 더한 것 | 자리 | 까닭 |
 | --- | --- | --- |
@@ -876,6 +900,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 2026-09-28 사용자가 필요해질 때까지 API에서 멱등성을 걷어 내기로 했다. 과제(2절)는 충전·주문 생성의 멱등성을 요구하지 않았고, Q5·Q9·Q15·Q16·Q22는 인터뷰에서 스스로 들인 정책이다. 지금의 호출자는 fixture와 테스트뿐이며 자동으로 다시 보내는 호출자가 없어, 키의 저장·재생·충돌 규칙을 지키는 비용이 막아 주는 위험보다 크다고 보았다([ADR 0005](../adr/0005-no-request-idempotency-until-a-retrying-caller.md)). 인터뷰의 번호를 이어 Q24부터 적는다.
 
+> 2026-10-23 5주차 2단계에서 [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md)가 확정에 한해 ADR 0005를 대체했다. 확정은 `Idempotency-Key`를 요구하고, 같은 키의 재요청에는 저장된 상태로 답한다. Q25의 409는 포인트로 확정된 주문에만 남고, 결제가 있는 주문에 다른 키로 온 확정은 409 `IDEMPOTENCY_KEY_MISMATCH`다. Q32의 `INSUFFICIENT_POINTS`와 Q33의 `Order.confirm()`은 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 확정할 수 있는지는 TX A가 결제수단을 먼저 보고, `ensureDraft()`는 `Order.startPayment()` 안에서 돈다([결제 설계](./payments.md) 12.1). 충전과 주문 생성은 이 절 그대로다.
+
 ### 17.1 결정
 
 | ID | 결정한 것 | 사용자의 선택 |
@@ -894,6 +920,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 ### 17.2 확정 재요청의 검사 차례
 
 > 2026-09-28 끝 문단의 `uk_point_history_order_id`는 18절에서 이력과 함께 사라졌다. 같은 주문의 동시 확정은 이제 둘 다 성공한다(18.2).
+>
+> 2026-10-23 거절 차례 끝의 "포인트 부족 409"는 5주차 2단계에서 사라졌다. 이미 확정된 주문의 409는 포인트로 확정된 주문에만 남고, 결제가 있는 주문은 키에 따라 재요청이나 `IDEMPOTENCY_KEY_MISMATCH`다. 지금의 확정의 거절 차례는 [결제 설계](./payments.md) 12.1에 있다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 재생을 지우는 것만으로는 모자랐다. `OrderService.confirm`의 이른 반환을 지우면 재요청이 `availableProduct` → `deductStock` → `PointAccount.pay`를 차례로 지난 뒤에야 `Order.confirm()`의 거절에 닿는다. 그사이 상품이 삭제됐으면 `ORDER_PRODUCT_NOT_AVAILABLE`, 잔액을 썼으면 `INSUFFICIENT_POINTS`가 먼저 나온다. 거절에 닿더라도 당시의 `InvalidOrderException`은 `RuleViolationException`이라 범용 400이었다.
 
@@ -911,6 +939,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 ### 17.3 지금의 흐름
 
 > 2026-09-28 충전과 확정의 이력 저장을 18절에서 철회했다. 지금의 흐름은 18.3에 있다.
+>
+> 2026-10-23 확정의 포인트 결제는 5주차 2단계에서 지웠다. 지금의 확정은 [결제 설계](./payments.md) 11–12절에 있다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 돌려받은 CHARGE 이력 저장. 잔액 변경과 이력은 한 트랜잭션이다.
 - DRAFT 생성: 요청자 확인 → 받은 품목마다 상품·브랜드 확인 후 이름·단가를 읽음 → `Order`가 상품 중복을 거절하고 상품 ID 순으로 품목을 둠 → 저장. (처음에는 상품 확인 앞에서 입력을 정규화했다(상품별 수량 합산·정렬). 2026-10-03(#55)에 합산을 지웠다(5.2).) 주문과 품목은 한 트랜잭션이다.
@@ -943,6 +973,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 | Q41 | 충전의 흔적 | 받아들인다. 충전은 잔액 말고 흔적을 남기지 않는다. 결제는 확정된 주문으로 답할 수 있지만 누가 언제 얼마를 충전했는지는 답할 수 없고, 이력을 다시 들여도 그 사이의 충전은 되살아나지 않는다. 운영 데이터는 없다. local/test가 `ddl-auto=create`이고 migration 도구가 없어 지금 지우는 비용이 없다(Q23, Q27). |
 | Q42 | 결제의 기록을 부르는 말 | CONTEXT.md의 확정된 주문이 결제의 기록이라고 적고 `결제 이력`·`결제 내역`을 피할 말로 둔다. 개념이 사라진 충전 키와 달리 결제의 기록은 자리만 옮겼다. |
 
+> 2026-10-23 Q39의 `pay(amount)`와 `Order.confirm`은 5주차 2단계에서 지웠다. `PointAccount`에는 `charge(amount)`만 남았다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). PG로 결제한 주문의 결제 기록은 결제(`Payment`)이고, Q42의 "확정된 주문이 결제의 기록"은 포인트로 확정된 이전 주문에만 맞는다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [결제 설계](./payments.md) 10.1).
+
 ### 18.2 같은 주문의 동시 확정과 늦은 실패
 
 두 확정이 모두 DRAFT를 읽으면 전에는 먼저 커밋한 쪽의 PAYMENT 행이 `uk_point_history_order_id`를 차지해 뒤진 쪽이 커밋에서 500으로 되돌아갔다(17.2). 이제 그 제약이 없다. `REPEATABLE READ`에서 두 트랜잭션은 첫 읽기의 스냅샷으로 판단하고, Hibernate는 바뀐 엔티티의 열을 절댓값으로 쓴다(`balance = ?`). 뒤진 쪽도 같은 값을 쓰므로 차감은 한 번이고 두 요청 모두 200을 받으며, `confirmed_at`만 뒤진 쪽의 값이 된다. 우연히 맞아 보이는 갱신 유실이고 그 사이에 커밋된 충전은 덮어쓴다. 동시 요청 테스트가 없어 스위트는 이 변화를 알아채지 못한다. 3주차 과제는 뒤진 요청을 409 `ORDER_ALREADY_CONFIRMED`로 거절해야 한다.
@@ -959,9 +991,13 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 > 2026-10-09 ADR 0019의 잠금 읽기를 들인 뒤 SQL 로그를 다시 보았다. 결제의 계정 잠금 읽기는 `point_account`만 읽는 조회라 바뀐 상품을 자동 flush하지 않는다. 첫 상품의 재고는 여전히 둘째 상품의 잠금 읽기 때 먼저 나가고, 커밋의 flush는 `orders` → `point_account` → 둘째 상품 차례다. 둘째 상품의 재고가 마지막 쓰기이므로 늦은 실패의 CHECK와 KDoc은 그대로다.
 
+> 2026-10-23 5주차 2단계에서 확정은 포인트 계정을 바꾸지 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 늦은 실패는 TX A의 마지막 쓰기인 둘째 상품의 재고 UPDATE를 임시 CHECK로 거절하고, 재고·결제·주문이 함께 되돌아가며 PG에는 아무것도 가지 않는지 본다(`OrderConfirmationApiTest`, [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [결제 설계](./payments.md) 12.1).
+
 ### 18.3 지금의 흐름
 
 > 2026-10-09 충전과 확정의 첫 읽기가 잠금 읽기로 바뀌었다. 지금의 흐름은 19.2에 있다.
+>
+> 2026-10-23 확정의 `PointAccount.pay`는 5주차 2단계에서 지웠다. 지금의 확정은 [결제 설계](./payments.md) 11–12절에 있다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
 
 - 충전: 요청자 확인 → 계정 조회 → `PointAccount.charge(amount)` → 저장. `point_account` 한 행만 바뀐다.
 - DRAFT 생성: 17.3과 같다.
@@ -978,6 +1014,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 ## 19. 주문·포인트 계정 행의 잠금 — ADR 0019
 
 2026-10-09 3주차 과제의 3절(기존 포인트 주문의 원자성과 경쟁 제어)과 4절(실패·경쟁 결과 확인)을 두고 설계 인터뷰를 했다. [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)이 상품과 브랜드의 몫을 끝낸 뒤 남은 것은 같은 주문의 동시 확정, 포인트 계정의 잠금, 과제가 요구하는 검증이었다(18.2). 결정은 [ADR 0019](../adr/0019-order-and-point-account-rows-locked-on-first-read.md)이고 명세는 #109다. 인터뷰의 번호를 이어 Q43부터 적는다.
+
+> 2026-10-23 5주차 2단계에서 확정은 포인트 계정을 읽지도 잠그지도 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). Q44의 "확정의 결제", Q45의 이중 결제, Q46 잠금 차례 끝의 포인트 계정, Q49의 포인트 부족, 19.3의 잔액은 포인트로 결제하던 때의 것이다. 확정의 잠금은 TX A가 주문 → 상품 → revision, TX B가 주문 → 상품(실패일 때만) → revision이다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) 규칙 4, [결제 설계](./payments.md) 11.2). 계정을 잠그는 것은 충전뿐이고, 그 잠금은 충전끼리의 경쟁으로 시험한다(`PointChargerConcurrencyTest`). 주문을 첫 문장에서 잠그는 것은 그대로다.
 
 ### 19.1 결정
 
@@ -1006,6 +1044,8 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 > 2026-10-12 DRAFT 생성의 상품 확인은 확정처럼 상품 행만 보고 브랜드는 보지 않는다. 17.3의 "상품·브랜드 확인"은 그때의 것이다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 4의 메모).
 
+> 2026-10-23 위 확정의 흐름은 포인트로 결제하던 때의 것이다. 지금의 확정은 [결제 설계](./payments.md) 11–12절에 있다. 충전의 흐름은 그대로이고, 계정 행에서 겨루는 것은 충전끼리뿐이다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md), [ADR 0027](../adr/0027-point-payment-path-is-deleted.md)).
+
 ### 19.3 주문 잠금이 한 문장인지
 
 ADR 0019 규칙 2는 첫 작업이 SQL 로그로 확인하라고 했다(#114). MySQL 방언의 Hibernate 7.4는 엔티티 그래프의 조회 끝에 주문 별칭만 잠그는 절을 붙였다.
@@ -1018,3 +1058,18 @@ where (o1_0.deleted_at is null) and o1_0.id=? and o1_0.user_id=? order by li1_0.
 읽은 뒤 주문을 따로 잠그는 조회는 로그에 없었다. `for update of o1_0`는 `orders`의 행만 잠그므로 품목 행은 잠기지 않는다. 계정은 `… from point_account pa1_0 where … pa1_0.user_id=? for update of pa1_0`로 잠긴다.
 
 확정의 첫 읽기를 `find`로 되돌리자 새 테스트 둘이 실패했다. 같은 DRAFT를 다섯 번 함께 확정하면 다섯 모두 성공해 재고 10이 5로, 잔액 5,000원이 0원으로 줄었다. 멈춤 테스트에서는 둘째 확정도 성공해 재고 10이 4로, 잔액 6,000원이 0원으로 줄었다. 계정 잠금이 있는 채로 주문 잠금만 빠지면 뒤진 확정이 가장 최근 잔액에서 다시 결제한다. 규칙 4가 말한 이중 결제다.
+
+## 20. 확정 시각을 응답에서 뺌
+
+2026-10-21 사용자의 결정으로 고객·관리자 주문 응답에서 `confirmedAt`을 뺐다. Q19의 "CONFIRMED에는 저장된 값을 제공한다" 가운데 확정 시각 부분을 철회한다. 결제액은 그대로 싣는다.
+
+- 과제가 묻지 않았다. 2주차 과제는 확정에서 "결제액·결과"를 저장하고, 내 주문은 "품목·수량·금액·상태·결제액"을, 관리자 주문은 "품목·상태·금액·결제 결과"를 조회하라고 했다(2절). 시각은 Q19가 "결제 결과"를 구체화하며 들였다. 3주차 과제도 시각을 지목하지 않는다.
+- Q19의 "저장된 값"은 Q5의 재요청 재생과 짝이었다. 재생을 17절(ADR 0005)에서 철회할 때 Q19는 다시 보지 않았다.
+- 응답에서 이 값을 읽는 것은 테스트뿐이었다.
+- 주문은 확정 시각을 그대로 저장한다. 18절(ADR 0006)로 포인트 결제의 기록은 확정된 주문의 결제액과 확정 시각이고, `Order`의 CHECK가 상태·결제액·확정 시각을 함께 요구한다. 바뀐 것은 응답 DTO 둘이고 스키마는 그대로다. (2026-10-23 5주차 2단계에서 포인트로 결제하는 길을 지웠으므로, 포인트 결제의 기록은 그 전에 포인트로 확정된 주문에만 있다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 결제액 열은 2026-10-22에 지워 확정된 주문의 주문 금액으로 계산하고, CHECK는 상태·결제수단·확정 시각을 본다([결제 설계](./payments.md) 10.1).)
+
+테스트가 바뀐 자리:
+
+- 확정 흐름(`OrderConfirmationApiTest`)과 관리자 상세(`OrderAdminApiTest`)가 CONFIRMED 응답에 `confirmedAt`이 없음을 붙든다. 고객 응답에 `userId`가 없음을 붙드는 것과 같은 모양이다. 확정이 시각을 찍어 저장하는지는 `OrderTest`와 `OrderConfirmerConcurrencyTest`가 그대로 본다.
+- DRAFT 응답에서 `confirmedAt`이 없음을 보던 줄은 지웠다. 필드가 사라져 아무것도 붙들지 않는다.
+- 목록 테스트의 SQL fixture는 CHECK 때문에 `confirmed_at`을 계속 채운다. 정해 둔 값을 읽는 단언이 없으므로 `now(6)`을 쓴다.

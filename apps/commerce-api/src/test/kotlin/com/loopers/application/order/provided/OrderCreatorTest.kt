@@ -14,7 +14,7 @@ import org.junit.jupiter.api.assertThrows
  *
  * 생성의 거절과 품목·합계는 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로
  * 여기서는 생성이 요청마다 새 주문이라는 계약(ADR 0005)과, 포트가 Request를 검증한다는 것만 본다.
- * 만든 주문은 같은 조각의 [OrderFinder]로 읽는다.
+ * 만든 주문은 같은 슬라이스의 [OrderFinder]로 읽는다.
  */
 class OrderCreatorTest(
     private val orderCreator: OrderCreator,
@@ -32,7 +32,7 @@ class OrderCreatorTest(
         val second = orderCreator.create(user.id, request)
         entityManager.flushAndClear()
 
-        val listed = orderFinder.findAll(user.id, OrderListRequest()).content
+        val listed = orderFinder.findAll(user.id, OrderListRequest()).content.map { it.order }
         assertThat(second.id).isNotEqualTo(first.id)
         assertThat(listed.map { it.id }).containsExactly(second.id, first.id)
         assertThat(listed.map { it.status }).containsOnly(OrderStatus.DRAFT)

@@ -183,8 +183,8 @@ abstract class BaseRepositoryTest {
     }
 
     /** 결제를 PG 거래와 대사하고 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
-    protected fun reconcile(transactions: List<PgTransaction>, payment: Payment = this.payment) {
-        payment.reconcile(transactions)
+    protected fun reconcile(transaction: PgTransaction, payment: Payment = this.payment) {
+        payment.reconcile(transaction)
         paymentRepository.save(payment)
     }
 

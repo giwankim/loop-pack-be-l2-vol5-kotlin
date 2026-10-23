@@ -14,9 +14,9 @@ import org.springframework.data.domain.Slice
 /**
  * [LikeFinder]와, 상품이 선언한 [LikeCounter]의 구현. 내주는 포트가 상품의 물음을 상속하지 않고 이 Service가 둘을 각자 구현한다(ADR 0017).
  * 목록이 Request를 받으므로 검증하는 Service다. 좋아요를 누른 상품은 [ProductFinder]로 읽는다.
- * 상품을 [ProductInfo]로 옮기는 규칙은 상품 조각에 하나뿐이라 여기서는 누구의 좋아요인지만 정한다(설계 5.31).
+ * 상품을 [ProductInfo]로 옮기는 규칙은 상품 슬라이스에 하나뿐이라 여기서는 누구의 좋아요인지만 정한다(설계 5.31).
  *
- * [ProductFinder]는 `@Lazy`로 받아 처음 부를 때 찾는다. 상품 조각이 [ProductInfo]를 만들며 이 Service가 답하는
+ * [ProductFinder]는 `@Lazy`로 받아 처음 부를 때 찾는다. 상품 슬라이스가 [ProductInfo]를 만들며 이 Service가 답하는
  * [LikeCounter]를 부르므로, 코드의 의존은 좋아요에서 상품으로만 가도 빈은 좋아요 → 상품 → 좋아요로 서로를 기다린다.
  * 생성자로 곧장 받으면 컨텍스트가 뜨지 않는다.
  */

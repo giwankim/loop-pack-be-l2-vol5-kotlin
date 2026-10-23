@@ -1,7 +1,6 @@
 package com.loopers.application.point.provided
 
 import com.loopers.domain.point.createPointChargeRequest
-import com.loopers.domain.shared.InvalidMoneyException
 import com.loopers.domain.shared.Money
 import com.loopers.support.balanceOf
 import com.loopers.support.countPointAccounts
@@ -34,7 +33,7 @@ class PointChargerTest(
         entityManager.flushAndClear()
 
         assertThat(account.balance).isEqualTo(Money(10_000))
-        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(10_000L)
+        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(10_000L.toBigInteger())
     }
 
     /** 요청마다 새 충전이다. 같은 충전액을 두 번 보내면 두 번 늘어난다(ADR 0005). */
@@ -48,7 +47,7 @@ class PointChargerTest(
         entityManager.flushAndClear()
 
         assertThat(account.balance).isEqualTo(Money(20_000))
-        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(20_000L)
+        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(20_000L.toBigInteger())
     }
 
     /** 상품 가격의 상한은 잔액의 상한이 아니다(설계 5.7). */
@@ -84,17 +83,16 @@ class PointChargerTest(
     }
 
     @Test
-    fun `a charge that overflows the balance is rejected and changes nothing`() {
+    fun `charging past Long MAX_VALUE persists the exact balance`() {
         prepareUser()
         charge(amount = Long.MAX_VALUE)
         entityManager.flushAndClear()
 
-        assertThrows<InvalidMoneyException> {
-            pointCharger.charge(user.id, createPointChargeRequest(amount = 1))
-        }
+        pointCharger.charge(user.id, createPointChargeRequest(amount = 1))
         entityManager.flushAndClear()
 
-        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(Long.MAX_VALUE)
+        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo("9223372036854775808".toBigInteger())
+        assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo("9223372036854775808".toBigInteger())
     }
 
     /** 사용자는 있는데 계정이 없는 것은 fixture와 데이터의 불일치다. 0원 계정을 만들어 주지 않고 내부 오류다(설계 5.9, 6 끝). */

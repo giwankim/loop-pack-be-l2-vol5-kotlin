@@ -53,7 +53,7 @@ data class ProductSummaryInfo(
             return ProductSummaryInfo(
                 id = product.id,
                 name = product.name,
-                price = product.price.amount,
+                price = product.price.amount.longValueExact(),
                 soldOut = product.isSoldOut(),
                 brandId = product.brand.id,
                 brandName = product.brand.name,

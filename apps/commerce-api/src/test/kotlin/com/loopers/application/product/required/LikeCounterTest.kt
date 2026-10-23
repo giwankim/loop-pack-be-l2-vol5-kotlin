@@ -7,7 +7,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * 상품이 선언한 [LikeCounter]를 좋아요 조각의 구현으로 실제 MySQL 위에서 확인한다. 테스트는 포트가 선언된 패키지에 둔다
+ * 상품이 선언한 [LikeCounter]를 좋아요 슬라이스의 구현으로 실제 MySQL 위에서 확인한다. 테스트는 포트가 선언된 패키지에 둔다
  * ([com.loopers.application.user.required.UserRepositoryTest]와 같다). 정리와 flush/clear의 까닭은
  * [com.loopers.application.like.provided.LikerTest]와 같다.
  */

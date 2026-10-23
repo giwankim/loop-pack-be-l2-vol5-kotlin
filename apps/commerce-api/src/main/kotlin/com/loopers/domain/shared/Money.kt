@@ -1,24 +1,22 @@
 package com.loopers.domain.shared
 
 import jakarta.persistence.Embeddable
+import java.math.BigInteger
 
-/**
- * 원 단위 정수 금액. 0 이상인 불변 값 객체이며 연산은 새 값을 돌려준다.
- * 결과가 `Long` 범위를 넘거나 음수가 되면 [InvalidMoneyException]으로 거절한다.
- * 컬럼 이름은 쓰는 엔티티가 `@AttributeOverride`로 정한다.
- */
 @Embeddable
 data class Money(
-    val amount: Long,
+    val amount: BigInteger,
 ) : Comparable<Money> {
+    constructor(amount: Long) : this(BigInteger.valueOf(amount))
+
     init {
-        if (amount < 0) {
+        if (amount.signum() < 0) {
             throw InvalidMoneyException("금액은 0 이상이어야 합니다.")
         }
     }
 
     operator fun plus(other: Money): Money {
-        return Money(exact { Math.addExact(amount, other.amount) })
+        return Money(amount + other.amount)
     }
 
     operator fun minus(other: Money): Money {
@@ -30,7 +28,7 @@ data class Money(
     }
 
     operator fun times(count: Int): Money {
-        return Money(exact { Math.multiplyExact(amount, count.toLong()) })
+        return Money(amount * BigInteger.valueOf(count.toLong()))
     }
 
     override fun compareTo(other: Money): Int {
@@ -38,15 +36,6 @@ data class Money(
     }
 
     companion object {
-        /** 0원. 포인트 계정의 처음 잔액이고, 양수 검사의 기준이다. */
-        val ZERO = Money(0)
-    }
-
-    private inline fun exact(calculate: () -> Long): Long {
-        return try {
-            calculate()
-        } catch (e: ArithmeticException) {
-            throw InvalidMoneyException("금액 계산 결과가 표현 범위를 넘습니다.")
-        }
+        val ZERO = Money(BigInteger.ZERO)
     }
 }
