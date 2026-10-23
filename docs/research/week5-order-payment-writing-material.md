@@ -1012,3 +1012,78 @@ Two commits on `feat/order-payment` (pushed, `98d88bc..bbb6136`):
   - The restart scene.
   - Metrics for payments left UNKNOWN.
 - **[Spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147):** with this ticket, tickets 148 to 157 are all closed. The spec can be reviewed against its checklist and closed.
+
+## Spec 147: the step 2 spec review
+
+Recorded 2026-10-23 from the [spec review comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147#issuecomment-6354544931) of [spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147). The review ran both axes of a code review over the whole branch, after all ten tickets had closed. The merged `PgTransactionClient` port came from a question asked during the review, not from a finding.
+
+Spec review on 2026-10-23: `feat/order-payment` (HEAD `faec086` at review time) against `week5` (`54651ce`, the branch's merge-base), on two axes: this spec and the coding standards. Tickets 148–157 are all closed.
+
+### Result: 56 of 56 stories met
+
+The review found 55 met, 1 partial and 0 missing. The partial story was fixed in [`da34380`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/da34380). Stories 47, 48, 53 and 56 are about docs or structure, so they were checked by reading, not by a test.
+
+- **Story 25** ("viewing my orders never to contact the PG or create a payment"). The detail view's tests asserted the PG counts, but the customer and admin list tests did not. Both list tests now assert that the test PG received only the two creates from their setup and no lookup.
+  - Mutation check: an `OrderInfoAssembler.toInfos` that looks up each PG-paid order's transaction turns both tests red at the `lookupCount()` line. The lookup's exception was swallowed so the list still answered 200.
+- **A nit under story 55.** The scene 6 race between a reconcile and the confirmation's TX B re-read only the order and the stock. It now re-reads the payment status too, as the two-reconcile variant already did.
+
+The decisions without a story of their own also match the amended text: TX A's check order, the lock order, the `propagation` alias, `NEVER` on the orchestrator and on `PgTransactionService`, the migration, the ADR notes, and seams 1–5.
+
+### Decided in this review
+
+- **The vertical slice is 슬라이스, and 조각 means only a `Slice` page** ([`c440a7d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c440a7d)). ADR 0013 had used 조각 for both. The rule is in `CODING_STANDARDS.md`'s new `## 용어` section, and ADR 0013 carries a dated note. 191 uses that meant the slice now say 슬라이스, across KDoc, the ADRs, the design and domain docs and `CODING_STANDARDS.md`. About 200 page meanings stay 조각. Eight uses meant neither (a fragment of a response body, or Spring Data's repository fragment), so they were reworded and the rule has no exceptions. `docs/research/` stays as posted.
+- **The two PG ports are now one, `PgTransactionClient`** ([`dd2e074`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dd2e074), [`0de231a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/0de231a)). It has `create(payment, card)` and `retrieve(payment)`, and their contracts are unchanged.
+  - `PgTransactionCreator` and `PgTransactionRetriever` had the same implementation (`PgTransactionService`, `NEVER`), the same caller (`OrderPaymentService`) and the same outside-any-transaction condition. Only ADR 0013's one-port-per-use-case rule split them. ADR 0013 records the exception, and ADR 0028 rule 1 has a dated note.
+  - The port's KDoc and payments design 11.1 now say why the order slice calls this port instead of `PaymentGateway`:
+    - another slice's `required` port is off limits (ADR 0013);
+    - the implementation refuses a call inside a transaction before anything reaches the PG (ADR 0028 rule 2);
+    - turning the payment's PG order ID and amount into a PG request stays in the payment slice (ADR 0028 rule 5).
+- **"PG 주문" is on the Avoid list of `CONTEXT.md`'s 결제수단 entry**, because it collides with PG 주문 번호. Write "결제수단이 PG인 주문" instead.
+- **Four judgement-call smells were fixed rather than declined.** They are listed below under `da34380`.
+
+### Fixed in this review
+
+[`da34380`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/da34380) (code and tests) and [`fbe5aaf`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/fbe5aaf) (docs):
+
+- **The key's format is checked at the port** (catalog design 5.25). `OrderPaymentService.confirm` now checks the key with `Payment.checkIdempotencyKey` before TX A. Before, only the web boundary checked it ahead of the lookup. Under `utf8mb4_bin`'s PAD SPACE, a caller that skipped the web and sent `"key "` found the payment of `"key"`, so it got `IDEMPOTENCY_KEY_IN_USE` instead of a format error.
+  - The new integration test ran red first with exactly that `CoreException`.
+  - Payments design 12.1 has the bullet.
+- **One rule for the payment status.** `OrderInfo` now rejects a payment status on an order that doesn't pay through the PG, and a missing status on an order that does. The three places that build it (the assembler, TX A, and the create response) now share that one rule. `OrderInfoTest` covers both cases.
+- **The payment method is compared once.** `Order` gains `paysThroughPg` and `productQuantities`. TX A sends an order that pays through the PG to the replay branch and lets `ensureDraft()` reject a point-paid one.
+  - The two kinds of order never overlap, so every answer stays the same. Payments design 12.1, rows 5 and 6, has a dated note.
+  - `OrderTest` covers both properties, and the domain doc's property table lists them.
+- **`OrderConfirmRequest.toCreditCard()`** replaces 26 copies of `CreditCard(type = request.cardType, number = request.cardNo)`. `startPaymentMappingKeyRace` is now `startPaymentOrRejectUsedKey`.
+- **Standards:**
+  - `hasStatus2xxSuccessful()` became the exact first status for each row (`CODING_STANDARDS.md`, HTTP tests);
+  - stale KDoc in three places: `StockDeductor` (it described ADR 0003's confirm), `ProductFinder.findForUpdateOrNull` (it named only the deductor), and `PaymentGateway` (it described step 2's ports as future);
+  - `Order`'s class KDoc is restored; it had been dropped with the point path;
+  - a blank line after `reserveStock`'s guard (catalog design 5.33);
+  - wording: test names say "PG order ID" to match `pgOrderId` (they said "PG order number"), and "PG orders", "실패한 시도" and "포인트 주문" are reworded.
+
+### Spec text amended
+
+Dated "2026-10-23 고침(검토)" notes in this issue's body:
+- **브랜치와 단계:** the merged `PgTransactionClient` port, and the vocabulary change. The body's seven uses of 조각 now say 슬라이스.
+- **결제, 멱등 키:** the orchestrator checks the format too.
+- **TX A의 차례:** checks 2 and 3 swapped (`Order.paysThroughPg`, then `ensureDraft()`), with the same answers.
+
+### Recorded deviations and open points
+
+- **`ApiControllerAdvice` turns every `MissingRequestHeaderException` into 400**, not only a missing `Idempotency-Key`. Ticket 151 accepted it.
+- **Two accepted extras:** `TestPgWarmUpConfig`, and the guard plus `addExact` in `Product.restoreStock`. Both were accepted in ticket 152.
+- **Six commits predate the design interview and were not judged against this spec:** `8ffd51c`, `1faf289`, `a9dea84`, `bdd4b39`, `5324951` and `d7b7cfd`. They carry the BigInteger money change, `confirmedAt` leaving the responses, the `paid_amount` question, the duplicate-product guard and the stock reservation research. They go into `week5` with this branch.
+
+### Declined review suggestions
+
+- **`LIST_PATH` keeps its name.** It names the PG's wire list endpoint (ticket 148).
+- **`PaymentGateway.retrieveTransaction(transactionKey)` stays without a caller.** This spec leaves it to step 3's callback.
+- **The per-class wrappers around `acceptNextCreate`** (`acceptCreate`, `acceptSuccessfulCreate`) stay. Each fixes its own class's defaults.
+- **Still open from ticket 156's review:** the point-paid SQL shortcut copied across four order HTTP test classes, and string-flag parameterizations.
+
+### Verification
+
+- `./gradlew cleanTest check` from the root at `0de231a`, which includes every module's `ktlintCheck`, ended `BUILD SUCCESSFUL`.
+  - commerce-api: 864 tests in 72 classes, with 0 failures, 0 errors and 0 skips. That is the 856 from issue 157 plus 8 new ones: 1 for the key format, 5 in `OrderTest` and 2 in the new `OrderInfoTest` class.
+  - commerce-batch: 3 tests. supports/jackson: 2 tests.
+- `OrderPaymentIntegrationTest` now has 32 cases, up from 31.
+- Mutation checks: story 25's list assertions (above); the key-format test ran red before the fix.
