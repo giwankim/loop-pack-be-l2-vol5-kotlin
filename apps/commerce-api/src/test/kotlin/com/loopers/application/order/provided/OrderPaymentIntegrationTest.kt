@@ -5,10 +5,12 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
+import com.loopers.CommerceApiApplication
 import com.loopers.application.order.OrderPaymentSteps
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
 import com.loopers.application.payment.provided.PaymentFinder
+import com.loopers.application.payment.required.PaymentGateway
 import com.loopers.application.point.provided.PointAccountFinder
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductListInfo
@@ -31,6 +33,8 @@ import com.loopers.support.error.ErrorType
 import com.loopers.support.productDeletedAt
 import com.loopers.support.productStock
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
+import com.loopers.testcontainers.MySqlTestContainersConfig
+import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
@@ -42,6 +46,9 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
+import org.springframework.boot.builder.SpringApplicationBuilder
+import org.springframework.boot.context.logging.LoggingApplicationListener
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
@@ -56,6 +63,7 @@ import org.wiremock.spring.InjectWireMock
  * 결제 중인 주문 곁의 쓰기와 읽기(관리자의 재고 수정, 상품 삭제, 예약된 재고, 고객 목록, 대사)는 PG 호출을 spy해 생성을 보내기 바로 앞에 넣고,
  * 생성을 보내기 전에 멈춘 프로세스도 그 spy가 흉내 낸다. 같은 키로 겨루는 두 확정은 결제를 만드는 Service를 spy해 늦은 쪽을 결제 삽입 앞에서,
  * 같은 답을 반영하는 두 TX B는 같은 Service를 spy해 앞선 쪽을 주문을 잠근 채 멈춘다. 외부 성공 뒤 내부 저장의 실패는 TX B의 빈을 spy해 넣는다.
+ * 재시작은 같은 DB와 테스트 PG 위에 두 번째 실제 컨텍스트를 띄워 그 안의 새 Service로 본다([restarted]).
  */
 @EnableTestPg
 class OrderPaymentIntegrationTest(
@@ -64,6 +72,7 @@ class OrderPaymentIntegrationTest(
     private val paymentFinder: PaymentFinder,
     private val productFinder: ProductFinder,
     private val pointAccountFinder: PointAccountFinder,
+    private val paymentGateway: PaymentGateway,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         private const val IDEMPOTENCY_KEY = "confirm-key-1"
@@ -498,6 +507,77 @@ class OrderPaymentIntegrationTest(
             assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
             assertThat(payment.transactionKey).isNull()
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
+        }
+    }
+
+    /**
+     * 과제 6절의 장면 8을 서비스와 클라이언트를 다시 만들어 본다. 첫 컨텍스트에 결제 중인 주문 둘을 남긴다. 하나는 TX A가 커밋한 뒤 생성을 보내기
+     * 전에 멈췄고(생성 0), 하나는 생성의 응답을 잃었다(생성 1). 같은 DB와 테스트 PG 위에 [restarted]로 띄운 두 번째 컨텍스트는 뜨면서 PG에 생성도
+     * 조회도 보내지 않는다. 시작할 때 도는 코드가 없고, TX A의 커밋이 발송 기록이라 생성은 다시 보내지 않는다(ADR 0024 규칙 2, 3).
+     * 새 컨텍스트의 대사는 응답을 잃은 결제를 PG 거래의 거래 키로 확정하고, 보내지 못한 결제는 0건을 찾아 결과 미확인 그대로 둔다.
+     * 생성은 결제마다 0과 1 그대로이고 재고는 한 번 소비된다.
+     */
+    @Test
+    fun `a restarted context sends nothing on start and its reconcile finishes the payment whose create response was lost`() {
+        val request = createOrderConfirmRequest()
+        val stoppedProduct = prepareProduct(price = 1_000, stock = 5)
+        val stopped = prepareOrder(products = listOf(stoppedProduct), quantity = 2)
+        val stoppedPgOrderId = nextPgOrderId()
+        stopBeforeSendingTheCreate()
+        assertThrows<ProcessStopped> { orderConfirmer.confirm(stopped.userId, stopped.id, IDEMPOTENCY_KEY, request) }
+        val lostProduct = prepareProduct(price = 1_000, stock = 5)
+        val lost = prepareOrder(products = listOf(lostProduct), quantity = 2)
+        val lostPgOrderId = nextPgOrderId()
+        testPg.losesCreateResponse(pgOrderId = lostPgOrderId, amount = 2_000, card = request.toCreditCard())
+        val pending = orderConfirmer.confirm(lost.userId, lost.id, "confirm-key-2", request)
+        assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
+        testPg.hasTransactions(stoppedPgOrderId)
+        testPg.hasTransactions(lostPgOrderId, pgTransaction(lostPgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
+        assertThat(testPg.createCount(stoppedPgOrderId)).isZero()
+        assertThat(testPg.createCount(lostPgOrderId)).isOne()
+        val requestsBeforeRestart = testPg.requestCount()
+
+        restarted { context ->
+            val restartedConfirmer = context.getBean(OrderConfirmer::class.java)
+
+            assertThat(testPg.requestCount()).isEqualTo(requestsBeforeRestart)
+            assertThat(testPg.createCount()).isOne()
+            assertThat(testPg.lookupCount()).isZero()
+            assertThat(AopTestUtils.getUltimateTargetObject<OrderConfirmer>(restartedConfirmer))
+                .isNotSameAs(AopTestUtils.getUltimateTargetObject<OrderConfirmer>(orderConfirmer))
+            assertThat(AopTestUtils.getUltimateTargetObject<PaymentGateway>(context.getBean(PaymentGateway::class.java)))
+                .isNotSameAs(AopTestUtils.getUltimateTargetObject<PaymentGateway>(paymentGateway))
+            inNewTransaction {
+                assertThat(paymentFinder.findByOrder(stopped.id).status).isEqualTo(PaymentStatus.UNKNOWN)
+                assertThat(productFinder.find(stoppedProduct.id).stock).isEqualTo(3)
+                assertThat(paymentFinder.findByOrder(lost.id).status).isEqualTo(PaymentStatus.UNKNOWN)
+                assertThat(productFinder.find(lostProduct.id).stock).isEqualTo(3)
+            }
+
+            val unsent = restartedConfirmer.reconcile(stopped.userId, stopped.id)
+            val reconciled = restartedConfirmer.reconcile(lost.userId, lost.id)
+
+            assertThat(unsent.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            assertThat(unsent.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
+            assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
+            assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
+        }
+
+        assertThat(testPg.createCount(stoppedPgOrderId)).isZero()
+        assertThat(testPg.createCount(lostPgOrderId)).isOne()
+        assertThat(testPg.lookupCount()).isEqualTo(2)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            assertThat(orderFinder.find(stopped.userId, stopped.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            val unsentPayment = paymentFinder.findByOrder(stopped.id)
+            assertThat(unsentPayment.status).isEqualTo(PaymentStatus.UNKNOWN)
+            assertThat(unsentPayment.transactionKey).isNull()
+            assertThat(productFinder.find(stoppedProduct.id).stock).isEqualTo(3)
+            assertThat(orderFinder.find(lost.userId, lost.id).status).isEqualTo(OrderStatus.CONFIRMED)
+            val lostPayment = paymentFinder.findByOrder(lost.id)
+            assertThat(lostPayment.status).isEqualTo(PaymentStatus.SUCCESS)
+            assertThat(lostPayment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            assertThat(productFinder.find(lostProduct.id).stock).isEqualTo(3)
         }
     }
 
@@ -1090,6 +1170,34 @@ class OrderPaymentIntegrationTest(
             pause.hold()
             callOriginal()
         }
+    }
+
+    /**
+     * 같은 MySQL과 Redis, 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
+     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB와 Redis다. 그 설정이
+     * `DynamicPropertyRegistrar` 빈으로 넣는 접속 정보는 테스트 프레임워크 밖에서도 `spring-boot-testcontainers`의 자동 설정이 들인다.
+     * 덮는 값은 명령줄 인자로 넘긴다. builder의 `properties`는 기본 속성이라 프로필의 설정 파일에 진다. test 프로필의 `ddl-auto: create`는
+     * 표를 다시 만들어 첫 컨텍스트가 남긴 결제를 지우므로 `none`으로 덮는다. 운영의 재시작도 스키마를 다시 만들지 않는다. `pg.base-url`은
+     * 첫 컨텍스트의 `pg.base-url`에 들어간 테스트 PG 서버의 주소라 그 스텁과 요청 기록이 그대로 남는다. 서블릿과 관리 서버는 빈 포트에 띄운다. 로깅은 JVM에 하나라 첫
+     * 컨텍스트가 맡으므로 `LoggingApplicationListener`를 뺀다. 그대로 두면 두 번째 컨텍스트가 닫히며 logback을 초기화 전으로 표시하고,
+     * 뒤에 뜨는 테스트 컨텍스트가 logback을 다시 설정한다. 첫 컨텍스트의 spy와 PG 주문 번호 생성기는 두 번째 컨텍스트에 없다.
+     */
+    private fun restarted(block: (ConfigurableApplicationContext) -> Unit) {
+        val application = SpringApplicationBuilder(
+            CommerceApiApplication::class.java,
+            MySqlTestContainersConfig::class.java,
+            RedisTestContainersConfig::class.java,
+        )
+            .profiles("test")
+            .build()
+        application.setListeners(application.listeners.filterNot { it is LoggingApplicationListener })
+
+        application.run(
+            "--pg.base-url=${server.baseUrl()}",
+            "--spring.jpa.hibernate.ddl-auto=none",
+            "--server.port=0",
+            "--management.server.port=0",
+        ).use(block)
     }
 
     /** [stopBeforeSendingTheCreate]가 생성을 보내기 전에 던지는, 멈춘 프로세스. */

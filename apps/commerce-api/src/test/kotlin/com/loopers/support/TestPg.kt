@@ -10,6 +10,7 @@ import com.github.tomakehurst.wiremock.client.WireMock.equalTo
 import com.github.tomakehurst.wiremock.client.WireMock.equalToJson
 import com.github.tomakehurst.wiremock.client.WireMock.get
 import com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor
+import com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath
 import com.github.tomakehurst.wiremock.client.WireMock.post
 import com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor
 import com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo
@@ -132,6 +133,13 @@ class TestPg(
     /** PG가 받은 생성 요청 수. 헤더와 본문이 무엇이든 센다. */
     fun createCount(): Int {
         return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).size
+    }
+
+    /** PG가 받은 생성 요청 가운데 본문의 `orderId`가 PG 주문 번호 [pgOrderId]인 것의 수. 결제가 여럿인 장면이 결제마다 센다. */
+    fun createCount(pgOrderId: String): Int {
+        return server.findAll(
+            postRequestedFor(urlEqualTo(PAYMENTS_PATH)).withRequestBody(matchingJsonPath("$.orderId", equalTo(pgOrderId))),
+        ).size
     }
 
     /** PG가 받은 모든 요청 수. 메서드와 경로가 무엇이든, 맞는 스텁이 없던 요청까지 센다. */
