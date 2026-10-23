@@ -203,7 +203,7 @@ class ProductCacheTest(
         assertNextReadIsHit(request)
     }
 
-    /** 마지막 하나를 예약한 주문 확정은 상품을 품절로 바꾼다. 표시는 주문 조각이 아니라 재고를 줄이는 상품 조각이 한다. */
+    /** 마지막 하나를 예약한 주문 확정은 상품을 품절로 바꾼다. 표시는 주문 슬라이스가 아니라 재고를 줄이는 상품 슬라이스가 한다. */
     @Test
     fun `after an order confirmation reserves the last unit the list shows the product sold out`() {
         prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)

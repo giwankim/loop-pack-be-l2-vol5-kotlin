@@ -2,7 +2,7 @@ package com.loopers.application.like.provided
 
 /**
  * 좋아요를 바꾸기 전에 보는 사전 조건. 관계 자체에는 규칙이 없으므로(도메인 문서 좋아요) 여기 있는 것은
- * 다른 조각에 물어야 답할 수 있는 조건이다(ADR 0014). 첫 거절에서 던지고 멈춘다.
+ * 다른 슬라이스에 물어야 답할 수 있는 조건이다(ADR 0014). 첫 거절에서 던지고 멈춘다.
  */
 interface LikeValidator {
     /**

@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 import org.springframework.data.domain.Slice
 
 /**
- * 주문 조각이 내주는 읽기. 고객의 내 주문 상세·목록과 관리자의 주문 목록·상세가 부르고, 주문 확정은 [findForUpdate]로 바꿀 주문을 잠가 얻는다.
+ * 주문 슬라이스가 내주는 읽기. 고객의 내 주문 상세·목록과 관리자의 주문 목록·상세가 부르고, 주문 확정은 [findForUpdate]로 바꿀 주문을 잠가 얻는다.
  * 결제 상태까지 싣는 읽기는 [OrderInfo]를 돌려준다. 응답에 실리는 읽기가 모두 그렇다.
  * 품목은 같은 애그리거트라 함께 읽어 [Order]를 통째로 돌려준다. 트랜잭션 밖에서 품목을 건너도 지연 로딩이 없다(ADR 0014).
  *

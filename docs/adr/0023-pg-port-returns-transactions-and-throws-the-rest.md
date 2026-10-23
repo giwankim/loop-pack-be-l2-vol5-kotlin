@@ -17,7 +17,7 @@ date: 2026-10-20
    - `PgOutcomeUnknownException`: 생성의 결과 미확인. 실패가 아니다.
    - `PgUnavailableException`: 조회 불가.
    - 세 예외는 `RuntimeException`을 바로 넓히고 공통 상위 타입이 없다. catch 하나로 거절과 결과 미확인을 함께 잡아 같게 다루는 길을 막는다.
-   - 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 원인 예외를 잇지 않는다. 해석 오류의 메시지는 응답 본문의 조각을 담을 수 있다([결제 설계 3.5](../design/payments.md)).
+   - 메시지는 HTTP 상태(`HTTP 503`)나 실패의 종류(`SocketTimeoutException`)다. 원인 예외를 잇지 않는다. 해석 오류의 메시지는 응답 본문의 일부를 담을 수 있다([결제 설계 3.5](../design/payments.md)).
 3. **무엇이 어느 결과인지는 그대로다.** ADR 0022 규칙 2·3의 증거, `retrieve()` 대신 `exchange`로 상태 코드를 직접 읽는 것, 호출마다 `RestClientException`을 잡는 catch 하나는 바뀌지 않는다. 그 catch가 값 대신 포트의 예외를 던진다. (2026-10-21: `exchange`를 고른 ADR 0022 규칙 4의 까닭은 이 결정으로 사라졌다. 포트가 값을 돌려주므로 예외를 실패로 옮기는 catch가 생길 자리가 없다는 것이었다. 포트가 던지게 되면서 `retrieve()`의 `onStatus` 처리기에서 포트의 예외를 던지는 길도 열렸다. 다시 견주어 `exchange`를 그대로 둔다. 이제 까닭은 PG 계약이 `retrieve()`의 전제와 어긋나는 데 있다. 성공은 202 하나이고, 거래 키 조회의 404는 결과이며, 422의 본문은 엄격한 컨버터가 읽어야 한다. Spring의 기본 예외는 메시지에 응답 본문을 담는다. 자세한 것은 [결제 설계 4.2](../design/payments.md)에 있다.)
 4. **호출자(2단계)는 PG 호출을 트랜잭션 안에 두지 않고, PG 예외를 넓게 잡지 않는다.**
    - 과제가 PG 호출을 트랜잭션 밖에 둔다. 예외에서는 그것이 더 무겁다. `PgOutcomeUnknownException`이 결제를 결과 미확인으로 저장한 트랜잭션(TX A)을 지나면 Spring이 그 트랜잭션을 되돌려, 생성을 보냈다는 기록이 사라진다. 같은 멱등 키로 다시 확정하면 결제가 없으니 생성이 다시 나간다.

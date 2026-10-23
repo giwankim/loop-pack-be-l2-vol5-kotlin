@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Propagation
 /**
  * [PgTransactionCreator]와 [PgTransactionRetriever]의 구현. `NEVER`라서 트랜잭션 안에서 불리면 Spring이 `IllegalTransactionStateException`으로
  * 거절하고 PG에 보내지 않는다. 그래서 결과 미확인이나 조회 불가의 예외가 결제를 저장한 트랜잭션을 지나 그 저장을 되돌리는 일이 없다
- * (ADR 0023 규칙 4, ADR 0028 규칙 2). PG의 예외는 그대로 던진다. 어떻게 다룰지는 조율하는 주문 조각이 예외의 타입마다 정한다(ADR 0028 규칙 3).
+ * (ADR 0023 규칙 4, ADR 0028 규칙 2). PG의 예외는 그대로 던진다. 어떻게 다룰지는 조율하는 주문 슬라이스가 예외의 타입마다 정한다(ADR 0028 규칙 3).
  */
 @ApplicationService(propagation = Propagation.NEVER)
 class PgTransactionService(

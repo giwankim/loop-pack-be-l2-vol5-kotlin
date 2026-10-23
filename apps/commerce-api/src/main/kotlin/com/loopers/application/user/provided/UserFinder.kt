@@ -1,7 +1,7 @@
 package com.loopers.application.user.provided
 
 /**
- * 사용자 조각이 내주는 읽기. 웹 경계가 요청자를 받아들일지 정할 때 부른다(ADR 0015).
+ * 사용자 슬라이스가 내주는 읽기. 웹 경계가 요청자를 받아들일지 정할 때 부른다(ADR 0015).
  * 사용자를 만들거나 바꾸는 유스케이스가 없어 쓰기 포트는 없다.
  */
 interface UserFinder {

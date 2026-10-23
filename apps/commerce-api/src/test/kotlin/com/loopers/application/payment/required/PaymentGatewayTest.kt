@@ -330,7 +330,7 @@ class PaymentGatewayTest(
         assertThat(exception.message).isEqualTo("HTTP $httpStatus")
     }
 
-    /** 해석 오류의 메시지는 응답 본문의 조각을 담을 수 있어, 포트의 예외는 그 오류를 원인으로 잇지 않는다(결제 설계 3.5). */
+    /** 해석 오류의 메시지는 응답 본문의 일부를 담을 수 있어, 포트의 예외는 그 오류를 원인으로 잇지 않는다(결제 설계 3.5). */
     @ParameterizedTest
     @MethodSource("unreadableTransactions")
     fun `a 202 whose body is not a well-formed transaction throws PgOutcomeUnknownException without the parse error`(

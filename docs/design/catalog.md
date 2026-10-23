@@ -1,8 +1,8 @@
 # 카탈로그 설계 — 브랜드, 상품, 좋아요
 
-2주차 첫 번째 조각의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)를 따르고, 각 개념의 규칙·속성·행위는 [`docs/domain/catalog.md`](../domain/catalog.md)에 있다. 삭제 방식의 결정은 [ADR 0001](../adr/0001-soft-delete-catalog-hard-delete-like.md)이다.
+2주차 첫 번째 슬라이스의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)를 따르고, 각 개념의 규칙·속성·행위는 [`docs/domain/catalog.md`](../domain/catalog.md)에 있다. 삭제 방식의 결정은 [ADR 0001](../adr/0001-soft-delete-catalog-hard-delete-like.md)이다.
 
-범위: 고객의 브랜드 상세, 상품 목록·상세, 좋아요 누르기·취소·내 좋아요 목록. 관리자의 브랜드·상품 CRUD와 재고 변경. 포인트와 주문은 다음 조각이다.
+범위: 고객의 브랜드 상세, 상품 목록·상세, 좋아요 누르기·취소·내 좋아요 목록. 관리자의 브랜드·상품 CRUD와 재고 변경. 포인트와 주문은 다음 슬라이스다.
 
 ## 1. 컴포넌트 다이어그램
 
@@ -12,22 +12,22 @@
 > | --- | --- | --- | --- |
 > | adapter.webapi | 컨트롤러(`<X>Api`)와 ApiSpec, 응답 DTO, 웹 공용 타입(`ApiResponse`, `PageResponse`, `UserIdHeader`). 바로 위 `adapter`의 `ApiControllerAdvice`도 이 계층이다. 고객·관리자 입력과 응답, HTTP 오류 매핑, 요청자 식별 | application의 provided 포트와 그 타입, domain | adapter.persistence |
 > | adapter.persistence | QueryDSL 목록 어댑터(`QuerydslProductListRepository`, `QuerydslOrderListRepository`) | application의 required 포트, domain | adapter.webapi |
-> | application | `provided`: 포트, Request, `Info`. `required`: Spring Data 저장소, QueryDSL 목록 포트, 다른 조각에 묻는 포트. 조각마다 `<X>QueryService`와 `<X>ModifyService`. 유스케이스 순서, 교차 검사, 응답 모델 조합 | domain | adapter.webapi, adapter.persistence |
+> | application | `provided`: 포트, Request, `Info`. `required`: Spring Data 저장소, QueryDSL 목록 포트, 다른 슬라이스에 묻는 포트. 슬라이스마다 `<X>QueryService`와 `<X>ModifyService`. 유스케이스 순서, 교차 검사, 응답 모델 조합 | domain | adapter.webapi, adapter.persistence |
 > | domain | 상태와 규칙 | 없음 | application, adapter.webapi, adapter.persistence |
 >
 > - 개념 패키지는 그대로 계층 아래에 둔다: `domain/brand`, `application/brand`, `adapter/webapi/v1/brand`. API 버전은 `adapter/webapi` 바로 아래 패키지에 붙인다(`adapter/webapi/v1/brand/BrandApi`, `BrandAdminApi`).
-> - 유스케이스는 포트로 드러난다. 읽기는 조각마다 Finder 하나(`BrandFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `ProductRegister`, 주문 확정이 부르는 `StockDeductor`). `Facade`는 쓰지 않고 domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+> - 유스케이스는 포트로 드러난다. 읽기는 슬라이스마다 Finder 하나(`BrandFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `ProductRegister`, 주문 확정이 부르는 `StockDeductor`). `Facade`는 쓰지 않고 domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 > - Request는 이름 규칙(`<개념><동사>Request`) 그대로 `provided`에 둔다(5.17). `Money`는 `domain/shared`에 남는다.
-> - 다른 조각은 그 조각의 provided 포트로만 부른다. 다른 조각의 Service, `required` 저장소, 구현 클래스를 쓰지 않는다. 이 쓰임은 ArchUnit이 아니라 리뷰가 지킨다.
+> - 다른 슬라이스는 그 슬라이스의 provided 포트로만 부른다. 다른 슬라이스의 Service, `required` 저장소, 구현 클래스를 쓰지 않는다. 이 쓰임은 ArchUnit이 아니라 리뷰가 지킨다.
 > - 저장소는 `required`의 Spring Data 인터페이스이고 Spring Data가 구현한다(5.20). 저장소의 위치가 만든 두 순환은 묻는 쪽이 선언한 포트(`ActiveProductChecker`, `LikeCounter`)로 끊는다(5.16). (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): `ActiveProductChecker`는 지웠다. 브랜드 쪽 순환은 이제 브랜드가 선언한 `ProductDeleter`를 상품의 `ProductModifyService`가 직접 구현해 끊는다. `LikeCounter`는 `LikeQueryService`가 직접 구현한다.)
 >
-> 2026-10-16 위 표의 adapter.persistence 줄은 QueryDSL 목록 어댑터만 적었다. 지금은 고객 상품 목록 캐시의 설정(`ProductListCacheConfig`)과 캐시 오류 처리기(`ProductListCacheErrorHandler`)도 이 계층에 있다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.8). 설정은 캐시 이름(`ProductListCacheKeyGenerator.CACHE_NAME`)과 캐시하는 값의 타입(`ProductListInfo`)을 쓰므로, required 포트 말고도 같은 조각의 application 구현 클래스와 provided 타입에 기댄다. `HexagonalArchitectureTest`는 adapter가 application에 기대는 것을 막지 않는다. 다른 조각의 구현 클래스를 쓰지 않는다는 위 규칙은 그대로다.
+> 2026-10-16 위 표의 adapter.persistence 줄은 QueryDSL 목록 어댑터만 적었다. 지금은 고객 상품 목록 캐시의 설정(`ProductListCacheConfig`)과 캐시 오류 처리기(`ProductListCacheErrorHandler`)도 이 계층에 있다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md), 8.6–8.8). 설정은 캐시 이름(`ProductListCacheKeyGenerator.CACHE_NAME`)과 캐시하는 값의 타입(`ProductListInfo`)을 쓰므로, required 포트 말고도 같은 슬라이스의 application 구현 클래스와 provided 타입에 기댄다. `HexagonalArchitectureTest`는 adapter가 application에 기대는 것을 막지 않는다. 다른 슬라이스의 구현 클래스를 쓰지 않는다는 위 규칙은 그대로다.
 
 과제의 "버드뷰"를 C4 컴포넌트 다이어그램으로 그린다. 고객과 관리자, API 서버 안의 네 계층, DB와 요청 방향을 담는다.
 
 ```mermaid
 C4Component
-    title commerce-api 컴포넌트 (카탈로그 조각)
+    title commerce-api 컴포넌트 (카탈로그 슬라이스)
 
     Person(user, "고객", "브랜드·상품을 보고 좋아요를 누르는 사용자")
     Person(admin, "관리자", "브랜드·상품·재고를 관리하는 역할")
@@ -129,7 +129,7 @@ classDiagram
     Like "*" ..> "1" User : userId
 ```
 
-- 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 조각에 물어서(`ActiveProductChecker`) 판단한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 이제 묻지 않는다. 브랜드를 삭제하면 application이 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품도 함께 삭제한다.)
+- 실선 `Product → Brand`는 JPA `@ManyToOne` 읽기 참조다. 애그리거트는 둘이며 저장소도 둘이다. 브랜드를 지울 수 있는지는 `Brand`가 아니라 application이 상품 슬라이스에 물어서(`ActiveProductChecker`) 판단한다. (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 이제 묻지 않는다. 브랜드를 삭제하면 application이 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품도 함께 삭제한다.)
 - 점선 `Like → Product`, `Like → User`는 식별자만 보관하는 관계다. 좋아요 수는 `Like`를 세어 구하고 `Product`에 저장하지 않는다.
 - `deletedAt`은 `BaseEntity`에서 온다. `Like`는 `BaseEntity.delete()`를 쓰지 않고 행을 지운다(ADR 0001). 테이블은 `likes`이고 유일 제약은 `(user_id, product_id)`다.
 - `User`는 `users` 테이블의 실습용 행이다. 식별자 말고 속성이 없고 저장 약속(`UserRepository`)은 `save`와 `existsById`뿐이다. 요청자 식별이 `existsById`에 기댄다(5.27).
@@ -244,8 +244,8 @@ sequenceDiagram
   - 카탈로그 변경의 각 트랜잭션은 애그리거트 하나만 바꾼다. 주문 확정은 별도 예외로 application이 Order·PointAccount·Product를 하나의 트랜잭션에서 변경한다([ADR 0003](../adr/0003-confirm-order-in-one-transaction.md)). 상품 자체는 `brand`를 읽기만 한다. 영속성 컨텍스트가 관리하는 `Brand`는 cascade가 없어도 dirty checking으로 저장되므로, `product.brand`에서 상태를 바꾸는 메서드를 부르면 브랜드도 함께 바뀐다.
   - 연관은 상품에서 브랜드로 가는 한 방향이다. `Brand`는 상품 컬렉션을 갖지 않는다. cascade가 없고 `updatable = false`다.
   - 브랜드 삭제 거절(삭제되지 않은 상품이 남으면 409)이 "삭제되지 않은 상품의 브랜드는 삭제되지 않았다"를 보장한다(한 트랜잭션 안에서. 동시 등록은 7에 적었다). 그래서 `@SQLRestriction`으로 삭제된 행을 숨기는 `Brand`를 삭제되지 않은 상품에서 언제나 읽을 수 있다. 삭제 조건을 풀거나 연쇄 삭제로 바꾸면 이 연관을 다시 본다.
-- 아키텍처 테스트: `HexagonalArchitectureTest.domainSlicesOnlyReadEachOther`. `domain` 아래 한 조각(`brand`, `product`, `shared` …)의 클래스가 다른 조각 클래스에서 부를 수 있는 메서드는 셋뿐이다. getter(`get`·`is`로 시작하고 인자가 없으며 값을 돌려준다), enum의 메서드, record의 메서드다. Kotlin에는 record가 없으므로 프로퍼티가 모두 `val`인 data class(`Money`)를 record로 본다. 생성자 호출은 메서드 호출이 아니므로 다른 조각의 값 객체와 예외는 만들 수 있다.
-  - 이 테스트는 domain 계층만 본다. application의 Service는 다른 조각의 포트를 불러야 하므로 테스트 밖이고, 그곳에서 `product.brand`의 상태를 바꾸지 않는 것은 리뷰로 지킨다.
+- 아키텍처 테스트: `HexagonalArchitectureTest.domainSlicesOnlyReadEachOther`. `domain` 아래 한 슬라이스(`brand`, `product`, `shared` …)의 클래스가 다른 슬라이스 클래스에서 부를 수 있는 메서드는 셋뿐이다. getter(`get`·`is`로 시작하고 인자가 없으며 값을 돌려준다), enum의 메서드, record의 메서드다. Kotlin에는 record가 없으므로 프로퍼티가 모두 `val`인 data class(`Money`)를 record로 본다. 생성자 호출은 메서드 호출이 아니므로 다른 슬라이스의 값 객체와 예외는 만들 수 있다.
+  - 이 테스트는 domain 계층만 본다. application의 Service는 다른 슬라이스의 포트를 불러야 하므로 테스트 밖이고, 그곳에서 `product.brand`의 상태를 바꾸지 않는 것은 리뷰로 지킨다.
   - 이름이 getter처럼 생긴 변경 메서드(`getAndIncrement` 같은 것)는 잡지 못한다. 그런 이름을 쓰지 않는다.
 - 다시 볼 조건: 브랜드 단위로 상품을 한꺼번에 바꾸는 요구가 생기면 A를 다시 본다. 브랜드와 상품을 다른 모듈이나 서비스로 나누거나, 브랜드를 바꾸는 흐름이 상품을 읽은 트랜잭션 안에 들어와야 하면 C로 옮긴다.
 
@@ -297,7 +297,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.8 교차 검사의 위치
 
-브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.) (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 브랜드 삭제 조건은 없어졌다. 브랜드 삭제는 상품 조각에 묻지 않고 시킨다. 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품을 함께 삭제하게 하고, `ActiveProductChecker`와 `BrandValidator.validateForDelete`는 지웠다. 남은 교차 검사는 브랜드 이름 중복과 상품 등록 시 브랜드 존재다.) (2026-10-09, [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md): 상품 등록의 브랜드 존재는 `BrandFinder.findForShare`로 묻는다. 거절은 그대로 `BRAND_NOT_FOUND`이고, 공유 잠금이 커밋까지 가므로 겹친 브랜드 삭제가 그 사이에 끼어들지 못한다(7).)
+브랜드 삭제 조건, 브랜드 이름 중복, 상품 등록 시 브랜드 존재는 application의 Service에서 조회해 확인한다. 자기 개념의 것은 저장소로 묻고, 다른 개념의 것은 포트로 묻는다. 브랜드는 자기가 선언하고 상품이 구현한 `ActiveProductChecker`로, 상품은 브랜드의 `BrandFinder`로 묻는다. 각 검사가 조회 하나와 거절 하나라서 도메인 서비스로 뺄 규칙이 아직 없다. 규칙이 자라면 그때 도메인 서비스로 옮긴다. (2026-10-08, [ADR 0014](../adr/0014-finders-load-whole-aggregates.md): 브랜드의 두 검사는 `BrandModifyService`에서 provided 포트 `BrandValidator`의 구현 `BrandValidationService`로 옮겼다. 묻는 곳(이름 중복은 `BrandRepository`, 남은 상품은 `ActiveProductChecker`)과 거절의 차례는 그대로다. 상품 등록의 브랜드 존재는 `BrandFinder.find`가 던지는 조회 그대로 `ProductModifyService`에 남는다.) (2026-10-09, [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md): 브랜드 삭제 조건은 없어졌다. 브랜드 삭제는 상품 슬라이스에 묻지 않고 시킨다. 브랜드가 선언한 `ProductDeleter`로 그 브랜드의 삭제되지 않은 상품을 함께 삭제하게 하고, `ActiveProductChecker`와 `BrandValidator.validateForDelete`는 지웠다. 남은 교차 검사는 브랜드 이름 중복과 상품 등록 시 브랜드 존재다.) (2026-10-09, [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md): 상품 등록의 브랜드 존재는 `BrandFinder.findForShare`로 묻는다. 거절은 그대로 `BRAND_NOT_FOUND`이고, 공유 잠금이 커밋까지 가므로 겹친 브랜드 삭제가 그 사이에 끼어들지 못한다(7).)
 
 ### 5.9 카탈로그 조회의 식별
 
@@ -363,21 +363,21 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 > 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 계층 이름이 바뀌었다. 계층마다 따로 검사하는 선택(B)은 그대로이고, 대안과 선택에 적힌 계층·규칙 이름은 지금 것으로 고쳤다. 문제와 "확인"은 그때의 계층(`interfaces`, `infrastructure`)과 `LayeredArchitectureTest`를 두고 적은 것이다. 다시 볼 조건이 카탈로그를 나눌 때 쓰겠다던 `required` 포트는 그 계기 없이 먼저 들어왔다. 저장소가 `domain`에서 `application`의 `required`로 옮겨 오자 `application.brand`와 `application.product`가 서로를 참조해 순환이 생겼다. 그래서 brand가 `ActiveProductChecker`("삭제되지 않은 상품이 남았는가")를 선언하고 product의 `ProductFinder`가 상속해 구현한다. 의존은 도메인과 같은 product → brand다. 같은 까닭으로 product가 선언한 `LikeCounter`를 like의 `LikeFinder`가 구현한다.
 >
-> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)으로 provided 포트는 다른 조각의 required 포트를 상속하지 않는다. Service가 맡는 역할 인터페이스를 모두 직접 구현한다. 위 메모의 "`ProductFinder`가 상속해 구현한다"와 "`LikeCounter`를 like의 `LikeFinder`가 구현한다"는 그때의 모양이다. 지금은 `LikeQueryService`가 `LikeFinder`와 `LikeCounter`를 각자 구현한다. `ProductFinder : ActiveProductChecker`는 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지울 때까지 남는다. 의존 방향은 product → brand, like → product 그대로이고, 계층마다 따로 검사하는 선택(B)도 그대로다.
+> 2026-10-09 [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)으로 provided 포트는 다른 슬라이스의 required 포트를 상속하지 않는다. Service가 맡는 역할 인터페이스를 모두 직접 구현한다. 위 메모의 "`ProductFinder`가 상속해 구현한다"와 "`LikeCounter`를 like의 `LikeFinder`가 구현한다"는 그때의 모양이다. 지금은 `LikeQueryService`가 `LikeFinder`와 `LikeCounter`를 각자 구현한다. `ProductFinder : ActiveProductChecker`는 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지울 때까지 남는다. 의존 방향은 product → brand, like → product 그대로이고, 계층마다 따로 검사하는 선택(B)도 그대로다.
 >
 > 2026-10-09 브랜드 삭제 연쇄가 `ActiveProductChecker`를 지웠다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)). 브랜드 ↔ 상품 순환은 이제 brand가 선언한 `ProductDeleter`("이 브랜드의 삭제되지 않은 상품을 삭제하라")를 product의 `ProductModifyService`가 `ProductRegister`, `StockDeductor`와 나란히 직접 구현해 끊는다. 묻는 포트가 시키는 포트로 바뀌었을 뿐 타입의 의존은 product → brand 그대로이고, `HexagonalArchitectureTest`는 고치지 않았다. 아래 문제와 다시 볼 조건의 "삭제되지 않은 상품이 있는가"는 그때의 물음이다.
 >
 > 2026-10-15 브랜드 이름 변경이 고객 상품 목록의 캐시를 무효로 만들면서([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)) brand가 선언한 시키는 포트가 하나 더 생겼다. `ProductListMarker`("상품 목록이 바뀌었다고 표시하라")를 product의 `ProductListRevisionMarker`가 product의 `ProductListChangeMarker`와 나란히 직접 구현한다. brand가 product의 표시 포트를 부르면 순환이므로 `ProductDeleter`와 같은 꼴로 끊는다. 브랜드 삭제는 `deleteAllOfBrand` 안에서 표시하므로 새 포트는 이름 변경만 쓴다. 타입의 의존은 product → brand 그대로다.
 
-- 문제: #6의 브랜드 삭제 거절은 `application.brand`가 `domain.product`의 저장소에 묻는 일이다. `domain.product`는 이미 `domain.brand`를 참조한다(5.1). 계층을 가로질러 기능을 한 조각으로 묶으면 `brand → product → brand`가 순환으로 잡힌다.
-- 대안 A: 기능 조각 하나가 네 계층을 가로지른다. `domain.brand`, `application.brand`, `adapter.webapi.v1.brand`를 조각 `brand` 하나로 묶고 조각 사이 순환을 막는다. 기능 하나를 통째로 떼어 낼 수 있음을 보장한다.
-- 대안 B: 계층마다 따로 검사한다. `domain`, `application`, `adapter.webapi`, `adapter.persistence` 각각의 안에서만 기능 조각 사이 순환을 막는다. splearn의 `HexagonalArchitectureTest`가 domain과 application에 같은 방식을 쓴다.
+- 문제: #6의 브랜드 삭제 거절은 `application.brand`가 `domain.product`의 저장소에 묻는 일이다. `domain.product`는 이미 `domain.brand`를 참조한다(5.1). 계층을 가로질러 기능을 한 슬라이스로 묶으면 `brand → product → brand`가 순환으로 잡힌다.
+- 대안 A: 기능 슬라이스 하나가 네 계층을 가로지른다. `domain.brand`, `application.brand`, `adapter.webapi.v1.brand`를 슬라이스 `brand` 하나로 묶고 슬라이스 사이 순환을 막는다. 기능 하나를 통째로 떼어 낼 수 있음을 보장한다.
+- 대안 B: 계층마다 따로 검사한다. `domain`, `application`, `adapter.webapi`, `adapter.persistence` 각각의 안에서만 기능 슬라이스 사이 순환을 막는다. splearn의 `HexagonalArchitectureTest`가 domain과 application에 같은 방식을 쓴다.
 - 선택: B (2026-09-17). `HexagonalArchitectureTest`의 `domainSlicesAreFreeOfCycles`, `applicationSlicesAreFreeOfCycles`, `webApiSlicesAreFreeOfCycles`, `persistenceSlicesAreFreeOfCycles`.
   - 브랜드 삭제 거절은 같은 계층의 두 모듈이 서로를 부르는 일이 아니다. 유스케이스가 아래 계층의 두 애그리거트를 읽는 일이다. Vernon은 애그리거트의 행위를 부르기 전에 application service가 저장소로 필요한 애그리거트를 찾아 두라고 한다("Effective Aggregate Design" Part II). 한 요청이 여러 애그리거트를 읽어도 바꾸는 것은 하나다.
   - DDD에서 순환을 피하라는 조언은 모듈에 대한 것이다. Vernon은 모듈 사이 결합을 줄이고, 결합이 필요하면 순환 없이 한 방향으로 두라고 한다(IDDD 9장). 그 장의 모듈은 주로 도메인 모델의 패키지다. 이 저장소에서 도메인 모듈의 방향은 `product → brand`, `product → shared`, `brand → shared`로 한 방향이다.
-  - 따로 떼어 내는 단위는 모듈이 아니라 바운디드 컨텍스트다. 브랜드·상품·좋아요는 카탈로그라는 한 컨텍스트 안의 모듈이다(`CONTEXT.md`). 기능마다 떼어 낼 수 있어야 한다는 A의 조건은 이 조각에 필요 이상으로 강하다.
+  - 따로 떼어 내는 단위는 모듈이 아니라 바운디드 컨텍스트다. 브랜드·상품·좋아요는 카탈로그라는 한 컨텍스트 안의 모듈이다(`CONTEXT.md`). 기능마다 떼어 낼 수 있어야 한다는 A의 조건은 이 슬라이스에 필요 이상으로 강하다.
 - 비용: 계층을 가로지르는 `brand ↔ product` 의존은 잡지 못한다. 브랜드 기능만 떼어 낼 수 있다는 보장이 없다.
-- 확인: 임시 클래스로 계층마다 순환을 만들면 해당 규칙이 실패하고, `application.brand → domain.product`만 더하면 여섯 규칙이 모두 통과함을 확인하고 임시 클래스를 지웠다. interfaces의 조각 이름이 `v1`이 아니라 `brand`, `product`로 잡히는 것도 같이 확인했다.
+- 확인: 임시 클래스로 계층마다 순환을 만들면 해당 규칙이 실패하고, `application.brand → domain.product`만 더하면 여섯 규칙이 모두 통과함을 확인하고 임시 클래스를 지웠다. interfaces의 슬라이스 이름이 `v1`이 아니라 `brand`, `product`로 잡히는 것도 같이 확인했다.
 - 다시 볼 조건: 카탈로그를 여러 컨텍스트나 모듈로 나눌 때. 그때는 splearn의 `required` 포트처럼 `application.brand`가 필요한 질문("삭제되지 않은 상품이 있는가")을 인터페이스로 선언하고 `application.product`가 구현해, 의존을 도메인과 같은 `product → brand` 한 방향으로 맞춘다.
 
 ### 5.17 유스케이스 입력의 형태
@@ -429,16 +429,16 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 옮기는 일을 하던 Impl 넷은 이렇게 갈렸다. 브랜드의 `Slice` → `PageSlice` 변환은 #81이 `PageSlice`를 지우면서 없어졌다(5.21). 상품·주문 목록의 QueryDSL은 순수 포트(`ProductListRepository`, `OrderListRepository`)와 `adapter.persistence`의 구현(`QuerydslProductListRepository`, `QuerydslOrderListRepository`)으로 나뉘었다. 좋아요 수의 0 채우기는 `LikeRepository`의 본문 있는 메서드가 되었다. `JpaRepository`가 아니라 표지 `Repository`를 상속하고 쓰는 메서드만 선언하는 것과, 단건 조회 `findById`가 `X?`를 돌려주는 것은 그대로다. 저장소 테스트는 Spring Data 포트 타입을 대상으로 `application/<개념>/required`에 있고, QueryDSL 목록을 함께 보는 상품·주문 테스트만 그 어댑터를 `@Import`한다(6).
 
 - 문제: domain의 저장 약속(`BrandRepository`, `ProductRepository`)을 Spring Data JPA로 구현하는 방법. 저장 약속의 메서드 이름은 Spring Data의 `CrudRepository`와 맞추고(`findById`), 없는 행은 `Optional`이 아니라 nullable(`Brand?`)로 돌려준다. 저장 약속이 `Optional`을 돌려주면 application이 매번 `orElseThrow`나 `orElse(null)`을 붙여야 한다.
-- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. `Repository`는 메서드를 하나도 선언하지 않는 표지라서 저장 약속이 `findById(id: Long): Brand?`를 그대로 선언할 수 있다. 그러나 domain 인터페이스가 Spring Data에 의존하고, 이름만으로 끝나지 않는 목록(`findAll(page, size): PageSlice<Brand>`)은 Spring Data가 만들지 못한다. 목록을 Spring Data에 맡기려면 저장 약속이 `Slice`·`Pageable`을 돌려받아 5.21을 뒤집거나, domain에 조각 인터페이스를 따로 두고 infrastructure가 구현해야 한다.
+- 대안 A: 저장 약속이 직접 `Repository<Brand, Long>`을 상속하고 Spring Data가 구현을 만든다. splearn의 `MemberRepository`가 이 모양이다. `Repository`는 메서드를 하나도 선언하지 않는 표지라서 저장 약속이 `findById(id: Long): Brand?`를 그대로 선언할 수 있다. 그러나 domain 인터페이스가 Spring Data에 의존하고, 이름만으로 끝나지 않는 목록(`findAll(page, size): PageSlice<Brand>`)은 Spring Data가 만들지 못한다. 목록을 Spring Data에 맡기려면 저장 약속이 `Slice`·`Pageable`을 돌려받아 5.21을 뒤집거나, domain에 fragment 인터페이스를 따로 두고 infrastructure가 구현해야 한다.
 - 대안 B: infrastructure에 Spring Data 인터페이스 `BrandJpaRepository`와 `@Component BrandRepositoryImpl : BrandRepository`를 따로 둔다. Impl은 이름만으로 끝나는 일을 `BrandJpaRepository`에 맡기고, Spring Data가 읽은 결과를 domain의 모양으로 옮긴다. 템플릿의 `Example` 패키지가 쓰던 모양이다.
-- 대안 C: infrastructure의 Spring Data 인터페이스가 표지와 저장 약속을 함께 상속한다(`BrandJpaRepository : Repository<Brand, Long>, BrandRepository`). domain은 Spring Data를 모른다. 그러나 Spring Data가 이름에서 만들지 못하는 `findAll(page, size)`에서 애플리케이션 시작이 실패한다. Impl을 남기면 `BrandRepository` 빈이 둘이 되어 타입으로 주입받지 못한다. Spring Data는 저장 약속을 구현한 `BrandRepositoryImpl`을 저장 약속의 패키지(`domain.brand`) 아래에서만 찾으므로, `infrastructure.brand`의 Impl은 조각 구현으로 잡히지 않는다. Impl을 `domain.brand`로 옮기면 모든 메서드가 그리로 가고, Impl이 `BrandJpaRepository`를 받으므로 순환 참조로 시작이 실패한다. 옮기는 일이 있는 개념마다 저장 약속을 이름으로 끝나는 쪽과 손으로 짜는 쪽으로 나눠야 한다.
-- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모른다. domain은 JPA·Hibernate 애노테이션만 들여오고 `org.springframework`는 하나도 들여오지 않는다. 일곱 Impl 중 넷은 위임에 그치지 않고 옮기는 일을 한다. 브랜드는 `Slice`를 `PageSlice`로 옮기고, 상품과 주문은 목록을 QueryDSL로 짜고, 좋아요는 좋아요가 없는 상품의 개수를 0으로 채운다. A와 C는 그 넷에 조각 인터페이스를 따로 요구하면서 위임만 하는 셋(사용자, 포인트 계정, 포인트 이력)을 없앨 뿐이다.
+- 대안 C: infrastructure의 Spring Data 인터페이스가 표지와 저장 약속을 함께 상속한다(`BrandJpaRepository : Repository<Brand, Long>, BrandRepository`). domain은 Spring Data를 모른다. 그러나 Spring Data가 이름에서 만들지 못하는 `findAll(page, size)`에서 애플리케이션 시작이 실패한다. Impl을 남기면 `BrandRepository` 빈이 둘이 되어 타입으로 주입받지 못한다. Spring Data는 저장 약속을 구현한 `BrandRepositoryImpl`을 저장 약속의 패키지(`domain.brand`) 아래에서만 찾으므로, `infrastructure.brand`의 Impl은 fragment 구현으로 잡히지 않는다. Impl을 `domain.brand`로 옮기면 모든 메서드가 그리로 가고, Impl이 `BrandJpaRepository`를 받으므로 순환 참조로 시작이 실패한다. 옮기는 일이 있는 개념마다 저장 약속을 이름으로 끝나는 쪽과 손으로 짜는 쪽으로 나눠야 한다.
+- 선택: B (2026-09-17). 저장 약속이 Spring Data를 모른다. domain은 JPA·Hibernate 애노테이션만 들여오고 `org.springframework`는 하나도 들여오지 않는다. 일곱 Impl 중 넷은 위임에 그치지 않고 옮기는 일을 한다. 브랜드는 `Slice`를 `PageSlice`로 옮기고, 상품과 주문은 목록을 QueryDSL로 짜고, 좋아요는 좋아요가 없는 상품의 개수를 0으로 채운다. A와 C는 그 넷에 fragment 인터페이스를 따로 요구하면서 위임만 하는 셋(사용자, 포인트 계정, 포인트 이력)을 없앨 뿐이다.
 - Spring Data 인터페이스는 `JpaRepository`가 아니라 표지 `Repository<X, Long>`을 상속하고, Impl이 부르는 메서드만 선언한다(2026-09-28). 저장(`save`)은 일곱 모두, 단건 조회(`findById(id: Long): X?`)는 브랜드·상품·주문, 삭제(`delete`)는 좋아요, 존재 확인(`existsById`)은 사용자만 선언한다. `JpaRepository`가 물려주던 `deleteAll`, 쪽 없는 `findAll()`, `saveAndFlush`를 Impl이 부를 수 없다.
   - 이름과 매개변수가 `CrudRepository`의 메서드와 같으면 Spring Data는 파생 조회를 만들지 않고 `SimpleJpaRepository`로 보낸다. 짝을 찾을 때 반환 타입은 따지지 않는다. 그래서 `findById`는 JPQL이 아니라 `EntityManager.find`이고, 영속성 컨텍스트에 있는 엔티티는 조회 없이 돌려주며 auto flush도 일으키지 않는다. `SimpleJpaRepository`가 돌려준 `Optional`은 Spring Data가 풀어 없으면 null이 된다.
   - 반환 타입을 non-null `X`로 적으면 없을 때 `EmptyResultDataAccessException`을 던진다. 그래서 `X?`로 적는다.
   - 공통 부모(`@NoRepositoryBean`)에 `save`·`findById`를 모으지 않는다. 줄이려던 물려받는 메서드가 작은 모양으로 돌아오고, 부르는 곳 없는 `findById`가 좋아요·사용자·포인트 이력에 생긴다. `save` 한 줄이 일곱 번 되풀이되는 것이 대가다.
 - 비용: 개념마다 Impl이 하나 더 있고, 조회를 더할 때 저장 약속·Spring Data 인터페이스·Impl 세 곳을 고친다. `@DataJpaTest`는 `@Component`를 스캔하지 않으므로 저장소 테스트가 Impl을 `@Import`로 등록해야 하고, 그래서 테스트가 `domain`이 아니라 `infrastructure` 패키지에 있다(6). `LayeredArchitectureTest`는 테스트 클래스를 빼고 검사하므로 domain 패키지의 테스트가 infrastructure를 가져와도 잡지 못한다. 그 자리는 리뷰가 지킨다. `JpaRepository`나 `CrudRepository`를 다시 상속하는 인터페이스도 아직은 ArchUnit 규칙 없이 리뷰가 막는다.
-- 고침 (2026-09-28): 처음에는 문제를 "`JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려주므로 두 인터페이스를 합칠 수 없다"로 적고, A에는 "`findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다"고 적었다. 그 부딪힘은 `findById`를 선언한 `CrudRepository` 쪽의 것이고 표지 `Repository`에는 없다. 부딪힘이 사라진 뒤 B를 지키는 근거는 domain이 Spring Data를 모른다는 것과 Impl이 하는 옮기는 일이다. 다시 볼 조건에 있던 "위임 클래스가 셋을 넘으면"은 포인트·주문 조각에서 Impl이 일곱이 될 때까지 아무도 다시 보지 않았고, 위임만 하는 Impl은 지금도 셋이다. 그래서 지웠다.
+- 고침 (2026-09-28): 처음에는 문제를 "`JpaRepository.findById`는 `Optional<Brand>`를, 저장 약속은 `Brand?`를 돌려주므로 두 인터페이스를 합칠 수 없다"로 적고, A에는 "`findById`는 `Optional`을 돌려주거나 다른 이름을 써야 한다"고 적었다. 그 부딪힘은 `findById`를 선언한 `CrudRepository` 쪽의 것이고 표지 `Repository`에는 없다. 부딪힘이 사라진 뒤 B를 지키는 근거는 domain이 Spring Data를 모른다는 것과 Impl이 하는 옮기는 일이다. 다시 볼 조건에 있던 "위임 클래스가 셋을 넘으면"은 포인트·주문 슬라이스에서 Impl이 일곱이 될 때까지 아무도 다시 보지 않았고, 위임만 하는 Impl은 지금도 셋이다. 그래서 지웠다.
 - 고침 (2026-09-28, ADR 0006): 포인트 이력의 저장소를 지웠다([포인트·주문 설계 18절](./points-orders.md)). 이 절에서 센 수는 그 전의 것이다. Impl과 `save`를 선언하는 Spring Data 인터페이스는 일곱에서 여섯, 위임만 하는 Impl은 셋에서 둘(사용자, 포인트 계정)이 되었다.
 - 다시 볼 조건: domain이 Spring Data에 의존해도 된다고 정할 때. 그때는 A로 가고 `findById`의 반환은 `X?` 그대로 둔다.
 
@@ -461,7 +461,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 처음에는 `Slice`·`PageRequest`·`SliceResponse`로 두고 "한 파일에 둘이 함께 나오지 않으므로 별칭을 두지 않는다"고 적었으나 2026-09-18에 고쳤다. 그 전제도 틀렸다. `BrandRepositoryImpl`은 한 파일에서 Spring Data의 `PageRequest`와 domain의 조각을 함께 쓰고, `BrandJpaRepository`와 `BrandRepositoryImpl`은 같은 패키지에서 `Slice`라는 한 이름으로 서로 다른 두 타입을 가리켰다. 두 파일의 KDoc이 쓴 `[Slice]` 링크도 각자 다른 곳을 가리켰다. 별칭을 고르지 않은 까닭은 별칭이 파일마다 다시 적어야 하는 것이고, 이름을 그대로 두면 다음 목록(#7·#10)이 같은 자리에서 같은 선택을 되풀이해야 하기 때문이다.
 - 구현: Spring Data의 `Slice<Brand>`를 돌려주는 파생 조회(`findAllByOrderByCreatedAtDescIdDesc`)가 `size + 1`개를 읽고 넘치는 하나를 버리며 count 쿼리를 보내지 않는다. `BrandRepositoryImpl`이 그 결과를 domain의 `PageSlice`로 옮긴다. 삭제 필터는 `Brand`의 `@SQLRestriction`이 붙인다. Spring Data의 `PageRequest.of(page, size + 1)`로 하나 더 읽으면 offset이 `page * (size + 1)`이 되어 두 번째 조각부터 행을 건너뛴다. `BrandRepositoryTest`의 `page = 1` 사례가 이 실수를 잡는다.
 - 총 개수를 세지 않는다는 약속은 반환 타입 하나에 걸려 있다. `Page<Brand>`로 바꿔도 컴파일되고 `hasNext`도 맞아서, 세어 보지 않으면 count 쿼리가 말없이 늘어난다. `BrandRepositoryTest`가 Hibernate 통계(`spring.jpa.properties.hibernate.generate_statistics`)로 한 조각을 읽는 데 쓰인 조회가 하나뿐임을 확인한다. `Page`로 바꾸면 그 테스트만 깨진다(2026-09-18에 더함). (2026-10-08, [ADR 0012](../adr/0012-tests-inherit-setup-from-abstract-base-classes.md): 속성 대신 실행 중에 켜고 끄는 `withStatistics`로 센다.)
-- 응답 봉투는 `interfaces/api/PageResponse`에 둔다. `ApiResponse` 옆이고 개념 패키지 밖이다. `from(slice, transform)`이 조각을 봉투로 옮기면서 항목을 응답 DTO로 바꾼다. 목록이 어느 개념의 것이든 봉투는 같고 항목만 역할별 응답 DTO로 바뀌므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. `interfaces`의 순환 검사는 `api`를 한 조각으로 보고, `brand → api` 한 방향이라 `ApiResponse`와 같다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다. (2026-10-08, 5.33: 항목을 바꾸는 일은 부르는 쪽의 `Slice.map`으로 옮겼다. 봉투의 `from(slice)`는 조각을 옮기기만 한다.)
+- 응답 봉투는 `interfaces/api/PageResponse`에 둔다. `ApiResponse` 옆이고 개념 패키지 밖이다. `from(slice, transform)`이 조각을 봉투로 옮기면서 항목을 응답 DTO로 바꾼다. 목록이 어느 개념의 것이든 봉투는 같고 항목만 역할별 응답 DTO로 바뀌므로 `<개념><성격>Response`(5.7)가 아니라 `ApiResponse`와 같은 자리다. `interfaces`의 순환 검사는 `api`를 한 슬라이스로 보고, `brand → api` 한 방향이라 `ApiResponse`와 같다. 응답은 `{ meta, data: { items, page, size, hasNext } }`가 된다. (2026-10-08, 5.33: 항목을 바꾸는 일은 부르는 쪽의 `Slice.map`으로 옮겼다. 봉투의 `from(slice)`는 조각을 옮기기만 한다.)
 - 대가: 같은 네 필드가 domain과 interfaces에 하나씩 있다. `ApiResponse`가 domain 타입을 그대로 내보내지 않기 위한 값이고, 항목의 타입이 층마다 다르므로(`Product`, `ProductInfo`, `ProductAdminResponse`) 봉투도 따라간다.
 - 용어집: `슬라이스`와 `페이지`는 `CONTEXT.md`에 넣지 않았다. 재고·금액과 달리 고객·관리자가 말하는 개념이 아니라 목록 응답의 모양이다. 목록의 뜻이 달라지면(예: 총 개수를 주기로 하면) 그때 다시 본다.
 - 다시 볼 조건: 커서 기반 페이지로 바꿀 때(`page` 대신 마지막 키), 총 개수가 필요해질 때(5.5), 또는 목록마다 다른 `size` 상한이 필요할 때. 조각을 만드는 저장소가 셋을 넘어 `PageSlice` 변환이 되풀이되면 공용 확장 함수로 뺀다.
@@ -480,7 +480,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 5.17이 개념마다 Request를 따로 둔 까닭이 "한쪽의 범위가 바뀌어도 다른 쪽이 따라가지 않게"였고, 5.21은 그 공용 타입(`application/shared/PageQuery`)을 이미 한 번 철회했다. 되풀이를 없애려고 그 결합을 되살릴 만큼 되풀이가 크지 않다.
   - 그때가 오는 조건을 좁힌다: 목록마다 다른 `size` 상한이 필요해지거나(5.21의 다시 볼 조건) 제약이 둘을 넘어 자랄 때 인터페이스로 묶는다. 목록 입력이 다섯째가 되는 것만으로는 다시 보지 않는다.
 - 여기서 A를 물리친 것은 "두 번 검사하는 것"이 아니라 "같은 규칙을 두 가지 방식으로 적는 것"이다. 이 둘은 다른 축이다(5.25).
-- 좋아요 목록이 부르는 `ProductFinder.findAllLikedBy`는 Request 없이 `page`·`size`를 받는 유일한 포트였다. HTTP에서는 `LikeListRequest`가 먼저 걸렀지만, 포트를 바로 부르면 잘못된 페이지가 `PageRequest.of`에서 `IllegalArgumentException`(500)이 됐다. 이제 상품의 `ProductLikedListRequest(page, size)`를 `@Valid`로 받고, 좋아요 조각이 자기 Request를 그것으로 옮겨 부른다. 상품은 좋아요의 Request를 모른다. 상수는 `ProductListRequest`의 것을 읽어 사본이 늘지 않는다. 포트의 `Int` 파라미터에 제약을 바로 다는 대안은 고르지 않았다. Bean Validation이 Request 밖에 앉는 둘째 자리가 생기기 때문이다(5.18) (2026-10-08, [#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)).
+- 좋아요 목록이 부르는 `ProductFinder.findAllLikedBy`는 Request 없이 `page`·`size`를 받는 유일한 포트였다. HTTP에서는 `LikeListRequest`가 먼저 걸렀지만, 포트를 바로 부르면 잘못된 페이지가 `PageRequest.of`에서 `IllegalArgumentException`(500)이 됐다. 이제 상품의 `ProductLikedListRequest(page, size)`를 `@Valid`로 받고, 좋아요 슬라이스가 자기 Request를 그것으로 옮겨 부른다. 상품은 좋아요의 Request를 모른다. 상수는 `ProductListRequest`의 것을 읽어 사본이 늘지 않는다. 포트의 `Int` 파라미터에 제약을 바로 다는 대안은 고르지 않았다. Bean Validation이 Request 밖에 앉는 둘째 자리가 생기기 때문이다(5.18) (2026-10-08, [#93](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/93)).
 - 다시 볼 조건: 필드별 오류 목록을 응답에 실어야 할 때(5.18의 다시 볼 조건과 같다). 개념별 Request가 셋을 넘어 같은 두 제약이 되풀이되면 공용 상위 타입이나 인터페이스를 다시 본다.
 
 ### 5.23 이름 수정의 순서
@@ -503,7 +503,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 ### 5.24 정렬 기준의 자리와 모르는 값의 거절
 
-> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 조각이 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `value` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
+> 2026-10-08 `ProductSort`를 `domain/product`에서 `application/product/provided`로 옮겼다. domain에 둔 까닭은 그때의 저장 약속 `ProductRepository.findAll`이 domain에 있고 그 서명이 기준을 받았기 때문인데, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 저장소가 `required`로 옮겨 오며 그 까닭이 사라졌다. 5.21의 `PageSlice`와 같은 까닭이다. 지금 이것을 쓰는 곳은 `ProductListRequest`의 기본값, `ProductQueryService`, required 포트 `ProductListRepository`의 서명, 그 포트를 구현한 `QuerydslProductListRepository`이고 domain에는 없다. 고객이 고르는 입력의 낱말이라 Request와 함께 provided에 둔다. required 포트가 provided의 타입을 받는 곳은 이것 하나다. 둘 다 상품 슬라이스가 스스로 선언한 포트라 받아들인다. 선택 C는 그대로다. 철자를 아는 곳은 `value` 하나이고, 파싱은 Spring 없이 단위 테스트로 고정되며, `from`은 null을 돌려주고 그것이 `INVALID_SORT`라는 것은 Service가 정한다. null을 돌려주는 까닭만 "domain은 `support/error`를 모른다"에서 "provided의 Request처럼 HTTP 상태를 싣는 `ErrorType`을 모른다"로 바뀌었다. 기준을 `Pageable`의 `Sort`에 실어 포트에서 `sort`를 빼는 것은 고르지 않았다. 좋아요 수는 `Product`의 속성이 아니라 `left join`과 `group by`가 붙는 집계라서 저장소가 지어낸 속성 이름을 알아보고 쿼리를 갈라야 한다. 세 기준의 닫힌 셋이 아무 문자열이나 받는 `Sort`가 되어, 어댑터의 `when`이 기준을 빠짐없이 다루는지 컴파일러가 보지 않는다. `createdAt`·`price.amount`·`id` 같은 경로를 application이 적게 된다. 포트의 `Pageable`은 여전히 위치와 크기만 싣는다(`fetchSlice`).
 
 - 문제: 고객 목록은 `sort=latest|price_asc`를 받고 모르는 값을 거절해야 한다. 5.22가 `page`·`size`를 Request 제약에 맡겼으니 `sort`도 같은 자리인지, 아니면 `INVALID_SORT`를 두는지 정해야 한다(5.22가 #7로 미뤄 둔 것).
 - `sort`가 `page`·`size`와 다른 점: 숫자의 범위가 아니라 낱말이다. Bean Validation은 범위를 그대로 말할 수 있지만 "이 열거가 아는 낱말"은 말할 수 없다.
@@ -549,12 +549,12 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 > 2026-10-08 [ADR 0016](../adr/0016-every-entity-extends-base-entity-and-roots-soft-delete.md)으로 `User`에도 `@SQLRestriction`이 붙었다. 사용자를 지우는 API는 여전히 없지만 애그리거트 루트라 논리 삭제가 기본이다. 아래 사용자 테이블 항목의 "삭제 상태는 두지 않는다"와 "`@SQLRestriction`도 붙이지 않는다"는 철회했다. 좋아요와 같은 모양이라는 비교도 이제 맞지 않는다. 좋아요는 필터 없이 행을 지우는 하나뿐인 예외다.
 
 - 문제: 좋아요 누르기·취소는 `X-USER-ID` 헤더의 사용자 식별자로 요청자를 식별한다(1장 요청자와 관리자 경계). "헤더가 없다"와 "그 사용자가 없다"는 둘 다 401인데, 앞의 것은 HTTP만 아는 사실이고 뒤의 것은 저장소를 봐야 하는 사실이라 한 곳에서 둘 다 볼 수 없다.
-- 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 adapter.webapi의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 좋아요 조각의 Service가 `UserFinder.checkExists`로 본다(`UserRepository.existsById`).
+- 대안 A: 컨트롤러가 헤더를 `required = false`로 받고, 없으면 adapter.webapi의 `UserIdHeader.require`가 `UNAUTHORIZED`를 던진다. 사용자가 있는지는 좋아요 슬라이스의 Service가 `UserFinder.checkExists`로 본다(`UserRepository.existsById`).
 - 대안 B: 헤더를 필수로 받고 Spring의 `MissingRequestHeaderException`을 `ApiControllerAdvice`가 401로 옮긴다. 컨트롤러가 가장 짧다. 그러나 그 예외는 어느 헤더가 빠졌든 같은 타입이라, advice가 헤더 이름을 보고 401과 400을 가르게 된다.
 - 대안 C: `@RequesterId` 같은 애노테이션과 `HandlerMethodArgumentResolver`를 두고 식별을 컨트롤러 밖으로 뺀다. 세 엔드포인트(누르기, 취소, 내 목록)가 같은 선언을 쓴다. 그러나 resolver를 등록하는 `WebMvcConfigurer`가 한 층에 더 생기고, 식별자 하나를 읽는 일에 비해 장치가 크다.
 - 선택: A (2026-09-18, #8). 헤더의 존재는 adapter.webapi가, 사용자의 존재는 application이 본다. 층은 서로를 거치지 않고도 불릴 수 있으므로(5.25) 사용자 존재 검사는 Controller가 아니라 Service에 있어야 하고, 헤더가 없다는 사실은 Service가 알 수 없으므로 컨트롤러가 본다. `UserIdHeader`는 헤더 이름과 "없으면 401" 하나를 모아 두 컨트롤러 메서드와 #10이 같은 말을 되풀이하지 않게 한다.
 - 요청자에는 코드 이름이 없다(CONTEXT.md 요청자, `Requester`는 _Avoid_). 사용자 식별자(`userId`)로 나타난다.
-- 사용자 테이블: `User`는 `users` 테이블의 실습용 행이다. 브랜드·상품이 단수 이름을 쓰는 것과 달리 복수인 까닭은 `user`가 SQL 표준의 예약어라서다. MySQL은 허용하지만 `like`처럼 피한다. 삭제 상태는 두지 않는다. 사용자를 만들거나 지우는 API가 이 조각에 없다. `BaseEntity`에서 온 `deleted_at` 컬럼과 `delete()`는 있으나 아무도 부르지 않고, `@SQLRestriction`도 붙이지 않는다. 좋아요가 `BaseEntity`를 상속하되 `delete()`를 쓰지 않는 것과 같은 모양이다(ADR 0001).
+- 사용자 테이블: `User`는 `users` 테이블의 실습용 행이다. 브랜드·상품이 단수 이름을 쓰는 것과 달리 복수인 까닭은 `user`가 SQL 표준의 예약어라서다. MySQL은 허용하지만 `like`처럼 피한다. 삭제 상태는 두지 않는다. 사용자를 만들거나 지우는 API가 이 슬라이스에 없다. `BaseEntity`에서 온 `deleted_at` 컬럼과 `delete()`는 있으나 아무도 부르지 않고, `@SQLRestriction`도 붙이지 않는다. 좋아요가 `BaseEntity`를 상속하되 `delete()`를 쓰지 않는 것과 같은 모양이다(ADR 0001).
 - 헤더가 있으나 숫자가 아닌 값은 Spring의 타입 변환이 거절해 400이다. 401이 아닌 것은 요청자가 없는 것이 아니라 요청이 잘못된 것이기 때문이다.
 - 다시 볼 조건: 요청자가 식별자 하나를 넘어 역할이나 토큰을 갖게 될 때, 또는 식별이 필요한 엔드포인트가 넷을 넘을 때. 그때는 C로 간다.
 
@@ -586,7 +586,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: `ProductRepository.findAllLikedBy(userId, page, size)`가 상품을 root로 두고 `likes`를 join한다. 돌려주는 것은 자기 애그리거트이고, 삭제 필터는 `Product`의 `@SQLRestriction`이 root에 그대로 붙는다. 차례를 정하는 값이 join한 관계에 있으므로 `Sort`가 아니라 쿼리가 적는다.
 - 선택: C (2026-09-18, #10). 거르는 일을 SQL이 하므로 조각의 크기와 `hasNext`가 남은 상품만 센다. 상품 목록이 브랜드 식별자로 거르는 것처럼(`findAll(brandId = ...)`) 좋아요도 상품을 고르는 또 하나의 조건이다. 5.28이 좋아요 수를 `ProductRepository`에 두지 않은 까닭은 반환 타입이 엔티티가 아닌 튜플이 되기 때문이었고, 여기서는 그대로 `Product`다.
 - 정렬 기준(`ProductSort`)에는 넣지 않는다. 이 차례는 고객이 고르는 것이 아니고, 상품의 컬럼으로 옮길 수 없는 관계의 시각이다.
-- 유스케이스는 `LikeFinder.findLikedProducts(userId, LikeListRequest)`다. 좋아요 조각의 유스케이스이고 요청자 존재 검사가 이미 거기 있다(5.27). 항목은 고객 상품 목록과 같은 `ProductInfo`라 application의 `like`가 `product`의 `Info`를 읽는다. 한 방향이므로 `HexagonalArchitectureTest`의 슬라이스 순환 검사는 그대로다.
+- 유스케이스는 `LikeFinder.findLikedProducts(userId, LikeListRequest)`다. 좋아요 슬라이스의 유스케이스이고 요청자 존재 검사가 이미 거기 있다(5.27). 항목은 고객 상품 목록과 같은 `ProductInfo`라 application의 `like`가 `product`의 `Info`를 읽는다. 한 방향이므로 `HexagonalArchitectureTest`의 슬라이스 순환 검사는 그대로다.
 - 좋아요 수는 5.28대로 조각의 상품 식별자에 대해 한 번에 센다. 한 조각에 조회 셋이다: 요청자 확인 하나, 상품과 브랜드를 함께 읽는 조각 하나, 좋아요 수 집계 하나. 조각에 몇 개가 담기든 셋이다. `LikeFinderTest`가 Hibernate 통계로 이것을 센다.
 - 다시 볼 조건: 좋아요 많은순 정렬(#9)이 상품 목록 쿼리에 같은 join을 들일 때. 그때 두 조회를 하나로 합칠지, 조건과 차례만 다른 둘로 둘지 정한다.
 
@@ -611,7 +611,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 > 2026-10-15 `ProductInfoAssembler`가 고객 목록의 `ProductListInfo`도 만든다(`toListInfo`, 5.7의 2026-10-15 메모). 항목만 `ProductSummaryInfo`이고 조각의 좋아요 수를 한 번에 세는 일(5.28)은 `toInfos`와 같은 private 셈 하나를 쓴다. 관리자 목록과 내 좋아요 목록은 그대로 `toInfos`다.
 
-> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 조각의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`와 domain의 `LikeRepository.countByProductIds`는 그때의 이름과 자리다. 지금은 `application/like/required`의 `LikeRepository`가 그룹 집계 `findProductLikeCounts`만 갖고, 0을 채우는 일은 `LikeCounter`의 구현이 한다(5.28).
+> 2026-10-08 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)으로 대안 B를 물리친 이유가 사라졌다. Service가 다른 슬라이스의 provided 포트를 부르는 것이 이제 정상 경로다. 내 좋아요 목록은 `LikeQueryService`가 상품의 provided 포트 `ProductFinder.findAllLikedBy`를 불러 `ProductInfo`의 `Slice`를 받는다. `ProductInfoAssembler`는 그대로 `application/product`에 남아 상품의 두 Service만 쓰고, 다른 개념은 구현 클래스인 이것을 주입받지 않는다. 좋아요 수는 `LikeRepository`에 바로 묻지 않고 상품이 선언한 `LikeCounter`에 묻는다. 좋아요의 `LikeFinder`가 그 물음에 답한다(5.16). 아래의 `ProductService`·`LikeService`와 domain의 `LikeRepository.countByProductIds`는 그때의 이름과 자리다. 지금은 `application/like/required`의 `LikeRepository`가 그룹 집계 `findProductLikeCounts`만 갖고, 0을 채우는 일은 `LikeCounter`의 구현이 한다(5.28).
 >
 > 2026-10-09 위 메모의 "좋아요의 `LikeFinder`가 그 물음에 답한다"는 그때의 모양이다. 지금은 `LikeFinder`가 `LikeCounter`를 상속하지 않고, `LikeQueryService`가 `LikeCounter`를 직접 구현해 답한다(5.16의 2026-10-09 메모).
 
@@ -640,7 +640,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 대안 C: `left join` + `group by`로 차례만 내고, 값은 5.28의 C가 그대로 센다.
 - 선택: C (2026-09-18, #9). 정렬에 쓰는 수와 응답에 싣는 수가 같은 쿼리에서 나오지 않지만, 그 대가로 저장소의 반환이 기준과 무관하게 `Product`로 남는다.
 - A와 C가 갈리는 자리는 반환 타입 하나뿐이다. "상품 저장소가 좋아요를 알게 된다"는 A를 물리치는 근거가 되지 못한다. C도 `QLike`를 들여와 `likes`를 조인하므로 이미 알고 있다. 상품 저장소가 좋아요를 모르는 선택지는 애초에 없었고, 5.28의 B를 물리친 근거 중 살아남은 것도 같은 절반이다. B와 갈린 자리는 인덱스다. `likes`의 유일 제약이 `user_id`로 시작해 `product_id` 단독 조회는 인덱스가 없는데, 같은 조건에서 MySQL 8.0은 equi-join을 해시 조인으로 푼다. `likes`를 한 번 훑어 해시 테이블을 만들고 훑는 O(N + L)이고, B의 중첩 루프는 O(N × L)이다.
-- QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductQueryService`가 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 조각에서 처음 쓰인다.
+- QueryDSL로 짠다. 목록은 브랜드 필터도 정렬 기준도 조각마다 달라지고, 세 기준 중 하나만 조인을 요구한다. Spring Data로 두면 `likes_desc` 전용 조회 메서드가 하나 더 생기고 `ProductQueryService`가 기준을 보고 메서드를 고른다. QueryDSL에서는 조회 메서드가 늘지 않는다. 기준마다 갈리는 것이 `OrderSpecifier`뿐이라는 뜻은 아니다. 좋아요 많은순 가지는 조인과 `group by`도 함께 붙인다. 요점은 갈리는 것이 차례를 내는 방법 전체이고 그 전체가 `orderedBy`의 가지 하나에 모여 있다는 것이다. 쓰이지 않던 `querydsl-jpa`와 `QueryDslConfig`가 이 슬라이스에서 처음 쓰인다.
 - `findAllBy`·`findAllByBrandId`는 지웠다. 목록이 QueryDSL로 옮겨 가 부르는 곳이 없다. `ProductJpaRepository`에는 메서드 이름만으로 끝나는 일(저장·단건 조회와 `existsByBrandId`)만 남는다. (2026-10-08, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): 이 저장소는 `required`의 Spring Data 포트 `ProductRepository`가 되었고, 목록은 그 옆의 `ProductListRepository`가 맡는다.)
 - `brandId`가 null이면 QueryDSL이 그 조건을 통째로 버리므로 `:brandId is null` 같은 관용구가 없다. 나가는 SQL에 죽은 조건이 남지 않는다.
 - `hasNext`는 저장소가 정한다. `size + 1`개를 읽어 넘치면 다음 조각이 있고 그 하나는 버린다. `PageSlice`의 KDoc이 이미 그렇게 적혀 있었고, Spring의 `Slice`가 하던 일을 그대로 옮긴 것이다. 총 개수를 세는 쿼리는 여전히 나가지 않는다(5.5). (2026-10-08, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): `PageSlice`는 #81에서 없어졌다. 지금은 `adapter/persistence/shared`의 `fetchSlice`가 같은 일을 하고 Spring Data의 `Slice`를 돌려준다.)
@@ -681,7 +681,7 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 - 문제: `Stock`은 `Product`만 쓴다. `Product`가 `deduct`·`isEmpty`를 `deductStock`·`isSoldOut`으로 다시 내보내고, `updateStock`·`deductStock`은 처음부터 `Int`를 받는다. 타입이 지키는 자리는 생성자뿐인데, 부르는 쪽은 `Stock(request.stock)`으로 감싸기만 하고 `ProductInfo`는 `.quantity`로 다시 푼다. 인터페이스(생성자, `quantity`, `isEmpty`, `deduct`)가 구현(`if` 셋)과 같은 크기다. 같은 엔티티의 다른 속성 규칙은 이미 `Product` 안에 있다. 이름은 `validatedName`이, 가격 범위는 `validatePrice`가 지킨다. 가격은 용어집의 개념이지만 `Price` 타입은 없고, `Money`에 `Product`의 범위 검사를 더해 쓴다. 테스트도 `Product`를 인터페이스로 본다. `deduct`의 거절은 `StockTest`가 아니라 `ProductTest`가 본다.
 - 대안 A: 그대로 둔다.
 - 대안 B: `Stock`을 지우고 `Product`가 재고를 `Int`로 가진다. 5.3의 C다.
-- 대안 C: 재고 규칙을 Validator(`ProductValidator`)로 옮긴다. ADR 0014의 Validator는 저장소나 다른 조각이 있어야 답할 수 있는 사전 조건의 자리이고, 엔티티의 필드만으로 답하는 불변식은 엔티티에 남는다. 엔티티의 검사를 지우면 음수 재고의 `Product`를 만들 수 있고, 남기면 같은 규칙이 두 꼴로 적혀 따로 바뀐다.
+- 대안 C: 재고 규칙을 Validator(`ProductValidator`)로 옮긴다. ADR 0014의 Validator는 저장소나 다른 슬라이스가 있어야 답할 수 있는 사전 조건의 자리이고, 엔티티의 필드만으로 답하는 불변식은 엔티티에 남는다. 엔티티의 검사를 지우면 음수 재고의 `Product`를 만들 수 있고, 남기면 같은 규칙이 두 꼴로 적혀 따로 바뀐다.
 - 선택: B (2026-10-08, #97). `Product.stock`은 `Int`이고 기본 이름의 `stock` 컬럼에 담긴다. 전에는 `@AttributeOverride`로 `stock_quantity`였다. 생성과 `updateStock`은 `validatePrice`와 같은 꼴의 private `validateStock`으로 음수를 거절하고, `deductStock`은 0 이하의 수량과 부족을 거절한 뒤에야 값을 바꾼다. `isSoldOut`은 `stock == 0`이다. 예외와 메시지는 그대로다. 생성자의 음수 거절을 이제 `ProductTest`가 직접 본다. 전에는 `Stock(-1)`이 먼저 던져서 볼 자리가 없었다.
   - 이름은 `stock`이다. 용어집이 재고를 정식 용어로 두고 재고량·재고 수를 피하며, Request·`ProductInfo`·응답 JSON이 이미 `stock`이다. 다른 코드베이스는 [재고 수량 필드의 이름](../research/stock-field-naming.md)에 있다. `stockQuantity`는 `stock_*` 상태·플래그나 둘째 수량이 같은 엔티티에 있을 때 쓰이고, 수 하나만 가진 상품에는 `stock`이 쓰인다(Shopware).
   - 3주차에 비관적 잠금을 쓰면 잠근 엔티티 위에서 메모리로 차감하므로 이 선택과 부딪치지 않는다. 조건부 UPDATE를 고르면 불변식이 SQL로 옮겨 가므로 그때 다시 본다. (2026-10-09, [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md): 비관적 잠금을 골랐다. 확정은 상품 행을 `FOR UPDATE`로 잠가 읽은 `Product`에서 `deductStock`으로 차감하므로 재고 규칙은 `Product`에 남는다. 조건부 UPDATE는 고르지 않은 대안이다.)
@@ -732,13 +732,13 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 - 문제: 변경 Service가 바꾼 애그리거트를 저장하는 방식이 둘이었다. `BrandModifyService`의 수정·삭제는 바꾼 브랜드를 `brandRepository.save`에 넘겼다. 상품의 수정·재고 수정·삭제·차감·연쇄 삭제, 포인트의 충전·차감, 주문 확정은 `save`를 부르지 않고 dirty checking에 맡겼다. Service만 읽어서는 `save`가 없는 것이 실수인지 의도인지 알 수 없다. 이 문서의 재고 변경 흐름도에는 "save는 register에만 있다"고 적혀 있었다.
 - 대안 A: 그대로 둔다. `save`는 새 엔티티에만 부르고, 관리 상태 엔티티의 변경은 dirty checking에 맡긴다.
-- 대안 B: 상태를 바꾼 애그리거트는 application Service가 자기 조각 저장소의 `save`에 넘긴다. 여럿이면 `saveAll`에 넘긴다. Spring Data가 저장소를 쓰는 방식이고, splearn의 `MemberModifyService`도 `member.activate()` 뒤에 `memberRepository.save(member)`를 부른다(ADR 0013).
+- 대안 B: 상태를 바꾼 애그리거트는 application Service가 자기 슬라이스 저장소의 `save`에 넘긴다. 여럿이면 `saveAll`에 넘긴다. Spring Data가 저장소를 쓰는 방식이고, splearn의 `MemberModifyService`도 `member.activate()` 뒤에 `memberRepository.save(member)`를 부른다(ADR 0013).
 - 선택: B (2026-10-09). 모든 변경 Service에 적용한다.
   - Spring Data의 저장소는 애그리거트를 넣고 꺼내는 컬렉션이다. dirty checking은 JPA 영속성 컨텍스트의 동작이라, 그것에 기대는 Service는 저장소 뒤의 구현을 안다는 전제를 드러내지 않는다. 영속성 컨텍스트가 없는 Spring Data JDBC라면 `save` 없이 바꾼 값은 저장되지 않는다.
   - 바꾼 엔티티는 관리 상태다. `SimpleJpaRepository.save`는 식별자가 0이 아니면 `EntityManager.merge`를 부르고, 관리 중인 엔티티를 병합하면 SQL을 보내지 않고 같은 인스턴스를 돌려준다. UPDATE는 전처럼 커밋의 flush가 보낸다. 그래서 ADR 0018의 잠금 순서, `order_updates`의 차례, 배치는 그대로다. 주문 품목의 cascade는 `PERSIST`뿐이라 병합이 품목으로 번지지 않는다.
   - `save`가 돌려준 값을 쓴다. 돌려줄 것이 있으면 `return brandRepository.save(brand)`, 응답으로 옮길 것이면 `productInfoAssembler.toInfo(productRepository.save(product))`다. Spring Data는 `save`가 돌려준 인스턴스를 이어서 쓰라고 권한다. 관리 상태에서는 같은 인스턴스다.
   - 바꾸는 단계와 저장 사이에 빈 줄을 둔다(5.33의 덩어리). 엔티티를 바꾸는 줄과 저장하는 줄이 따로 있어야 하므로 `finder.findForUpdate(id).delete()` 같은 한 줄 연쇄는 지역 변수로 푼다.
-  - 각 Service는 자기 조각의 애그리거트만 저장한다. 확정은 주문을 `orderRepository`로 저장하고, 재고와 잔액은 `StockDeductor`·`PointDeductor`의 구현이 자기 저장소로 저장한다. 그래서 `PointModifyService`가 `PointAccountRepository`를 받는다. (2026-10-22: `PointDeductor`는 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). `PointModifyService`는 충전한 계정을 저장하려고 여전히 `PointAccountRepository`를 받는다.)
+  - 각 Service는 자기 슬라이스의 애그리거트만 저장한다. 확정은 주문을 `orderRepository`로 저장하고, 재고와 잔액은 `StockDeductor`·`PointDeductor`의 구현이 자기 저장소로 저장한다. 그래서 `PointModifyService`가 `PointAccountRepository`를 받는다. (2026-10-22: `PointDeductor`는 포인트로 결제하는 길과 함께 지웠다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). `PointModifyService`는 충전한 계정을 저장하려고 여전히 `PointAccountRepository`를 받는다.)
   - 브랜드 삭제의 연쇄(`deleteAllOfBrand`)는 `saveAll`로 저장한다. `ProductRepository`가 `CrudRepository.saveAll`과 같은 이름·매개변수로 선언하므로 호출은 `SimpleJpaRepository.saveAll`로 가고(5.20), 그 구현은 항목마다 `save`를 부른다.
 - 그대로 두는 것: dirty checking 자체. `save`를 빠뜨려도 관리 엔티티의 변경은 커밋된다. 이 규칙은 저장의 의도를 코드에 적을 뿐 dirty checking을 끄지 않는다. 그러니 `product.brand`에서 상태를 바꾸는 메서드를 부르면 브랜드도 함께 바뀐다는 주의(5.1)는 여전히 참이다. 행을 지우는 좋아요 취소의 `delete`와 새 엔티티의 `save`는 이미 저장소를 불렀다.
 - 지키는 것: 리뷰다. 빠뜨린 `save`는 동작을 바꾸지 않으므로 스위트가 잡지 못한다. ArchUnit은 메서드 본문에서 호출의 차례를 보지 못한다.
@@ -800,10 +800,10 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
 
 > 2026-10-09 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 브랜드 행 잠금으로 아래 `@ManyToOne(optional = false)` 항목의 동시 등록 경합이 닫혔다. 상품 등록은 브랜드를 `FOR SHARE`로 읽고, 브랜드의 삭제와 이름 변경은 `FOR UPDATE`로 읽는다. 등록과 삭제가 겹치면 둘 중 하나로 끝난다. 등록이 먼저 커밋하면 연쇄가 그 상품까지 삭제하고, 삭제가 먼저 커밋하면 등록이 `BRAND_NOT_FOUND`로 거절된다. 그래서 삭제된 브랜드 아래 삭제되지 않은 상품은 커밋된 어느 상태에도 남지 않는다. 같은 브랜드의 등록끼리는 공유 잠금이라 서로 막지 않는다. 외래 키 검사도 부모 행에 공유 잠금을 걸지만, 논리 삭제는 브랜드 행을 남기므로 삭제가 커밋된 뒤에도 그 검사가 통과한다. `BrandRegisterConcurrencyTest`가 경합마다 두 결과를 확인한다. 브랜드 이름의 동시 중복은 여전히 범위 밖이다. 동시에 들어온 등록이나 이름 변경은 서로 다른 행을 읽으므로 브랜드 행의 잠금으로 막지 못하고, 이름에는 유일 인덱스가 없다(ADR 0001, ADR 0018의 "이번 범위 밖에 남은 빈틈").
 
-- 내 좋아요 목록은 2026-10-08 `GET /api/v1/likes`로 줄였다(5.36, #98). 403 경우와 `FORBIDDEN`이 이 조각에서 사라졌다. 비교가 `UserLikeApi.getLikedProducts` 한 곳에 있었으므로 지운 자리도 한 곳이었다(5.30).
+- 내 좋아요 목록은 2026-10-08 `GET /api/v1/likes`로 줄였다(5.36, #98). 403 경우와 `FORBIDDEN`이 이 슬라이스에서 사라졌다. 비교가 `UserLikeApi.getLikedProducts` 한 곳에 있었으므로 지운 자리도 한 곳이었다(5.30).
 - 내 좋아요 목록(#10)이 상품 조회가 `likes`를 join하는 첫 자리다. #9의 좋아요 많은순도 같은 join을 쓰게 되므로 두 쿼리의 관계는 5.29의 다시 볼 조건에서 정한다.
 - 상품 등록 입력의 `stock`은 필수 0 이상으로 두었다. 초기 재고를 재고 변경 API로만 넣게 할지는 구현하며 다시 본다.
-- 재고를 별도 엔티티로 빼는 시점은 주문 조각에서 정한다.
+- 재고를 별도 엔티티로 빼는 시점은 주문 슬라이스에서 정한다.
 - MockMvc 테스트는 테스트 트랜잭션 하나 안에서 도므로 요청 사이에 영속성 컨텍스트가 그대로 남는다. 앞 요청이 삭제한 브랜드를 뒤 요청이 ID로 조회하면 1차 캐시가 답해 SQL이 나가지 않고, `@SQLRestriction`의 삭제 필터가 붙을 자리가 없다. 관리자가 바꾼 이름을 고객 조회가 읽는 자리도 같다. 그런 자리에서는 `flushAndClear`로 다음 조회가 SQL을 타게 한다. 저장소가 `@SQLRestriction` 대신 `deletedAt is null`을 조회 조건에 직접 넣으면 이 흉내가 필요 없어지지만, 삭제 필터가 적히는 곳이 둘로 늘어난다. 읽기 경로가 더 늘 때 다시 본다.
 - `Product.brand`의 `LAZY`는 2026-09-17부터 지켜진다. 그전에는 엔티티가 `final`이어서 Hibernate가 `Brand` 프록시를 만들지 못하고 상품을 읽을 때 브랜드를 곧바로 따로 조회했다. `kotlin("plugin.spring")`은 Spring 애노테이션이 붙은 클래스만 열므로, `build-logic`의 `loopers.jpa` 컨벤션이 `@Entity`·`@MappedSuperclass`·`@Embeddable`을 `allOpen`으로 열고, `modules/jpa`와 앱 모듈이 그 컨벤션을 건다. `modules/jpa`도 필요한 까닭은 `BaseEntity`의 getter가 `final`이면 Hibernate가 하위 엔티티의 프록시 팩토리를 만들지 못하기(HHH000305) 때문이다(`ProductRepositoryTest`가 `Hibernate.isInitialized`로 확인). 이제 5.7의 "트랜잭션 밖 지연 로딩은 실패한다"는 실제로 작동하는 제약이다. 상품 목록에서 브랜드를 읽으면 상품마다 조회가 붙으므로 목록은 브랜드를 함께 읽는다. #5·#7에서는 `ProductJpaRepository`의 `@EntityGraph(attributePaths = ["brand"])`였고, #9이 목록을 QueryDSL로 옮기면서 `innerJoin(product.brand).fetchJoin()`이 되었다(5.32). 어느 쪽이든 `@ManyToOne`이라 조각 나누기는 그대로 SQL이 한다.
 - `ProductSort.LIKES_DESC`는 #9(2026-09-18)에서 들어왔다. 목록 쿼리가 `left join` + `group by`로 차례만 내고 `likeCount` 값은 5.28의 C가 그대로 센다. 쿼리를 QueryDSL로 옮긴 까닭과 치른 값은 5.32에 있다.
@@ -931,9 +931,9 @@ ADR 0001. 브랜드·상품은 논리 삭제, 좋아요는 물리 삭제. 근거
   - 고객은 재고를 품절 여부로만 보므로 두 재고 쓰기는 품절이 바뀔 때만 표시한다. 상품 행을 `FOR UPDATE`로 쥔 채 바꾸기 전과 뒤의 `isSoldOut()`을 견주므로 그 판단에 잠금을 더하지 않는다. 차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다.
   - 좋아요는 수가 항목에 실리고 `likes_desc`의 차례를 정하므로 언제나 표시한다(5.28의 2026-10-15 메모). 이미 그 상태인 누르기·취소를 가려내는 분기는 값어치가 없다.
   - 표시하지 않는 쓰기: 브랜드 등록, 주문 생성, 포인트 충전. 주문 취소와 재고 복원은 없다.
-  - 표시는 상품 조각의 `ProductListRevisionMarker`가 받는다. 좋아요는 상품 조각의 포트를 직접 부른다. 주문 확정은 표시하지 않고, 차감이 상품 조각 안에서 표시한다. 브랜드는 상품 조각에 기댈 수 없으므로(5.16) 브랜드가 선언한 포트를 상품 조각이 구현한다. [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)의 `ProductDeleter`와 같은 꼴이다.
+  - 표시는 상품 슬라이스의 `ProductListRevisionMarker`가 받는다. 좋아요는 상품 슬라이스의 포트를 직접 부른다. 주문 확정은 표시하지 않고, 차감이 상품 슬라이스 안에서 표시한다. 브랜드는 상품 슬라이스에 기댈 수 없으므로(5.16) 브랜드가 선언한 포트를 상품 슬라이스가 구현한다. [ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)의 `ProductDeleter`와 같은 꼴이다.
 
-  > 2026-10-22 쓰기가 아홉이 됐다([ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md) 규칙 6). 아홉째는 결제에 실패한 주문의 재고 돌려주기(`StockRestorer.restore`)이고, 품목 가운데 하나라도 품절이 풀릴 때만 표시한다. 돌려주기는 재고를 늘리기만 하므로 품절이 되는 일은 없고, 삭제된 상품은 건너뛴다. 그래서 위의 "재고 복원은 없다"는 더 맞지 않는다. "차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다"는 차감에는 그대로 맞다. 표의 "주문 확정의 재고 차감"은 이제 확정 TX A의 재고 예약이고, 표시 규칙은 그대로다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 돌려주기도 차감처럼 주문 조각이 아니라 상품 조각 안에서 표시한다. 8.10의 "여덟 쓰기"도 아홉이다.
+  > 2026-10-22 쓰기가 아홉이 됐다([ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md) 규칙 6). 아홉째는 결제에 실패한 주문의 재고 돌려주기(`StockRestorer.restore`)이고, 품목 가운데 하나라도 품절이 풀릴 때만 표시한다. 돌려주기는 재고를 늘리기만 하므로 품절이 되는 일은 없고, 삭제된 상품은 건너뛴다. 그래서 위의 "재고 복원은 없다"는 더 맞지 않는다. "차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다"는 차감에는 그대로 맞다. 표의 "주문 확정의 재고 차감"은 이제 확정 TX A의 재고 예약이고, 표시 규칙은 그대로다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 돌려주기도 차감처럼 주문 슬라이스가 아니라 상품 슬라이스 안에서 표시한다. 8.10의 "여덟 쓰기"도 아홉이다.
 - revision: 카탈로그 전체에 행 하나(`product_list_revision`)이고, 행이 없으면 0이다. 올리기는 `insert … on duplicate key update revision = revision + 1` 한 문장이다. 더하기를 문장 안에서 하므로 읽고 더해 쓰지 않고, upsert라서 표를 비운 뒤에도 0행을 고치고 지나가지 않는다. 이 행은 `BaseEntity`를 상속하지 않는 유일한 엔티티다(ADR 0016의 예외).
 - 잠금 순서: 주문 → 브랜드 → 상품(id 오름차순) → 포인트 계정 → revision. revision이 마지막이고, 경로마다의 차례는 ADR 0020 규칙 3의 표에 있다. 올리기가 트랜잭션의 마지막 SQL이므로 revision을 쥔 트랜잭션은 다른 잠금을 기다리지 않고 커밋으로 간다. 기다리지 않는 트랜잭션은 교착의 고리에 들 수 없다. revision을 기다리다 3초를 넘기면 409 `CONCURRENT_REQUEST`다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md) 규칙 7, 8).
 - 트랜잭션 경계:

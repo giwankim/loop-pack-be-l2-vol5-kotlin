@@ -1,10 +1,10 @@
 package com.loopers.application.brand.required
 
 /**
- * 브랜드 이름 변경이 상품 조각에 시키는 것. 고객 상품 목록은 항목마다 브랜드 이름을 실으므로, 이름이 바뀌면 목록도 바뀐다(ADR 0020).
+ * 브랜드 이름 변경이 상품 슬라이스에 시키는 것. 고객 상품 목록은 항목마다 브랜드 이름을 실으므로, 이름이 바뀌면 목록도 바뀐다(ADR 0020).
  *
- * [ProductDeleter]처럼 브랜드가 모양을 선언하고 상품 조각이 직접 구현한다. 상품 조각이 이미 브랜드에 기대므로
- * 브랜드가 상품 조각의 표시 포트를 부르면 조각 사이에 순환이 생긴다(ADR 0017). 브랜드 삭제는 [ProductDeleter.deleteAllOfBrand]가
+ * [ProductDeleter]처럼 브랜드가 모양을 선언하고 상품 슬라이스가 직접 구현한다. 상품 슬라이스가 이미 브랜드에 기대므로
+ * 브랜드가 상품 슬라이스의 표시 포트를 부르면 슬라이스 사이에 순환이 생긴다(ADR 0017). 브랜드 삭제는 [ProductDeleter.deleteAllOfBrand]가
  * 표시하므로 이 포트는 이름 변경만 쓴다.
  */
 interface ProductListMarker {

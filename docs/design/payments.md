@@ -203,7 +203,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 
 게이트웨이는 로그를 쓰지 않는다(2026-10-21). 그 전에는 호출마다 한 줄을 썼다. 메서드, 경로 템플릿, 결과와 HTTP 상태나 실패의 종류, 걸린 시간, PG 주문 번호, 거래 키를 담고 본문과 카드 번호는 담지 않았다. 결과 미확인과 조회 불가는 WARN이었다. 어댑터를 줄이려고 지웠고, 나중에 다시 둘 수 있다. 지우기 전의 모양은 [76bd60e의 `LocalPgGateway`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/pg/LocalPgGateway.kt)와 그 줄을 보던 [`PaymentGatewayTest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/76bd60e9af4bf69d8766ed9bc044416431b5bac3/apps/commerce-api/src/test/kotlin/com/loopers/application/payment/required/PaymentGatewayTest.kt)에 있다.
 
-- 포트의 예외 메시지에는 Spring 예외의 메시지를 쓰지 않는다. 응답 본문의 조각을 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
+- 포트의 예외 메시지에는 Spring 예외의 메시지를 쓰지 않는다. 응답 본문의 일부를 담을 수 있기 때문이다. 실패의 종류는 예외 사슬의 맨 안쪽 타입 이름이다. 같은 까닭으로 포트의 예외는 그 원인 예외를 잇지 않는다(ADR 0023).
 - 카드 번호를 가리는 일은 지금 다루지 않는다(2026-10-20). `CreditCard`는 data class의 기본 문자열 형태를 쓴다.
 - observation registry가 있으면 다른 HTTP client 호출처럼 PG 호출도 기록한다. Boot의 `RestClientObservationAutoConfiguration`이 게이트웨이가 받는 `RestClient.Builder`에 registry를 단다(2026-10-20, 그 전에는 설정이 `ObjectProvider`로 직접 달았다). 어댑터만 담은 테스트 컨텍스트에는 registry가 없다. `ObservedPaymentGatewayTest`가 registry와 그 자동 설정을 더해, 생성과 거래 키 조회가 `http.client.requests`로 기록되고 측정값의 `uri`에 거래 키 대신 템플릿 `/api/v1/payments/{transactionKey}`가 남는 것을 본다(2026-10-20 명세 리뷰).
 - 포트의 예외는 `exchange` 안에서도 던지므로 observation의 `exception`에 그 이름이 남는다. 422의 생성 전 거절, 202가 아닌 생성 응답, 200·404가 아닌 조회 응답이 그렇다. 받아들여진 생성과 찾은 조회(404 포함)만 오류가 없다(ADR 0023의 대가). 테스트는 이 값을 보지 않는다.

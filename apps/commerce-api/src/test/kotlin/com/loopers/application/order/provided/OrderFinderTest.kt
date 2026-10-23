@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 조각의 [OrderCreator]로 만든다.
+ * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 슬라이스의 [OrderCreator]로 만든다.
  * 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
  * 상세의 값은 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 상세의 조회 횟수와

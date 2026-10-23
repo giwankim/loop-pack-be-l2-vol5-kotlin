@@ -21,7 +21,7 @@ import com.loopers.support.stereotype.ValidatedApplicationService
 /**
  * [ProductRegister]와 [StockDeductor], [StockRestorer], 브랜드가 선언한 [ProductDeleter]의 구현. 넷 모두 상품을 바꾸므로 한 Service가 직접 구현한다.
  * 등록할 상품의 브랜드는 [BrandFinder]로 읽어 없는 브랜드를 브랜드의 오류로 거절한다.
- * 바꿀 상품은 같은 조각의 [ProductFinder.findForUpdate]로 잠가 얻으므로, 없는 상품의 거절도 조회와 같다(ADR 0014).
+ * 바꿀 상품은 같은 슬라이스의 [ProductFinder.findForUpdate]로 잠가 얻으므로, 없는 상품의 거절도 조회와 같다(ADR 0014).
  * 잠금은 커밋까지 가므로 같은 상품을 바꾸는 다른 쓰기는 이 쓰기가 끝난 뒤의 행을 읽는다(ADR 0018).
  * 관리자 응답이 브랜드 이름과 좋아요 수를 합치므로 쓰기는 [ProductInfo]를 돌려준다.
  * 고객 목록을 바꾸는 쓰기는 [ProductListChangeMarker]로 표시해, 커밋 바로 앞에 상품 목록 revision을 올린다(ADR 0020).
@@ -100,7 +100,7 @@ class ProductModifyService(
      * 잠가 읽기, 없는 상품의 거절, 차감을 차례로 나눈다. 모두 잠가 읽은 뒤에 거절하므로 없는 상품이 재고 부족보다 앞선다(포인트·주문 설계 15).
      *
      * 어느 상품이든 품절이 되면 목록을 바꿨다고 표시한다. 차감은 재고를 줄이기만 하므로 품절이 풀리는 일은 없다.
-     * 표시는 주문이 아니라 재고를 바꾸는 이 조각이 한다. 올리기는 커밋 앞이라 확정이 잡는 잠금 가운데 맨 뒤에 온다(ADR 0020).
+     * 표시는 주문이 아니라 재고를 바꾸는 이 슬라이스가 한다. 올리기는 커밋 앞이라 확정이 잡는 잠금 가운데 맨 뒤에 온다(ADR 0020).
      */
     override fun deduct(quantities: Map<Long, Int>) {
         val locked = lockAll(quantities.keys)

@@ -1,7 +1,7 @@
 package com.loopers.application.product.provided
 
 /**
- * 결제에 실패한 주문의 재고 예약을 돌려준다(ADR 0026 규칙 3). 상품의 재고는 상품 조각만 바꾼다.
+ * 결제에 실패한 주문의 재고 예약을 돌려준다(ADR 0026 규칙 3). 상품의 재고는 상품 슬라이스만 바꾼다.
  * 확정과 대사의 TX B가 주문을 잠근 뒤 부르고, 그 트랜잭션에 참여한다. 그래서 돌려주기는 결제의 실패와 함께 커밋되고 함께 되돌아간다.
  */
 interface StockRestorer {

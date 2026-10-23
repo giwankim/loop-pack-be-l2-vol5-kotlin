@@ -98,9 +98,9 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 테스트는 단언하는 값, 기대는 경계(품절, 잔액 0원, 이름 길이의 한계 등), 기대는 값 사이의 관계(앞뒤 공백만 다른 이름, 대소문자만 다른 이름 등)를 이름 있는 인자로 넘긴다. 그 밖의 인자는 검증하는 동작의 입력이어도 fixture의 기본값에 맡긴다. 그래서 JSON 본문 밖에 남은 리터럴은 모두 그 테스트가 확인하거나 기대는 값이다.
 - 생성된 값을 확인할 때는 fixture나 `prepare`가 만든 객체에서 읽는다. 예: 요청 fixture의 `name`과 응답의 `name`을 비교한다.
 - MockMvc 요청의 JSON 본문은 손으로 적는다. 필드 이름과 JSON 타입까지 HTTP 계약이다.
-- 서비스·MockMvc·저장소 테스트는 자기 조각이든 다른 조각이든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 그리고 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`)뿐이다. 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다.
+- 서비스·MockMvc·저장소 테스트는 자기 슬라이스든 다른 슬라이스든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 그리고 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`)뿐이다. 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다.
 - `prepare`가 데이터를 만드는 길은 기반마다 다르다.
-  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 조각의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`BaseRepositoryTest`의 `deleteBrandKeepingProducts`).
+  - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 슬라이스의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`BaseRepositoryTest`의 `deleteBrandKeepingProducts`).
   - `BaseRepositoryTest`는 같은 이름으로 저장소에 엔티티를 저장한다. 저장소 테스트의 컨텍스트에는 포트가 없다.
 - `prepare`가 다른 애그리거트를 받는 파라미터의 기본값은 `prepare`로 저장한 엔티티다(`prepareProduct(brand: Brand = prepareBrand())`). 그 밖의 파라미터는 nullable이고 기본값 `null`을 fixture에 그대로 넘긴다.
 - `prepare`는 마지막으로 준비한 엔티티를 타입마다 `protected` 필드(`brand`, `product`)에 둔다. 다른 `prepare`의 기본값으로 불린 `prepare`도 필드를 바꾸며, 나중 것이 남는다. 테스트는 기본값으로 만든 것까지 세어 그 타입의 엔티티를 하나만 준비했을 때만 필드를 읽고, 그렇지 않으면 반환값을 쓴다.
@@ -145,3 +145,9 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 외래 키 컬럼은 코드에 선언한 유일 키나 인덱스의 첫 컬럼이다. 그런 것이 없으면 `IDX_<테이블>_ON_<컬럼>`을 선언한다. MySQL이 외래 키 이름으로 몰래 만드는 인덱스에 기대지 않는다.
 - 연관의 외래 키는 `@JoinColumn(foreignKey = ForeignKey(name = …))`에, 연관 없는 식별자 컬럼의 외래 키는 `scalar-foreign-keys.sql`에 둔다(ADR 0014).
 - `scalar-foreign-keys.sql`의 외래 키 가운데 자기 테이블의 이름이 가리키는 테이블보다 차례가 뒤인 것(`payment` → `orders`)은 `scalar-foreign-keys-drop.sql`에서도 지운다. Hibernate는 매핑에 없는 외래 키를 남긴 채 테이블을 이름 차례로 지우므로, 그 외래 키가 가리키는 테이블의 drop을 막는다(points-orders 설계 8.2).
+
+## 용어
+
+도메인의 말은 `CONTEXT.md`가 정한다. 여기에는 코드의 구조를 부르는 말만 둔다.
+
+- 애플리케이션을 세로로 자른 단위, 곧 `application.<x>` 패키지와 그 provided·required 포트는 **슬라이스**다(주문 슬라이스, 결제 슬라이스, 슬라이스 사이 호출). **조각**은 Spring Data의 `Slice`가 담는 목록의 한 페이지만 뜻한다(목록 조각, 조각 크기, 다음 조각). KDoc, 주석, 설계 문서, ADR이 모두 따른다. [ADR 0013](docs/adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)은 두 뜻을 모두 조각이라 불렀고, 2026-10-23 [명세 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)의 검토에서 나눴다. `docs/research/`는 올린 댓글의 사본이라 고치지 않는다.

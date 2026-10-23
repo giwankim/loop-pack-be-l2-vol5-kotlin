@@ -18,7 +18,7 @@ private val log = KotlinLogging.logger {}
 
 /**
  * [PaymentStarter]와 [PaymentReconciler]의 구현. 둘 다 부르는 쪽의 트랜잭션(TX A, TX B)에 참여한다(ADR 0028 규칙 1).
- * 주문은 모르고 식별자로만 가리킨다. 바꿀 결제는 같은 조각의 [PaymentFinder]로 얻는다.
+ * 주문은 모르고 식별자로만 가리킨다. 바꿀 결제는 같은 슬라이스의 [PaymentFinder]로 얻는다.
  */
 @ApplicationService
 class PaymentModifyService(
@@ -30,7 +30,7 @@ class PaymentModifyService(
     /**
      * PG는 금액을 64비트 정수로 받으므로(`PgTransactionCreateRequest.amount`) 그보다 큰 결제는 만들지 않는다. 주문의 합계는 그보다 클 수 있다.
      * 재고를 예약하는 TX A 안에서 거절해야 예약과 함께 되돌아간다. TX A가 커밋한 뒤 PG 요청을 만들다 실패하면 보내지 않을 결제가 결과 미확인으로
-     * 남아 예약을 영영 쥔다(ADR 0024 규칙 1). 결제의 금액 열은 그보다 넓은 `DECIMAL(65,0)`이라 이 한도는 PG를 아는 이 조각이 지킨다.
+     * 남아 예약을 영영 쥔다(ADR 0024 규칙 1). 결제의 금액 열은 그보다 넓은 `DECIMAL(65,0)`이라 이 한도는 PG를 아는 이 슬라이스가 지킨다.
      */
     override fun start(orderId: Long, idempotencyKey: String, amount: Money): Payment {
         if (amount > PG_MAX_AMOUNT) {

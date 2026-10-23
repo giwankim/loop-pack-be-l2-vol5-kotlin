@@ -64,7 +64,7 @@ Q1–Q23은 답변을 받았다. Q8의 경합 처리와 Q23의 DB migration은 �
 
 | ID | 결정한 것 | 사용자의 선택 | 후속 결정 |
 | --- | --- | --- | --- |
-| Q1 | 이번 조각의 기능 범위 | 위 고객·관리자 API와 필요한 사용자 fixture를 포함한다. 쿠폰·취소·환불·만료·예약·외부 결제는 이번 조각에서 제외한다. | 사용자 준비 방식, 목록·상세 계약 |
+| Q1 | 이번 슬라이스의 기능 범위 | 위 고객·관리자 API와 필요한 사용자 fixture를 포함한다. 쿠폰·취소·환불·만료·예약·외부 결제는 이번 슬라이스에서 제외한다. | 사용자 준비 방식, 목록·상세 계약 |
 | Q2 | DRAFT에 저장된 단가의 효력 | 생성 시 상품 가격으로 단가를 기록하고 확정에도 그대로 쓴다. 가격 변경 시 확정 거절 대안도 비교했으며 결정은 ADR 0002에 명시한다. | Q10에서 이름 등 스냅샷 범위도 확정 |
 | Q3 | 같은 상품이 요청에 여러 번 있을 때의 의미 | 상품별 수량을 합산해 한 품목으로 기록한다. | Q13에서 수량·입력 품목 수와 넘침 거절도 확정 **5.2에서 철회(#55).** |
 | Q4 | 여러 품목 중 하나라도 확정에 실패했을 때의 결과 | 해당 확정 시도의 차감을 모두 취소하고 주문은 DRAFT로 유지한다. 같은 주문으로 재시도할 수 있다. | 트랜잭션 경계(Q7), 동시성(Q8), 실패 기록(Q11) |
@@ -573,7 +573,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 ## 12. 구현 기록 — #12 충전과 잔액 조회
 
-2026-09-18에 [#12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/12)를 구현하며 8절의 초안을 코드로 옮길 때 정한 것이다. 규칙은 [포인트 도메인](../domain/points-orders.md)에, 용어는 `CONTEXT.md`에 있다. 주문 조각(#13–#16)은 아직이며 이 절은 충전과 잔액 조회만 다룬다.
+2026-09-18에 [#12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/12)를 구현하며 8절의 초안을 코드로 옮길 때 정한 것이다. 규칙은 [포인트 도메인](../domain/points-orders.md)에, 용어는 `CONTEXT.md`에 있다. 주문 슬라이스(#13–#16)는 아직이며 이 절은 충전과 잔액 조회만 다룬다.
 
 ### 12.1 사용자 참조와 물리 FK의 자리
 
@@ -589,7 +589,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 - 상품–브랜드가 이미 같은 까닭으로 연관을 택했다(카탈로그 설계 5.1). Q14가 OrderLineItem에 객체 연관을 두지 않기로 한 까닭은 `Product`의 `@SQLRestriction`이 join에도 붙어 삭제된 상품의 주문을 못 읽게 되기 때문인데, `User`에는 삭제 상태가 없어 그 문제가 없다.
 - `userId`는 프록시가 들고 있는 식별자라 읽어도 사용자 행을 조회하지 않는다(`PointAccountRepositoryTest`가 `Hibernate.isInitialized`로 고정). `PointAccountRepository.findByUserId`는 파생 프로퍼티에 이름 규칙이 닿지 않아 `a.user.id`를 JPQL로 적는다.
 - 만들어진 제약은 `FK_POINT_ACCOUNT_ON_USER_ID`, `UK_POINT_ACCOUNT_ON_USER_ID`, `fk_point_history_point_account`, `uk_point_history_point_account_id_charge_key`이며 저장소 테스트가 `information_schema`에서 이름과 열을 확인한다. `@OneToOne`이 스스로 만드는 유일 키와 `@Table`의 유일 제약은 Hibernate가 같은 열 집합으로 보고 하나만 낸다. (처음에는 제약 이름이 소문자였다. 2026-10-03(#55)에 살아 있는 제약 이름을 대문자로 맞췄다. 포인트 이력의 두 이름은 18절에서 지운 제약이라 그때 이름 그대로 둔다. 2026-10-08에 그때 빠진 주문의 두 인덱스 이름도 `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`, `IDX_ORDERS_ON_CREATED_AT_AND_ID`로 맞췄다. 살아 있는 제약과 인덱스의 이름은 모두 대문자다.)
-- 이번 조각에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
+- 이번 슬라이스에 필요한 초기화는 이것으로 끝났다. 별도 schema SQL이나 migration 도구를 들이지 않았다(Q23).
 
 다시 볼 조건: 사용자에 삭제 상태가 생겨 `@SQLRestriction`이 붙으면, 계정 조회가 삭제된 사용자의 계정을 숨기게 되므로 스칼라 `userId` + 명시적 schema로 옮길지 정한다. OrderLineItem→Product의 FK(#13)는 이 방식으로는 만들 수 없어 그때 초기화 방법을 다시 정한다.
 
@@ -627,7 +627,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 > 2026-10-03 본문 행의 전용 code를 5.10과 함께 철회했다(#55). 그 행은 이제 범용 `Bad Request`다. 충전도 Controller가 Request를 `@Valid`로 받으므로, 아래 끝 문단이 적은 카탈로그 설계 5.18과의 차이도 사라졌다. HTTP 요청의 충전액 0은 `MethodArgumentNotValidException`으로 거절되며 응답은 같은 400과 메시지다.
 
 
-6절의 초안 가운데 이번 조각이 쓴 행과 그 자리다.
+6절의 초안 가운데 이번 슬라이스가 쓴 행과 그 자리다.
 
 | 상황 | HTTP | `meta.errorCode` | 거르는 자리 |
 | --- | --- | --- | --- |
@@ -657,7 +657,7 @@ Q1–Q23의 개별 답변은 모두 기록했다. 사용자가 추가 인터뷰 
 
 **#12 시점의 선택: `PointHistoryType`은 `CHARGE`뿐이고 `charge_key`는 `not null`이다.** #14에서 결제 이력(`PAYMENT`), `order_id`, `charge_key`의 nullable 전환을 추가했다(15절).
 
-- 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 조각에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
+- 8.1의 표는 두 종류를 한 테이블에 적었고 그 구조는 유지한다. 이번에 들어온 것은 충전 슬라이스에 필요한 열뿐이다. migration이 없어 열의 nullable 전환은 엔티티 한 줄이다.
 - `PointHistory`의 생성자는 private이고 `PointAccount.charge`가 `PointHistory.charge` 팩토리로 만든다. "이력의 잔액은 그 충전 직후의 잔액"을 계정이 지키게 하려는 것이다. 계정은 이력 컬렉션을 갖지 않는다(7절).
 - Hibernate가 `type` 열을 MySQL `enum('CHARGE')`로 만든다. `PAYMENT`를 더하면 `ddl-auto=create`가 열 정의를 다시 만든다.
 
@@ -821,7 +821,7 @@ throw JsonMappingException.from(parser, "…", CoreException(ErrorType.INVALID_P
 
 ## 16. 관리자 주문 조회 구현 — Issue #16
 
-[Issue #16](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/16)은 `GET /api-admin/v1/orders`와 `GET /api-admin/v1/orders/{orderId}`를 구현한다. 주문 확정(#14)과 고객 목록(#15)은 week2에 이미 있고, 이 조각은 그 주문을 읽기만 한다. 관리자가 주문을 조회한다는 것은 `CONTEXT.md`에 이미 적혀 있어 새 낱말을 정하지 않았다.
+[Issue #16](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/16)은 `GET /api-admin/v1/orders`와 `GET /api-admin/v1/orders/{orderId}`를 구현한다. 주문 확정(#14)과 고객 목록(#15)은 week2에 이미 있고, 이 슬라이스는 그 주문을 읽기만 한다. 관리자가 주문을 조회한다는 것은 `CONTEXT.md`에 이미 적혀 있어 새 낱말을 정하지 않았다.
 
 낱말 하나를 도메인 문서에 맞췄다. 2절과 6절의 표가 주문한 사람을 "구매자"라고 불렀는데 `CONTEXT.md`에 없는 말이었고, 도메인 문서는 `Order.userId`를 "주문한 사용자"라고 적는다. 용어집에 새 항목을 만드는 대신 이미 있는 말로 맞추기로 해서, 이 구현의 KDoc과 Swagger 설명은 물론 2절·6절의 표현까지 함께 고쳤다. `CONTEXT.md`의 고객 항목이 "이름이 필요한 자리에는 사용자(User)를 쓴다"이므로 새 역할 이름을 만들 까닭이 없다. 이제 저장소에 "구매자"는 없다.
 

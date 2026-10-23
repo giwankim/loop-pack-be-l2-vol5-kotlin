@@ -50,7 +50,7 @@ import java.util.UUID
  * 캐시 writer를 spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
  * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`뿐이다(ADR 0012).
  *
- * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 조각의 provided 포트로 만든다.
+ * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 슬라이스의 provided 포트로 만든다.
  * 포트가 엔티티를 돌려주면 그대로 쓰고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다(ADR 0014).
  * 포트가 없는 데이터(사용자, 포인트 계정)와 포트가 막는 상태는 저장소에 엔티티를 저장해 만들고,
  * 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다.

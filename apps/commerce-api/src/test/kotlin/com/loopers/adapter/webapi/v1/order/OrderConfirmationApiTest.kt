@@ -198,7 +198,7 @@ class OrderConfirmationApiTest(
         assertStock(product, 10)
     }
 
-    /** 결제의 거래 키, PG 주문 번호, 카드는 주문 조각이 옮기기만 하고 응답에 싣지 않는다(ADR 0028 규칙 5). 카드 번호는 숫자만 남겨서도 찾는다. */
+    /** 결제의 거래 키, PG 주문 번호, 카드는 주문 슬라이스가 옮기기만 하고 응답에 싣지 않는다(ADR 0028 규칙 5). 카드 번호는 숫자만 남겨서도 찾는다. */
     @ParameterizedTest
     @CsvSource("SUCCESS, OK", "PENDING, ACCEPTED", "FAILED, OK")
     fun `no confirmation or detail response carries the transaction key, the PG order ID or the card`(
