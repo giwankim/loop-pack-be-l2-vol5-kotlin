@@ -303,8 +303,8 @@ class PaymentApiTest(
         repeat(2) { assertThat(requestCallback(json)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE) }
         assertThat(testPg.lookupCount()).isEqualTo(4)
 
-        val error = assertThat(requestCallback(json)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
+        val body = assertThat(requestCallback(json)).hasStatus(HttpStatus.SERVICE_UNAVAILABLE).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("PG_UNAVAILABLE")
 
         assertThat(testPg.lookupCount()).isEqualTo(4)
         assertThat(requestDetail().response.contentAsString).isEqualTo(pending.response.contentAsString)

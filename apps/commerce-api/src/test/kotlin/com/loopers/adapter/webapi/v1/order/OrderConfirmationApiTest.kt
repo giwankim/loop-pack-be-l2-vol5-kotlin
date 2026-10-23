@@ -547,8 +547,8 @@ class OrderConfirmationApiTest(
         val draft = requestDetail(orderId)
         assertThat(draft).hasStatusOk()
 
-        val error = assertThat(requestConfirm(orderId, idempotencyKey = "retry-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
-        error.extractingPath("$.meta.errorCode").isEqualTo("INSUFFICIENT_STOCK")
+        val body = assertThat(requestConfirm(orderId, idempotencyKey = "retry-key")).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.errorCode").isEqualTo("INSUFFICIENT_STOCK")
 
         assertThat(requestDetail(orderId).json()).isEqualTo(draft.json())
         assertThat(testPg.createCount()).isZero()
@@ -556,8 +556,8 @@ class OrderConfirmationApiTest(
         assertThat(entityManager.productStock(second.id)).isEqualTo(4)
         updateProductStock(quantity = 5, product = second)
         acceptCreate(amount = 7_000)
-        val body = assertThat(requestConfirm(orderId, idempotencyKey = "retry-key")).hasStatusOk().bodyJson()
-        body.extractingPath("$.data.paidAmount").isEqualTo(7_000)
+        val confirmBody = assertThat(requestConfirm(orderId, idempotencyKey = "retry-key")).hasStatusOk().bodyJson()
+        confirmBody.extractingPath("$.data.paidAmount").isEqualTo(7_000)
         assertThat(testPg.createCount()).isOne()
         assertThat(entityManager.productStock(first.id)).isEqualTo(8)
         assertThat(entityManager.productStock(second.id)).isEqualTo(0)
