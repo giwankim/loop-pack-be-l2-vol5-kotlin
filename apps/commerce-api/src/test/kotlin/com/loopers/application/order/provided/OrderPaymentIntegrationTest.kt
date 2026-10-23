@@ -68,6 +68,7 @@ import org.wiremock.spring.InjectWireMock
 @EnableTestPg
 class OrderPaymentIntegrationTest(
     private val orderConfirmer: OrderConfirmer,
+    private val orderPaymentReconciler: OrderPaymentReconciler,
     private val orderFinder: OrderFinder,
     private val paymentFinder: PaymentFinder,
     private val productFinder: ProductFinder,
@@ -1066,6 +1067,119 @@ class OrderPaymentIntegrationTest(
             assertThat(persisted.updatedAt).isEqualTo(order.updatedAt)
             assertThat(productFinder.find(kept.id).stock).isEqualTo(5)
         }
+    }
+
+    /**
+     * PG의 대사 포트는 고객의 대사와 같은 PG 주문 번호 조회와 같은 TX B로 결제를 끝낸다(ADR 0031 규칙 3). 요청자 없이 주문의 결제를 대사하고,
+     * 성공이면 주문을 확정하고 예약을 소비하며, 실패면 예약을 한 번 돌려줘 재고는 5다. 생성은 다시 보내지 않는다.
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, CONFIRMED, SUCCESS, 3", "FAILED, PAYMENT_FAILED, FAILED, 5")
+    fun `the PG's reconcile finishes a pending payment with the transaction its lookup finds`(
+        pgStatus: PgStatus,
+        orderStatus: OrderStatus,
+        paymentStatus: PaymentStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = "PENDING",
+        )
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
+
+        orderPaymentReconciler.reconcile(order.id)
+
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.lookupCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(orderStatus)
+            val payment = paymentFinder.findByOrder(order.id)
+            assertThat(payment.status).isEqualTo(paymentStatus)
+            assertThat(payment.transactionKey).isEqualTo(TRANSACTION_KEY)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /**
+     * 조회할 수 없으면 PG의 대사 포트는 `PG_UNAVAILABLE`을 던진다. 묻지 못했으니 PG가 알림을 다시 보내야 한다(ADR 0031 규칙 6). 같은 경우
+     * 고객의 대사는 지금처럼 저장된 상태로 답한다. 어느 쪽도 결제와 예약을 바꾸지 않는다. 조회 수는 재조회의 티켓이 정하므로 세지 않는다.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["503", "stall"])
+    fun `the PG's reconcile throws PG_UNAVAILABLE on an unavailable lookup while the customer's answers the stored state`(
+        unavailable: String,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(
+            pgOrderId = pgOrderId,
+            amount = 2_000,
+            card = request.toCreditCard(),
+            transactionKey = TRANSACTION_KEY,
+            pgStatus = "PENDING",
+        )
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+        if (unavailable == "503") {
+            testPg.answersList(pgOrderId, httpStatus = 503)
+        } else {
+            testPg.stallsLookup()
+        }
+
+        val exception = assertThrows<CoreException> { orderPaymentReconciler.reconcile(order.id) }
+        val stored = orderConfirmer.reconcile(user.id, order.id)
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.PG_UNAVAILABLE)
+        assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+        assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.PAYMENT_PENDING)
+            assertThat(paymentFinder.findByOrder(order.id).status).isEqualTo(PaymentStatus.PENDING)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(3)
+        }
+    }
+
+    /**
+     * 결제가 끝난 주문은 PG의 대사 포트도 PG에 조회하지 않고 돌아간다. 다시 받아도 바뀌는 것이 없고, 실패한 결제의 반환도 다시 일어나지 않는다.
+     */
+    @ParameterizedTest
+    @CsvSource("SUCCESS, CONFIRMED, 3", "FAILED, PAYMENT_FAILED, 5")
+    fun `the PG's reconcile of a finished payment sends no lookup and changes nothing`(
+        pgStatus: String,
+        orderStatus: OrderStatus,
+        stock: Int,
+    ) {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
+        confirmOrder(testPg, pgStatus = pgStatus)
+
+        repeat(2) { orderPaymentReconciler.reconcile(order.id) }
+
+        assertThat(testPg.lookupCount()).isZero()
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(orderStatus)
+            assertThat(productFinder.find(product.id).stock).isEqualTo(stock)
+        }
+    }
+
+    /** 확정 전 주문에는 대사할 결제가 없다. PG의 대사 포트도 고객의 대사처럼 PG에 아무것도 보내지 않고 거절한다. */
+    @Test
+    fun `the PG's reconcile of a draft is rejected as payment not started without a lookup`() {
+        prepareOrder(products = listOf(prepareProduct(stock = 5)), quantity = 2)
+
+        val exception = assertThrows<CoreException> { orderPaymentReconciler.reconcile(order.id) }
+
+        assertThat(exception.errorType).isEqualTo(ErrorType.PAYMENT_NOT_STARTED)
+        assertThat(testPg.requestCount()).isZero()
     }
 
     /**

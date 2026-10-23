@@ -18,7 +18,7 @@ import org.springframework.data.repository.Repository
 interface OrderRepository : Repository<Order, Long> {
     fun save(order: Order): Order
 
-    /** 소유자를 묻지 않는 조회. 관리자만 쓴다([findWithLineItemsByIdAndUserId]가 고객의 것이다). */
+    /** 소유자를 묻지 않는 조회. 관리자와 PG의 대사만 쓴다([findWithLineItemsByIdAndUserId]가 고객의 것이다). */
     @EntityGraph(attributePaths = ["_lineItems"])
     fun findWithLineItemsById(orderId: Long): Order?
 

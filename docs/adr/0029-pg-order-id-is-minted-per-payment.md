@@ -11,7 +11,7 @@ date: 2026-10-22
 
 1. **결제를 만들 때 `PgOrderIdGenerator`가 새 값을 만든다.** `domain.payment`의 인터페이스이고 주문 식별자를 받지 않는다. 운영 구현은 `adapter.integration.pg`에 있으며 UUID 문자열(36자 ASCII)을 돌려준다. PG의 형식 규칙(6자 이상)은 PG를 아는 어댑터가 지킨다. splearn이 `PasswordEncoder`와 그 구현 `SecurePasswordEncoder`를 나눈 모양이다.
 2. **`Payment.start(orderId, idempotencyKey, amount, pgOrderIdGenerator)`가 결제를 만드는 유일한 길이다.** 생성자는 private이라 호출자가 PG 주문 번호를 고를 수 없다. splearn의 `Member.register(request, passwordEncoder)` 모양이고, 이 저장소의 첫 애그리거트 팩터리이자 첫 도메인 인터페이스다. 매개변수는 이름 붙인 인자로 넘기고 도메인 DTO를 두지 않는다. Request는 application에 둔다([카탈로그 설계 5.17](../design/catalog.md)).
-3. **`pg_order_id`에 유일 제약(`UK_PAYMENT_ON_PG_ORDER_ID`)을 둔다.** 유일성이 이제 `order_id`의 유일성에서 따라 나오지 않는다. 3단계의 알림이 이 인덱스로 결제를 찾는다.
+3. **`pg_order_id`에 유일 제약(`UK_PAYMENT_ON_PG_ORDER_ID`)을 둔다.** 유일성이 이제 `order_id`의 유일성에서 따라 나오지 않는다. 3단계의 알림이 이 인덱스로 결제를 찾는다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 알림이 이 인덱스를 탄다. `PaymentRepository.findByPgOrderId`는 없으면 `null`이고, `PaymentFinder.findByPgOrderId`가 그것을 `PAYMENT_NOT_FOUND`(404)로 던진다([ADR 0031](./0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 2). 스키마는 바뀌지 않았다.)
 4. **테스트는 정해 둔 값을 돌려주는 생성기를 넣는다.** 테스트 PG의 스텁이 확정을 부르기 전에 PG 주문 번호를 알아야 한다.
 5. **결제마다 새 값이므로 시도마다 다르다.** 실패한 뒤 다시 결제하는 것이 들어와도 그대로 맞는다.
 

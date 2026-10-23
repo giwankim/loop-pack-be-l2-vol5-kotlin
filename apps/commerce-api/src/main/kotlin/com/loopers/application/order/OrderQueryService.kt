@@ -58,4 +58,8 @@ class OrderQueryService(
 
         return orderInfoAssembler.toInfo(order)
     }
+
+    override fun findForPg(orderId: Long): Order {
+        return orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    }
 }

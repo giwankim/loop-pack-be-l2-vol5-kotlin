@@ -741,7 +741,8 @@ stateDiagram-v2
   - `OrderConfirmer.reconcile(userId, orderId)`는 고객의 요청을 받는다. 알림에는 요청자가 없으므로, 주문의 사용자를 읽어 넘길지 사용자 없는 입구를 둘지 정한다.
   - 알림 주소는 설정의 `pg.callback-url`에서 와 PG에 이미 보낸다(4.1). 받는 엔드포인트만 없다.
   - 알림도 대사와 같은 TX B로 반영하면 주문 잠금이 동시 반영을 한 번으로 만든다. 장면 6의 알림 쪽 절반은 알림과 대사, 알림과 확정의 TX B가 같은 답을 함께 반영하는 장면이다. 13.3의 다시 읽는 창도 알림으로 생긴다.
-- **거래 키의 인덱스.** `transaction_key`에는 인덱스가 없다(8절). PG의 거래 키 조회(`retrieveTransaction(transactionKey)`)도 부르는 곳이 없다. 알림이 거래 키로 결제를 찾거나 거래 키로 PG에 조회하게 되면 그때 인덱스를 더한다(명세 147의 Further Notes). 유일 키로 둘지도 그때 정한다.
+  - (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 엔드포인트는 `PaymentApi`이고, `PaymentRepository.findByPgOrderId`와 `PaymentFinder.findByPgOrderId`(없으면 404 `PAYMENT_NOT_FOUND`)가 생겼다. 요청자 문제는 사용자 없는 입구로 정했다. PG가 부르는 provided 포트 `OrderPaymentReconciler.reconcile(orderId)`가 주문의 사용자를 TX B에만 넘긴다([ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 3). 그 대사는 답하는 때에 다시 읽지 않으므로 13.3의 창은 알림의 답에 생기지 않는다. 같은 TX B를 쓰는 것은 그대로다. 장면 6의 알림 쪽 절반은 아직 없다.)
+- **거래 키의 인덱스.** `transaction_key`에는 인덱스가 없다(8절). PG의 거래 키 조회(`retrieveTransaction(transactionKey)`)도 부르는 곳이 없다. 알림이 거래 키로 결제를 찾거나 거래 키로 PG에 조회하게 되면 그때 인덱스를 더한다(명세 147의 Further Notes). 유일 키로 둘지도 그때 정한다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 알림은 거래 키를 읽지 않고 PG 주문 번호로 조회한다([ADR 0031](../adr/0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 4). 인덱스도 거래 키 조회도 더하지 않았다.)
 - **서킷 브레이커와 제한된 재조회.**
   - 조회에만 씌운다. 어댑터 안에서 조회 메서드만 감싸고, 열린 브레이커가 거절한 조회도 포트 밖에서는 `PgUnavailableException`이다(ADR 0022 규칙 7, ADR 0023 규칙 5). 대사는 이미 그 예외에 저장된 상태로 답하므로(13.2) 대체 응답이 결과를 정하지 않는다.
   - 생성은 감싸지 않는다. 어댑터 안의 브레이커는 TX A 뒤에 돌아, 거절해도 결과 미확인인 결제가 예약을 쥔 채 남는다. 생성 앞에 브레이커를 두려면 TX A 앞에서 묻고, 그 거절은 결과 미확인과 다른 예외로 둔다(ADR 0023의 다시 볼 조건).
