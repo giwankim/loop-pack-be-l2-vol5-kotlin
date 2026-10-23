@@ -60,7 +60,6 @@ import org.wiremock.spring.InjectWireMock
 @EnableTestPg
 class OrderPaymentIntegrationTest(
     private val orderConfirmer: OrderConfirmer,
-    private val orderPaymentReconciler: OrderPaymentReconciler,
     private val orderFinder: OrderFinder,
     private val paymentFinder: PaymentFinder,
     private val productFinder: ProductFinder,
@@ -184,7 +183,7 @@ class OrderPaymentIntegrationTest(
         }
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
 
-        val reconciled = orderPaymentReconciler.reconcile(user.id, order.id)
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
@@ -214,7 +213,7 @@ class OrderPaymentIntegrationTest(
         )
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
         var reconciled: OrderInfo? = null
-        whilePaymentPending { reconciled = orderPaymentReconciler.reconcile(user.id, order.id) }
+        whilePaymentPending { reconciled = orderConfirmer.reconcile(user.id, order.id) }
 
         val answered = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
 
@@ -250,7 +249,7 @@ class OrderPaymentIntegrationTest(
             testPg.stallsLookup()
         }
 
-        val stored = orderPaymentReconciler.reconcile(user.id, order.id)
+        val stored = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.PENDING)
@@ -301,7 +300,7 @@ class OrderPaymentIntegrationTest(
         }
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
 
-        val reconciled = orderPaymentReconciler.reconcile(user.id, order.id)
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
@@ -347,9 +346,9 @@ class OrderPaymentIntegrationTest(
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
         pauseTheFirstTxBHoldingTheOrder()
 
-        val first = inAnotherThread { orderPaymentReconciler.reconcile(user.id, order.id) }
+        val first = inAnotherThread { orderConfirmer.reconcile(user.id, order.id) }
         pause.awaitHeld()
-        val second = inAnotherThread { orderPaymentReconciler.reconcile(user.id, order.id) }
+        val second = inAnotherThread { orderConfirmer.reconcile(user.id, order.id) }
 
         assertThat(second.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
         pause.release()
@@ -397,7 +396,7 @@ class OrderPaymentIntegrationTest(
 
         val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
         pause.awaitHeld()
-        val reconciling = inAnotherThread { orderPaymentReconciler.reconcile(user.id, order.id) }
+        val reconciling = inAnotherThread { orderConfirmer.reconcile(user.id, order.id) }
 
         assertThat(reconciling.finishesWithin(LOCK_WAIT_PROBE)).isFalse()
         pause.release()
@@ -447,7 +446,7 @@ class OrderPaymentIntegrationTest(
         }
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = PgStatus.SUCCESS))
 
-        val reconciled = orderPaymentReconciler.reconcile(user.id, order.id)
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
@@ -483,7 +482,7 @@ class OrderPaymentIntegrationTest(
         testPg.hasTransactions(pgOrderId)
 
         val replayed = orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
-        val reconciled = orderPaymentReconciler.reconcile(user.id, order.id)
+        val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
         listOf(replayed, reconciled).forEach { answer ->
             assertThat(answer.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
@@ -539,7 +538,7 @@ class OrderPaymentIntegrationTest(
             )
         }
 
-        val stored = orderPaymentReconciler.reconcile(user.id, order.id)
+        val stored = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
@@ -1015,7 +1014,7 @@ class OrderPaymentIntegrationTest(
         confirmOrder(testPg, pgStatus = "PENDING")
 
         assertThrows<IllegalTransactionStateException> {
-            inNewTransaction { orderPaymentReconciler.reconcile(user.id, order.id) }
+            inNewTransaction { orderConfirmer.reconcile(user.id, order.id) }
         }
 
         assertThat(testPg.lookupCount()).isZero()

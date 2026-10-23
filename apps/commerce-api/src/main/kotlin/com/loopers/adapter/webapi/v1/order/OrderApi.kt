@@ -11,7 +11,6 @@ import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.provided.OrderListRequest
-import com.loopers.application.order.provided.OrderPaymentReconciler
 import com.loopers.domain.order.OrderStatus
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
@@ -36,7 +35,6 @@ class OrderApi(
     private val orderFinder: OrderFinder,
     private val orderCreator: OrderCreator,
     private val orderConfirmer: OrderConfirmer,
-    private val orderPaymentReconciler: OrderPaymentReconciler,
 ) : OrderApiSpec {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -89,7 +87,7 @@ class OrderApi(
         @RequesterId userId: Long,
         @PathVariable orderId: Long,
     ): ResponseEntity<ApiResponse<OrderResponse>> {
-        val order = orderPaymentReconciler.reconcile(userId, orderId)
+        val order = orderConfirmer.reconcile(userId, orderId)
 
         return paymentResponse(order)
     }

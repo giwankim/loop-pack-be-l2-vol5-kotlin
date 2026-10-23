@@ -5,7 +5,6 @@ import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
-import com.loopers.application.order.provided.OrderPaymentReconciler
 import com.loopers.application.payment.provided.MultiplePgTransactionsException
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentValidator
@@ -25,7 +24,7 @@ import org.springframework.transaction.annotation.Propagation
 private val log = KotlinLogging.logger {}
 
 /**
- * [OrderConfirmer]와 [OrderPaymentReconciler]의 구현. 주문 확정이 PG로 결제하는 절차와, 그 결과를 대사로 되찾는 절차를 조율한다(ADR 0024,
+ * [OrderConfirmer]의 구현. 주문 확정이 PG로 결제하는 절차와, 그 결과를 대사로 되찾는 절차를 조율한다(ADR 0024,
  * ADR 0028 규칙 1). 결제 슬라이스는 주문을 모르므로 이 절차의 주인인 주문 슬라이스가 조율한다. 확정 요청이 카드를 담으므로 검증하는 Service다.
  *
  * `NEVER`라서 트랜잭션 안에서 불리면 Spring이 `IllegalTransactionStateException`으로 거절한다. PG 호출이 트랜잭션에 드는 실수를
@@ -44,8 +43,7 @@ class OrderPaymentService(
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
     private val pgTransactionClient: PgTransactionClient,
-) : OrderConfirmer,
-    OrderPaymentReconciler {
+) : OrderConfirmer {
     /**
      * 키의 형식은 TX A를 열기 전에 본다. 웹 경계도 보지만 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD
      * SPACE라서, 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 형식 오류 대신 `IDEMPOTENCY_KEY_IN_USE`로 거절된다.
