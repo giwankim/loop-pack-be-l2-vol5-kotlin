@@ -10,7 +10,7 @@ import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
  * [Liker]의 구현. 누르기가 Request를 받으므로 검증하는 Service다. 관계 자체에는 규칙이 없고 유스케이스가 순서를 정한다(도메인 문서 좋아요).
- * 다른 조각에 물어야 하는 사전 조건은 [LikeValidator]가 보고, 여기에는 단계의 차례만 있다(ADR 0014).
+ * 다른 슬라이스에 물어야 하는 사전 조건은 [LikeValidator]가 보고, 여기에는 단계의 차례만 있다(ADR 0014).
  * 요청자는 웹 경계가 이미 받아들였으므로 받은 `userId`를 그대로 믿는다(ADR 0015).
  * 좋아요 수는 관계에서 세므로 누르기와 취소는 고객 목록을 바꾼다. 둘 다 [ProductListChangeMarker]로 표시해 커밋 바로 앞에
  * 상품 목록 revision을 올린다. 그래서 좋아요는 상품을 잠그지 않지만 커밋에서 revision 행을 잠근다(ADR 0020).

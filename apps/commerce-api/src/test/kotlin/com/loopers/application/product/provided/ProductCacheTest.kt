@@ -1,27 +1,42 @@
 package com.loopers.application.product.provided
 
+import com.github.tomakehurst.wiremock.WireMockServer
+import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
+import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.shared.Money
+import com.loopers.support.EnableTestPg
+import com.loopers.support.TestPg
 import com.loopers.support.captureSql
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.loopers.support.withStatistics
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.wiremock.spring.InjectWireMock
 
 /**
  * 고객 목록의 캐시와 그것을 무효로 만드는 상품 목록 revision을 실제 MySQL·Redis 위에서 확인한다(ADR 0020).
  *
  * 롤백하는 테스트에서는 `beforeCommit`이 돌지 않아 쓰기가 revision을 올리지 않는다. 무효화를 보려면 쓰기가 커밋해야 하므로
  * 커밋하는 기반을 쓴다. 기반이 테스트마다 표와 Redis를 함께 비우므로 테스트는 revision 0과 빈 캐시에서 시작한다.
+ * 주문 확정은 PG로 결제하므로 테스트 PG를 띄운다. 품절은 확정의 TX A가 재고를 예약할 때 바뀐다(ADR 0026).
  */
+@EnableTestPg
 class ProductCacheTest(
     private val productFinder: ProductFinder,
     private val orderFinder: OrderFinder,
+    private val orderConfirmer: OrderConfirmer,
     private val productListChangeMarker: ProductListChangeMarker,
     private val productListCacheKeyGenerator: ProductListCacheKeyGenerator,
 ) : BaseCommittingApplicationServiceTest() {
+    /** 생성자 주입의 하나뿐인 예외다. 까닭은 `OrderPaymentIntegrationTest`의 같은 필드에 있다. */
+    @InjectWireMock(TestPg.NAME)
+    private lateinit var server: WireMockServer
+
+    private val testPg by lazy { TestPg(server) }
+
     /**
      * miss는 revision, 페이지, 좋아요 수의 세 문장이고 hit는 revision 하나다. 두 결과는 같고, 준비한 행에서 손으로 적은 페이지와 같다.
      * 기본 정렬은 늦게 등록된 상품이 앞선다.
@@ -188,46 +203,84 @@ class ProductCacheTest(
         assertNextReadIsHit(request)
     }
 
-    /** 마지막 하나를 판 주문 확정은 상품을 품절로 바꾼다. 표시는 주문 조각이 아니라 재고를 줄이는 상품 조각이 한다. */
+    /** 마지막 하나를 예약한 주문 확정은 상품을 품절로 바꾼다. 표시는 주문 슬라이스가 아니라 재고를 줄이는 상품 슬라이스가 한다. */
     @Test
-    fun `after an order confirmation sells the last unit the list shows the product sold out`() {
-        prepareConfirmableOrder(stock = 1, quantity = 1)
+    fun `after an order confirmation reserves the last unit the list shows the product sold out`() {
+        prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
         val request = ProductListRequest()
         productFinder.findAll(request)
 
-        confirmOrder()
+        confirmOrder(testPg)
 
         assertThat(productFinder.findAll(request).items.map { it.soldOut }).containsExactly(true)
     }
 
+    /** TX A의 예약도, 성공을 반영하는 TX B도 품절을 바꾸지 않으므로 어느 쪽도 올리지 않는다. */
     @Test
     fun `an order confirmation that leaves sold out unchanged sends no upsert and the next read is a hit`() {
-        prepareConfirmableOrder(stock = 5, quantity = 2)
+        prepareOrder(products = listOf(prepareProduct(stock = 5)), quantity = 2)
         val request = ProductListRequest()
         productFinder.findAll(request)
 
-        val captured = captureSql { confirmOrder() }
+        val captured = captureSql { confirmOrder(testPg) }
 
         assertThat(captured.statements).noneMatch { it.startsWith("insert into product_list_revision") }
         assertNextReadIsHit(request)
     }
 
     /**
-     * 품절을 만든 확정에서 올리기는 마지막 SQL이다. 주문, 상품, 포인트 계정의 UPDATE가 모두 그 앞에 나가므로,
-     * 잠금의 차례는 주문 → 상품 → 포인트 계정 → revision이다(ADR 0020 규칙 3).
+     * 품절을 만든 확정의 TX A에서 올리기는 마지막으로 잠그는 SQL이다. 주문과 상품의 UPDATE, 결제의 INSERT가 모두 그 앞에 나가므로,
+     * 잠금의 차례는 주문 → 상품 → revision이다(ADR 0020 규칙 3, ADR 0028 규칙 4). 생성의 응답을 잃게 해 TX B 없이 TX A의 SQL만 남긴다.
+     * 답을 모르는 확정은 답하는 때에 저장된 상태를 다시 읽으므로(ADR 0028 규칙 3의 2026-10-23 메모) 올리기 뒤에는 잠그지 않는 SELECT만 온다.
      */
     @Test
-    fun `the upsert of a confirmation that sells out is its last statement after the order, product and point account updates`() {
-        prepareConfirmableOrder(stock = 1, quantity = 1)
+    fun `the upsert of a sell-out confirmation is TX A's last locking statement after the order, product and payment writes`() {
+        prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
+        val request = createOrderConfirmRequest()
+        testPg.losesCreateResponse(
+            pgOrderId = nextPgOrderId(),
+            amount = order.totalAmount.amount.longValueExact(),
+            card = request.toCreditCard(),
+        )
 
-        val captured = captureSql { confirmOrder() }
+        val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "sold-out-key", request) }
 
-        val upsert = captured.statements.last()
-        val updates = captured.statements.dropLast(1)
+        val upsertAt = captured.statements.indexOfFirst { it.startsWith("insert into product_list_revision") }
+        val writes = captured.statements.take(upsertAt)
+        val reads = captured.statements.drop(upsertAt + 1)
+        assertThat(upsertAt).isPositive()
+        assertThat(writes).anyMatch { it.startsWith("update orders ") }
+        assertThat(writes).anyMatch { it.startsWith("update product ") }
+        assertThat(writes).anyMatch { it.startsWith("insert into payment ") }
+        assertThat(reads).allMatch { it.startsWith("select ") && !it.contains(" for update") }
+    }
+
+    /**
+     * 품절을 푼 돌려주기의 TX B에서도 올리기는 마지막 SQL이다. 주문, 결제, 상품의 UPDATE가 모두 그 앞에 나가므로 잠금의 차례는 주문 → 상품 →
+     * revision이다(ADR 0020 규칙 3, ADR 0028 규칙 4). 마지막 하나를 예약한 TX A도 품절을 바꿔 올리므로, TX B의 SQL은 TX A의 올리기 뒤의 문장들이다.
+     * 돌려준 상품은 다시 팔 수 있으므로 TX B가 끝난 뒤 둘째 올리기가 나간다(ADR 0026 규칙 6).
+     */
+    @Test
+    fun `the upsert of a failed payment that makes a sold out product buyable is TX B's last statement after its writes`() {
+        prepareOrder(products = listOf(prepareProduct(stock = 1)), quantity = 1)
+        val request = createOrderConfirmRequest()
+        testPg.rejectsBeforeCreate(
+            pgOrderId = nextPgOrderId(),
+            amount = order.totalAmount.amount.longValueExact(),
+            card = request.toCreditCard(),
+        )
+
+        val captured = captureSql { orderConfirmer.confirm(user.id, order.id, "returned-key", request) }
+
+        val isUpsert = { statement: String -> statement.startsWith("insert into product_list_revision") }
+        assertThat(captured.statements.filter(isUpsert)).hasSize(2)
+        val txB = captured.statements.drop(captured.statements.indexOfFirst(isUpsert) + 1)
+        val upsert = txB.last()
+        val writes = txB.dropLast(1)
         assertThat(upsert).startsWith("insert into product_list_revision")
-        assertThat(updates).anyMatch { it.startsWith("update orders ") }
-        assertThat(updates).anyMatch { it.startsWith("update product ") }
-        assertThat(updates).anyMatch { it.startsWith("update point_account ") }
+        assertThat(writes).anyMatch { it.startsWith("update orders ") }
+        assertThat(writes).anyMatch { it.startsWith("update payment ") }
+        assertThat(writes).anyMatch { it.startsWith("update product ") }
     }
 
     /**
@@ -277,12 +330,6 @@ class ProductCacheTest(
 
         assertThat(captured.statements).singleElement().asString().startsWith("insert into product_list_revision")
         assertThat(currentListRevision()).isOne()
-    }
-
-    /** 재고가 [stock]개인 상품 하나를 [quantity]개 담은 주문을 만들고, 확정할 수 있게 그 합계만큼 충전한다. */
-    private fun prepareConfirmableOrder(stock: Int, quantity: Int) {
-        prepareOrder(products = listOf(prepareProduct(stock = stock)), quantity = quantity)
-        charge(amount = order.totalAmount.amount)
     }
 
     /** 다음 읽기가 revision 하나만 읽는 hit인지 본다. */

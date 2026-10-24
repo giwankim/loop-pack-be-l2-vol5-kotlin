@@ -10,7 +10,7 @@ data class OrderProduct(
     val quantity: Int,
 ) {
     init {
-        if (productId <= 0 || quantity <= 0 || unitPrice.amount <= 0 || productName.isBlank() || productName.length > 100) {
+        if (productId <= 0 || quantity <= 0 || unitPrice <= Money.ZERO || productName.isBlank() || productName.length > 100) {
             throw InvalidOrderException("주문 품목에는 상품 식별자, 이름과 양수 단가·수량이 필요합니다.")
         }
     }

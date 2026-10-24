@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 /**
- * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 조각의 [OrderCreator]로 만든다.
+ * [OrderFinder]를 실제 MySQL 위에서 확인한다. 읽을 주문은 기반 클래스의 `prepareOrder`가 같은 슬라이스의 [OrderCreator]로 만든다.
  * 정리와 flush/clear의 까닭은 [com.loopers.application.like.provided.LikerTest]와 같다.
  *
  * 상세의 값은 [com.loopers.adapter.webapi.v1.order.OrderApiTest]가 HTTP로 이미 붙들어 두므로 여기서는 상세의 조회 횟수와
@@ -40,13 +40,14 @@ class OrderFinderTest(
 
         val slice = orderFinder.findAll(user.id, OrderListRequest())
 
-        val listed = slice.content.single()
+        val (listed, paymentStatus) = slice.content.single()
         assertThat(slice.number).isEqualTo(OrderListRequest.DEFAULT_PAGE)
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
         assertThat(slice.hasNext()).isFalse()
         assertThat(listed.status).isEqualTo(OrderStatus.DRAFT)
         assertThat(listed.totalAmount).isEqualTo(Money(4_000))
         assertThat(listed.paidAmount).isNull()
+        assertThat(paymentStatus).isNull()
         assertThat(listed.confirmedAt).isNull()
         assertThat(listed.createdAt).isNotNull()
         assertThat(listed.lineItems.map { it.productId }).containsExactly(shirt.id, socks.id)
@@ -106,7 +107,7 @@ class OrderFinderTest(
             val slice = orderFinder.findAll(user.id, OrderListRequest(size = size))
 
             assertThat(slice.content).hasSize(size)
-            assertThat(slice.content.flatMap { it.lineItems }).hasSize(size)
+            assertThat(slice.content.flatMap { it.order.lineItems }).hasSize(size)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
@@ -123,8 +124,8 @@ class OrderFinderTest(
 
         val slice = orderFinder.findAll(OrderAdminListRequest())
 
-        assertThat(slice.content.map { it.id }).containsExactly(second, first)
-        assertThat(slice.content.map { it.userId }).containsExactly(theirs.id, mine.id)
+        assertThat(slice.content.map { it.order.id }).containsExactly(second, first)
+        assertThat(slice.content.map { it.order.userId }).containsExactly(theirs.id, mine.id)
         assertThat(slice.number).isZero()
         assertThat(slice.size).isEqualTo(OrderListRequest.DEFAULT_SIZE)
         assertThat(slice.hasNext()).isFalse()
@@ -146,8 +147,8 @@ class OrderFinderTest(
         entityManager.withStatistics { statistics ->
             val slice = orderFinder.findAll(OrderAdminListRequest())
 
-            assertThat(slice.content.map { it.lineItems.size }).containsExactly(1, 3)
-            assertThat(slice.content.flatMap { it.lineItems }.map { it.quantity }).containsExactly(2, 1, 1, 1)
+            assertThat(slice.content.map { it.order.lineItems.size }).containsExactly(1, 3)
+            assertThat(slice.content.flatMap { it.order.lineItems }.map { it.quantity }).containsExactly(2, 1, 1, 1)
             assertThat(statistics.prepareStatementCount).isEqualTo(2L)
         }
     }
@@ -172,7 +173,7 @@ class OrderFinderTest(
         prepareOrder(pants to 1, shirt to 2)
         entityManager.flushAndClear()
 
-        val found = orderFinder.findForAdmin(order.id)
+        val (found, paymentStatus) = orderFinder.findForAdmin(order.id)
 
         assertThat(found.id).isEqualTo(order.id)
         assertThat(found.userId).isEqualTo(user.id)
@@ -181,6 +182,7 @@ class OrderFinderTest(
         assertThat(found.lineItems.map { it.productId }).containsExactly(shirt.id, pants.id)
         assertThat(found.lineItems.map { it.lineAmount }).containsExactly(Money(2_000), Money(2_000))
         assertThat(found.paidAmount).isNull()
+        assertThat(paymentStatus).isNull()
         assertThat(found.confirmedAt).isNull()
     }
 
@@ -190,6 +192,28 @@ class OrderFinderTest(
         val exception = assertThrows<CoreException> { orderFinder.findForAdmin(Long.MAX_VALUE) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.ORDER_NOT_FOUND)
+    }
+
+    /**
+     * 결제수단이 PG인 주문에 결제가 없는 것은 데이터의 불일치다. 고객 상세, 두 목록, 관리자 상세 모두 그 주문을 결제 상태 없이 싣지 않고
+     * `PAYMENT_MISSING`이다(ADR 0028 규칙 1). 목록에서도 감추면 응답이 결제수단이 PG인데 결제 상태가 없는 주문이라는, 있을 수 없는 모양이 된다.
+     */
+    @Test
+    fun `every read of an order paying through the PG without its payment fails with PAYMENT_MISSING`() {
+        prepareOrder()
+        startPaymentWithoutPayment()
+        entityManager.flushAndClear()
+
+        listOf(
+            { orderFinder.findInfo(user.id, order.id) },
+            { orderFinder.findAll(user.id, OrderListRequest()) },
+            { orderFinder.findAll(OrderAdminListRequest()) },
+            { orderFinder.findForAdmin(order.id) },
+        ).forEach { read ->
+            val exception = assertThrows<CoreException> { read() }
+
+            assertThat(exception.errorType).isEqualTo(ErrorType.PAYMENT_MISSING)
+        }
     }
 
     private fun violationsOf(userId: Long, request: OrderListRequest): List<String> {

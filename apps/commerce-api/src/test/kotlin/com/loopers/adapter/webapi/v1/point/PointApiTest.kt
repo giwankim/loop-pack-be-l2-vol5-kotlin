@@ -130,7 +130,7 @@ class PointApiTest : BaseWebApiAdapterTest() {
         chargeBody.extractingPath("$.data.balance").isEqualTo(10)
         entityManager.flushAndClear()
 
-        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(10)
+        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(10.toBigInteger())
     }
 
     /** 숫자로 읽을 수 없거나 `Long` 범위 밖인 값은 다른 본문 오류와 같은 범용 400이다(설계 5.10). */
@@ -194,22 +194,19 @@ class PointApiTest : BaseWebApiAdapterTest() {
         assertUnchanged(pointAccount.id)
     }
 
-    /**
-     * 충전 후 잔액이 `Long` 범위를 넘으면 domain이 거절한다. 잔액은 그대로다(설계 5.7).
-     * 첫 충전은 준비가 아니라 검증하는 요청이다. `Long` 최댓값의 충전액을 받는지 본다.
-     */
     @Test
-    fun `a charge that overflows the balance returns 400 and keeps the balance`() {
+    fun `charging past Long MAX_VALUE returns and persists the exact balance`() {
         prepareUser()
         assertThat(requestCharge(user.id, json = """{"amount": ${Long.MAX_VALUE}}""")).hasStatusOk()
         entityManager.flushAndClear()
 
-        val body = assertThat(requestCharge(user.id, json = """{"amount": 1}""")).hasStatus(HttpStatus.BAD_REQUEST).bodyJson()
-        body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
-        body.extractingPath("$.meta.message").isEqualTo("금액 계산 결과가 표현 범위를 넘습니다.")
+        val body = assertThat(requestCharge(user.id, json = """{"amount": 1}""")).hasStatusOk().bodyJson()
+        body.extractingPath("$.data.balance").isEqualTo("9223372036854775808".toBigInteger())
         entityManager.flushAndClear()
 
-        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo(Long.MAX_VALUE)
+        assertThat(entityManager.balanceOf(pointAccount.id)).isEqualTo("9223372036854775808".toBigInteger())
+        assertThat(requestGetBalance(user.id)).hasStatusOk().bodyJson()
+            .extractingPath("$.data.balance").isEqualTo("9223372036854775808".toBigInteger())
     }
 
     /** 상품 가격의 10억 원 상한은 잔액에 적용되지 않는다(설계 5.7). */

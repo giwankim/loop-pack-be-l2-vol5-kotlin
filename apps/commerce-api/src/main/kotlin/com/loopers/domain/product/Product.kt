@@ -56,7 +56,7 @@ class Product(
         protected set
 
     @Embedded
-    @AttributeOverride(name = "amount", column = Column(name = "price", nullable = false))
+    @AttributeOverride(name = "amount", column = Column(name = "price", nullable = false, precision = 65, scale = 0))
     var price: Money = price
         protected set
 
@@ -98,6 +98,18 @@ class Product(
         }
 
         stock -= quantity
+    }
+
+    /**
+     * 결제에 실패한 주문이 예약해 둔 수량을 재고에 돌려준다(ADR 0026 규칙 3). 관리자가 그 사이 재고를 맞췄어도 그 위에 더한다(규칙 5).
+     * 수량이 잘못되거나 더한 재고가 `Int`를 넘으면 기존 재고를 유지한다. 넘치면 조용히 음수가 되지 않고 `ArithmeticException`이다.
+     */
+    fun restoreStock(quantity: Int) {
+        if (quantity <= 0) {
+            throw InvalidStockException("돌려줄 수량은 1개 이상이어야 합니다.")
+        }
+
+        stock = Math.addExact(stock, quantity)
     }
 
     /** 재고가 0이면 품절이다. */

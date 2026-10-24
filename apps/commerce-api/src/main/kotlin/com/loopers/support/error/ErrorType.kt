@@ -30,7 +30,23 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."),
     ORDER_PRODUCT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "ORDER_PRODUCT_NOT_AVAILABLE", "주문할 수 없는 상품입니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "재고가 부족합니다."),
-    INSUFFICIENT_POINTS(HttpStatus.CONFLICT, "INSUFFICIENT_POINTS", "포인트가 부족합니다."),
     ORDER_ALREADY_CONFIRMED(HttpStatus.CONFLICT, "ORDER_ALREADY_CONFIRMED", "이미 확정된 주문입니다."),
     POINT_ACCOUNT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "사용자의 포인트 계정이 없습니다."),
+
+    /**
+     * 결제. 결제수단이 PG인 주문에 결제가 없는 것은 데이터의 불일치라 포인트 계정 없음처럼 범용 500과 status·code를 공유한다(ADR 0028 규칙 1).
+     * 멱등 키의 두 거절은 고객이 키를 고쳐야 하는 409라서 code를 새로 갖는다(ADR 0025 규칙 3). 확정 전 주문의 대사도 고객이 먼저 확정해야
+     * 하는 409라서 code를 새로 갖는다.
+     */
+    IDEMPOTENCY_KEY_MISMATCH(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_MISMATCH", "다른 멱등 키로 결제를 시작한 주문입니다."),
+    IDEMPOTENCY_KEY_IN_USE(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_IN_USE", "다른 주문이 이미 쓴 멱등 키입니다."),
+    PAYMENT_NOT_STARTED(HttpStatus.CONFLICT, "PAYMENT_NOT_STARTED", "결제를 시작하지 않은 주문입니다."),
+    PAYMENT_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR.reasonPhrase, "주문의 결제가 없습니다."),
+
+    /**
+     * PG의 알림. PG는 답으로 다시 보낼지를 정하므로 둘 다 code를 새로 갖는다(ADR 0031 규칙 6). 모르는 PG 주문 번호는 다시 보내도 같은 404이고,
+     * 조회할 수 없던 알림은 다시 보내면 답이 바뀔 수 있는 503이다. 고객의 대사는 조회할 수 없어도 저장된 상태로 답하므로 이 503을 받지 않는다.
+     */
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "결제를 찾을 수 없습니다."),
+    PG_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_UNAVAILABLE", "PG에 결제를 조회할 수 없습니다. 잠시 뒤 다시 보내 주세요."),
 }

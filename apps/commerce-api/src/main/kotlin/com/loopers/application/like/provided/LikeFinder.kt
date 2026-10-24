@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 import org.springframework.data.domain.Slice
 
 /**
- * 좋아요 조각이 내주는 읽기. 고객의 내 좋아요 목록이 부른다.
+ * 좋아요 슬라이스가 내주는 읽기. 고객의 내 좋아요 목록이 부른다.
  */
 interface LikeFinder {
     /**

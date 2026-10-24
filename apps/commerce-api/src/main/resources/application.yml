@@ -29,6 +29,71 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+# 로컬 테스트 PG 어댑터(ADR 0022). 알림 주소(callback-url)는 설정에서만 온다.
+pg:
+  base-url: ${PG_BASE_URL}
+  callback-url: ${PG_CALLBACK_URL}
+  # PG 계약이 정한 합성 계정. 모든 요청의 X-USER-ID 헤더다.
+  user-id: 135135
+  # 느린 PG에 요청이 쌓이지 않게 한다. 풀은 전체와 경로당 모두 20개다. 응답 한도는 읽기마다의 한도이고 호출 전체의 기한이 아니다.
+  max-connections: 20
+  connection-request-timeout: 200ms
+  connect-timeout: 500ms
+  response-timeout: 1s
+
+# PG 조회의 재시도와 서킷 브레이커(ADR 0030). 두 조회가 pg-lookup 하나를 나눠 쓰고, 생성은 감싸지 않는다. 재시도가 브레이커를 감싸므로
+# HTTP 시도 하나가 브레이커 표본 하나다. 값의 근거는 ADR 0030 규칙 6의 표에 있다. 조회 하나의 위 끝은 2 × (200 ms + 500 ms + 1 s) + 100 ms = 3.5 s다.
+resilience4j:
+  circuitbreaker:
+    instances:
+      pg-lookup:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        # 시도 2번 × 조회 2번. 죽은 PG에 대사를 두 번 하면 열린다. HALF_OPEN의 탐색 수 이상이어야 탐색을 다 하기 전에 판정하지 않는다.
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        # 조회 하나가 시도 둘이다. 실패한 조회 하나는 다시 열고, 성공한 조회 둘은 닫는다.
+        permitted-number-of-calls-in-half-open-state: 2
+        # 기다린 뒤의 첫 호출이 HALF_OPEN으로 옮긴다. 옮기는 스케줄러 스레드가 없다.
+        automatic-transition-from-open-to-half-open-enabled: false
+        # 조회 불가만 실패다. null(PG 거래 없음)은 성공, PG 거래 여럿은 PG가 답한 것이라 성공도 실패도 아니다.
+        record-exceptions:
+          - com.loopers.application.payment.provided.PgUnavailableException
+        ignore-exceptions:
+          - com.loopers.application.payment.provided.MultiplePgTransactionsException
+        # The health indicator reports the state but never fails: product browsing, ordering and admin keep working while
+        # the PG is down, so an open breaker must not turn commerce-api DOWN (ADR 0030 rule 7).
+        register-health-indicator: true
+        allow-health-indicator-to-fail: false
+  retry:
+    instances:
+      pg-lookup:
+        # 첫 시도와 다시 시도 한 번.
+        max-attempts: 2
+        wait-duration: 100ms
+        # 열린 브레이커의 거절은 다시 시도하지 않고 곧바로 fallback이 조회 불가로 바꾼다.
+        retry-exceptions:
+          - com.loopers.application.payment.provided.PgUnavailableException
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+          - com.loopers.application.payment.provided.MultiplePgTransactionsException
+
+# Resilience4j's health contributor is off unless enabled. It shows each breaker that registers a health indicator under the
+# circuitBreakers component. The main health endpoint shows only the overall status, so the breaker's state is read at
+# /actuator/health/pg-lookup: a group of the breakers alone, with details, which exposes nothing about the DB or Redis.
+# The breaker metrics need no switch: the Boot module binds them to the meter registry on its own.
+management:
+  health:
+    circuitbreakers:
+      enabled: true
+  endpoint:
+    health:
+      group:
+        pg-lookup:
+          include: circuitBreakers
+          show-details: always
+
 ---
 spring:
   config:
@@ -38,6 +103,25 @@ spring:
     properties:
       hibernate:
         hbm2ddl.import_files: scalar-foreign-keys.sql
+      # 표를 지우기 전에, 가리키는 표보다 이름 차례가 뒤인 표의 스칼라 외래 키를 먼저 지운다(포인트·주문 설계 8.2).
+      jakarta.persistence.schema-generation:
+        drop-source: script-then-metadata
+        drop-script-source: scalar-foreign-keys-drop.sql
+
+# 로컬에서는 PG가 떠 있지 않다. 테스트에서는 테스트 PG(@EnableTestPg)가 base-url을 자기 주소로 덮는다.
+pg:
+  base-url: http://127.0.0.1:8082
+  callback-url: http://127.0.0.1:8080/api/v1/payments/callback
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+# 시간 초과 장면이 오래 걸리지 않게 줄인다. 게이트웨이 테스트(*PaymentGatewayTest)는 이것을 덮어 운영의 1 s로 돈다(ADR 0022 규칙 6).
+pg:
+  response-timeout: 200ms
 
 ---
 spring:

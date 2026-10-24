@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: accepted; superseded by ADR-0025 for confirm
 date: 2026-09-28
 ---
 
 # 요청 멱등성은 재시도하는 호출자가 생길 때 들인다
+
+> 2026-10-22 확정에 한해 [ADR 0025](./0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md)로 대체했다. "다시 들이는 조건"의 외부 결제 연동이 왔다. 결제를 시작하는 확정은 `Idempotency-Key`를 요구하고, 같은 키의 재요청에는 거절 대신 지금 저장된 상태로 답한다(결제 중이면 202, 끝났으면 200). 결제가 있는 주문에 다른 키는 409 `IDEMPOTENCY_KEY_MISMATCH`, 다른 주문이 쓴 키는 409 `IDEMPOTENCY_KEY_IN_USE`다. 409 `ORDER_ALREADY_CONFIRMED`는 포인트로 확정된 이전 주문에만 남는다. 아래 둘째 항목이 바뀐 원문이다. "대가"가 사라졌다고 적은 "같은 키의 동시 재요청이 유일 제약에 부딪혔을 때의 복구"도 확정에서 돌아왔다. 두 확정 전 주문이 같은 키로 겨루면 진 쪽의 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸리고, 조율하는 Service가 그것을 `IDEMPOTENCY_KEY_IN_USE`로 옮긴다. 충전과 주문 생성은 그대로 요청마다 새 충전, 새 주문이다.
 
 과제는 충전·주문 생성의 멱등성을 요구하지 않는다. 2주차 인터뷰(Q5·Q9·Q15·Q16·Q22)에서 스스로 들인 `Idempotency-Key`와 첫 성공 응답 재생([ADR 0004](./0004-replay-success-from-business-records.md))을 걷어 낸다. 지금의 호출자는 fixture와 테스트뿐이며 자동으로 다시 보내는 호출자가 없다. 키의 저장·재생·충돌 규칙이 막아 주는 위험보다 그것을 지키는 비용이 크다.
 

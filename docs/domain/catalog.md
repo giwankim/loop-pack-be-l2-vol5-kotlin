@@ -4,7 +4,7 @@
 
 표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
-이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockDeductor`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockReserver`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). 트랜잭션 밖에서 단계의 차례를 쥐고 조율하는 구현은 `Orchestrator`로 끝나고, 그것이 부르는 트랜잭션 단계의 빈은 같은 접두어에 `Steps`를 붙인다(`OrderPaymentOrchestrator`, `OrderPaymentSteps`, [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ## 브랜드 (Brand)
 
@@ -22,7 +22,7 @@
 
 - 이름은 공백뿐일 수 없고, 앞뒤 공백을 포함해 100자(`Brand.NAME_MAX_LENGTH`) 이하다. 받은 그대로 저장한다. 어기면 `InvalidNameException`.
 - 삭제되지 않은 브랜드끼리는 이름이 같을 수 없다. 같은지는 컬럼 collation이 정한다. 대소문자와 뒤 공백은 가리지 않고(`Loopers`, `loopers`, `Loopers `는 같은 이름), 앞 공백은 가린다(` Loopers`는 다른 이름). 이 규칙은 저장소를 봐야 하므로 브랜드 자신이 아니라 application이 등록·수정 전에 확인한다. 수정은 자기를 뺀 나머지 브랜드와 본다(대소문자만 바꾸는 수정이 자기 이름과 겹치지 않도록). 어기면 `BRAND_NAME_DUPLICATED`.
-- 삭제하면 그 브랜드의 삭제되지 않은 상품도 같은 트랜잭션에서 함께 삭제된다. 재고 0인 상품도 함께 삭제하고, 이미 삭제된 상품의 삭제 시각은 그대로 둔다. 브랜드는 자기 상품을 모르므로 application이 브랜드가 선언한 `ProductDeleter`로 상품 조각에 시킨다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)).
+- 삭제하면 그 브랜드의 삭제되지 않은 상품도 같은 트랜잭션에서 함께 삭제된다. 재고 0인 상품도 함께 삭제하고, 이미 삭제된 상품의 삭제 시각은 그대로 둔다. 브랜드는 자기 상품을 모르므로 application이 브랜드가 선언한 `ProductDeleter`로 상품 슬라이스에 시킨다([ADR 0017](../adr/0017-brand-delete-changes-brand-and-its-products-in-one-transaction.md)).
 - 삭제된 브랜드는 조회·수정·삭제·상품 등록의 대상이 아니다. 되돌리지 않는다.
 
 ### 행위
@@ -75,7 +75,7 @@
 | `isSoldOut()` | 재고가 0이면 참 | 없음 |
 | `delete()` | `deletedAt`을 찍는다 | 없음 |
 
-주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockDeductor.deduct`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 다른 재고·포인트·주문 변경과 같은 트랜잭션이다(ADR 0003). 확정은 상품을 읽지 않는다. `deduct`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 차감한 상품 가운데 하나라도 품절이 되면 `deduct`가 고객 상품 목록이 바뀌었다고 표시한다. 확정은 표시하지 않는다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
+주문 확정에서는 주문의 `OrderConfirmer`가 품목 전부의 상품 ID별 수량으로 상품의 `StockReserver.reserve`를 한 번 부르고, 그것이 상품마다 `deductStock`을 부른다. 확정의 TX A에서 주문과 결제의 변경과 같은 트랜잭션이다([ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md)). 포인트는 건드리지 않는다([ADR 0027](../adr/0027-point-payment-path-is-deleted.md)). 확정은 상품을 읽지 않는다. `reserve`가 모든 상품 행을 id 오름차순으로 `ProductFinder.findForUpdateOrNull`로 처음 읽으며 잠그고, 하나라도 없거나 삭제됐으면 차감 전에 `PRODUCT_NOT_FOUND`로 거절한다([ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)). 확정은 그 거절을 `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 예약한 상품 가운데 하나라도 품절이 되면 `reserve`가 고객 상품 목록이 바뀌었다고 표시한다. 확정은 표시하지 않는다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 브랜드 삭제에서는 브랜드의 `BrandRegister.delete`가 브랜드가 선언한 `ProductDeleter.deleteAllOfBrand`를 거쳐 그 브랜드의 삭제되지 않은 상품마다 `delete`를 부른다. 브랜드의 삭제와 같은 트랜잭션이다(ADR 0017).
 
 ### 협력
@@ -95,12 +95,12 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 | 이름 | 타입 | 뜻 |
 | --- | --- | --- |
-| `amount` | `Long` | 원 단위 정수 |
+| `amount` | `BigInteger` | 원 단위 임의 정밀도 정수 |
 
 ### 규칙
 
 - 0 이상이다. 어기면 `InvalidMoneyException`. 가격 범위는 `Product`가 따로 막고 `InvalidPriceException`을 던진다. 금액은 여러 개념이 함께 쓰므로 가격 예외를 빌리지 않는다.
-- 더하기·곱하기 결과가 `Long` 범위를 넘으면 `InvalidMoneyException`으로 거절한다. `Math.addExact`, `Math.multiplyExact`.
+- 더하기·곱하기는 `BigInteger`로 정확히 계산하며 `Long` 범위에 제한되지 않는다. 저장 열은 `DECIMAL(65,0)`이므로 저장되는 금액은 65자리 이하다.
 - 가진 값보다 큰 값을 뺄 수 없다. 어기면 `InvalidMoneyException`.
 
 ### 행위
@@ -112,7 +112,7 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 | `times(count)` | 수량을 곱한 새 값 |
 | `compareTo(other)` | 크기 비교 |
 
-이 조각에서는 `plus`, `minus`, `times`를 부르는 곳이 없다. 포인트와 주문에서 쓴다. 지금 두는 이유는 가격의 타입을 처음부터 금액으로 고정해 나중에 컬럼 매핑을 바꾸지 않기 위해서다.
+이 슬라이스에서는 `plus`, `minus`, `times`를 부르는 곳이 없다. 포인트와 주문에서 쓴다. 지금 두는 이유는 가격의 타입을 처음부터 금액으로 고정해 나중에 컬럼 매핑을 바꾸지 않기 위해서다.
 
 ## 좋아요 (Like)
 
@@ -157,14 +157,14 @@ TDD 대표 사례: 재고 -1로 만든 `Product`는 거절되고, 0은 허용되
 
 ### 협력
 
-- 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. 좋아요 조각의 `LikeQueryService`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
+- 상품 상세·수정·재고 변경: `ProductFinder`·`ProductRegister`가 상품을 읽은 뒤 상품이 선언한 `LikeCounter`에 좋아요 수를 묻고 `ProductInfo`에 싣는다. 좋아요 슬라이스의 `LikeQueryService`가 `countByProductId`로 세어 답한다. 등록은 새 상품에 좋아요가 없으므로 세지 않고 0이다.
 - 상품 목록: 조각의 상품 식별자 목록을 `LikeCounter`에 한 번 묻는다. `LikeQueryService`가 `findProductLikeCounts` 한 번으로 세고, 좋아요가 없는 상품은 0으로 채운다. 항목마다 세지 않는다(설계 5.28). 고객 목록은 캐시에 없을 때만 센다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 - 목록의 무효화: 좋아요 수가 고객 목록의 항목과 `likes_desc`의 차례에 실리므로 누르기와 취소는 상품의 표시 포트를 직접 부른다. 좋아요의 INSERT·DELETE가 나간 뒤, 커밋 바로 앞의 마지막 SQL로 상품 목록 revision을 올린다. 상품 행을 잠그지 않던 좋아요가 이 행에서 처음 줄을 서고, 3초 안에 차례가 오지 않으면 409 `CONCURRENT_REQUEST`다([ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md)).
 - 내 좋아요 목록: `LikeFinder`가 `ProductFinder.findAllLikedBy`로 상품 조각을 받는다. `ProductFinder`가 같은 방법으로 좋아요 수를 세어 상품 항목을 채운다. 차례는 좋아요를 누른 시각이고, 같으면 나중에 누른 쪽이 앞선다.
 
 ## 사용자 (User)와 요청자
 
-`User`는 실습용 데이터다. 이 조각에서 사용자를 만들거나 바꾸는 API는 없다. 요청자는 `X-USER-ID` 헤더에서 온 사용자 식별자다.
+`User`는 실습용 데이터다. 이 슬라이스에서 사용자를 만들거나 바꾸는 API는 없다. 요청자는 `X-USER-ID` 헤더에서 온 사용자 식별자다.
 
 ### 속성
 

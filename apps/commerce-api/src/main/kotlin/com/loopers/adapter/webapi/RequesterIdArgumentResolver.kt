@@ -18,7 +18,7 @@ import org.springframework.web.method.support.ModelAndViewContainer
  * - 헤더가 없거나 비었으면 요청자가 없는 것이므로 401이다.
  * - 숫자가 아니면 요청자가 없는 것이 아니라 요청이 잘못된 것이므로 400이다. `@RequestHeader`의 타입 변환이 던지던
  *   [MethodArgumentTypeMismatchException]을 그대로 던져 응답도 그때와 같다.
- * - 그 식별자의 사용자가 없으면 401이다. 사용자가 있는지는 사용자 조각의 [UserFinder]에 묻는다.
+ * - 그 식별자의 사용자가 없으면 401이다. 사용자가 있는지는 사용자 슬라이스의 [UserFinder]에 묻는다.
  *
  * 경로가 사용자를 품는 API는 없다. 요청자의 자원은 최상위 경로에 두므로 경로와 요청자를 견줄 일도 없다(설계 5.36).
  */

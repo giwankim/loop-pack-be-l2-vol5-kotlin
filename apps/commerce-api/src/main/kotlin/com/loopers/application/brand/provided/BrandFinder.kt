@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 import org.springframework.data.domain.Slice
 
 /**
- * 브랜드 조각이 내주는 읽기. 고객과 관리자의 브랜드 조회가 부른다.
+ * 브랜드 슬라이스가 내주는 읽기. 고객과 관리자의 브랜드 조회가 부른다.
  * 삭제된 브랜드는 없는 브랜드이므로 어느 읽기에도 나오지 않는다.
  */
 interface BrandFinder {

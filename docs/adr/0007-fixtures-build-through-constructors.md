@@ -5,14 +5,14 @@ date: 2026-09-30
 
 # 테스트 fixture는 생성자로 만들고 Instancio는 값만 뽑는다
 
-> 2026-10-03 [ADR 0010](./0010-entity-fixtures-built-by-instancio.md)으로 대체했다. 입력만 검사하는 엔티티(`Brand`, `Product`, `Like`)와 모든 Request는 Instancio가 만들고, 필드를 계산하는 엔티티(`Order`, `PointAccount`)만 계속 생성자를 부른다. 값 생성기 함수는 없어지고 범위는 fixture에 적힌다. 아래의 파일 위치·seed 보고·전체 이전은 그대로 유효하다. 다른 조각의 데이터를 그 조각의 저장소로 준비한다는 줄은 2026-10-07 [ADR 0012](./0012-tests-inherit-setup-from-abstract-base-classes.md)가 대체했다. 테스트는 기반 클래스의 `prepare` 메서드로 준비한다. `UserFixture`도 2026-10-08 ADR 0012에 따라 없어졌고, 사용자와 0원 계정은 `prepareUser()`가 저장한다.
+> 2026-10-03 [ADR 0010](./0010-entity-fixtures-built-by-instancio.md)으로 대체했다. 입력만 검사하는 엔티티(`Brand`, `Product`, `Like`)와 모든 Request는 Instancio가 만들고, 필드를 계산하는 엔티티(`Order`, `PointAccount`)만 계속 생성자를 부른다. 값 생성기 함수는 없어지고 범위는 fixture에 적힌다. 아래의 파일 위치·seed 보고·전체 이전은 그대로 유효하다. 다른 슬라이스의 데이터를 그 슬라이스의 저장소로 준비한다는 줄은 2026-10-07 [ADR 0012](./0012-tests-inherit-setup-from-abstract-base-classes.md)가 대체했다. 테스트는 기반 클래스의 `prepare` 메서드로 준비한다. `UserFixture`도 2026-10-08 ADR 0012에 따라 없어졌고, 사용자와 0원 계정은 `prepareUser()`가 저장한다.
 
 테스트 데이터를 손으로 적은 값 대신 fixture로 준비한다. 지금은 테스트 클래스마다 private 도우미가 따로 있다. `registerProduct`만 8곳에 다섯 가지 모양으로 있고 기본 가격과 재고도 제각각이다. 처음에는 Instancio(`instancio-junit` 6.1.0, 이미 모든 모듈의 테스트 경로에 있다)의 Bean Validation 연동으로 도메인 객체를 만들 생각이었다. 그러나 도메인에는 제약 애노테이션이 없고 규칙은 생성자에 있다([카탈로그 설계 5.18](../design/catalog.md)). Instancio가 엔티티를 만들면 그 생성자를 거치지 않는다. 그래서 fixture는 진짜 생성자를 부르고, Instancio는 엔티티의 상수가 정한 범위에서 값을 뽑는 데만 쓴다.
 
 - 애그리거트마다 `<Aggregate>Fixtures.kt` 하나를 그 애그리거트의 domain 테스트 패키지에 둔다(예: `src/test/.../domain/product/ProductFixtures.kt`). 한 파일에 세 가지가 함께 있다.
   - 규칙마다 하나인 값 생성기(`productName()`, `productPrice()` …). 범위는 엔티티 상수(`Product.NAME_MAX_LENGTH`, `MIN_PRICE_AMOUNT`, `MAX_PRICE_AMOUNT`)에서 읽는다. 가격과 포인트 금액은 범위가 달라 공용 `createMoney()`는 두지 않는다.
-  - 저장하지 않은 엔티티를 만드는 fixture(`createProduct(brand, …)`). domain 단위 테스트와 `@DataJpaTest`가 쓴다. Service·MockMvc 테스트도 다른 조각의 데이터를 그 조각의 저장소로 준비할 때 쓴다. 그래서 그 조각의 등록 규칙이 바뀌어도 상관없는 테스트가 깨지지 않는다.
-  - 유효한 Request를 만드는 fixture(`createProductAdminRegisterRequest(brandId, …)`). Service·MockMvc 테스트가 자기 조각의 Service를 불러 데이터를 준비할 때 쓴다.
+  - 저장하지 않은 엔티티를 만드는 fixture(`createProduct(brand, …)`). domain 단위 테스트와 `@DataJpaTest`가 쓴다. Service·MockMvc 테스트도 다른 슬라이스의 데이터를 그 슬라이스의 저장소로 준비할 때 쓴다. 그래서 그 슬라이스의 등록 규칙이 바뀌어도 상관없는 테스트가 깨지지 않는다.
+  - 유효한 Request를 만드는 fixture(`createProductAdminRegisterRequest(brandId, …)`). Service·MockMvc 테스트가 자기 슬라이스의 Service를 불러 데이터를 준비할 때 쓴다.
 - 모든 필드는 기본값을 생성하는 이름 있는 파라미터라 테스트가 덮어쓸 수 있다. 기본값은 동작을 바꾸는 경계를 피한다.
   - 이름과 가격은 엔티티 상수가 허용하는 전체 범위다.
   - 재고는 100..1,000이라 0(품절)이 나오지 않는다. 주문 수량은 1..10이고 한 주문의 상품은 서로 다르다.

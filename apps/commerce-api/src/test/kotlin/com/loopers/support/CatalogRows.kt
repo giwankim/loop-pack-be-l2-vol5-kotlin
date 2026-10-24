@@ -4,7 +4,7 @@ import jakarta.persistence.EntityManager
 import java.time.Instant
 
 /**
- * `brand`와 `product` 행의 삭제 시각을 저장 약속을 거치지 않고 SQL로 읽는다.
+ * `brand`와 `product` 행의 삭제 시각과 `product` 행의 재고를 저장 약속을 거치지 않고 SQL로 읽는다.
  *
  * 삭제됨은 브랜드나 상품이 삭제 시각을 가진 상태다(CONTEXT.md). 그런데 엔티티의 `@SQLRestriction("deleted_at is null")`이 모든 조회에 붙어
  * 삭제된 행을 숨기므로, 어느 포트로도 그 시각을 볼 수 없다. 그래서 SQL 제한을 지나는 native 조회로 읽는다.
@@ -25,4 +25,13 @@ fun EntityManager.productDeletedAt(productId: Long): Instant? {
     return createNativeQuery("select deleted_at from product where id = :id", Instant::class.java)
         .setParameter("id", productId)
         .singleResult as Instant?
+}
+
+/** `product` 행의 재고. 삭제된 상품의 재고도 어느 포트로도 읽히지 않으므로, 삭제가 재고를 바꾸지 않았는지는 이것으로 본다. */
+fun EntityManager.productStock(productId: Long): Int {
+    return (
+        createNativeQuery("select stock from product where id = :id")
+            .setParameter("id", productId)
+            .singleResult as Number
+    ).toInt()
 }

@@ -1,13 +1,9 @@
 package com.loopers.application.order
 
-import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreateRequest
 import com.loopers.application.order.provided.OrderCreator
-import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.required.OrderRepository
-import com.loopers.application.point.provided.PointDeductor
 import com.loopers.application.product.provided.ProductFinder
-import com.loopers.application.product.provided.StockDeductor
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderProduct
 import com.loopers.support.error.CoreException
@@ -15,14 +11,10 @@ import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
 
 /**
- * [OrderCreator]와 [OrderConfirmer]의 구현. 생성이 Request를 받으므로 검증하는 Service다.
- * 확정할 주문은 같은 조각의 [OrderFinder]로 얻고, 생성이 담을 상품이 주문할 수 있는 상품인지는 [ProductFinder]에 묻는다.
+ * [OrderCreator]의 구현. 생성이 Request를 받으므로 검증하는 Service다. 담을 상품이 주문할 수 있는 상품인지는 [ProductFinder]에 묻는다.
  * 요청자는 웹 경계가 이미 받아들였으므로 받은 `userId`를 믿는다(ADR 0015).
  *
- * 자기 주문만 바꾼다. 확정의 재고는 [StockDeductor]로, 포인트는 [PointDeductor]로 그 조각이 차감한다.
- * 두 포트의 Service도 확정의 트랜잭션에 참여하므로(기본 `REQUIRED`) 재고·잔액·확정 상태가 한 번에 커밋되고,
- * 어느 차감이 실패해도 모두 되돌아간다(ADR 0003).
- * [OrderFinder.findForUpdate]의 `readOnly`도 이 트랜잭션에 참여할 때는 걸리지 않는다. 그래서 잠가 읽어 둔 주문을 확정해도 변경이 커밋된다.
+ * 주문 확정은 PG를 트랜잭션 밖에서 불러야 하므로 이 Service가 아니라 [OrderPaymentOrchestrator]가 맡는다(ADR 0028 규칙 2).
  *
  * 주문할 수 있는 상품인지는 Validator로 옮기지 않는다. 생성은 그 상품의 이름·단가를 품목에 담으므로, 이 검사가 곧
  * 유스케이스가 쓸 데이터를 만든다(ADR 0014).
@@ -30,12 +22,8 @@ import com.loopers.support.stereotype.ValidatedApplicationService
 @ValidatedApplicationService
 class OrderModifyService(
     private val orderRepository: OrderRepository,
-    private val orderFinder: OrderFinder,
     private val productFinder: ProductFinder,
-    private val stockDeductor: StockDeductor,
-    private val pointDeductor: PointDeductor,
-) : OrderCreator,
-    OrderConfirmer {
+) : OrderCreator {
     /**
      * 품목마다 상품을 읽어 그 이름·단가를 담는다. 논리 삭제된 상품은 주문할 수 없다. 상품을 바꾸지 않으므로 잠그지 않는다.
      * 브랜드 삭제가 상품을 함께 삭제하므로 확정처럼 브랜드는 따로 보지 않는다(ADR 0017, 0018).
@@ -46,48 +34,5 @@ class OrderModifyService(
             OrderProduct(product.id, product.name, product.price, item.quantity)
         }
         return orderRepository.save(Order(userId, products))
-    }
-
-    /**
-     * 이미 확정된 본인 주문은 현재 카탈로그·잔액을 읽기 전에 거절한다. 첫 확정의 결과는 GET으로 읽는다(ADR 0005).
-     *
-     * 첫 문장이 주문 행을 잠가 읽으므로 같은 주문의 확정은 그 잠금에서 차례로 지나간다. 기다린 쪽은 잠금을 얻은 뒤 가장 최근에 커밋된
-     * 주문을 읽으므로, 앞선 확정이 커밋했으면 상품과 계정을 읽기 전에 `ORDER_ALREADY_CONFIRMED`로 거절된다(ADR 0019).
-     * 품목의 상품 행은 [StockDeductor]가 처음 읽을 때 잠그므로, 상품을 바꾸는 다른 쓰기(관리자의 수정·재고 수정·삭제, 브랜드 삭제의 연쇄)와는
-     * 한쪽이 커밋할 때까지 기다려 차례로 지나간다(ADR 0018).
-     * 계정은 [PointDeductor]가 잠가 읽으므로 잠금의 차례는 주문 → 상품(id 오름차순) → 포인트 계정이다.
-     */
-    override fun confirm(userId: Long, orderId: Long): Order {
-        val order = orderFinder.findForUpdate(userId, orderId)
-        order.ensureDraft()
-
-        deductStock(order)
-
-        pointDeductor.deduct(order.userId, order.totalAmount)
-
-        order.confirm()
-
-        return orderRepository.save(order)
-    }
-
-    /**
-     * 품목의 재고를 상품 조각이 한 번에 차감한다. 상품 행의 잠금과 없는 상품의 거절은 그 조각이 맡으므로 확정은 상품을 읽지 않는다(ADR 0018).
-     * 삭제와 재고 부족이 함께면 품목 차례와 무관하게 없는 상품의 거절이 앞선다(설계 15).
-     *
-     * 상품 조각은 없거나 삭제된 상품을 `PRODUCT_NOT_FOUND`로 거절한다. 주문에게는 주문할 수 없는 상품이므로 생성과 같은
-     * `ORDER_PRODUCT_NOT_AVAILABLE`로 옮긴다. 재고 부족은 그대로 지나간다. 상품 조각의 Service도 이 트랜잭션에 참여하므로 그 예외가
-     * 나오는 순간 트랜잭션은 되돌릴 것으로 표시된다. 잡은 예외는 삼키지 않고 반드시 다시 던진다.
-     */
-    private fun deductStock(order: Order) {
-        val quantities = order.lineItems.associate { item -> item.productId to item.quantity }
-
-        try {
-            stockDeductor.deduct(quantities)
-        } catch (e: CoreException) {
-            if (e.errorType == ErrorType.PRODUCT_NOT_FOUND) {
-                throw CoreException(ErrorType.ORDER_PRODUCT_NOT_AVAILABLE)
-            }
-            throw e
-        }
     }
 }

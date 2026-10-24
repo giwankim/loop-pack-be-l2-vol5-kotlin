@@ -1,6 +1,7 @@
 package com.loopers.adapter.webapi.v1.order
 
 import com.loopers.domain.order.OrderLineItem
+import java.math.BigInteger
 
 /**
  * 주문 품목 하나. 고객 응답과 관리자 응답이 함께 쓴다.
@@ -12,9 +13,9 @@ import com.loopers.domain.order.OrderLineItem
 data class OrderLineItemResponse(
     val productId: Long,
     val productName: String,
-    val unitPrice: Long,
+    val unitPrice: BigInteger,
     val quantity: Int,
-    val lineAmount: Long,
+    val lineAmount: BigInteger,
 ) {
     companion object {
         fun from(item: OrderLineItem): OrderLineItemResponse {

@@ -9,8 +9,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * [ProductListChangeMarker]와 브랜드가 선언한 [ProductListMarker]의 구현. 처음 표시할 때 트랜잭션에 [RaiseRevisionBeforeCommit]을
- * 하나 등록하고, 그것이 커밋 바로 앞에 revision을 올린다. 두 포트는 부르는 조각만 다르고 하는 일이 같으므로 한 메서드가 둘을 맡는다.
- * 상품 조각의 포트가 브랜드의 포트를 상속하지 않고 구현이 둘을 직접 맡는다(ADR 0017).
+ * 하나 등록하고, 그것이 커밋 바로 앞에 revision을 올린다. 두 포트는 부르는 슬라이스만 다르고 하는 일이 같으므로 한 메서드가 둘을 맡는다.
+ * 상품 슬라이스의 포트가 브랜드의 포트를 상속하지 않고 구현이 둘을 직접 맡는다(ADR 0017).
  *
  * `@ApplicationService`가 아니다. 그 표지의 `@Transactional`은 트랜잭션 밖의 표시에 새 트랜잭션을 열어 주므로,
  * 표시가 곧바로 커밋되어 아무것도 바꾸지 않은 채 revision만 오른다. 표시는 부르는 쓰기의 트랜잭션에만 합류해야 한다.
