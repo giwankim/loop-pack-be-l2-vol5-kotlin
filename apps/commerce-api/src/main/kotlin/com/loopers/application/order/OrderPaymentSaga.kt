@@ -1,6 +1,6 @@
 package com.loopers.application.order
 
-import com.loopers.application.order.OrderPaymentSteps.StartedPayment
+import com.loopers.application.order.OrderPaymentSagaSteps.StartedPayment
 import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderFinder
@@ -31,8 +31,11 @@ private val log = KotlinLogging.logger {}
  * ADR 0028 규칙 1). 대사는 고객이 부르는 것과 PG의 알림이 부르는 것 둘이고, 같은 조회와 같은 TX B를 쓴다(ADR 0031 규칙 3). 결제 슬라이스는
  * 주문을 모르므로 이 절차의 주인인 주문 슬라이스가 조율한다. 확정 요청이 카드를 담으므로 검증하는 Service다.
  *
+ * In Richardson's saga terms TX A is the compensatable step (a failed payment releases the stock reservation), the PG create is
+ * the pivot, and TX B is the retriable step. The saga itself holds no state. The state lives in the order and payment rows.
+ *
  * `NEVER`라서 트랜잭션 안에서 불리면 Spring이 `IllegalTransactionStateException`으로 거절한다. PG 호출이 트랜잭션에 드는 실수를
- * KDoc 대신 실행이 막는다(ADR 0028 규칙 2). TX A와 TX B는 [OrderPaymentSteps]의 메서드로 각자 커밋하고, 그 사이의 PG 호출은 어느
+ * KDoc 대신 실행이 막는다(ADR 0028 규칙 2). TX A와 TX B는 [OrderPaymentSagaSteps]의 메서드로 각자 커밋하고, 그 사이의 PG 호출은 어느
  * 트랜잭션에도 들지 않는다. 대사는 확정과 같은 TX B로 반영한다. 주문 슬라이스는 카드와 PG 거래를 결제 슬라이스의 부름 사이에서 옮길 뿐 읽지
  * 않는다(ADR 0028 규칙 5).
  *
@@ -41,8 +44,8 @@ private val log = KotlinLogging.logger {}
  * 대사는 답할 주문 정보가 없어 다시 읽지 않는다.
  */
 @ValidatedApplicationService(propagation = Propagation.NEVER)
-class OrderPaymentOrchestrator(
-    private val orderPaymentSteps: OrderPaymentSteps,
+class OrderPaymentSaga(
+    private val orderPaymentSagaSteps: OrderPaymentSagaSteps,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
     private val paymentFinder: PaymentFinder,
@@ -71,22 +74,21 @@ class OrderPaymentOrchestrator(
 
         val started = startPaymentOrRejectUsedKey(userId, orderId, idempotencyKey)
         val payment = started.payment ?: return started.info
-        val card = request.toCreditCard()
 
-        val transaction = try {
-            pgTransactionClient.create(payment, card)
+        val pgTransaction = try {
+            pgTransactionClient.create(payment, request.toCreditCard())
         } catch (e: PgRejectedException) {
-            return orderPaymentSteps.applyRejection(userId, orderId, e.rejection)
+            return orderPaymentSagaSteps.applyRejection(userId, orderId, e.rejection)
         } catch (e: PgOutcomeUnknownException) {
             log.warn { "PG 거래의 생성 결과를 몰라 결제를 결과 미확인으로 둔다. orderId=$orderId, cause=${e.message}" }
             return orderFinder.findInfo(userId, orderId)
         }
 
-        return orderPaymentSteps.applyTransaction(userId, orderId, transaction)
+        return orderPaymentSagaSteps.applyTransaction(userId, orderId, pgTransaction)
     }
 
     /**
-     * 주문을 잠그지 않고 읽어 소유와 상태를 본다. 결제 중인 주문만 결제의 PG 주문 번호로 PG에 조회한다([checkLookupNeeded], [retrieveTransaction]).
+     * 주문을 잠그지 않고 읽어 소유와 상태를 본다. 결제 중인 주문만 결제의 PG 주문 번호로 PG에 조회한다([isLookupNeeded], [retrieveTransaction]).
      *
      * 찾은 PG 거래는 확정과 같은 TX B의 PG 거래 입구로 간다. TX B는 주문을 잠근 뒤 결제를 다시 읽으므로, 확정의 TX B나 다른 대사가 같은 답을
      * 먼저 반영했으면 `Unchanged`라 주문도 예약도 다시 바뀌지 않는다(ADR 0024 규칙 5). 결제와 맞지 않는 PG 거래는 TX B 안의 `Conflicted`가
@@ -101,21 +103,21 @@ class OrderPaymentOrchestrator(
      */
     override fun reconcile(userId: Long, orderId: Long): OrderInfo {
         val order = orderFinder.find(userId, orderId)
-        if (!checkLookupNeeded(order)) {
+        if (!isLookupNeeded(order)) {
             return orderInfoAssembler.toInfo(order)
         }
 
-        val transaction = try {
+        val pgTransaction = try {
             retrieveTransaction(order)
         } catch (_: PgUnavailableException) {
             null
         }
 
-        if (transaction == null) {
+        if (pgTransaction == null) {
             return orderFinder.findInfo(userId, orderId)
         }
 
-        return orderPaymentSteps.applyTransaction(userId, orderId, transaction)
+        return orderPaymentSagaSteps.applyTransaction(userId, orderId, pgTransaction)
     }
 
     /**
@@ -127,28 +129,28 @@ class OrderPaymentOrchestrator(
      */
     override fun reconcile(orderId: Long) {
         val order = orderFinder.findForPg(orderId)
-        if (!checkLookupNeeded(order)) {
+        if (!isLookupNeeded(order)) {
             return
         }
 
-        val transaction = try {
+        val pgTransaction = try {
             retrieveTransaction(order)
         } catch (_: PgUnavailableException) {
             throw CoreException(ErrorType.PG_UNAVAILABLE)
         }
 
-        if (transaction == null) {
+        if (pgTransaction == null) {
             return
         }
 
-        orderPaymentSteps.applyTransaction(order.userId, orderId, transaction)
+        orderPaymentSagaSteps.applyTransaction(order.userId, orderId, pgTransaction)
     }
 
     /**
      * 두 대사가 PG에 물을 주문인지 본다. 결제 중인 주문만 묻는다. 확정 전 주문은 대사할 결제가 없어 `PAYMENT_NOT_STARTED`로 거절하고, 포인트로
      * 확정된 주문과 결제가 끝난 주문은 묻지 않는다. 거절할 수 있어서 이름이 Kotlin의 `check`처럼 `check`로 시작한다.
      */
-    private fun checkLookupNeeded(order: Order): Boolean {
+    private fun isLookupNeeded(order: Order): Boolean {
         return when (order.status) {
             OrderStatus.DRAFT -> throw CoreException(ErrorType.PAYMENT_NOT_STARTED)
             OrderStatus.CONFIRMED, OrderStatus.PAYMENT_FAILED -> false
@@ -182,7 +184,7 @@ class OrderPaymentOrchestrator(
      */
     private fun startPaymentOrRejectUsedKey(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         try {
-            return orderPaymentSteps.startPayment(userId, orderId, idempotencyKey)
+            return orderPaymentSagaSteps.startPayment(userId, orderId, idempotencyKey)
         } catch (e: DataIntegrityViolationException) {
             paymentValidator.validateForStart(idempotencyKey)
             throw e

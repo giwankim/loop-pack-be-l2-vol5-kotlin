@@ -7,7 +7,7 @@ import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.CommerceApiApplication
 import com.loopers.adapter.integration.pg.LocalPgGateway
-import com.loopers.application.order.OrderPaymentSteps
+import com.loopers.application.order.OrderPaymentSagaSteps
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
 import com.loopers.application.payment.provided.PaymentFinder
@@ -128,7 +128,7 @@ class OrderPaymentIntegrationTest(
 
     /** 외부 성공 뒤 내부 저장이 실패하는 자리([failTxBOnceAfterItsWrites]). stub이 없으면 실제 TX B 그대로다. */
     @MockkSpyBean
-    private lateinit var orderPaymentSteps: OrderPaymentSteps
+    private lateinit var orderPaymentSagaSteps: OrderPaymentSagaSteps
 
     private val pause = Pause()
 
@@ -1749,7 +1749,7 @@ class OrderPaymentIntegrationTest(
      * 트랜잭션은 프록시가 열었으므로 프록시가 감싼 spy에 stub한다. 그 뒤의 호출은 원래 호출 그대로다.
      */
     private fun failTxBOnceAfterItsWrites() {
-        val target = AopTestUtils.getUltimateTargetObject<OrderPaymentSteps>(orderPaymentSteps)
+        val target = AopTestUtils.getUltimateTargetObject<OrderPaymentSagaSteps>(orderPaymentSagaSteps)
         every { target.applyTransaction(any(), any(), any()) } answers {
             callOriginal()
             entityManager.flush()
