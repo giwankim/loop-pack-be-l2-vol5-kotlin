@@ -81,9 +81,9 @@ class OrderPaymentSagaSteps(
         order.startPayment()
         val payment = paymentRecorder.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
 
-        val saved = orderRepository.save(order)
+        val savedOrder = orderRepository.save(order)
 
-        return StartedPayment(OrderInfo(saved, payment.status), payment)
+        return StartedPayment(OrderInfo(savedOrder, payment.status), payment)
     }
 
     /**

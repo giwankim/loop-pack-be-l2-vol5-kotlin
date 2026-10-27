@@ -36,8 +36,8 @@ class OrderEventsKafkaConfig {
     }
 
     /**
-     * Runs each relay on a virtual thread of its own (ADR 0032 rule 3). It has no queue, so a broker that stops answering
-     * piles up no backlog in memory, and an `afterCommit` never meets a full queue's `TaskRejectedException`. The switch
+     * Runs each relay on a virtual thread of its own (ADR 0032 rule 3). It has no queue, so a broker that stops answering piles
+     * up no backlog in memory, and the hand-off after TX B commits never meets a full queue's `TaskRejectedException`. The switch
      * `spring.threads.virtual.enabled` stays off: it would move Tomcat and the listener containers onto virtual threads too.
      *
      * Being an `Executor` bean, it makes Boot back off from its own `applicationTaskExecutor`, which nothing in commerce-api

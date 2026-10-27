@@ -88,7 +88,7 @@ class OrderPaymentSaga(
     }
 
     /**
-     * 주문을 잠그지 않고 읽어 소유와 상태를 본다. 결제 중인 주문만 결제의 PG 주문 번호로 PG에 조회한다([isLookupNeeded], [retrieveTransaction]).
+     * 주문을 잠그지 않고 읽어 소유와 상태를 본다. 결제 중인 주문만 결제의 PG 주문 번호로 PG에 조회한다([checkLookupNeeded], [retrieveTransaction]).
      *
      * 찾은 PG 거래는 확정과 같은 TX B의 PG 거래 입구로 간다. TX B는 주문을 잠근 뒤 결제를 다시 읽으므로, 확정의 TX B나 다른 대사가 같은 답을
      * 먼저 반영했으면 `Unchanged`라 주문도 예약도 다시 바뀌지 않는다(ADR 0024 규칙 5). 결제와 맞지 않는 PG 거래는 TX B 안의 `Conflicted`가
@@ -104,7 +104,7 @@ class OrderPaymentSaga(
     override fun reconcile(userId: Long, orderId: Long): OrderInfo {
         val order = orderFinder.find(userId, orderId)
 
-        if (!isLookupNeeded(order)) {
+        if (!checkLookupNeeded(order)) {
             return orderInfoAssembler.toInfo(order)
         }
 
@@ -131,7 +131,7 @@ class OrderPaymentSaga(
     override fun reconcile(orderId: Long) {
         val order = orderFinder.findForPg(orderId)
 
-        if (!isLookupNeeded(order)) {
+        if (!checkLookupNeeded(order)) {
             return
         }
 
@@ -152,7 +152,7 @@ class OrderPaymentSaga(
      * 두 대사가 PG에 물을 주문인지 본다. 결제 중인 주문만 묻는다. 확정 전 주문은 대사할 결제가 없어 `PAYMENT_NOT_STARTED`로 거절하고, 포인트로
      * 확정된 주문과 결제가 끝난 주문은 묻지 않는다. 거절할 수 있어서 이름이 Kotlin의 `check`처럼 `check`로 시작한다.
      */
-    private fun isLookupNeeded(order: Order): Boolean {
+    private fun checkLookupNeeded(order: Order): Boolean {
         return when (order.status) {
             OrderStatus.DRAFT -> throw CoreException(ErrorType.PAYMENT_NOT_STARTED)
             OrderStatus.CONFIRMED, OrderStatus.PAYMENT_FAILED -> false

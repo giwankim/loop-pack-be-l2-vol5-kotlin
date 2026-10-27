@@ -3,6 +3,7 @@ package com.loopers.adapter.integration.kafka
 import com.loopers.application.order.required.OrderConfirmedEvent
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.kafka.support.SendResult
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Component
 import org.springframework.transaction.event.TransactionPhase
@@ -46,18 +47,19 @@ class OrderConfirmedKafkaRelay(
         val message = OrderConfirmedMessage.from(event)
 
         try {
-            kafkaTemplate.send(properties.topic, event.orderId.toString(), message).whenComplete { result, exception ->
-                if (exception != null) {
-                    logFailure(event, exception)
-                    return@whenComplete
-                }
+            kafkaTemplate.send(properties.topic, event.orderId.toString(), message)
+                .whenComplete { result: SendResult<Any, Any>?, exception: Throwable? ->
+                    if (exception != null) {
+                        logFailure(event, exception)
+                        return@whenComplete
+                    }
 
-                val metadata = result.recordMetadata
-                log.info {
-                    "Published the order confirmed event. eventId=${event.eventId}, topic=${metadata.topic()}, " +
-                        "partition=${metadata.partition()}, offset=${metadata.offset()}"
+                    val metadata = checkNotNull(result).recordMetadata
+                    log.info {
+                        "Published the order confirmed event. eventId=${event.eventId}, topic=${metadata.topic()}, " +
+                            "partition=${metadata.partition()}, offset=${metadata.offset()}"
+                    }
                 }
-            }
         } catch (e: Exception) {
             logFailure(event, e)
         }

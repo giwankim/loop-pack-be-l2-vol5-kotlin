@@ -176,8 +176,8 @@ class OrderEventPublishGapTest(
 
     /**
      * The publish has not happened yet: the relay's `send` is stopped after TX B committed and the confirmation answered. Until
-     * it goes on, the committed confirmation is readable and the broker has no record, so a process that stopped here would
-     * leave the order confirmed and the event lost. The relay has logged nothing yet, which shows it is still stopped. Released,
+     * it goes on, the committed confirmation is readable and the broker has no record, so a process that stopped here would leave
+     * the order confirmed and the event unpublished. The relay has logged nothing yet, which shows it is still stopped. Released,
      * the `send` fails as it would once `max.block.ms` passed. The scene waits for the relay's WARN line so the relay has
      * finished before the next scene, and asserts nothing about what becomes of the event: the gap is what it shows.
      */

@@ -17,7 +17,7 @@ data class OrderConfirmedEvent(
 ) {
     /**
      * Derived from the order and never stored (ADR 0032 rule 6). An order is confirmed only once, so a republished or
-     * redelivered event carries the same ID. No send count, clock reading or random value goes into it.
+     * redelivered event carries the same ID. No publish count, clock reading or random value goes into it.
      */
     val eventId: String
         get() = "order-confirmed:v1:$orderId"
