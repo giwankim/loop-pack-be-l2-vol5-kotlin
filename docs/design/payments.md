@@ -389,7 +389,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [148](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/148) | PG 주문 번호의 조회가 PG 거래를 하나까지 돌려준다(`retrieveTransactionByPgOrderId`, `MultiplePgTransactionsException`). `Payment.reconcile`은 PG 거래 하나를 받는다. PG 예외 넷을 `application.payment.provided`로 옮겼다. |
 | [149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149) | 주문의 네 상태, 결제수단(`PaymentMethod`), 세 전이, 계산되는 결제액, 새 `CK_ORDERS_ON_PAYMENT_STATE`. `orders.paid_amount`를 지웠다. |
 | [150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150) | `PgOrderIdGenerator`와 `Payment.start`, 멱등 키의 규칙과 `utf8mb4_bin` 열, `UK_PAYMENT_ON_PG_ORDER_ID`. |
-| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSagaSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. (2026-10-23: 조율하는 빈은 `OrderPaymentSaga`로 이름을 바꿨다. 11.1.) |
+| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. (2026-10-23: 조율하는 빈은 `OrderPaymentSaga`로 이름을 바꿨다. 11.1.) |
 | [152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152) | 결제가 실패하면 예약을 한 번 돌려준다(`StockRestorer`). 생성 전 거절을 TX B가 반영한다. (2026-10-23: 명세 147의 검토 뒤 `StockDeductor`와 `StockRestorer`를 `StockReserver` 하나로 합쳤다. 11.1.) |
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
