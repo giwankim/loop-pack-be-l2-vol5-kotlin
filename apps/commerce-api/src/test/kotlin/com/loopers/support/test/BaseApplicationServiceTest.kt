@@ -52,7 +52,8 @@ import java.util.UUID
  * 테스트마다 롤백으로 정리한다. `@Import`가 [com.loopers.CommerceApiContextTest]와 같아 그 컨텍스트를 나눠 쓴다.
  * [SqlCaptureConfig]는 `com.loopers.support`의 `captureSql`이 블록 안의 SQL을 잡게 한다. 블록 밖에서는 아무것도 하지 않는다.
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소,
- * 캐시 writer를 spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
+ * 캐시 writer, Kafka 템플릿을 spy하는 `@MockkSpyBean` 필드, 누락 구간 테스트가 Kafka 템플릿을 바꾸는 `@MockkBean` 필드,
+ * 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
  * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`뿐이다(ADR 0012).
  *
  * Every context here needs the Kafka broker, not only the tests that read it: the application declares its order events topic,

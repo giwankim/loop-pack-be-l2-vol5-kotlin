@@ -25,13 +25,11 @@ import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
+import com.loopers.support.TopicReader
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
-import org.apache.kafka.clients.consumer.Consumer
 import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.serialization.StringDeserializer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.ThrowingConsumer
 import org.awaitility.Awaitility.await
@@ -44,9 +42,7 @@ import org.junit.jupiter.params.provider.CsvSource
 import org.slf4j.LoggerFactory
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.dao.DataAccessResourceFailureException
-import org.springframework.kafka.core.DefaultKafkaConsumerFactory
 import org.springframework.kafka.core.KafkaTemplate
-import org.springframework.kafka.test.utils.KafkaTestUtils
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.json.JsonContent
 import org.springframework.test.util.AopTestUtils
@@ -64,11 +60,9 @@ import java.util.concurrent.TimeUnit
  *
  * The scenes run on the real MySQL, the test PG and the Kafka test container, and read what reached the broker. The relay
  * publishes after the commit on a thread of its own, so a scene waits a bounded time for the records it expects and then
- * reads on for a quiet period to see that nothing else follows ([publishedRecords]). The class names a topic of its own, since
- * the broker is one per JVM, and each scene reads it from where it ended before the scene. Reading from the earliest offset
- * would not do: `DatabaseCleanUp` truncates the tables after every test, so order IDs, and with them keys and eventIds,
- * start again at 1, and an earlier scene's records would pass for this one's. Every scene that asserts an envelope pins the
- * clock, so its `confirmedAt` is a literal.
+ * reads on for a quiet period to see that nothing else follows ([TopicReader.publishedRecords]). The class names a topic of
+ * its own, since the broker is one per JVM, and each scene reads it from where it ended before the scene ([TopicReader]).
+ * Every scene that asserts an envelope pins the clock, so its `confirmedAt` is a literal.
  *
  * The first two spies are the ones [OrderPaymentIntegrationTest] uses for the same scenes. A callback that beats confirm's
  * TX B runs from the PG-call spy right after the create is answered. Of two racing callbacks, the payment-modifying spy
@@ -95,15 +89,8 @@ class OrderEventPublishingTest(
         /** Where every confirming scene pins the clock. Already in microseconds, so the order keeps it as it is. */
         private val CONFIRMED_AT: Instant = Instant.parse("2026-10-27T01:02:03.123456Z")
 
-        /** How long a scene waits for the records it expects. Reading returns as soon as they are there. */
-        private val RECORD_WAIT: Duration = Duration.ofSeconds(10)
-
-        /**
-         * How long a scene reads on after the records it expects, so that a record it should not have published has time to
-         * arrive. Such a record would follow a commit the call has already returned from, after one hand-off to a virtual
-         * thread and one round trip to the broker in the same machine.
-         */
-        private val QUIET_WAIT: Duration = Duration.ofSeconds(1)
+        /** How long a scene waits for what the relay does on its own thread: the INFO line, or the thread that publishes. */
+        private val RELAY_WAIT: Duration = Duration.ofSeconds(10)
     }
 
     /** Where a callback runs after confirm's create is answered ([afterTheCreateIsAnswered]). Unstubbed, it is the real PG call. */
@@ -131,7 +118,7 @@ class OrderEventPublishingTest(
     private val testPg by lazy { TestPg(server) }
 
     /** Reads the class's topic from where it ended before the scene, so the scene sees only what it published. */
-    private lateinit var consumer: Consumer<String, String>
+    private lateinit var orderEvents: TopicReader
 
     /**
      * Logs from the Kafka adapter, where the relay logs each publish. The INFO line is logged on the producer's thread when
@@ -141,22 +128,9 @@ class OrderEventPublishingTest(
 
     private val kafkaAdapterLogger = LoggerFactory.getLogger("com.loopers.adapter.integration.kafka") as Logger
 
-    /**
-     * The consumer is assigned every partition of the topic and placed at its end, and `position` makes it take those offsets
-     * now rather than at the first read, when the scene's records are already there. It joins no group and commits nothing,
-     * so the group name `KafkaTestUtils` asks for is never used.
-     */
     @BeforeEach
     fun readTheTopicFromItsEnd() {
-        val properties = KafkaTestUtils.consumerProps(
-            kafkaProperties.bootstrapServers.joinToString(","),
-            orderEventsProperties.topic,
-        )
-        consumer = DefaultKafkaConsumerFactory(properties, StringDeserializer(), StringDeserializer()).createConsumer()
-        val partitions = consumer.partitionsFor(orderEventsProperties.topic).map { TopicPartition(it.topic(), it.partition()) }
-        consumer.assign(partitions)
-        consumer.seekToEnd(partitions)
-        partitions.forEach { consumer.position(it) }
+        orderEvents = TopicReader(kafkaProperties.bootstrapServers, orderEventsProperties.topic)
     }
 
     @BeforeEach
@@ -166,8 +140,8 @@ class OrderEventPublishingTest(
     }
 
     @AfterEach
-    fun closeTheConsumer() {
-        consumer.close()
+    fun closeTheTopicReader() {
+        orderEvents.close()
     }
 
     @AfterEach
@@ -193,7 +167,7 @@ class OrderEventPublishingTest(
 
         assertThat(confirmed.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(confirmed.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
-        val records = publishedRecords(expected = 1)
+        val records = orderEvents.publishedRecords(expected = 1)
         assertThat(records).hasSize(1)
         assertThat(records.single().key()).isEqualTo(order.id.toString())
         assertThat(records.single().headers().toArray()).isEmpty()
@@ -236,7 +210,7 @@ class OrderEventPublishingTest(
 
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
-        assertOnlyTheConfirmation(publishedRecords(expected = 1), quantity = 2)
+        assertOnlyTheConfirmation(orderEvents.publishedRecords(expected = 1), quantity = 2)
         assertThat(testPg.lookupCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
@@ -255,7 +229,7 @@ class OrderEventPublishingTest(
         orderPaymentReconciler.reconcile(order.id)
         orderPaymentReconciler.reconcile(order.id)
 
-        assertOnlyTheConfirmation(publishedRecords(expected = 1), quantity = 2)
+        assertOnlyTheConfirmation(orderEvents.publishedRecords(expected = 1), quantity = 2)
         inNewTransaction {
             assertThat(orderFinder.find(user.id, order.id).status).isEqualTo(OrderStatus.CONFIRMED)
         }
@@ -284,7 +258,7 @@ class OrderEventPublishingTest(
         pause.release()
         first.await()
         duplicate.await()
-        assertOnlyTheConfirmation(publishedRecords(expected = 1), quantity = 2)
+        assertOnlyTheConfirmation(orderEvents.publishedRecords(expected = 1), quantity = 2)
         assertThat(testPg.lookupCount()).isEqualTo(2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
@@ -310,7 +284,7 @@ class OrderEventPublishingTest(
         var recordsAfterCallback: List<ConsumerRecord<String, String>> = emptyList()
         afterTheCreateIsAnswered {
             orderPaymentReconciler.reconcile(order.id)
-            recordsAfterCallback = publishedRecords(expected = 1)
+            recordsAfterCallback = orderEvents.publishedRecords(expected = 1)
         }
         clock.pin(CONFIRMED_AT)
 
@@ -318,7 +292,7 @@ class OrderEventPublishingTest(
 
         assertOnlyTheConfirmation(recordsAfterCallback, quantity = 2)
         assertThat(confirmed.order.status).isEqualTo(OrderStatus.CONFIRMED)
-        assertThat(publishedRecords(expected = 0)).isEmpty()
+        assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
@@ -374,7 +348,7 @@ class OrderEventPublishingTest(
 
         assertThat(answered.order.status).isEqualTo(orderStatus)
         assertThat(answered.paymentStatus).isEqualTo(paymentStatus)
-        assertThat(publishedRecords(expected = 0)).isEmpty()
+        assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
@@ -398,14 +372,14 @@ class OrderEventPublishingTest(
         failTxBOnceAfterItsWrites()
         clock.pin(CONFIRMED_AT)
         assertThrows<DataAccessResourceFailureException> { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
-        assertThat(publishedRecords(expected = 0)).isEmpty()
+        assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
         testPg.hasTransactions(pgOrderId, succeededTransaction(pgOrderId, amount = 2_000))
 
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(reconciled.order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(reconciled.paymentStatus).isEqualTo(PaymentStatus.SUCCESS)
-        assertOnlyTheConfirmation(publishedRecords(expected = 1), quantity = 2)
+        assertOnlyTheConfirmation(orderEvents.publishedRecords(expected = 1), quantity = 2)
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
@@ -419,7 +393,7 @@ class OrderEventPublishingTest(
         confirmOrder(testPg, second)
 
         val requirements = listOf(first, second).map { confirmed -> recordOf(confirmed) }
-        assertThat(publishedRecords(expected = 2)).satisfiesExactlyInAnyOrder(*requirements.toTypedArray())
+        assertThat(orderEvents.publishedRecords(expected = 2)).satisfiesExactlyInAnyOrder(*requirements.toTypedArray())
     }
 
     /**
@@ -431,7 +405,7 @@ class OrderEventPublishingTest(
         prepareOrder()
         confirmOrder(testPg)
 
-        val record = publishedRecords(expected = 1).single()
+        val record = orderEvents.publishedRecords(expected = 1).single()
 
         assertThat(relayInfoLines().map { it.formattedMessage }).containsExactly(
             "Published the order confirmed event. eventId=order-confirmed:v1:${order.id}, topic=${record.topic()}, " +
@@ -450,10 +424,10 @@ class OrderEventPublishingTest(
 
         confirmOrder(testPg)
 
-        val thread = publishingThread.get(RECORD_WAIT.toMillis(), TimeUnit.MILLISECONDS)
+        val thread = publishingThread.get(RELAY_WAIT.toMillis(), TimeUnit.MILLISECONDS)
         assertThat(thread).isNotSameAs(Thread.currentThread())
         assertThat(thread.isVirtual).isTrue()
-        assertThat(publishedRecords(expected = 1)).hasSize(1)
+        assertThat(orderEvents.publishedRecords(expected = 1)).hasSize(1)
     }
 
     /** With no transaction to deliver after, the port refuses the call before anything is published (ADR 0032 rule 3). */
@@ -466,19 +440,6 @@ class OrderEventPublishingTest(
         )
 
         assertThrows<IllegalStateException> { orderEventPublisher.publish(event) }
-    }
-
-    /**
-     * Every record published on the class's topic since the scene began, which a scene that is right has exactly [expected]
-     * of. Waits up to [RECORD_WAIT] for that many, since the relay publishes after the call returned, then reads on for
-     * [QUIET_WAIT] so that a record the scene should not publish has time to arrive. A scene that expects none waits only for
-     * the quiet period.
-     */
-    private fun publishedRecords(expected: Int): List<ConsumerRecord<String, String>> {
-        val awaited = if (expected == 0) emptyList() else KafkaTestUtils.getRecords(consumer, RECORD_WAIT, expected).toList()
-        val further = KafkaTestUtils.getRecords(consumer, QUIET_WAIT, 1).toList()
-
-        return awaited + further
     }
 
     /**
@@ -517,7 +478,7 @@ class OrderEventPublishingTest(
      * the consumer, so the line may trail the record.
      */
     private fun relayInfoLines(): List<ILoggingEvent> {
-        await().atMost(RECORD_WAIT).until { relayInfoLinesSoFar().isNotEmpty() }
+        await().atMost(RELAY_WAIT).until { relayInfoLinesSoFar().isNotEmpty() }
 
         return relayInfoLinesSoFar()
     }

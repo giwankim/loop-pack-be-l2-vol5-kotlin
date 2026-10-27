@@ -31,12 +31,14 @@ class OrderConfirmedKafkaRelay(
      * future failed. That future ends when the broker acknowledges the record or the producer gives up on it, at
      * `delivery.timeout.ms` at the latest, so no shorter wait is set (order-events design 5).
      *
-     * It returns `Unit` on purpose. Spring runs `afterCommit` before it releases TX B's connection, so a synchronous publish
-     * would hold that connection for the round trip to the broker, and its exception would leave `commit()` and turn a
-     * committed confirmation into a 500. `@Async` hands the call to the executor and returns at once. The exception of an
-     * `@Async` method that returns nothing goes to Spring's default `AsyncUncaughtExceptionHandler`, which logs it at ERROR
-     * with the method and the stack trace, though not the argument: the backstop for a bug in the relay itself, such as
-     * building the envelope. A method that returned a `Future` would put that exception into a future nobody reads.
+     * It returns `Unit` on purpose. Spring runs an after-commit listener in TX B's `afterCompletion`, before it releases TX B's
+     * connection, so a synchronous publish would hold that connection for the round trip to the broker, and a `send` waiting
+     * for the topic's metadata would hold the confirming thread for up to `max.block.ms`. Its exception would not reach the
+     * confirmation either way: Spring logs an exception from `afterCompletion` at ERROR and goes on. `@Async` hands the call
+     * to the executor and returns at once. The exception of an `@Async` method that returns nothing goes to Spring's default
+     * `AsyncUncaughtExceptionHandler`, which logs it at ERROR with the method and the stack trace, though not the argument:
+     * the backstop for a bug in the relay itself, such as building the envelope. A method that returned a `Future` would put
+     * that exception into a future nobody reads.
      */
     @Async(OrderEventsKafkaConfig.ORDER_EVENTS_EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
