@@ -57,8 +57,10 @@ class OrderPaymentSagaSteps(
      */
     fun startPayment(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         val order = orderFinder.findForUpdate(userId, orderId)
+
         if (order.paysThroughPg) {
             val payment = paymentFinder.findByOrder(order.id)
+
             if (!payment.isStartedWith(idempotencyKey)) {
                 throw CoreException(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
             }
@@ -68,7 +70,9 @@ class OrderPaymentSagaSteps(
 
         order.ensureDraft()
         paymentValidator.validateForStart(idempotencyKey)
+
         reserveStock(order)
+
         order.startPayment()
         val payment = paymentRecorder.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
 
@@ -86,6 +90,7 @@ class OrderPaymentSagaSteps(
      */
     fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
+
         val reconcileResult = paymentRecorder.reconcile(orderId = order.id, transaction = transaction)
 
         return applyResult(order, reconcileResult)
@@ -97,6 +102,7 @@ class OrderPaymentSagaSteps(
      */
     fun applyRejection(userId: Long, orderId: Long, rejection: PgRejection): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
+
         val reconcileResult = paymentRecorder.reject(orderId = order.id, rejection = rejection)
 
         return applyResult(order, reconcileResult)
@@ -127,9 +133,9 @@ class OrderPaymentSagaSteps(
             }
         }
 
-        val saved = orderRepository.save(order)
+        val savedOrder = orderRepository.save(order)
 
-        return orderInfoAssembler.toInfo(saved)
+        return orderInfoAssembler.toInfo(savedOrder)
     }
 
     /**

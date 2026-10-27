@@ -103,6 +103,7 @@ class OrderPaymentSaga(
      */
     override fun reconcile(userId: Long, orderId: Long): OrderInfo {
         val order = orderFinder.find(userId, orderId)
+
         if (!isLookupNeeded(order)) {
             return orderInfoAssembler.toInfo(order)
         }
@@ -129,6 +130,7 @@ class OrderPaymentSaga(
      */
     override fun reconcile(orderId: Long) {
         val order = orderFinder.findForPg(orderId)
+
         if (!isLookupNeeded(order)) {
             return
         }
