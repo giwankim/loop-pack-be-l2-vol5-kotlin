@@ -7,6 +7,8 @@ import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.support.DatabaseCleanUp
 import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.test.context.event.ApplicationEvents
+import org.springframework.test.context.event.RecordApplicationEvents
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Propagation
@@ -37,8 +39,13 @@ import kotlin.reflect.KClass
  *   읽는다. 롤백하는 테스트는 revision을 올리지 않으므로 캐시의 무효화를 보는 테스트가 이 기반을 쓴다(ADR 0020).
  *
  * `prepare`가 돌려준 엔티티는 그 트랜잭션이 끝나 분리되어 있다. 지연 연관(`Product.brand` 등)을 건드리지 않는다.
+ *
+ * It also records the application events each test publishes ([applicationEvents]), so a test can read what a port
+ * published. An event is recorded when it is published, so the record keeps it even if its transaction then rolls back.
+ * Recording adds a listener to the cached context and leaves its cache key as it is.
  */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@RecordApplicationEvents
 abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest() {
     companion object {
         /** 멈춘 쪽을 풀지 못한 테스트에서도 정리가 끝나도록, 다른 스레드의 호출을 기다리는 한도. */
@@ -67,6 +74,15 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
 
     @Autowired
     private lateinit var productListCacheKeyGenerator: ProductListCacheKeyGenerator
+
+    /**
+     * The application events published during the current test, on its own thread or on a thread it starts
+     * ([inAnotherThread], [runConcurrently]): a new thread inherits the recording. An event published on a thread that
+     * existed before the test, such as a pool's, is not recorded. Spring scopes the record to the test method, so it cannot
+     * be passed to a test class's constructor and is a field here, like [entityManager].
+     */
+    @Autowired
+    protected lateinit var applicationEvents: ApplicationEvents
 
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
