@@ -63,7 +63,7 @@ Two commits, fast-forwarded onto `feat/order-events` on top of `23a9244`:
 
 ## Issue 168: commerce-api talks to a Kafka test container and declares the order-events topic
 
-Recorded 2026-10-27 from the closing comment drafted for [issue 168](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/168). The rule is rule 9 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) (the application declares its topic). The decisions are the "의존성과 설정" section and the "테스트 기반의 사실" notes of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167), and sections 7 and 8 of the [order events design](../design/order-events.md). The ticket asked to create this file with its comment as the first section; issue 169 landed first and created it, so this is the second. The code is:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/168#issuecomment-6436994028) of [issue 168](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/168). The rule is rule 9 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) (the application declares its topic). The decisions are the "의존성과 설정" section and the "테스트 기반의 사실" notes of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167), and sections 7 and 8 of the [order events design](../design/order-events.md). The ticket asked to create this file with its comment as the first section; issue 169 landed first and created it, so this is the second. The code is:
 
 - [`KafkaTestContainersConfig`](../../modules/kafka/src/testFixtures/kotlin/com/loopers/testcontainers/KafkaTestContainersConfig.kt): the broker, one per JVM, imported explicitly
 - [`kafka.yml`](../../modules/kafka/src/main/resources/kafka.yml): `acks: all`, and a `test` document with no broker address and with `spring.kafka.admin.fail-fast`
@@ -74,10 +74,10 @@ Recorded 2026-10-27 from the closing comment drafted for [issue 168](https://git
 
 ### Landed
 
-Two commits on `worktree-issue-168`, rebased onto `feat/order-events`' `6369374` (issue 169's tip):
+Two commits, rebased onto issue 169's `6369374` and fast-forwarded onto `feat/order-events`:
 
 - [`264cb0d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/264cb0d) is the code, the tests, `kafka.yml`, and the standards, ADR and design notes. No event is published yet; this ticket lays the rails.
-- The second commit appends this section.
+- [`99fbaf6`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/99fbaf6) appends this section to the week 6 writing material.
 
 ### Acceptance criteria
 
