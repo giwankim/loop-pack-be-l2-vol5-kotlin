@@ -200,7 +200,7 @@ The two-axis review (standards and spec) ran on the working tree before the comm
 
 ## Issue 171: an async after-commit relay publishes the order confirmed event to Kafka and observes the publish
 
-Recorded 2026-10-27 from the closing comment of [issue 171](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/171). The rules are rules 3–6 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the Spring event relayed after the commit, why the relay is asynchronous, the publish observed and not awaited, and the key and envelope derived from the order. The decisions are the "어댑터" section of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and sections 2, 4, 5 and 8 of the [order events design](../design/order-events.md). The code is:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/171#issuecomment-6439907100) of [issue 171](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/171). The rules are rules 3–6 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the Spring event relayed after the commit, why the relay is asynchronous, the publish observed and not awaited, and the key and envelope derived from the order. The decisions are the "어댑터" section of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and sections 2, 4, 5 and 8 of the [order events design](../design/order-events.md). The code is:
 
 - [`OrderConfirmedKafkaRelay`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderConfirmedKafkaRelay.kt): `@Async("orderEventsExecutor") @TransactionalEventListener(AFTER_COMMIT)`, `send()` in `try/catch`, `whenComplete` logging one INFO or one WARN
 - [`OrderConfirmedMessage`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderConfirmedMessage.kt): the envelope of design section 2
@@ -211,10 +211,10 @@ Recorded 2026-10-27 from the closing comment of [issue 171](https://github.com/g
 
 ### Landed
 
-Committed on `feat/order-events` on top of `c56cfd7`:
+Two commits on `feat/order-events` on top of `c56cfd7`, the tip after issue 170 landed, pushed to origin:
 
 - [`5d426ae`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/5d426ae) is the code, the tests, the standards bullet and the dated notes in ADR 0012, ADR 0032 and the design doc.
-- The commit after it records this comment in this writing-material file.
+- [`9f3808a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9f3808a) records this comment in this writing-material file.
 
 ### Acceptance criteria
 
@@ -242,9 +242,9 @@ Each mutation failed only the scene meant to catch it, and the file was restored
 ### Decisions made while implementing
 
 - **No producer mapper is configured.** `modules:kafka` declares `JacksonJsonSerializer` by class name, so it uses spring-kafka 4.1.1's default `JsonMapper` (Jackson 3). Jackson 3 writes `Instant` with `ISO_INSTANT`, and the pinned `2026-10-27T01:02:03.123456Z` went out as written. `ISO_INSTANT` writes the fraction in groups of three as far as needed. A time whose micros end in `000` goes out as `…03.100Z`, and a whole second as `…03Z`. Precision is unchanged, and ISO-8601 parsers read all three forms, so design section 2 now says the consumer compares `confirmedAt` as an instant, not as a string.
-- **The broker reader does not use a unique group and `earliest`.** A class's tests share its topic, and `DatabaseCleanUp`'s `TRUNCATE` restarts `AUTO_INCREMENT`. Order IDs, and so keys and eventIds, start again at 1 in every test, so reading from the earliest offset would pass earlier scenes' records off as this one's. Before each scene, the consumer is assigned every partition and placed at its end, and `position` fixes those offsets before the scene runs. Without the group protocol, the race that `earliest` guards against, an assignment that lands after the record, cannot happen. The group name `consumerProps` asks for is never used. `CODING_STANDARDS.md` and design section 8 record this.
+- **The broker reader does not use a unique group and `earliest`.** A class's tests share its topic, and `DatabaseCleanUp`'s `TRUNCATE` restarts `AUTO_INCREMENT`. Order IDs, and so keys and eventIds, start again at 1 in every test, so reading from the earliest offset would pass earlier scenes' records off as this one's. Before each scene, the consumer is assigned every partition and placed at its end, and `position` fixes those offsets before the scene runs. Without the group protocol, the race that `earliest` guards against, an assignment that lands after the record, cannot happen. The group name `consumerProps` asks for is never used. `CODING_STANDARDS.md`, design section 8 and a dated note under spec 167's "기반" testing decision record this.
 - **Waits:** 10 s for the records a scene expects, with the read returning as soon as they arrive, then a 1 s quiet period. A wrong record would follow a commit the call has already returned from, after one hand-off and one round trip to the local broker. A quiet period that is too short can only let a bug pass. It cannot make a correct scene fail. No scene sleeps or asserts elapsed time.
-- **The scenes read the broker instead of recorded Spring events.** Issue 170 left this choice to 171, and spec 167's testing decisions say not to assert how many Spring events were published. Recorded events are a detail of the adapter, the port → Spring event hop, which week 7's outbox may change. The broker is what other services see. No test read `applicationEvents` any more, so `@RecordApplicationEvents` and the field left the committing base, following the rule against helpers that no test uses. The two bases now match `4779179`.
+- **The scenes read the broker instead of recorded Spring events.** Issue 170 left this choice to 171, and spec 167's testing decisions say not to assert how many Spring events were published. Recorded events are a detail of the adapter, the port → Spring event hop, which week 7's outbox may change. The broker is what other services see. No test read `applicationEvents` any more, so `@RecordApplicationEvents` and the field left the committing base, following the rule against helpers that no test uses. The two bases now match `4779179`, and spec 167's "차례" section has a dated note saying so.
 - **The envelope is built outside the `try`.** A bug in the mapping goes to Spring's default `AsyncUncaughtExceptionHandler` as an ERROR and is not mistaken for a failed publish. That handler logs the method and the stack trace but not the argument (`SimpleAsyncUncaughtExceptionHandler`, spring-aop 7.0.9). ADR 0032 and design section 4 had said it logs the argument, and both now carry a dated correction.
 - **The executor is an `Executor` bean, so Boot 4.1 backs off from its own `applicationTaskExecutor`** (`spring.task.execution.mode` defaults to `auto`). Nothing in commerce-api uses it: no MVC handler returns an async type, and no other method is `@Async`. `TaskExecutorAdapter` has no `close`, so nothing waits for running relays when the context closes. A relay that has not published by then falls in the publish gap of design section 6.
 - **Log text says "publish".** 발행하다 lists "send" under _Avoid_, so `send` appears only as the name of the Kafka method.
@@ -268,8 +268,7 @@ These findings were not applied:
 
 ### Left for later
 
-- Spec 167's "기반" bullet still says the consumer uses a unique group and `earliest`. Only design section 8 and `CODING_STANDARDS.md` record the change, so the spec could get a dated note.
-- Spec 167's seam 1 lists "포인트로 확정된 주문(fixture)에는 record가 없다". It is not among 171's criteria, and neither 172 nor 173 plans it.
+- Spec 167's seam 1 lists "포인트로 확정된 주문(fixture)에는 record가 없다". It is not among 171's criteria, and neither 172 nor 173 plans it. Confirming such an order is refused in TX A with `ORDER_ALREADY_CONFIRMED`, so it never reaches TX B. A dated note on the spec leaves the scene to the review that closes it.
 - Whether `confirmedAt` should always carry six fraction digits. A `@JsonFormat` on `OrderConfirmedMessage.Payload.confirmedAt` would do it without touching the shared template.
 - Issue 172 reads the broker too. By design section 8's rule ("같은 준비가 두 테스트에서 반복되면 그때 fixture에 도우미를 둔다"), that is when the reader leaves `OrderEventPublishingTest` for a shared helper.
 - The relay's virtual threads have no name, so the WARN from its `catch` shows an empty thread name.
