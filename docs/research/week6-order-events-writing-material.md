@@ -124,7 +124,7 @@ Two commits, rebased onto issue 169's `6369374` and fast-forwarded onto `feat/or
 
 ## Issue 170: the saga step publishes the first confirmation through a required port inside TX B
 
-Drafted 2026-10-27 as the closing comment of [issue 170](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/170). It has not been posted yet. The rules are rules 1–3, 6 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the port, the event built in TX B, the adapter's check and Spring event, the derived event ID, and the cases that publish nothing. The decisions are the "포트와 이벤트" and "어댑터" sections of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). The code is:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/170#issuecomment-6437905735) of [issue 170](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/170). The rules are rules 1–3, 6 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the port, the event built in TX B, the adapter's check and Spring event, the derived event ID, and the cases that publish nothing. The decisions are the "포트와 이벤트" and "어댑터" sections of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). The code is:
 
 - [`OrderConfirmedEvent`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderConfirmedEvent.kt): the event, its derived `eventId` and `from(order)`
 - [`OrderEventPublisher`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderEventPublisher.kt): the required port and its three promises
@@ -136,7 +136,12 @@ Drafted 2026-10-27 as the closing comment of [issue 170](https://github.com/giwa
 
 ### Landed
 
-The code is one commit, `62ab5ed`, on `worktree-issue-170`. It sits on `4779179`, the tip of `feat/order-events` after issue 168 landed, and has not been pushed or fast-forwarded yet. It was written on `6369374` and rebased once 168 landed. The rebase conflicted only in this file, in `CODING_STANDARDS.md` and in `BaseApplicationServiceTest`'s KDoc, and both sides were kept.
+Two commits, fast-forwarded onto `feat/order-events` on top of `4779179`, the tip after issue 168 landed:
+
+- [`62ab5ed`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/62ab5ed) is the code, the tests and the standards sentences.
+- [`9f1637a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9f1637a) records this comment in this writing-material file.
+
+It was written on `6369374` and rebased once 168 landed. The rebase conflicted only in this file, in `CODING_STANDARDS.md` and in `BaseApplicationServiceTest`'s KDoc, and both sides were kept.
 
 ### Acceptance criteria
 
