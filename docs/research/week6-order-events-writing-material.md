@@ -121,3 +121,74 @@ Two commits, rebased onto issue 169's `6369374` and fast-forwarded onto `feat/or
 
 - Ticket 171 reads records with `KafkaTestUtils` and isolates its topic per class with the override this ticket proved.
 - The template's dead `admin.properties.bootstrap.servers` waits for the `kafka.yml` cleanup that the spec puts out of scope this week.
+
+## Issue 170: the saga step publishes the first confirmation through a required port inside TX B
+
+Drafted 2026-10-27 as the closing comment of [issue 170](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/170). It has not been posted yet. The rules are rules 1–3, 6 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the port, the event built in TX B, the adapter's check and Spring event, the derived event ID, and the cases that publish nothing. The decisions are the "포트와 이벤트" and "어댑터" sections of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). The code is:
+
+- [`OrderConfirmedEvent`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderConfirmedEvent.kt): the event, its derived `eventId` and `from(order)`
+- [`OrderEventPublisher`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderEventPublisher.kt): the required port and its three promises
+- [`SpringEventOrderEventPublisher`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/SpringEventOrderEventPublisher.kt): the adapter's `check` and `publishEvent`
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt): `applyResult` publishes after the save, on a change to success only
+- [`BaseCommittingApplicationServiceTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/test/BaseCommittingApplicationServiceTest.kt): `@RecordApplicationEvents` and the `applicationEvents` field
+- [`OrderConfirmedEventTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/required/OrderConfirmedEventTest.kt) and [`OrderEventPublishingTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishingTest.kt): the unit seam and the provided-port seam
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): recording application events, under 도우미 next to the committing base
+
+### Landed
+
+The code is one commit, `62ab5ed`, on `worktree-issue-170`. It sits on `4779179`, the tip of `feat/order-events` after issue 168 landed, and has not been pushed or fast-forwarded yet. It was written on `6369374` and rebased once 168 landed. The rebase conflicted only in this file, in `CODING_STANDARDS.md` and in `BaseApplicationServiceTest`'s KDoc, and both sides were kept.
+
+### Acceptance criteria
+
+- [x] **Unit tests: `OrderConfirmedEvent.from(order)` yields the derived eventId, items in ascending product ID order with the order's quantities, and the order's `confirmedAt`; an unconfirmed order is refused.** `OrderConfirmedEventTest` builds an order from products 30, 10 and 20 and reads back items 10, 20 and 30, each with its quantity, and the literal confirmation time. The DRAFT, PAYMENT_PENDING and PAYMENT_FAILED orders are refused with `IllegalArgumentException`.
+  - An unsaved order's ID is 0, so the unit test cannot tell copying the order's ID from writing a constant. The derivation is tested on a constructed event: `orderId = 42` gives `order-confirmed:v1:42`. The first `OrderEventPublishingTest` scene pins a saved order's ID and `eventId`.
+- [x] **With `@RecordApplicationEvents` in the committing base, a confirmation whose create answers SUCCESS records exactly one `OrderConfirmedEvent`; so do a customer reconcile and the PG's callback when each is what first confirms the order.** There are three scenes, and each asserts the whole event with `containsExactly`. The clock is pinned, so `confirmedAt` is a literal. The first scene also reads the same instant from the stored order.
+- [x] **No event is recorded for a pending create answer, a lost create response, a failed transaction, a pre-create rejection, or a conflicting answer.** One parameterized scene covers all five. Each row also asserts the order and payment status it ends in.
+  - "A failed transaction" is read as a PG transaction that failed, that is, an accepted create whose transaction is FAILED. The existing tests call it "an accepted create whose transaction failed". The five rows match spec 167's list: 결제 중, 결과 미확인, 실패, 생성 전 거절, 충돌.
+  - A rolled-back TX B is not among them. `ApplicationEvents` records an event when `publishEvent` runs, so it cannot show that a rolled-back event is dropped. Dropping it is the AFTER_COMMIT relay's job, and design §8 already lists it as a broker-read scene.
+- [x] **A duplicate callback, a repeated reconcile and a late create answer after confirmation record no second event.** All three are covered, plus a duplicate callback that races the first one.
+  - The sequential duplicate callback and the repeated reconcile never reach TX B. The saga answers a finished payment from stored state before any lookup. Both scenes assert `lookupCount()` is 1 to pin that path.
+  - Only the late create answer and the racing duplicate reach `applyResult` with `Unchanged`, which is why the racing scene was added (ADR 0024 rule 5). It also shows that events published on a thread the test starts are recorded.
+- [x] **Calling `OrderEventPublisher.publish` outside a transaction throws `IllegalStateException`.** The committing base takes no test transaction. So the scene calls the real bean through the port type, and no event is recorded.
+- [x] **Every existing `OrderPaymentIntegrationTest` scene passes unchanged.** All 63 tests pass, and none was modified.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes, with executed test counts checked.** After the rebase onto 168's tip (921), the result is 78 classes, **937 tests, 0 failures, 0 skipped**, with the Kafka container in every full context. Before the rebase, on `6369374` (918), it was 75 classes and 934 tests. The 16 new tests are 5 in `OrderConfirmedEventTest` and 11 in `OrderEventPublishingTest`.
+
+### Red checks
+
+The first scene went red before the port existed: the confirmation succeeded and nothing was recorded. The other scenes passed as soon as the call site was in. So the call site and the adapter were mutated by hand, and the class was run against each mutation:
+
+| Mutation | Scenes that failed |
+| --- | --- |
+| publish whenever the saved order is CONFIRMED (state, not change) | late create answer, racing duplicate callback |
+| `check(true)` in the adapter | the refusal outside a transaction |
+| publish on any `Changed` | reconcile and callback that first confirm, racing duplicate, pending, failed, rejected |
+
+Under the third mutation, `OrderConfirmedEvent.from` refused the unconfirmed order, so TX B rolled back instead of publishing. The lost-response row never reaches TX B and the conflicting row is never `Changed`, so no mutation of the call site can fail them. What they guard is the saga.
+
+### Decisions made while implementing
+
+- **`@RecordApplicationEvents` is on `BaseCommittingApplicationServiceTest`, not on the test class.** `CODING_STANDARDS.md` keeps test configuration annotations on the base classes, and the ticket says "in the committing base".
+  - Spring scopes `ApplicationEvents` to the test method and cannot inject it into a test class's constructor. So the base exposes it as a `protected` field, like `entityManager`.
+  - Recording is only a `TestExecutionListener`. Spring-test 7.0.9's `spring.factories` registers no context customizer for it, so the context cache key does not change.
+  - The record is held in an `InheritableThreadLocal`. Events on the test thread and on threads the test starts (`inAnotherThread`, `runConcurrently`) are recorded. Events on a pool thread that existed before the test are not.
+- **The scenes are a new class, `OrderEventPublishingTest`, not part of `OrderPaymentIntegrationTest`.** That class is the assignment's `*PaymentIntegrationTest` target. The new class uses two of its three spies (the PG call and the payment-modifying Service), so it starts one more context.
+  - Its four helpers (`confirmPending`, `transactionOf`, `afterTheCreateIsAnswered`, `pauseTheFirstTxBHoldingTheOrder`) are copies. Moving them to `com.loopers.support` would rewrite the call sites in `OrderPaymentIntegrationTest`'s scenes, and this ticket was to leave those scenes passing unchanged.
+- **The call site tests `result is Changed && result.to == SUCCESS` again after the save** rather than publishing inside the `when`. The ticket and spec 167 put the publish after `orderRepository.save`, and the event is built from the saved order.
+- **The adapter is a plain `@Component`, like `ProductListRevisionMarker`.** `@ApplicationService` would open its own transaction for a call made outside one, so the check could never fail.
+- **The port's "never throws" covers delivery.** A call outside a transaction is a programming error and throws `IllegalStateException`, and the KDoc says so.
+- **`from(order)` uses `requireNotNull`, so an unconfirmed order raises `IllegalArgumentException`.** The `check` and `requireNotNull` messages are in English, as the ticket asks. The neighbouring Korean messages are left as they are.
+- **The placeholder names stayed** (`SpringEventOrderEventPublisher`, `OrderEventPublishingTest`), so spec 167 needs no dated note about names.
+
+### Review
+
+The two-axis review (standards and spec) ran on the working tree before the commit. These findings were applied, and the ones not applied are covered under the decisions above:
+
+- The new code said "announce" for the publish. In `CONTEXT.md`, 발행하다 lists 알리다 under _Avoid_ because it collides with the PG's 알림, and 주문 확정 이벤트 lists 주문 이벤트. Test names, KDoc and the check message now say "publish" and "order confirmed event". The issue body says "announces", but the glossary wins.
+- The repeated-reconcile KDoc said its second reconcile was `Unchanged`, but that reconcile returns before any TX B. `applyResult`'s KDoc overstated it the same way. Both were corrected, and the two sequential duplicates now assert the lookup count.
+- A KDoc and the standards pointed at a broker test that does not exist yet, and the claim about threads went further than `InheritableThreadLocal` allows. Both were reworded.
+
+### Left for later
+
+- **Ticket 171** adds the AFTER_COMMIT relay, and the scene where TX B rolls back (`failTxBOnceAfterItsWrites`) belongs there, read from the broker. 171 also decides whether the scenes in `OrderEventPublishingTest` that read recorded events stay beside the broker reads or become broker reads. Spec 167's testing decisions say not to assert how many Spring events were published.
+- The relay's `@Async` virtual threads are created per task by the submitting thread. So the record should follow them, but this has not been tried yet.
+- Once 171 or a later ticket settles the broker scenes, the four copied spy helpers could move to `com.loopers.support`, changing `OrderPaymentIntegrationTest`'s call sites in the same commit.
