@@ -275,7 +275,7 @@ These findings were not applied:
 
 ## Issue 172: a publish that fails or stops after TX B commits leaves the order confirmed and no record on the broker
 
-Recorded 2026-10-27 from the closing comment of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172). The ticket names rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the relay observes the publish and never throws, and the list of confirmations that publish nothing. The gap is the case rule 7 does not list, a confirmation that should publish and does not. The decisions are "이음매 2" of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and section 6 of the [order events design](../design/order-events.md). One run's values are in [W7 handoff: unpublished case](#w7-handoff-unpublished-case) below. The code is:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172#issuecomment-6442023152) of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172). The ticket names rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the relay observes the publish and never throws, and the list of confirmations that publish nothing. The gap is the case rule 7 does not list, a confirmation that should publish and does not. The decisions are "이음매 2" of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and section 6 of the [order events design](../design/order-events.md). One run's values are in [W7 handoff: unpublished case](#w7-handoff-unpublished-case) below. The code is:
 
 - [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt): the two scenes, with the relay's `KafkaTemplate` replaced by a `@MockkBean(relaxUnitFun = true)`
 - [`TopicReader`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TopicReader.kt): the broker reader, moved out of `OrderEventPublishingTest` now that two classes read the broker
@@ -285,11 +285,11 @@ Recorded 2026-10-27 from the closing comment of [issue 172](https://github.com/g
 
 ### Landed
 
-Committed on `feat/order-events` on top of `215bdbe`, the tip after issue 171 landed:
+Three commits on `feat/order-events` on top of `215bdbe`, the tip after issue 171 landed:
 
 - [`e492cf1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e492cf1) is the code, the tests, the standards bullets and the dated notes in ADR 0012, ADR 0032 and the design doc.
 - [`ff6c238`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ff6c238) records one run's values under "W7 handoff: unpublished case" in this writing-material file.
-- The commit after it records this comment in this writing-material file.
+- [`9f2e070`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/9f2e070) records this comment in this writing-material file.
 
 ### Acceptance criteria
 
