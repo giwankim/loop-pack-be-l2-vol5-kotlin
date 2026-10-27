@@ -1,6 +1,26 @@
 # Week 6 order events: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 1 ticket's closing comment, except the W7 handoff at the end, which is recorded from one run of issue 172's reproduction. The rules behind it are in [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and the [order events design](../design/order-events.md). The step is [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 1 ticket's closing comment, with three exceptions. The W7 handoff is recorded from one run of issue 172's reproduction. Issue 173 added the preface below and the draft PR body at the end. The rules behind it are in [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and the [order events design](../design/order-events.md). The step is [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167).
+
+## Preface: what this material is evidence for
+
+Added 2026-10-27 by [issue 173](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173). The [draft PR body](#draft-pr-body) for `feat/order-events` → `week6` is at the end.
+
+### Writing-quest topics
+
+- **Why publishing after the commit still leaks.** The order commits, the reservation is consumed, the confirmation answers, and the event exists nowhere. The database and the broker are not one transaction. See [W7 handoff: unpublished case](#w7-handoff-unpublished-case) for one run's values and [issue 172](#issue-172-a-publish-that-fails-or-stops-after-tx-b-commits-leaves-the-order-confirmed-and-no-record-on-the-broker) for the scenes. The window is at least one hand-off to the relay's virtual thread wide. When the broker cannot be reached, `send` can wait up to `max.block.ms` (60 s) for the topic's metadata. Once `send` has returned, the producer can go on trying for up to `delivery.timeout.ms` (120 s) more. A process that stops inside the window leaves no event and not even the WARN.
+- **Why the relay is asynchronous.** Spring runs an AFTER_COMMIT listener in `afterCompletion`, before `cleanupAfterCompletion` returns TX B's connection to the pool. A synchronous publish would hold that connection for the round trip to the broker. A `send` waiting for metadata would also hold the confirming thread for up to `max.block.ms`. The reason first written down, that the listener's exception would leave `commit()` and turn a committed confirmation into a 500, was wrong. Issue 172's red check made the relay synchronous and let the failure escape, and the confirmation still answered normally (ADR 0032 rule 4's dated note). Issue 171's red check shows the relay runs off the confirming thread: with `@Async` removed, `send` ran on `Test worker`.
+- **Why there is no await bound.** The future of `send` ends only when the broker acknowledges the record or the producer gives up at `delivery.timeout.ms` (120 s by default). Cutting the wait shorter would see "still trying", not a failure. The 3 s first proposed was only needed while a synchronous relay held the DB connection, and nothing in the assignment backed it (ADR 0032 rule 5, design section 5).
+
+### Questions the instructor's comments prompt
+
+The instructor (Kev) left four comments on the assignment page on 2026-10-24. They were read on 2026-10-27 through the page's comment buttons, which show which block each comment sits on. Chrome's policy blocks clicking on the page, so the exact words each comment highlights could not be read. The questions below are read from the block.
+
+- **On the opening paragraph** (purchase activity is a stored fact that feeds week 9's ranking, and there is no ranking API or outbox this week): "왜??" (why?). Why hand the confirmation to another service as an event, rather than have commerce-api write the purchase activity or let the streamer read commerce-api's tables? And why leave the outbox to week 7 when the gap is known?
+  - The outbox half has evidence: design sections 6 and 9, and ADR 0032's 고르지 않은 것 ("지금 Outbox").
+  - The first half has little written evidence yet. `CONTEXT.md` defines the event as a notice to another context after the commit, and ADR 0028's dated note says it is not a step of TX B. No document argues why the purchase activity lives in the streamer rather than in commerce-api. The assignment asks the design to show why the event is needed, so step 2's grilling (`feat/purchase-activity`) is the place to write it down.
+- **On the contract table** (topic, eventType and schemaVersion, key, eventId, orderId and confirmedAt, items), two comments: "왜??" (why?) and "다른 방법은?" (what other ways are there?). Why the order ID as the key, an eventId derived from the order rather than stored, an envelope with the metadata in the body, and items normalised per product? The alternatives: a stored eventId, a fresh UUID per publish attempt, a stored fingerprint, Kafka headers instead of the envelope. Evidence: ADR 0032 rule 6, design section 2 and the eventId entry in `CONTEXT.md`.
+- **On the paragraph about where to publish** (an after-commit listener or orchestration after the commit; a `send` at the end of a `@Transactional` method is not after the commit; build the payload beforehand so the listener needs no lazy entity): "면접에 나오는거~ 이거 코드 어케짤래~" (this comes up in interviews; how would you code it?). The branch's answer is a required port called inside TX B, a Spring event, and an async AFTER_COMMIT relay. ADR 0032's 고르지 않은 것 records the alternatives: the saga publishing after the step returns, a hand-registered `afterCommit`, Spring Data's `@DomainEvents`, and calling `ApplicationEventPublisher` directly. The event is built from the locked order inside TX B, so nothing reads an entity after the commit. Issue 171's red check is the proof: with `@EventListener` in place of the AFTER_COMMIT listener, the rolled-back TX B scene found a record.
 
 ## Issue 169: the confirmation instant comes from a Clock bean the tests can pin
 
@@ -404,7 +424,7 @@ The test logs each scene's values in one INFO line, `W7 handoff, unpublished cas
 ### What it shows and what it does not
 
 - The database and the broker are not one transaction. TX B committed the confirmation, consumed the reservation and answered, and the event exists nowhere: not on the broker, not in a table. The only trace is one WARN line.
-- Scene 2 is the window itself. Between TX B's commit and the end of `send`, a process that stopped would lose the event the same way, with no WARN at all. The relay runs after the commit on a virtual thread with no queue, and nothing waits for it when the context closes (design section 4), so the window is at least one hand-off wide. A broker that cannot be reached widens it to `max.block.ms` (60 s by default).
+- Scene 2 is the window itself. Between TX B's commit and the end of `send`, a process that stopped would lose the event the same way, with no WARN at all. The relay runs after the commit on a virtual thread with no queue, and nothing waits for it when the context closes (design section 4), so the window is at least one hand-off wide. A broker that cannot be reached widens it to `max.block.ms` (60 s by default). (2026-10-27, issue 173: that is the wait inside `send` for the topic's metadata. Once `send` has returned, the producer can go on trying for up to `delivery.timeout.ms`, 120 s by default, so the window can be wider still.)
 - It is a failure injected into one `send`, not an OS kill or a broker outage. The producer's own retries and `delivery.timeout.ms` are not exercised.
 - Week 7 closes the window with an outbox row written inside TX B. ADR 0032's "다시 볼 조건" plans a `BEFORE_COMMIT` listener on the same Spring event, which leaves the saga step and the port unchanged.
 
@@ -412,3 +432,118 @@ The test logs each scene's values in one INFO line, `W7 handoff, unpublished cas
 
 - A red check made the relay synchronous and let the failure escape. The confirmation still answered normally. `@TransactionalEventListener(AFTER_COMMIT)` runs in `afterCompletion`, and Spring catches and logs what it throws (`TransactionSynchronization.afterCompletion threw exception`, spring-tx 7.0.9). ADR 0032 rule 4 and design section 4 had said the exception leaves `commit()` and turns the confirmation into a 500. Both now carry a dated correction, and the relay's KDoc is fixed. The case for `@Async` stands on the held connection and on `max.block.ms` holding the confirming thread.
 - Issue 171's "Left for later" says the relay's WARN shows an empty thread name. The run shows `virtual-75` and `virtual-86`: logback prints an unnamed virtual thread as `virtual-<id>`.
+
+## Draft PR body
+
+Drafted 2026-10-27 by [issue 173](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173), in the shape of PR 158 and PR 166 (Summary / Evidence / Merge Danger). The user opens the PR in the UI.
+
+- **Base:** `week6` ← **head:** `feat/order-events`
+- **Title:** `feat(commerce-api): publish an order's first PG confirmation to Kafka after TX B commits`
+- The `blob/feat/order-events` links resolve once the branch is pushed.
+
+````markdown
+## Summary
+
+This is week 6 step 1, the producer. When TX B first confirms an order paid through the PG, commerce-api now publishes `OrderConfirmed` v1 to `order-events` once TX B has committed. The consumer (`feat/purchase-activity`) and the delivery experiments (`feat/kafka-delivery`) come next, and both start from the contract in design §2.
+
+- **Spec:** https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167, with tickets 168–173.
+- **Decision:** [ADR 0032](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-events/docs/adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md).
+- **Design:** [`docs/design/order-events.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-events/docs/design/order-events.md). §1.2 maps the tickets to what they built, and §12 has the commands and counts.
+- **Writing material:** [`docs/research/week6-order-events-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-events/docs/research/week6-order-events-writing-material.md).
+
+The step that confirms the order calls a required port inside TX B. The adapter hands the event to Spring, and an async AFTER_COMMIT relay publishes it:
+
+```text
+OrderPaymentSagaSteps.applyResult               # TX B, order locked; the only place an order becomes CONFIRMED
+  order.completePayment(clock.instant())        # Clock bean; tests pin the @Primary TestClock
+  orderRepository.save(order)
+  if the payment changed to SUCCESS
+    OrderEventPublisher.publish(OrderConfirmedEvent.from(order))   # required port; built from the locked order
+      SpringEventOrderEventPublisher            # check(isActualTransactionActive()), then publishEvent
+… TX B commits (a rolled-back TX B drops the event) …
+OrderConfirmedKafkaRelay.relay                  # @TransactionalEventListener(AFTER_COMMIT) @Async("orderEventsExecutor"), a virtual thread per event
+  OrderConfirmedMessage.from(event)             # outside the try: a bug here reaches Spring's async handler as an ERROR
+  try kafkaTemplate.send(topic, orderId, message)
+    whenComplete → INFO(eventId, topic, partition, offset) | WARN(eventId, orderId, cause)
+  catch → WARN                                  # never throws, never awaits; delivery.timeout.ms is the only give-up
+```
+
+The record is keyed by the order ID string. The body is an envelope, with no Kafka headers and no amount, user, payment or PG identifier:
+
+```json
+{"eventId": "order-confirmed:v1:42", "eventType": "OrderConfirmed", "schemaVersion": 1,
+ "payload": {"orderId": 42, "confirmedAt": "2026-10-27T03:14:15.123456Z",
+             "items": [{"productId": 7, "quantity": 2}, {"productId": 8, "quantity": 1}]}}
+```
+
+- **Publishes nothing for:**
+  - a pending, unknown, failed, rejected or conflicting outcome
+  - a rolled-back TX B
+  - a repeated application of a finished payment: a duplicate callback, a repeated reconcile, a late create answer
+  - orders confirmed with points (no backfill)
+- **Topic.** The app declares `order-events` with 3 partitions and 1 replica. The producer sets `acks: all`.
+- **Tests.**
+  - Every full test context imports `KafkaTestContainersConfig` (`apache/kafka-native:4.3.2`).
+  - The `test` profile of `kafka.yml` has no broker address and turns on `spring.kafka.admin.fail-fast`. A context that forgets the import fails at once, as it does without MySQL.
+  - The publishing tests read the broker through `TopicReader`.
+- **Dependencies.** commerce-api now depends on `modules:kafka` (spring-kafka 4.1.1, kafka-clients 4.2.1). It also takes `spring-boot-starter-kafka-test`, for `KafkaTestUtils` only.
+- **Also on this branch:**
+  - `3aa9b91`, `4c930ce`, `82155e2`: the saga renames (`OrderPaymentSaga`, `OrderPaymentSagaSteps`) and the order info assembler, before step 1 began
+  - a dated correction to ADR 0032 rule 4. A synchronous relay's exception would not leave `commit()`. The case for `@Async` stands on the held connection and on `max.block.ms`.
+
+## Evidence
+
+The mutations were run at ticket time and reverted ("Red checks" of issues 170–172 in the writing material).
+
+- **Before:** with `@EventListener` in place of `@TransactionalEventListener(AFTER_COMMIT)`, `a rolled-back TX B publishes nothing, and the reconcile that then confirms the order publishes one record` finds a record for the rolled-back TX B.
+  **After:** passes.
+- **Before:** with `@Async` removed, `the record is published from a virtual thread, not from the thread that confirmed the order` sees `send` called on `Test worker`.
+  **After:** passes.
+- **Before:** publishing on every `Changed`, not only on a change to SUCCESS, fails the reconcile, callback, racing-duplicate, pending, failed and rejected scenes. Publishing whenever the saved order is CONFIRMED fails the late-create-answer and racing-duplicate scenes.
+  **After:** all pass.
+- **Before:** with `throw e` after the WARN in the relay's `catch`, both `OrderEventPublishGapTest` scenes fail, because Spring's async handler logs an ERROR.
+  **After:** both pass, with one WARN and no ERROR for 1 s after it.
+- **The unpublished case handed to week 7.** `OrderEventPublishGapTest` at `e492cf1`:
+  - Confirm answers `CONFIRMED` and `SUCCESS`.
+  - In a fresh transaction the order is CONFIRMED at the pinned `2026-10-27T01:02:03.123456Z` and the payment is SUCCESS.
+  - Stock is 3 and 4 of 5, reserved and not released. The PG got 1 create.
+  - The topic has 0 records, and the relay logs one WARN:
+  ```text
+  Could not publish the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, cause=org.springframework.kafka.KafkaException: Send failed
+  ```
+- **Whole check.** At `a58cc89`, `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check :modules:kafka:ktlintCheck` passes, with no `BOOTSTRAP_SERVERS` in the shell. That is 943 tests in 79 classes (917 before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check` passes too. The filters from design §12:
+  ```bash
+  ./gradlew :apps:commerce-api:test --tests '*OrderEventPublishingTest'   # 15: the publishing scenes, read from the broker
+  ./gradlew :apps:commerce-api:test --tests '*OrderEventPublishGapTest'   # 2: the publish gap
+  ./gradlew :apps:commerce-api:test --tests '*OrderEventsTopicTest' --tests '*OrderEventsProducerTest'   # 1 + 1 + 1: the topic and the producer config
+  ./gradlew :apps:commerce-api:test --tests '*OrderConfirmedEventTest' --tests '*.OrderTest'           # 5 + 26
+  ./gradlew :apps:commerce-api:test --tests '*PaymentIntegrationTest'    # 63: week 5's scenes unchanged, plus the confirmation-time scene
+  ```
+
+## Merge Danger
+
+**Door:** two-way
+
+The schema doesn't change and there is no migration. A revert removes the port, the relay, the topic bean and the Kafka dependency, and confirmations go back to publishing nothing. Records already on `order-events` stay on the broker, and no consumer reads them yet.
+
+**Blast Radius:** order confirmation
+
+- **The publish gap remains.** A confirmation commits, consumes the reservation and answers even when its event never reaches the broker.
+  - A failed publish leaves one WARN line, and nothing retries it.
+  - A process that stops between the commit and the end of the publish leaves no event and no WARN.
+  - The async relay widens the window by one hand-off. With the broker out of reach, `send` can wait up to `max.block.ms` (60 s) for metadata. Once it has returned, the producer can go on trying for up to `delivery.timeout.ms` (120 s).
+  - Week 7's outbox narrows it (ADR 0032's 다시 볼 조건).
+- **One broker.** Replication is 1 and `min.insync.replicas` is 1, so `acks=all` is no stronger than `acks=1` here. Nothing in this PR proves replication or durability.
+- **Startup now involves Kafka.** Outside `local` and `test`, the broker address comes from `BOOTSTRAP_SERVERS`. Production keeps `fail-fast` off, so `KafkaAdmin` only logs when it cannot create the topic, and commerce-api still starts. Its publishes should then fail, each with the relay's WARN, since the relay catches whatever `send` throws (not tried against a real broker outage). In issue 168's probe, a context pointed at an address with no broker behind it waited out `KafkaAdmin`'s 30 s and 10 s, and only started after 61 s. A context left with the unresolved `${BOOTSTRAP_SERVERS}` started after 16 s.
+- **The executor.** `orderEventsExecutor` is the context's only `Executor` bean, so Boot backs off from its `applicationTaskExecutor`. Nothing used that executor. Spring's default for an `@Async` without a qualifier is the context's unique `TaskExecutor`, so a future one would most likely run on the relay's virtual threads (not tried).
+- **Logs only.** There are no metrics. MDC and tracing don't follow the relay's virtual thread, so each line carries its own eventId and orderId.
+- **`confirmedAt` on the wire.** Jackson 3's `ISO_INSTANT` trims trailing zero groups (`…03.100Z`, `…03Z`), so a consumer must compare it as an instant. Whether to fix six digits with `@JsonFormat` is still open.
+- **Docker for every full test context.** Each one needs the Kafka container as well as MySQL and Redis. The container starts once per JVM, and the first run pulls `apache/kafka-native:4.3.2`.
+- **Left open:** spec 167's seam 1 scene for an order confirmed with points is for the review that closes the spec. Such an order is refused in TX A and never reaches TX B.
+- **Out of scope:**
+  - the consumer and its tables
+  - the outbox
+  - metrics
+  - backfilling orders confirmed with points
+  - the partition and redelivery experiments
+````
