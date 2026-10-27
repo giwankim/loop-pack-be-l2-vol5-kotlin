@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 169: the confirmation instant comes from a Clock bean the tests can pin
 
-Recorded 2026-10-27 from the closing comment drafted for [issue 169](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/169). The rule is rule 8 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) (the confirmation time comes from a clock bean the reproduction can pin), and the decisions are the "시계 (ADR 0032 규칙 8)" section of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). The code is:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/169#issuecomment-6436774946) of [issue 169](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/169). The rule is rule 8 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) (the confirmation time comes from a clock bean the reproduction can pin), and the decisions are the "시계 (ADR 0032 규칙 8)" section of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). The code is:
 
 - [`ClockConfig`](../../apps/commerce-api/src/main/kotlin/com/loopers/support/time/ClockConfig.kt): the `Clock.systemUTC()` bean
 - [`Order`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/order/Order.kt): `completePayment(confirmedAt)`
@@ -15,10 +15,10 @@ Recorded 2026-10-27 from the closing comment drafted for [issue 169](https://git
 
 ### Landed
 
-Two commits on `worktree-issue-169` (local, not yet pushed or merged into `feat/order-events`), on top of `feat/order-events`' `23a9244`:
+Two commits, fast-forwarded onto `feat/order-events` on top of `23a9244`:
 
 - [`3df8325`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/3df8325) is the code, the tests and the standards sentences.
-- The commit after it creates this writing-material file. Ticket 168 was to create it, but it had not landed yet.
+- [`0ce5e63`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/0ce5e63) creates this writing-material file. Ticket 168 was to create it but had not landed yet, so 168 will meet an add/add conflict here.
 
 ### Acceptance criteria
 
