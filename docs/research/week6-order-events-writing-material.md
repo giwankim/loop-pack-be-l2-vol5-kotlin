@@ -366,6 +366,84 @@ These findings were not applied:
 - Spec 167's seam 2 still says the confirmation answers 200, as over HTTP. Only design section 6's dated note says the scenes call the port, so the review that closes the spec could add a note there.
 - The seam 1 scene for an order confirmed with points, and whether `confirmedAt` always carries six fraction digits, are still open from issue 171.
 
+## Issue 173: the order-events documents match the code, and the week6 PR body is drafted
+
+Recorded 2026-10-27 from the closing comment of [issue 173](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173), the last of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167)'s tickets. Nothing in the code changed. The documents are:
+
+- the [order events design](../design/order-events.md): dated notes in sections 2, 4, 6, 7, 8 and 11, the ticket table (1.2), and the commands and counts (12)
+- [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): dated notes on rules 4, 6 and 9
+- [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167)'s body: dated notes on the sections whose placeholders were resolved
+- this file: the [preface](#preface-what-this-material-is-evidence-for) and the [draft PR body](#draft-pr-body)
+
+### Landed
+
+Two commits on `feat/order-events` on top of `a58cc89`, not pushed:
+
+- [`270070b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/270070b) is the design doc and ADR 0032.
+- [`3fedd5a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/3fedd5a) is this file's preface and the draft PR body.
+- The commit after them records this comment in this file.
+
+### Acceptance criteria
+
+- [x] **Every placeholder name in spec 167 and the design doc is either the final name or carries a dated note with the final name.** All four of the spec's placeholders became the final names: `SpringEventOrderEventPublisher`, `OrderConfirmedKafkaRelay`, `OrderEventsKafkaConfig` and `OrderEventPublishingTest`. The spec's note under "브랜치와 단계" lists them, together with the names the spec never gave (`OrderEventsProperties`, `ClockConfig`, `OrderEventPublishGapTest`, `TopicReader` and the three topic and producer tests). The design doc had no placeholder names, only the unnamed slots of section 4's diagram. Its "이름" note names each slot.
+- [x] **Design section 8 states the actual image tag and the actual context-import decision.** Both have been in section 8's first bullet since issue 168: `apache/kafka-native:4.3.2`, and every full context imports the fixture. Section 8 now also says that a full context with the test PG holds two `Clock` beans, and which scenes keep the port's three promises.
+- [x] **The design doc's command block runs as written and the stated test count matches a fresh run.**
+  - At `a58cc89`, `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check :modules:kafka:ktlintCheck` gave **79 classes, 943 tests, 0 failures, 0 skipped**. The shell had no `BOOTSTRAP_SERVERS`.
+  - Each filter in section 12 was run as written. They gave 15, 2, 1 + 1 + 1, 5 + 26 and 63, each with `HexagonalArchitectureTest`'s 7.
+  - The streamer's `ktlintCheck` and `check` pass.
+  - The step added 26 tests (917 → 943).
+- [x] **The writing material has the W7 handoff section with observed values and the draft PR body.** The W7 handoff section from issue 172 stays as recorded, with one dated note on the window. Design section 6 repeats the values and links it. The draft PR body is at the end of this file.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check :modules:kafka:ktlintCheck` passes.** It passed at `a58cc89`, the same code as this branch's tip. Only documents changed after it, and the pre-commit ktlint passed for both commits.
+
+### Decisions made while implementing
+
+- **ADR 0032 got three dated notes where the code deviated.**
+  - Rule 4: its `afterCommit` reads as `afterCompletion(STATUS_COMMITTED)`.
+  - Rule 6: `confirmedAt` goes out in `ISO_INSTANT`'s trimmed forms.
+  - Rule 9: only the two broker-reading classes and `OverriddenOrderEventsTopicTest` override the topic. Every other relay publishes to the shared `order-events`, which nobody reads.
+
+  The first draft added none, and the spec review found all three. ADR 0028's note is unchanged.
+- **`CONTEXT.md` is unchanged.** 주문 확정 이벤트, 이벤트 ID, 누락 구간 and 발행하다 still describe the code. The definitions themselves use 알리다 and 보낸다, which 발행하다 lists under _Avoid_. That is inside the glossary, not a disagreement with the code, so it was left alone.
+- **`CODING_STANDARDS.md` is unchanged.** The four techniques sit in an unbroken run of bullets under 도우미: the container, the topic and producer tests, the broker-reading tests (with the wait for an async publish) and the publish-gap test. Their claims were checked against both broker-reading classes.
+- **The instructor's comments were read by block.** Chrome blocks clicks on the assignment page, so the threads could not be opened. The page's comment buttons still show which block each of the four comments sits on, so the preface reads the questions from those blocks.
+- **Spec 167's seam 3 has no separate scene for a confirmation in the rolled-back base.** A confirmation runs only outside a transaction (ADR 0028 rule 2), so it cannot be called there. The rolled-back TX B scene of seam 1 is the overlap seam 3 allowed for.
+
+### Review
+
+A two-axis review (standards and spec) ran on the working tree before the commits. It found nothing missing and no scope creep. These findings were applied:
+
+- The gap window said "up to `max.block.ms`". Once `send` has returned, the producer can go on trying for up to `delivery.timeout.ms` more. The preface and the PR body now say both, and the W7 handoff has a dated note.
+- ADR 0032 rules 6 and 9, and design section 2's topic row, got the notes described above. So did spec 167's broker-reading note.
+- The leftover `afterCommit` in design section 4 and ADR 0032 rule 4 got notes.
+- Section 12 had said every command needs Docker. The fourth filter and the streamer check start no context.
+- "Two `Clock` beans" was true only for full contexts. The gateway's light contexts hold only the `TestClock`. The design and the spec now say so.
+- Ticket 171's row in section 1.2 had claimed that every scene reads the broker. The refusal outside a transaction reads nothing.
+- New dated notes carry ticket links, and the new rows in section 11 are dated.
+- Glossary words:
+  - "loses the event" became "leaves no event".
+  - "per send" became "per publish attempt".
+  - 부르다 for an event became the port's name.
+  - 사용자 left the spec note.
+  - The outbox now "narrows" the gap rather than "closes" it.
+- The PR body's startup line had said `BOOTSTRAP_SERVERS` "must resolve". Unresolved, the context still starts. Its container line now says one per JVM.
+- The preface's first question had cited sections that answer only the outbox half. It now says the "why an event at all" half has little written evidence yet.
+- Duplicated sentences were cut: the placeholder sentence in section 4, and the spec's seam 3 reasoning, which now points to section 8.
+
+These findings were not applied:
+
+- One run's values sit in the W7 handoff, in design section 6 and in the PR's Evidence. The ticket asks for them in the design doc, and the PR's Evidence needs them.
+- "6주차 주문 이벤트 글감" names the document, as the design doc's own title (주문 이벤트 설계) does.
+- `OrderEventsKafkaConfig`'s KDoc still says "an `afterCommit`". That is `src/main`, and this ticket changes documents only.
+
+### Left for later
+
+- **For the review that closes spec 167:**
+  - seam 1's scene for an order confirmed with points
+  - whether `confirmedAt` always carries six fraction digits
+  - `OrderEventsKafkaConfig`'s KDoc wording
+- **For step 2's grilling:** the argument for "why an event at all", which the assignment asks the design to show.
+- **Before the PR opens:** `feat/order-events` must be pushed, so that the PR body's `blob/feat/order-events` links resolve.
+
 ## W7 handoff: unpublished case
 
 Recorded 2026-10-27 from one run of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172)'s reproduction, [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt). This is the unpublished case of design section 6 that week 6 hands to week 7's outbox. The published-and-consumed case comes from step 2 (`feat/purchase-activity`). The ticket names rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the relay observes the publish and never throws, and the list of confirmations that publish nothing, which leaves this case out.
