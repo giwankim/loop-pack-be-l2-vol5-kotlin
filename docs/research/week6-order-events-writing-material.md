@@ -368,7 +368,7 @@ These findings were not applied:
 
 ## Issue 173: the order-events documents match the code, and the week6 PR body is drafted
 
-Recorded 2026-10-27 from the closing comment of [issue 173](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173), the last of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167)'s tickets. Nothing in the code changed. The documents are:
+Recorded 2026-10-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173#issuecomment-6442859997) of [issue 173](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/173), the last of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167)'s tickets. Nothing in the code changed. The documents are:
 
 - the [order events design](../design/order-events.md): dated notes in sections 2, 4, 6, 7, 8 and 11, the ticket table (1.2), and the commands and counts (12)
 - [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): dated notes on rules 4, 6 and 9
@@ -377,11 +377,11 @@ Recorded 2026-10-27 from the closing comment of [issue 173](https://github.com/g
 
 ### Landed
 
-Two commits on `feat/order-events` on top of `a58cc89`, not pushed:
+Three commits on `feat/order-events` on top of `a58cc89`, not pushed:
 
 - [`270070b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/270070b) is the design doc and ADR 0032.
 - [`3fedd5a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/3fedd5a) is this file's preface and the draft PR body.
-- The commit after them records this comment in this file.
+- [`6fc6b4f`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/6fc6b4f) records this comment in this file.
 
 ### Acceptance criteria
 
