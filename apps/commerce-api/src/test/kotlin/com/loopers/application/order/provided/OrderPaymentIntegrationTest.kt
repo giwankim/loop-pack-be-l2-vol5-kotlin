@@ -38,6 +38,7 @@ import com.loopers.support.error.ErrorType
 import com.loopers.support.productDeletedAt
 import com.loopers.support.productStock
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
+import com.loopers.testcontainers.KafkaTestContainersConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
@@ -1869,8 +1870,8 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 같은 MySQL과 Redis, 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
-     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB와 Redis다. 그 설정이
+     * 같은 MySQL, Redis, Kafka와 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
+     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB, Redis, broker다. 그 설정이
      * `DynamicPropertyRegistrar` 빈으로 넣는 접속 정보는 테스트 프레임워크 밖에서도 `spring-boot-testcontainers`의 자동 설정이 들인다.
      * 덮는 값은 명령줄 인자로 넘긴다. builder의 `properties`는 기본 속성이라 프로필의 설정 파일에 진다. test 프로필의 `ddl-auto: create`는
      * 표를 다시 만들어 첫 컨텍스트가 남긴 결제를 지우므로 `none`으로 덮는다. 운영의 재시작도 스키마를 다시 만들지 않는다. `pg.base-url`은
@@ -1883,6 +1884,7 @@ class OrderPaymentIntegrationTest(
             CommerceApiApplication::class.java,
             MySqlTestContainersConfig::class.java,
             RedisTestContainersConfig::class.java,
+            KafkaTestContainersConfig::class.java,
         )
             .profiles("test")
             .build()
