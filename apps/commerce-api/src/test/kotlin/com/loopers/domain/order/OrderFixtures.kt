@@ -7,6 +7,7 @@ import com.loopers.domain.shared.Money
 import org.instancio.kotlin.KInstancio
 import org.instancio.kotlin.KInstancio.gen
 import org.instancio.kotlin.KSelect.field
+import java.time.Instant
 
 /**
  * 저장된 상품의 ID·이름·가격을 스냅숏하는 주문 품목. 상품은 다른 애그리거트라 테스트가 넘긴다.
@@ -53,6 +54,26 @@ fun createOrder(userId: Long, products: List<OrderProduct>? = null): Order {
             .take(gen().ints().range(1, 5).get())
             .toList(),
     )
+}
+
+/**
+ * An unsaved order in [status], reached by calling the transitions that lead there rather than writing the status. A confirmed
+ * order is one paid through the PG, confirmed at [confirmedAt] or a drawn past instant. No transition leads to an order
+ * confirmed with points any more (ADR 0027): such orders exist only as stored rows, so the tests that read stored rows cover
+ * them. User ID 1 and [products] go to [createOrder].
+ */
+fun createOrderIn(status: OrderStatus, products: List<OrderProduct>? = null, confirmedAt: Instant? = null): Order {
+    return when (status) {
+        OrderStatus.DRAFT -> createOrder(userId = 1, products = products)
+
+        OrderStatus.PAYMENT_PENDING -> createOrderIn(OrderStatus.DRAFT, products).apply { startPayment() }
+
+        OrderStatus.CONFIRMED -> createOrderIn(OrderStatus.PAYMENT_PENDING, products).apply {
+            completePayment(confirmedAt ?: gen().temporal().instant().past().get())
+        }
+
+        OrderStatus.PAYMENT_FAILED -> createOrderIn(OrderStatus.PAYMENT_PENDING, products).apply { failPayment() }
+    }
 }
 
 /**

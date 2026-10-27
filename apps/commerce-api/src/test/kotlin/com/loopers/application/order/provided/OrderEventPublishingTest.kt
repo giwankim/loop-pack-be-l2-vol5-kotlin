@@ -11,21 +11,23 @@ import com.loopers.application.order.required.OrderConfirmedEvent
 import com.loopers.application.order.required.OrderEventPublisher
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
-import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
-import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.payment.createPgTransaction
+import com.loopers.domain.payment.createPgTransactionOf
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
+import com.loopers.support.afterTheCreateIsAnswered
+import com.loopers.support.awaitLinesAt
+import com.loopers.support.failTxBOnceAfterItsWrites
+import com.loopers.support.pauseTheFirstTxBHoldingTheOrder
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
@@ -45,7 +47,6 @@ import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.json.JsonContent
-import org.springframework.test.util.AopTestUtils
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
 import java.time.Instant
@@ -76,7 +77,6 @@ class OrderEventPublishingTest(
     private val orderConfirmer: OrderConfirmer,
     private val orderPaymentReconciler: OrderPaymentReconciler,
     private val orderFinder: OrderFinder,
-    private val paymentFinder: PaymentFinder,
     private val orderEventPublisher: OrderEventPublisher,
     private val clock: TestClock,
     private val kafkaProperties: KafkaProperties,
@@ -122,7 +122,8 @@ class OrderEventPublishingTest(
 
     /**
      * Logs from the Kafka adapter, where the relay logs each publish. The INFO line is logged on the producer's thread when
-     * the broker acknowledges the record, so it is read under the appender's lock ([relayInfoLines]).
+     * the broker acknowledges the record, and that acknowledgement can reach the producer after the record reached the
+     * consumer. So the line may trail the record, and a scene waits for it ([awaitLinesAt]).
      */
     private val kafkaAdapterLogs = ListAppender<ILoggingEvent>()
 
@@ -201,8 +202,8 @@ class OrderEventPublishingTest(
     @Test
     fun `a customer reconcile that first confirms the order publishes one record and reconciling again publishes no other`() {
         prepareOrder(products = listOf(prepareProduct()), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, PgStatus.SUCCESS))
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, PgStatus.SUCCESS))
         clock.pin(CONFIRMED_AT)
 
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
@@ -222,8 +223,8 @@ class OrderEventPublishingTest(
     @Test
     fun `the PG's callback that first confirms the order publishes one record and a duplicate callback publishes no other`() {
         prepareOrder(products = listOf(prepareProduct()), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, PgStatus.SUCCESS))
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, PgStatus.SUCCESS))
         clock.pin(CONFIRMED_AT)
 
         orderPaymentReconciler.reconcile(order.id)
@@ -245,9 +246,9 @@ class OrderEventPublishingTest(
     @Test
     fun `a duplicate callback racing the first one publishes no second record`() {
         prepareOrder(products = listOf(prepareProduct()), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, PgStatus.SUCCESS))
-        pauseTheFirstTxBHoldingTheOrder()
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, PgStatus.SUCCESS))
+        paymentModifyService.pauseTheFirstTxBHoldingTheOrder(pause)
         clock.pin(CONFIRMED_AT)
 
         val first = inAnotherThread { orderPaymentReconciler.reconcile(order.id) }
@@ -282,7 +283,7 @@ class OrderEventPublishingTest(
         )
         testPg.hasTransactions(pgOrderId, succeededTransaction(pgOrderId, amount = 2_000))
         var recordsAfterCallback: List<ConsumerRecord<String, String>> = emptyList()
-        afterTheCreateIsAnswered {
+        pgTransactionService.afterTheCreateIsAnswered {
             orderPaymentReconciler.reconcile(order.id)
             recordsAfterCallback = orderEvents.publishedRecords(expected = 1)
         }
@@ -369,7 +370,7 @@ class OrderEventPublishingTest(
             transactionKey = TRANSACTION_KEY,
             pgStatus = "SUCCESS",
         )
-        failTxBOnceAfterItsWrites()
+        orderPaymentSagaSteps.failTxBOnceAfterItsWrites(entityManager)
         clock.pin(CONFIRMED_AT)
         assertThrows<DataAccessResourceFailureException> { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
         assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
@@ -407,7 +408,7 @@ class OrderEventPublishingTest(
 
         val record = orderEvents.publishedRecords(expected = 1).single()
 
-        assertThat(relayInfoLines().map { it.formattedMessage }).containsExactly(
+        assertThat(kafkaAdapterLogs.awaitLinesAt(Level.INFO, RELAY_WAIT).map { it.formattedMessage }).containsExactly(
             "Published the order confirmed event. eventId=order-confirmed:v1:${order.id}, topic=${record.topic()}, " +
                 "partition=${record.partition()}, offset=${record.offset()}",
         )
@@ -473,33 +474,6 @@ class OrderEventPublishingTest(
         }
     }
 
-    /**
-     * The relay's INFO lines, once there is one. The broker's acknowledgement can reach the producer after the record reached
-     * the consumer, so the line may trail the record.
-     */
-    private fun relayInfoLines(): List<ILoggingEvent> {
-        await().atMost(RELAY_WAIT).until { relayInfoLinesSoFar().isNotEmpty() }
-
-        return relayInfoLinesSoFar()
-    }
-
-    /** The appender adds a line under its own lock on the producer's thread, so the list is read under that lock. */
-    private fun relayInfoLinesSoFar(): List<ILoggingEvent> {
-        return synchronized(kafkaAdapterLogs) { kafkaAdapterLogs.list.filter { it.level == Level.INFO } }
-    }
-
-    /** Confirms the prepared order with a create accepted as pending and returns its payment, read in a new transaction. */
-    private fun confirmPending(): Payment {
-        confirmOrder(testPg, pgStatus = "PENDING")
-
-        return inNewTransaction { paymentFinder.findByOrder(order.id) }
-    }
-
-    /** The PG transaction that matches [payment]: its PG order ID, amount and transaction key, with PG status [status]. */
-    private fun transactionOf(payment: Payment, status: PgStatus): PgTransaction {
-        return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = status)
-    }
-
     /** The successful PG transaction a lookup by [pgOrderId] finds after the scene's create stub accepted [amount]. */
     private fun succeededTransaction(pgOrderId: String, amount: Long): PgTransaction {
         return PgTransaction(
@@ -508,47 +482,6 @@ class OrderEventPublishingTest(
             amount = Money(amount),
             status = PgStatus.SUCCESS,
         )
-    }
-
-    /**
-     * Stops the first TX B that applies a PG transaction to the payment just before it does, while it holds the order. Later
-     * calls are not stopped, so another TX B applying the same answer waits on the order lock. The Service is a CGLIB proxy,
-     * so the stub goes on the spy it wraps.
-     */
-    private fun pauseTheFirstTxBHoldingTheOrder() {
-        val target = AopTestUtils.getUltimateTargetObject<PaymentModifyService>(paymentModifyService)
-        every { target.reconcile(any(), any()) } answers {
-            pause.hold()
-            callOriginal()
-        } andThenAnswer { callOriginal() }
-    }
-
-    /**
-     * Runs [action] right after confirm's create is answered, before the answer goes to TX B. The PG call is outside any
-     * transaction, so a `NEVER` port such as the PG's reconcile is allowed. The Service is a CGLIB proxy, so the stub goes on
-     * the spy it wraps.
-     */
-    private fun afterTheCreateIsAnswered(action: () -> Unit) {
-        val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
-        every { target.create(any(), any()) } answers {
-            val transaction = callOriginal()
-            action()
-            transaction
-        }
-    }
-
-    /**
-     * The TX B entry for a PG transaction changes the payment and the order, flushes and then throws once, as if the database
-     * failed before the commit, so the whole TX B rolls back. Its transaction is opened by the proxy, so the stub goes on the
-     * spy it wraps. Later calls are the real ones.
-     */
-    private fun failTxBOnceAfterItsWrites() {
-        val target = AopTestUtils.getUltimateTargetObject<OrderPaymentSagaSteps>(orderPaymentSagaSteps)
-        every { target.applyTransaction(any(), any(), any()) } answers {
-            callOriginal()
-            entityManager.flush()
-            throw DataAccessResourceFailureException("The database failed before TX B committed.")
-        } andThenAnswer { callOriginal() }
     }
 
     /**

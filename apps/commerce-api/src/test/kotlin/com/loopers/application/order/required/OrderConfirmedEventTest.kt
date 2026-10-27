@@ -1,9 +1,7 @@
 package com.loopers.application.order.required
 
-import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderProduct
 import com.loopers.domain.order.OrderStatus
-import com.loopers.domain.order.createOrder
+import com.loopers.domain.order.createOrderIn
 import com.loopers.domain.order.createOrderProduct
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -29,7 +27,7 @@ class OrderConfirmedEventTest {
             createOrderProduct(productId = 10, quantity = 1),
             createOrderProduct(productId = 20, quantity = 2),
         )
-        val order = orderIn(OrderStatus.CONFIRMED, products)
+        val order = createOrderIn(OrderStatus.CONFIRMED, products, confirmedAt = CONFIRMED_AT)
 
         val event = OrderConfirmedEvent.from(order)
 
@@ -56,17 +54,8 @@ class OrderConfirmedEventTest {
     @ParameterizedTest
     @EnumSource(OrderStatus::class, names = ["CONFIRMED"], mode = EnumSource.Mode.EXCLUDE)
     fun `an order that is not confirmed has no confirmation to publish`(status: OrderStatus) {
-        val order = orderIn(status)
+        val order = createOrderIn(status)
 
         assertThrows<IllegalArgumentException> { OrderConfirmedEvent.from(order) }
-    }
-
-    private fun orderIn(status: OrderStatus, products: List<OrderProduct>? = null): Order {
-        return when (status) {
-            OrderStatus.DRAFT -> createOrder(userId = 1, products = products)
-            OrderStatus.PAYMENT_PENDING -> orderIn(OrderStatus.DRAFT, products).apply { startPayment() }
-            OrderStatus.CONFIRMED -> orderIn(OrderStatus.PAYMENT_PENDING, products).apply { completePayment(CONFIRMED_AT) }
-            OrderStatus.PAYMENT_FAILED -> orderIn(OrderStatus.PAYMENT_PENDING, products).apply { failPayment() }
-        }
     }
 }

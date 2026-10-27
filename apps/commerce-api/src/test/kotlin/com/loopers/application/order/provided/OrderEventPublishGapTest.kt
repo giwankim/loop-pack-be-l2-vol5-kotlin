@@ -18,6 +18,8 @@ import com.loopers.support.Pause
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
+import com.loopers.support.awaitLinesAt
+import com.loopers.support.linesAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkBean
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -120,7 +122,7 @@ class OrderEventPublishGapTest(
     /**
      * Logs from the Kafka adapter, where the relay logs a failed publish, and from Spring's default async exception handler,
      * which would log an exception that left the relay. The relay logs on its own thread, so the list is read under the
-     * appender's lock ([relayLinesSoFar]).
+     * appender's lock ([linesAt]).
      */
     private val relayLogs = ListAppender<ILoggingEvent>()
 
@@ -166,7 +168,7 @@ class OrderEventPublishGapTest(
         assertTheConfirmationCommitted(confirmed)
         val records = orderEvents.publishedRecords(expected = 0)
         assertThat(records).isEmpty()
-        assertThat(relayWarnLines().map { it.formattedMessage }).containsExactly(
+        assertThat(relayLogs.awaitLinesAt(Level.WARN, RELAY_WAIT).map { it.formattedMessage }).containsExactly(
             "Could not publish the order confirmed event. eventId=order-confirmed:v1:${order.id}, orderId=${order.id}, " +
                 "cause=org.springframework.kafka.KafkaException: Send failed",
         )
@@ -196,10 +198,10 @@ class OrderEventPublishGapTest(
         assertTheConfirmationCommitted(confirmed)
         val records = orderEvents.publishedRecords(expected = 0)
         assertThat(records).isEmpty()
-        assertThat(relayLinesSoFar(Level.WARN)).isEmpty()
+        assertThat(relayLogs.linesAt(Level.WARN)).isEmpty()
         logTheUnpublishedCase("the publish is stopped", recordsOnTheTopic = records.size)
         pause.release()
-        assertThat(relayWarnLines()).hasSize(1)
+        assertThat(relayLogs.awaitLinesAt(Level.WARN, RELAY_WAIT)).hasSize(1)
         assertNothingLeftTheRelay()
     }
 
@@ -255,13 +257,6 @@ class OrderEventPublishGapTest(
         return KafkaException("Send failed", cause)
     }
 
-    /** The relay's WARN lines, once there is one. The relay logs on its own thread after the confirmation returned. */
-    private fun relayWarnLines(): List<ILoggingEvent> {
-        await().atMost(RELAY_WAIT).until { relayLinesSoFar(Level.WARN).isNotEmpty() }
-
-        return relayLinesSoFar(Level.WARN)
-    }
-
     /**
      * No ERROR for [QUIET_WAIT] after the relay's WARN line: Spring's async exception handler logged nothing, so no exception
      * left the relay.
@@ -270,12 +265,7 @@ class OrderEventPublishGapTest(
         await("no exception left the relay")
             .during(QUIET_WAIT)
             .atMost(QUIET_WAIT.multipliedBy(2))
-            .until { relayLinesSoFar(Level.ERROR).isEmpty() }
-    }
-
-    /** The appender adds a line under its own lock on the relay's thread, so the list is read under that lock. */
-    private fun relayLinesSoFar(level: Level): List<ILoggingEvent> {
-        return synchronized(relayLogs) { relayLogs.list.filter { it.level == level } }
+            .until { relayLogs.linesAt(Level.ERROR).isEmpty() }
     }
 
     /**

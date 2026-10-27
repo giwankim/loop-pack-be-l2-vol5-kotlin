@@ -160,7 +160,7 @@ abstract class BaseApplicationServiceTest {
 
     /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
     @BeforeEach
-    fun resetPgLookupBreaker() {
+    fun resetClockAndPgLookupBreaker() {
         clocks.ifAvailable { it.reset() }
         circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP).reset()
     }
