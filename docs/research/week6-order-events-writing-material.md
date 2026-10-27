@@ -272,3 +272,70 @@ These findings were not applied:
 - Whether `confirmedAt` should always carry six fraction digits. A `@JsonFormat` on `OrderConfirmedMessage.Payload.confirmedAt` would do it without touching the shared template.
 - Issue 172 reads the broker too. By design section 8's rule ("같은 준비가 두 테스트에서 반복되면 그때 fixture에 도우미를 둔다"), that is when the reader leaves `OrderEventPublishingTest` for a shared helper.
 - The relay's virtual threads have no name, so the WARN from its `catch` shows an empty thread name.
+
+## W7 handoff: unpublished case
+
+Recorded 2026-10-27 from one run of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172)'s reproduction, [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt). This is the unpublished case of design section 6 that week 6 hands to week 7's outbox. The published-and-consumed case comes from step 2 (`feat/purchase-activity`). The rules are rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the publish is observed and never undoes the order.
+
+### How to run it
+
+- **Commit:** [`e492cf1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e492cf1) on `feat/order-events`
+- **Command:** `./gradlew :apps:commerce-api:test --tests 'com.loopers.application.order.provided.OrderEventPublishGapTest'`
+- **Run:** 2026-10-27T11:15:22Z, 2 tests, 0 failures, 0 skipped (3.6 s and 2.5 s)
+- **Containers:** MySQL, Redis and `apache/kafka-native:4.3.2` from the Testcontainers fixtures, one per JVM, stopped when the JVM ends. The test PG is WireMock inside the test JVM.
+
+### Fixed inputs
+
+| Input | Value |
+| --- | --- |
+| Clock | `TestClock` pinned at `2026-10-27T01:02:03.123456Z` |
+| Products | two products with stock 5, priced 1,000 (ID 1) and 2,000 (ID 2) |
+| Order | 1 × product 2 and 2 × product 1, listed in that order; total 4,000 |
+| PG create | accepted as `SUCCESS` with transaction key `20261027:TR:9e3b71` |
+| PG order ID | a fresh UUID per payment (`TestPgOrderIdGenerator`), so it differs between runs |
+| Topic | `order-events-publish-gap`, the class's own (3 partitions) |
+| Injected failure | the relay's `KafkaTemplate` is a springmockk `@MockkBean`. `send` throws `KafkaException("Send failed")` caused by `TimeoutException("Topic order-events-publish-gap not present in metadata after 60000 ms.")`, which is how `send` fails when the producer cannot reach the broker within `max.block.ms` |
+
+Card values are left out.
+
+### Observed
+
+Each scene runs after the tables are truncated, so both get order ID 1.
+
+| | Scene 1: the publish failed | Scene 2: the publish is stopped |
+| --- | --- | --- |
+| What `send` did | threw at once | stopped on `Pause` until the reads below were done, then threw |
+| orderId | 1 | 1 |
+| PG order ID | `2d50c75c-dc9f-4bf3-97c4-fd5186da94ce` | `7c92525b-8893-408e-9f7c-f348acc2efa8` |
+| Transaction key | `20261027:TR:9e3b71` | `20261027:TR:9e3b71` |
+| eventId (never published) | `order-confirmed:v1:1` | `order-confirmed:v1:1` |
+| confirmedAt | `2026-10-27T01:02:03.123456Z` | `2026-10-27T01:02:03.123456Z` |
+| items | `[{productId 1, quantity 2}, {productId 2, quantity 1}]` | same |
+| Confirm's answer | `CONFIRMED` / `SUCCESS`, no exception | same, returned while `send` was stopped |
+| Order (fresh transaction) | `CONFIRMED` at the pinned instant | same |
+| Payment (fresh transaction) | `SUCCESS` under the transaction key | same |
+| Stock (fresh transaction) | product 1: 3, product 2: 4 (reserved, not released) | same |
+| PG create requests | 1 | 1 |
+| Records on the topic | 0 after the 1 s quiet period | 0 while `send` was stopped |
+| Relay log | one WARN at 20:15:38.624 on `virtual-75` | none while stopped. The evidence line was logged at 20:15:42.526 and the WARN at 20:15:42.530 on `virtual-86`, after release |
+| Async handler ERROR | none for 1 s after the WARN | same |
+
+The WARN line, identical in both scenes:
+
+```
+Could not publish the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, cause=org.springframework.kafka.KafkaException: Send failed
+```
+
+The test logs each scene's values in one INFO line, `W7 handoff, unpublished case: …`, from a fresh transaction after the assertions.
+
+### What it shows and what it does not
+
+- The database and the broker are not one transaction. TX B committed the confirmation, consumed the reservation and answered, and the event exists nowhere: not on the broker, not in a table. The only trace is one WARN line.
+- Scene 2 is the window itself. Between TX B's commit and the end of `send`, a process that stopped would lose the event the same way, with no WARN at all. The relay runs after the commit on a virtual thread with no queue, and nothing waits for it when the context closes (design section 4), so the window is at least one hand-off wide. A broker that cannot be reached widens it to `max.block.ms` (60 s by default).
+- It is a failure injected into one `send`, not an OS kill or a broker outage. The producer's own retries and `delivery.timeout.ms` are not exercised.
+- Week 7 closes the window with an outbox row written inside TX B. ADR 0032's "다시 볼 조건" plans a `BEFORE_COMMIT` listener on the same Spring event, which leaves the saga step and the port unchanged.
+
+### Corrections found on the way
+
+- A red check made the relay synchronous and let the failure escape. The confirmation still answered normally. `@TransactionalEventListener(AFTER_COMMIT)` runs in `afterCompletion`, and Spring catches and logs what it throws (`TransactionSynchronization.afterCompletion threw exception`, spring-tx 7.0.9). ADR 0032 rule 4 and design section 4 had said the exception leaves `commit()` and turns the confirmation into a 500. Both now carry a dated correction, and the relay's KDoc is fixed. The case for `@Async` stands on the held connection and on `max.block.ms` holding the confirming thread.
+- Issue 171's "Left for later" says the relay's WARN shows an empty thread name. The run shows `virtual-75` and `virtual-86`: logback prints an unnamed virtual thread as `virtual-<id>`.
