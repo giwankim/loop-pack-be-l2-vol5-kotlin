@@ -27,7 +27,7 @@ date: 2026-10-27
 - **포트 없이 응용 계층이 `ApplicationEventPublisher`를 직접 부른다.** 의존이 생성자에 보이지 않고 ADR 0013의 포트 목록에서 사라진다.
 - **동기 중계와 기다림 한도.** 규칙 4와 5의 까닭이다.
 - **지금 Outbox.** 과제가 다음 주로 두었다. 이번 주는 누락 구간을 재현해 넘긴다.
-- **사용자 정의 `AsyncUncaughtExceptionHandler`.** 컨텍스트에 하나뿐이고 `(Throwable, Method, Object...)`만 받아 이벤트를 알지 못한다. 기본 처리기가 메서드와 인자를 ERROR로 남기는 것으로 중계 자체의 버그를 잡고, 예상한 실패는 중계의 코드가 잡는다.
+- **사용자 정의 `AsyncUncaughtExceptionHandler`.** 컨텍스트에 하나뿐이고 `(Throwable, Method, Object...)`만 받아 이벤트를 알지 못한다. 기본 처리기가 메서드와 인자를 ERROR로 남기는 것으로 중계 자체의 버그를 잡고, 예상한 실패는 중계의 코드가 잡는다. (2026-10-27, [issue 171](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/171): 기본 처리기는 메서드와 스택 트레이스만 남기고 인자는 남기지 않는다. 버그의 ERROR 줄에는 eventId가 없지만 고르지 않은 까닭은 그대로다.)
 
 ## 대가
 

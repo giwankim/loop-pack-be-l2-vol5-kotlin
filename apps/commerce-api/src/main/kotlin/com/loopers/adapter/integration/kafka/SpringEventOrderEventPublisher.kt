@@ -8,8 +8,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * [OrderEventPublisher] on Spring's application events (ADR 0032 rule 3). It hands the event to [ApplicationEventPublisher]
- * inside the caller's transaction, so a transactional event listener can act on it once that transaction commits, and never
- * if it rolls back.
+ * inside the caller's transaction, so [OrderConfirmedKafkaRelay] publishes it to Kafka once that transaction commits, and
+ * never if it rolls back.
  *
  * It refuses a call outside a transaction, as `ProductListRevisionMarker` does. A transactional event listener silently drops
  * an event published without one, so the promise to deliver after the commit would be lost without a trace. It is a plain
