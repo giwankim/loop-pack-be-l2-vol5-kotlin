@@ -197,3 +197,79 @@ The two-axis review (standards and spec) ran on the working tree before the comm
 - **Ticket 171** adds the AFTER_COMMIT relay, and the scene where TX B rolls back (`failTxBOnceAfterItsWrites`) belongs there, read from the broker. 171 also decides whether the scenes in `OrderEventPublishingTest` that read recorded events stay beside the broker reads or become broker reads. Spec 167's testing decisions say not to assert how many Spring events were published.
 - The relay's `@Async` virtual threads are created per task by the submitting thread. So the record should follow them, but this has not been tried yet.
 - Once 171 or a later ticket settles the broker scenes, the four copied spy helpers could move to `com.loopers.support`, changing `OrderPaymentIntegrationTest`'s call sites in the same commit.
+
+## Issue 171: an async after-commit relay publishes the order confirmed event to Kafka and observes the publish
+
+Recorded 2026-10-27 from the closing comment of [issue 171](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/171). The rules are rules 3–6 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the Spring event relayed after the commit, why the relay is asynchronous, the publish observed and not awaited, and the key and envelope derived from the order. The decisions are the "어댑터" section of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and sections 2, 4, 5 and 8 of the [order events design](../design/order-events.md). The code is:
+
+- [`OrderConfirmedKafkaRelay`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderConfirmedKafkaRelay.kt): `@Async("orderEventsExecutor") @TransactionalEventListener(AFTER_COMMIT)`, `send()` in `try/catch`, `whenComplete` logging one INFO or one WARN
+- [`OrderConfirmedMessage`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderConfirmedMessage.kt): the envelope of design section 2
+- [`OrderEventsKafkaConfig`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderEventsKafkaConfig.kt): `@EnableAsync` and the `orderEventsExecutor` bean
+- [`OrderEventPublishingTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishingTest.kt): every scene now reads the broker
+- [`BaseCommittingApplicationServiceTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/test/BaseCommittingApplicationServiceTest.kt): `@RecordApplicationEvents` and `applicationEvents` removed
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the broker-reading bullet under 도우미, next to the Kafka topic and producer tests
+
+### Landed
+
+Committed on `feat/order-events` on top of `c56cfd7`:
+
+- [`5d426ae`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/5d426ae) is the code, the tests, the standards bullet and the dated notes in ADR 0012, ADR 0032 and the design doc.
+- The commit after it records this comment in this writing-material file.
+
+### Acceptance criteria
+
+- [x] **A confirmation that first confirms an order (via create answer, customer reconcile, and PG callback, each in its own scene) produces exactly one record on the test's topic within the `KafkaTestUtils` wait. The key equals the order ID as a string, and the body equals design section 2's envelope with the pinned `confirmedAt` rendered as an ISO-8601 UTC string and items in ascending product ID order.** The create-answer scene orders two products in descending ID order and compares the body with a hand-written envelope through `JsonContent(…).isStrictlyEqualTo(…)`. It also checks that the record carries no header. The reconcile and callback scenes compare the same envelope for their one product. Each scene reads exactly one record within a 10 s wait and finds no other in the 1 s that follows.
+- [x] **The confirm/reconcile/callback call returns before or regardless of the record's arrival, with its week 5 status and body unchanged.** Each scene asserts the answer (`CONFIRMED` and `SUCCESS`) before it reads the broker. The relay now runs in every context that confirms an order. The week 5 suites (`OrderPaymentIntegrationTest`, `PaymentApiTest`, `OrderConfirmationApiTest`) pass unchanged, and the full run's output has no WARN from the relay and no ERROR from the async handler.
+- [x] **Two orders confirmed in one test yield two records with different eventIds and keys.** Each record is matched to its order by key and `$.eventId`, in any order, since the two keys can land on different partitions.
+- [x] **A TX B rolled back after its writes (existing `failTxBOnceAfterItsWrites` technique) yields no record. The reconcile that later confirms yields exactly one.** The helper is copied from `OrderPaymentIntegrationTest`, with a spy on `OrderPaymentSagaSteps`. The step has already published inside the doomed TX B, so the empty read shows that the relay drops a rolled-back event, not that nothing was published.
+- [x] **Pending, unknown, failed, rejected and conflicting outcomes yield no record. Repeated application after confirmation yields no second record (assert by draining the topic after a bounded wait).** The five rows of the parameterized scene read for the 1 s quiet period and find nothing. "Unknown" is the lost create response. The repeated reconcile, the duplicate callback, the racing duplicate callback and the late create answer each find exactly one record. The late-create scene reads the callback's record inside the PG-call spy and then finds nothing after confirm's own TX B.
+- [x] **One INFO line per successful send, naming eventId, topic, partition and offset, is captured (existing ListAppender technique).** The scene compares the whole message with the topic, partition and offset of the record the consumer read. The line is logged on the producer's network thread once the broker acknowledges the record, which can be after the consumer already sees it. So the appender's list is read under the appender's lock, and Awaitility waits for the line within a bound.
+- [x] **The relay bean's method is proxied asynchronously: a test asserts the send happened on a thread other than the caller's, without asserting elapsed time.** A `@MockkSpyBean` on `KafkaTemplate` captures the thread that calls `send`. It is not the test's thread, and it is virtual. The INFO line's thread could not show this. It is `kafka-producer-network-thread | commerce-api-1`, which differs from the caller's thread even when the relay is synchronous.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes, with executed test counts checked.** 78 classes, **941 tests, 0 failures, 0 skipped**: 937 plus four new scenes (the rolled-back TX B, two orders, the INFO line and the publishing thread). `OrderEventPublishingTest` has 15 tests and takes about 40 s, mostly in the 1 s quiet periods. The review changed only KDoc, documents and one parameter name after that run, and the class was run again (15 of 15).
+
+### Red checks
+
+The first scene went red before the relay existed: the confirmation succeeded, and no record arrived within the 10 s wait. Once the relay was in, every other scene passed without new code. So the relay was mutated by hand, and the class was run against each mutation:
+
+| Mutation | Scenes that failed |
+| --- | --- |
+| `@TransactionalEventListener(phase = AFTER_COMMIT)` → `@EventListener` | the rolled-back TX B, which found a record |
+| `@Async` removed | the publishing thread, which was `Test worker` |
+| each envelope sent twice | 9 scenes: every scene that expects a record |
+
+Each mutation failed only the scene meant to catch it, and the file was restored byte for byte after each run.
+
+### Decisions made while implementing
+
+- **No producer mapper is configured.** `modules:kafka` declares `JacksonJsonSerializer` by class name, so it uses spring-kafka 4.1.1's default `JsonMapper` (Jackson 3). Jackson 3 writes `Instant` with `ISO_INSTANT`, and the pinned `2026-10-27T01:02:03.123456Z` went out as written. `ISO_INSTANT` writes the fraction in groups of three as far as needed. A time whose micros end in `000` goes out as `…03.100Z`, and a whole second as `…03Z`. Precision is unchanged, and ISO-8601 parsers read all three forms, so design section 2 now says the consumer compares `confirmedAt` as an instant, not as a string.
+- **The broker reader does not use a unique group and `earliest`.** A class's tests share its topic, and `DatabaseCleanUp`'s `TRUNCATE` restarts `AUTO_INCREMENT`. Order IDs, and so keys and eventIds, start again at 1 in every test, so reading from the earliest offset would pass earlier scenes' records off as this one's. Before each scene, the consumer is assigned every partition and placed at its end, and `position` fixes those offsets before the scene runs. Without the group protocol, the race that `earliest` guards against, an assignment that lands after the record, cannot happen. The group name `consumerProps` asks for is never used. `CODING_STANDARDS.md` and design section 8 record this.
+- **Waits:** 10 s for the records a scene expects, with the read returning as soon as they arrive, then a 1 s quiet period. A wrong record would follow a commit the call has already returned from, after one hand-off and one round trip to the local broker. A quiet period that is too short can only let a bug pass. It cannot make a correct scene fail. No scene sleeps or asserts elapsed time.
+- **The scenes read the broker instead of recorded Spring events.** Issue 170 left this choice to 171, and spec 167's testing decisions say not to assert how many Spring events were published. Recorded events are a detail of the adapter, the port → Spring event hop, which week 7's outbox may change. The broker is what other services see. No test read `applicationEvents` any more, so `@RecordApplicationEvents` and the field left the committing base, following the rule against helpers that no test uses. The two bases now match `4779179`.
+- **The envelope is built outside the `try`.** A bug in the mapping goes to Spring's default `AsyncUncaughtExceptionHandler` as an ERROR and is not mistaken for a failed publish. That handler logs the method and the stack trace but not the argument (`SimpleAsyncUncaughtExceptionHandler`, spring-aop 7.0.9). ADR 0032 and design section 4 had said it logs the argument, and both now carry a dated correction.
+- **The executor is an `Executor` bean, so Boot 4.1 backs off from its own `applicationTaskExecutor`** (`spring.task.execution.mode` defaults to `auto`). Nothing in commerce-api uses it: no MVC handler returns an async type, and no other method is `@Async`. `TaskExecutorAdapter` has no `close`, so nothing waits for running relays when the context closes. A relay that has not published by then falls in the publish gap of design section 6.
+- **Log text says "publish".** 발행하다 lists "send" under _Avoid_, so `send` appears only as the name of the Kafka method.
+- **The placeholder names stayed** (`OrderConfirmedKafkaRelay`, `OrderEventsKafkaConfig`), so spec 167 needs no dated note about names.
+
+### Review
+
+The two-axis review (standards and spec) ran on the working tree before the commit. It found no hard violation, no missing criterion and no scope creep. These findings were applied:
+
+- The relay's KDoc, ADR 0032 and design section 4 said the default async handler logs the argument. It does not, and all three were corrected.
+- Earlier new kinds of spy each got a dated note in ADR 0012, and the `KafkaTemplate` spy now has one too.
+- `publishedRecords(count)` became `publishedRecords(expected)`, because the list it returns can hold more than that number.
+- Two KDocs said the callback "is published". They now say the confirmation is.
+
+These findings were not applied:
+
+- `failTxBOnceAfterItsWrites` is a fifth helper copied from `OrderPaymentIntegrationTest`. Moving the copies to `com.loopers.support` is still the follow-up that issue 170 named.
+- `@EnableAsync` sits in the Kafka adapter's configuration because the ticket puts it there. Its KDoc says so.
+- The rolled-back TX B scene asserts in the middle of its setup. The criterion names it as one scene.
+- `relayInfoLines()` returns at the first INFO line. A second line would come from a second publish, and the 1 s quiet period before it already catches that as a second record.
+
+### Left for later
+
+- Spec 167's "기반" bullet still says the consumer uses a unique group and `earliest`. Only design section 8 and `CODING_STANDARDS.md` record the change, so the spec could get a dated note.
+- Spec 167's seam 1 lists "포인트로 확정된 주문(fixture)에는 record가 없다". It is not among 171's criteria, and neither 172 nor 173 plans it.
+- Whether `confirmedAt` should always carry six fraction digits. A `@JsonFormat` on `OrderConfirmedMessage.Payload.confirmedAt` would do it without touching the shared template.
+- Issue 172 reads the broker too. By design section 8's rule ("같은 준비가 두 테스트에서 반복되면 그때 fixture에 도우미를 둔다"), that is when the reader leaves `OrderEventPublishingTest` for a shared helper.
+- The relay's virtual threads have no name, so the WARN from its `catch` shows an empty thread name.
