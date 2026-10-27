@@ -1,6 +1,6 @@
 # Week 6 order events: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 1 ticket's closing comment. The rules behind it are in [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and the [order events design](../design/order-events.md). The step is [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 1 ticket's closing comment, except the W7 handoff at the end, which is recorded from one run of issue 172's reproduction. The rules behind it are in [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and the [order events design](../design/order-events.md). The step is [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167).
 
 ## Issue 169: the confirmation instant comes from a Clock bean the tests can pin
 
@@ -273,9 +273,82 @@ These findings were not applied:
 - Issue 172 reads the broker too. By design section 8's rule ("같은 준비가 두 테스트에서 반복되면 그때 fixture에 도우미를 둔다"), that is when the reader leaves `OrderEventPublishingTest` for a shared helper.
 - The relay's virtual threads have no name, so the WARN from its `catch` shows an empty thread name.
 
+## Issue 172: a publish that fails or stops after TX B commits leaves the order confirmed and no record on the broker
+
+Recorded 2026-10-27 from the closing comment of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172). The ticket names rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the relay observes the publish and never throws, and the list of confirmations that publish nothing. The gap is the case rule 7 does not list, a confirmation that should publish and does not. The decisions are "이음매 2" of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167) and section 6 of the [order events design](../design/order-events.md). One run's values are in [W7 handoff: unpublished case](#w7-handoff-unpublished-case) below. The code is:
+
+- [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt): the two scenes, with the relay's `KafkaTemplate` replaced by a `@MockkBean(relaxUnitFun = true)`
+- [`TopicReader`](../../apps/commerce-api/src/test/kotlin/com/loopers/support/TopicReader.kt): the broker reader, moved out of `OrderEventPublishingTest` now that two classes read the broker
+- [`OrderEventPublishingTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishingTest.kt): reads the broker through `TopicReader`, with its scenes unchanged
+- [`OrderConfirmedKafkaRelay`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/OrderConfirmedKafkaRelay.kt): KDoc only, with the corrected reason for `@Async`
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the publish-gap bullet under 도우미, next to the broker-reading bullet that now names `TopicReader`, and the `@MockkBean` field among what a subclass may add
+
+### Landed
+
+Committed on `feat/order-events` on top of `215bdbe`, the tip after issue 171 landed:
+
+- [`e492cf1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e492cf1) is the code, the tests, the standards bullets and the dated notes in ADR 0012, ADR 0032 and the design doc.
+- [`ff6c238`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/ff6c238) records one run's values under "W7 handoff: unpublished case" in this writing-material file.
+- The commit after it records this comment in this writing-material file.
+
+### Acceptance criteria
+
+- [x] **Throwing scene: confirm answers confirmed; order CONFIRMED, payment SUCCESS, reservation consumed in a fresh transaction; no record for the eventId on the broker; exactly one WARN with eventId, orderId and cause; PG create count 1.** `send` throws `KafkaException("Send failed")` caused by Kafka's `TimeoutException` for a topic missing from the metadata. `confirm` answers `CONFIRMED` and `SUCCESS`. A fresh transaction finds the order `CONFIRMED` at the pinned instant, the payment `SUCCESS` under the PG's transaction key, and stock 3 and 4 of 5, which is what the reservation took, not released. The class's topic holds no record at all after the 1 s quiet period, which is stronger than none for that eventId. The PG received one create. The WARN is compared whole: `Could not publish the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, cause=org.springframework.kafka.KafkaException: Send failed`, with the order's ID in place of 1.
+- [x] **Paused scene: the same DB facts are readable in a fresh transaction while the send is still paused and the broker has no record; after release the test ends cleanly (the record may or may not arrive; the assertion is about the gap, not the recovery).** The `send` stub stops on `Pause.hold()`. Once `confirm` has answered, `awaitHeld()` shows the relay reached `send`, and the scene reads the same facts in a fresh transaction and finds no record on the topic. Before releasing, it asserts that the relay has logged no WARN yet. That shows `send` was still stopped during the reads, since `Pause` goes on by itself after 10 s. Released, `send` throws as the producer does once `max.block.ms` has passed, so the record never arrives. The scene waits for the relay's one WARN, so the relay has finished before the next scene starts.
+- [x] **Neither scene throws out of the confirm call or out of the relay.** `confirm` returns normally in both scenes. For the relay, the scenes' `ListAppender` also sits on the logger of `SimpleAsyncUncaughtExceptionHandler`, Spring's default handler for an exception that leaves an `@Async` method returning nothing. Both scenes see no ERROR there for 1 s after the WARN (Awaitility's `during`).
+- [x] **The writing-material file carries the observed values, command and commit for the unpublished case.** [W7 handoff: unpublished case](#w7-handoff-unpublished-case) has a run at `e492cf1`, the exact Gradle command, the pinned clock, products and quantities, and both scenes' orderId, PG order ID, transaction key, eventId, confirmedAt, items, and order, payment, stock and broker state. It has no card values. Each scene logs these values in one INFO line.
+- [x] **Nothing in `src/main` changes except KDoc, if any.** Only the relay's KDoc changed. It now gives the corrected reason for `@Async`, described below.
+- [x] **`./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-api:check` passes with executed test counts checked.** 79 classes, **943 tests, 0 failures, 0 skipped**: 941 plus the two scenes. The recorded run of `OrderEventPublishGapTest` took 3.6 s and 2.5 s. The full run's output has no ERROR from the async handler.
+
+### Red checks
+
+The relay already existed, so both scenes passed on their first run. The relay was then mutated by hand, and the class was run against each mutation:
+
+| Mutation | Where both scenes failed |
+| --- | --- |
+| `catch (e: Exception)` narrowed to `IllegalStateException`, so `send`'s exception leaves the relay | no WARN within 10 s |
+| `throw e` after `logFailure` in the `catch` | `no exception left the relay`: the async handler logged an ERROR |
+| `@Async` removed, with the `catch` narrowed as above | no WARN within 10 s, after `confirm` had answered normally |
+| `@Async` removed, `AFTER_COMMIT` changed to `BEFORE_COMMIT`, with the `catch` narrowed | `confirm` threw the `KafkaException` |
+
+Each mutation failed both scenes, and the file was restored byte for byte after each run. The third row is where ADR 0032 rule 4 turned out to be wrong.
+
+### Decisions made while implementing
+
+- **A mock, not a spy.** No record may reach the real broker, so the relay's `KafkaTemplate` is a springmockk `@MockkBean`, and the relay, the AFTER_COMMIT listener and the executor stay real. `KafkaTemplate` is a `SmartInitializingSingleton`, and Spring calls `afterSingletonsInstantiated()` on the mock that holds its bean name while the context starts. The first run failed with `MockKException: no answer found for KafkaTemplate(kafkaTemplate#1).afterSingletonsInstantiated()`. So the mock is `relaxUnitFun = true`: calls that return `Unit` are relaxed, and a `send` a scene did not stub still fails. It is the first mock among the fields a subclass may add, and ADR 0012 has a dated note.
+- **The scenes confirm through the provided port `OrderConfirmer`, not HTTP.** The ticket says so. Spec 167's seam 2 says "확정은 200으로 답하고" and design section 6 says "실제 주문 API". The design's dated note records the port.
+- **The stopped `send` throws once released.** `Pause` stands in for the producer waiting for the topic's metadata, and the throw is what `send` does once `max.block.ms` (60 s by default) has passed. The stopped scene is the middle of that wait, and the throwing scene is its end. Both throw the same failure, `KafkaException("Send failed")` caused by `TimeoutException("Topic order-events-publish-gap not present in metadata after 60000 ms.")`, so both log the same WARN. A mock cannot publish, so the record never arrives after release. The ticket allows either outcome, and waiting for the WARN ends the scene only after the relay has finished.
+- **The class has a topic of its own, `order-events-publish-gap`, though it publishes nothing.** Otherwise a record that another class's relay publishes late could pass for this class's order, whose ID restarts at 1 like theirs.
+- **The broker reader became `TopicReader` in `com.loopers.support`.** Design section 8 moves a helper out once two tests repeat the same setup, and issue 171 named this ticket. The reader stays in commerce-api's tests rather than `modules:kafka`'s testFixtures, because commerce-api is the only module that reads the broker. Design section 8 has a dated note saying so. The reader's waits are private: `OrderEventPublishingTest` had timed its INFO-line and thread waits with the reader's record wait, and it now has a `RELAY_WAIT` of its own.
+- **ADR 0032 rule 4 was wrong about the exception.** Spring runs an AFTER_COMMIT listener in `TransactionalApplicationListenerSynchronization.afterCompletion`, and `TransactionSynchronizationUtils.invokeAfterCompletion` catches whatever it throws and logs `TransactionSynchronization.afterCompletion threw exception` at ERROR (spring-tx 7.0.9). So a synchronous relay's exception never leaves `commit()`, and the confirmation still answers. Only a hand-registered `afterCommit` synchronization propagates. The case for `@Async` stands on the other two reasons. `afterCompletion` also runs before `cleanupAfterCompletion`, so a synchronous publish holds TX B's connection. And a `send` waiting for metadata holds the confirming thread for up to `max.block.ms`. The relay's KDoc is corrected, and ADR 0032 rule 4 and design section 4 carry dated notes.
+
+### Review
+
+The two-axis review (standards and spec) ran on the working tree before the commit. It found no hard violation, no missing criterion and no scope creep. These findings were applied:
+
+- The paused scene did not show that `send` was still stopped while it read. `Pause` goes on by itself after 10 s, and the empty broker read passes either way. The scene now asserts no WARN before release.
+- The paused scene checked for an ERROR as soon as the WARN appeared, so an exception logged a moment later could slip through. Both scenes now watch for 1 s with Awaitility's `during`.
+- The two scenes repeated their setup and their first assertions. These became `prepareTheOrder()` and `assertTheConfirmationCommitted()`, with the two products as fields.
+- `TopicReader.RECORD_WAIT` also timed `OrderEventPublishingTest`'s log and thread waits. The reader's waits are now private, and each class has its own `RELAY_WAIT`.
+- A line in the evidence log's raw string was 150 characters, over `.editorconfig`'s 130. ktlint does not check inside raw strings. The line was split.
+- The relay's KDoc paragraph was re-wrapped, and the ADR 0032 note says 발행 where it said 전송, since `CONTEXT.md` lists 전송하다 under _Avoid_.
+
+These findings were not applied:
+
+- `BaseApplicationServiceTest`'s KDoc gained Korean text, though new comments are in English. The text extends an existing Korean list in the middle of a sentence.
+- The list of what a subclass may add lives in three places: `CODING_STANDARDS.md`, that KDoc and ADR 0012's notes. The KDoc says `@MockkBean` without `relaxUnitFun = true`. The repo keeps the three in step by hand.
+- Both broker-reading classes repeat the `TopicReader` open and close and the `ListAppender` capture. They join the copied helpers that issue 170's "Left for later" would move to `com.loopers.support` in one commit.
+- The stopped scene asserts an outcome after release, one WARN, which the ticket says is not the point. It stays for the reason under the decisions above.
+
+### Left for later
+
+- Ticket 173 (docs) is the last of spec 167's tickets.
+- Spec 167's seam 2 still says the confirmation answers 200, as over HTTP. Only design section 6's dated note says the scenes call the port, so the review that closes the spec could add a note there.
+- The seam 1 scene for an order confirmed with points, and whether `confirmedAt` always carries six fraction digits, are still open from issue 171.
+
 ## W7 handoff: unpublished case
 
-Recorded 2026-10-27 from one run of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172)'s reproduction, [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt). This is the unpublished case of design section 6 that week 6 hands to week 7's outbox. The published-and-consumed case comes from step 2 (`feat/purchase-activity`). The rules are rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the publish is observed and never undoes the order.
+Recorded 2026-10-27 from one run of [issue 172](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/172)'s reproduction, [`OrderEventPublishGapTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventPublishGapTest.kt). This is the unpublished case of design section 6 that week 6 hands to week 7's outbox. The published-and-consumed case comes from step 2 (`feat/purchase-activity`). The ticket names rules 5 and 7 of [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): the relay observes the publish and never throws, and the list of confirmations that publish nothing, which leaves this case out.
 
 ### How to run it
 
