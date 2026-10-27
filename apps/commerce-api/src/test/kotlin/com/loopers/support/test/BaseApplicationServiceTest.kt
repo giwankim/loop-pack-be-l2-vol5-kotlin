@@ -122,9 +122,12 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var circuitBreakerRegistry: CircuitBreakerRegistry
 
-    /** PG 조회의 브레이커가 읽는 시계. `@EnableTestPg`가 가져온 컨텍스트에만 있다. */
+    /**
+     * The context's clock: the PG lookup breaker waits by it and an order is confirmed at its instant. Only contexts that
+     * `@EnableTestPg` imports have one.
+     */
     @Autowired
-    private lateinit var pgLookupClocks: ObjectProvider<TestClock>
+    private lateinit var clocks: ObjectProvider<TestClock>
 
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
@@ -147,7 +150,7 @@ abstract class BaseApplicationServiceTest {
     /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
     @BeforeEach
     fun resetPgLookupBreaker() {
-        pgLookupClocks.ifAvailable { it.reset() }
+        clocks.ifAvailable { it.reset() }
         circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP).reset()
     }
 

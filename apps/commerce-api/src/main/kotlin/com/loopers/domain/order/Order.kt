@@ -18,7 +18,7 @@ import java.time.temporal.ChronoUnit
 
 /**
  * 생성 정보는 불변이다. 다른 엔티티처럼 [BaseEntity]를 상속해 식별자와 생성·수정 시각을 물려받는다(ADR 0016).
- * 생성 시각은 저장할 때 찍히고, 확정 시각은 [completePayment]가 스스로 찍는다.
+ * 생성 시각은 저장할 때 찍힌다.
  *
  * 주문을 삭제하는 기능은 없지만 애그리거트 루트라 논리 삭제를 기본으로 하여, 삭제된 주문은 없는 주문이다.
  * 품목은 필터를 두지 않고 주문을 따른다([OrderLineItem]).
@@ -111,10 +111,14 @@ class Order(
         status = OrderStatus.PAYMENT_PENDING
     }
 
-    fun completePayment() {
+    /**
+     * Confirms the order at [confirmedAt], cut to the microseconds the column keeps so that the instant held here is the one
+     * a later read returns. The caller decides the instant (ADR 0032 rule 8).
+     */
+    fun completePayment(confirmedAt: Instant) {
         ensurePaymentPending()
 
-        confirmedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
+        this.confirmedAt = confirmedAt.truncatedTo(ChronoUnit.MICROS)
         status = OrderStatus.CONFIRMED
     }
 

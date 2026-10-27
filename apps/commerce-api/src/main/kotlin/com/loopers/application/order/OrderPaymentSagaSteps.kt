@@ -16,6 +16,7 @@ import com.loopers.domain.payment.ReconcileResult
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ApplicationService
+import java.time.Clock
 
 /**
  * 주문 확정의 두 트랜잭션 단계(ADR 0024 규칙 1). TX A는 결제를 시작하고, TX B는 PG의 답을 결제와 주문에 반영한다. TX B의 입구는
@@ -35,6 +36,7 @@ class OrderPaymentSagaSteps(
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
     private val paymentRecorder: PaymentRecorder,
+    private val clock: Clock,
 ) {
     /**
      * TX A. 요청자의 주문을 잠그고 이 차례로 본다(ADR 0025 규칙 3).
@@ -122,7 +124,7 @@ class OrderPaymentSagaSteps(
     private fun applyResult(order: Order, result: ReconcileResult): OrderInfo {
         if (result is ReconcileResult.Changed) {
             when (result.to) {
-                PaymentStatus.SUCCESS -> order.completePayment()
+                PaymentStatus.SUCCESS -> order.completePayment(clock.instant())
 
                 PaymentStatus.FAILED -> {
                     order.failPayment()

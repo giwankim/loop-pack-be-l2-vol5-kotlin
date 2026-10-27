@@ -7,8 +7,17 @@ import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
+import java.time.Instant
 
 class OrderTest {
+    companion object {
+        /** When [orderIn] confirms an order. */
+        private val CONFIRMATION_TIME: Instant = Instant.parse("2026-10-27T01:00:00Z")
+
+        /** A second confirmation attempt, later than [CONFIRMATION_TIME] so that an overwrite would show. */
+        private val LATER_CONFIRMATION_TIME: Instant = Instant.parse("2026-10-27T02:00:00Z")
+    }
+
     @Test
     fun `an order line amount can exceed Long MAX_VALUE`() {
         val product = createOrderProduct(unitPrice = Money(Long.MAX_VALUE), quantity = 2)
@@ -42,15 +51,15 @@ class OrderTest {
     }
 
     @Test
-    fun `completing the payment of a payment pending order confirms it and records the confirmation time`() {
+    fun `completing the payment of a payment pending order confirms it at the given instant truncated to microseconds`() {
         val order = createOrder(userId = 1)
         order.startPayment()
 
-        order.completePayment()
+        order.completePayment(Instant.parse("2026-10-27T01:02:03.123456789Z"))
 
         assertThat(order.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(order.paymentMethod).isEqualTo(PaymentMethod.PG)
-        assertThat(order.confirmedAt).isNotNull()
+        assertThat(order.confirmedAt).isEqualTo(Instant.parse("2026-10-27T01:02:03.123456Z"))
     }
 
     @Test
@@ -98,7 +107,7 @@ class OrderTest {
         val paymentMethod = order.paymentMethod
         val confirmedAt = order.confirmedAt
 
-        val exception = assertThrows<OrderStatusConflictException> { order.completePayment() }
+        val exception = assertThrows<OrderStatusConflictException> { order.completePayment(LATER_CONFIRMATION_TIME) }
 
         assertThat(exception.message).isEqualTo("결제 중인 주문이 아닙니다.")
         assertThat(order.status).isEqualTo(status)
@@ -204,7 +213,7 @@ class OrderTest {
         return when (status) {
             OrderStatus.DRAFT -> createOrder(userId = 1, products = products)
             OrderStatus.PAYMENT_PENDING -> orderIn(OrderStatus.DRAFT, products).apply { startPayment() }
-            OrderStatus.CONFIRMED -> orderIn(OrderStatus.PAYMENT_PENDING, products).apply { completePayment() }
+            OrderStatus.CONFIRMED -> orderIn(OrderStatus.PAYMENT_PENDING, products).apply { completePayment(CONFIRMATION_TIME) }
             OrderStatus.PAYMENT_FAILED -> orderIn(OrderStatus.PAYMENT_PENDING, products).apply { failPayment() }
         }
     }

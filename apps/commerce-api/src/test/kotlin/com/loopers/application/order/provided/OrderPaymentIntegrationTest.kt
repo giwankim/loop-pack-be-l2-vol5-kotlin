@@ -73,6 +73,7 @@ import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
+import java.time.Instant
 
 /**
  * 고객의 확정이 PG로 결제하는 장면과, 대사가 끝나지 않은 결제의 결과를 되찾는 장면을 실제 MySQL과 테스트 PG로 확인한다(ADR 0024, 0028).
@@ -101,7 +102,7 @@ class OrderPaymentIntegrationTest(
     private val paymentGateway: PaymentGateway,
     private val circuitBreakerRegistry: CircuitBreakerRegistry,
     private val retryRegistry: RetryRegistry,
-    private val pgLookupClock: TestClock,
+    private val clock: TestClock,
     private val healthEndpoint: HealthEndpoint,
     private val healthEndpointGroups: HealthEndpointGroups,
     private val meterRegistry: MeterRegistry,
@@ -201,6 +202,25 @@ class OrderPaymentIntegrationTest(
             assertThat(payment.idempotencyKey).isEqualTo(IDEMPOTENCY_KEY)
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(10_000L.toBigInteger())
+        }
+    }
+
+    /**
+     * TX B confirms the order at the instant of the context's clock, the [TestClock] the breaker scenes move (ADR 0032 rule 8).
+     * The scene pins the clock and moves it a day, so the stored confirmation time is an instant no other clock gives.
+     */
+    @Test
+    fun `confirming stores the instant of the context's clock as the confirmation time`() {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
+        clock.pin(Instant.parse("2026-10-27T01:02:03.123456789Z"))
+        clock.advance(Duration.ofDays(1))
+
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).confirmedAt).isEqualTo(Instant.parse("2026-10-28T01:02:03.123456Z"))
         }
     }
 
@@ -396,13 +416,13 @@ class OrderPaymentIntegrationTest(
         testPg.losesLookupResponse()
         openPgLookupBreaker()
 
-        pgLookupClock.advance(Duration.ofSeconds(59))
+        clock.advance(Duration.ofSeconds(59))
         val withinWait = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(testPg.lookupCount()).isEqualTo(4)
         assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
 
-        pgLookupClock.advance(Duration.ofSeconds(2))
+        clock.advance(Duration.ofSeconds(2))
         val probing = orderConfirmer.reconcile(user.id, order.id)
 
         listOf(withinWait, probing).forEach { answer ->
@@ -431,7 +451,7 @@ class OrderPaymentIntegrationTest(
         openPgLookupBreaker(first)
         testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
         testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
 
         val probed = orderConfirmer.reconcile(first.userId, first.id)
 
@@ -503,7 +523,7 @@ class OrderPaymentIntegrationTest(
         assertBreakerWarnings(CircuitBreaker.State.CLOSED to CircuitBreaker.State.OPEN)
 
         orderConfirmer.reconcile(first.userId, first.id)
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
         orderConfirmer.reconcile(first.userId, first.id)
 
         assertBreakerWarnings(
@@ -514,7 +534,7 @@ class OrderPaymentIntegrationTest(
 
         testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
         testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
         orderConfirmer.reconcile(first.userId, first.id)
         orderConfirmer.reconcile(second.userId, second.id)
 
