@@ -3,7 +3,9 @@ package com.loopers.adapter.consumer
 import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
 import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordResult
 import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecorder
+import com.loopers.support.error.UnprocessableOrderEventException
 import io.github.oshai.kotlinlogging.KotlinLogging
+import jakarta.validation.ConstraintViolationException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.kafka.support.Acknowledgment
@@ -38,6 +40,12 @@ class OrderEventsListener(
      * an event type the streamer does not record is skipped: acknowledged with an INFO line, and nothing is read further
      * (`CONTEXT.md` 건너뛰다). An order confirmed event at another schema version is refused with
      * [UnsupportedOrderEventException], and a payload that cannot be read with [MalformedOrderEventException].
+     *
+     * An unprocessable event (`CONTEXT.md` 처리할 수 없는 이벤트) is refused with one ERROR line before the exception leaves:
+     * an [UnprocessableOrderEventException], or a `ConstraintViolationException` from the request's validation. Those are the
+     * two types a `DefaultErrorHandler` would register as not retryable (purchase activity design 6), and the line is the
+     * evidence a person gets (design 5). It names the order by the record's [key], the order ID's string by the contract
+     * (order-events design 2), because a payload that cannot be read, or is not read at its schema version, gives none.
      */
     @KafkaListener(
         id = "order-events",
@@ -47,6 +55,7 @@ class OrderEventsListener(
     )
     fun listen(
         message: OrderEventMessage,
+        @Header(name = KafkaHeaders.RECEIVED_KEY, required = false) key: String?,
         @Header(KafkaHeaders.RECEIVED_PARTITION) partition: Int,
         @Header(KafkaHeaders.OFFSET) offset: Long,
         acknowledgment: Acknowledgment,
@@ -60,6 +69,21 @@ class OrderEventsListener(
             return
         }
 
+        try {
+            recordOrderConfirmed(message, partition, offset)
+        } catch (e: UnprocessableOrderEventException) {
+            logRefusal(message, key, partition, offset, e)
+            throw e
+        } catch (e: ConstraintViolationException) {
+            logRefusal(message, key, partition, offset, e)
+            throw e
+        }
+
+        acknowledgment.acknowledge()
+    }
+
+    /** Records [message], an order confirmed event, and logs the INFO line. */
+    private fun recordOrderConfirmed(message: OrderEventMessage, partition: Int, offset: Long) {
         if (message.schemaVersion != OrderConfirmedPayload.SCHEMA_VERSION) {
             throw UnsupportedOrderEventException(message.eventId, message.schemaVersion)
         }
@@ -70,8 +94,13 @@ class OrderEventsListener(
             "Recorded the order confirmed event. eventId=${message.eventId}, orderId=${payload.orderId}, " +
                 "partition=$partition, offset=$offset, result=$result"
         }
+    }
 
-        acknowledgment.acknowledge()
+    private fun logRefusal(message: OrderEventMessage, key: String?, partition: Int, offset: Long, cause: RuntimeException) {
+        log.error {
+            "Refused an order confirmed event that cannot be processed. eventId=${message.eventId}, orderId=$key, " +
+                "partition=$partition, offset=$offset, cause=$cause"
+        }
     }
 
     /** The payload of [message], which is an order confirmed event at the schema version the streamer reads. */
