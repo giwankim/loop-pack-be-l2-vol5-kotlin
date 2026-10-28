@@ -128,7 +128,7 @@ PG 상태(`PgStatus`)는 `PENDING`, `SUCCESS`, `FAILED` 셋이고 결과 미확�
 | `Unchanged` | 아는 것이 늘지 않았거나 같은 답을 다시 들었다. |
 | `Conflicted(reason)` | 결제와 맞지 않는 답이다. 상태와 거래 키는 그대로다. |
 
-- 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다. (2026-10-23: TX B의 `OrderPaymentSteps`가 그렇게 한다. 10.2.)
+- 2단계는 `is Changed`가 아니라 `to.isFinished`에서만 주문과 예약을 바꾼다. `Changed(UNKNOWN, PENDING)`도 `Changed`다. (2026-10-23: TX B의 `OrderPaymentSagaSteps`가 그렇게 한다. 10.2.)
 - `Conflicted`는 충돌 까닭(`ConflictReason`, 여섯 값)을 돌려주고 결제를 바꾸지 않는다. 까닭과 시각을 결제에 저장하지 않는다. 원래는 재시작 뒤에도 마지막 충돌을 보려고 두 열을 뒀지만, 이를 읽는 업무 규칙이나 복구 절차가 없어 2026-10-21에 제거했다([ADR 0021 규칙 1의 날짜 메모](../adr/0021-payment-is-its-own-aggregate-and-slice.md)). 결제 행만으로 마지막 충돌을 조회할 수는 없다. (2026-10-22: `MULTIPLE_TRANSACTIONS`가 빠져 `ConflictReason`은 다섯 값이다(2.3).)
 - 엔티티는 로그를 쓰지 않는다. 충돌의 WARN 로그는 결과를 반영하는 응용 서비스(2단계)가 쓴다. (2026-10-23: `PaymentModifyService`의 `reconcile`과 `reject`가 쓴다. 11.4.)
 - PG에게서 답을 얻지 못한 것(`PgOutcomeUnknownException`, `PgUnavailableException`)은 결제에 들어오지 않는다. 응용 계층이 거기서 멈추고 저장된 상태를 돌려준다. 그래서 결제에는 정확한 메서드 둘이면 되고, "답 없음"까지 받는 포괄 타입이 없다(ADR 0021의 고르지 않은 것). (2026-10-23: 저장된 상태는 답하는 때에 다시 읽는다. 13.3.) (2026-10-23: 3단계의 알림은 `PgUnavailableException`에 저장된 상태가 아니라 503 `PG_UNAVAILABLE`로 답한다. 그 예외가 결제에 들어오지 않는 것은 같다(19.2, 20.4).)
@@ -389,7 +389,7 @@ HttpClient의 응답 한도는 다음 바이트를 기다리는 시간이고, �
 | [148](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/148) | PG 주문 번호의 조회가 PG 거래를 하나까지 돌려준다(`retrieveTransactionByPgOrderId`, `MultiplePgTransactionsException`). `Payment.reconcile`은 PG 거래 하나를 받는다. PG 예외 넷을 `application.payment.provided`로 옮겼다. |
 | [149](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/149) | 주문의 네 상태, 결제수단(`PaymentMethod`), 세 전이, 계산되는 결제액, 새 `CK_ORDERS_ON_PAYMENT_STATE`. `orders.paid_amount`를 지웠다. |
 | [150](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/150) | `PgOrderIdGenerator`와 `Payment.start`, 멱등 키의 규칙과 `utf8mb4_bin` 열, `UK_PAYMENT_ON_PG_ORDER_ID`. |
-| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. (2026-10-23: 조율하는 빈은 `OrderPaymentOrchestrator`로 이름을 바꿨다. 11.1.) |
+| [151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151) | 확정이 PG로 결제한다. 조율하는 `OrderPaymentService`, TX A와 TX B의 `OrderPaymentSteps`, 결제 슬라이스의 provided 포트, `OrderInfo`, `Idempotency-Key` 헤더, 202와 200. (2026-10-23: 조율하는 빈은 `OrderPaymentSaga`로 이름을 바꿨다. 11.1.) |
 | [152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152) | 결제가 실패하면 예약을 한 번 돌려준다(`StockRestorer`). 생성 전 거절을 TX B가 반영한다. (2026-10-23: 명세 147의 검토 뒤 `StockDeductor`와 `StockRestorer`를 `StockReserver` 하나로 합쳤다. 11.1.) |
 | [153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153) | 고객 목록과 관리자 상세·목록이 결제 상태를 싣는다. 목록은 한 조각의 결제를 한 번에 읽는다. |
 | [154](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/154) | 포인트로 결제하는 길을 지웠다. 충전끼리의 경쟁 테스트를 더했다. |
@@ -434,7 +434,7 @@ stateDiagram-v2
 | 실패 | TX B | `Changed(_, FAILED)` | `failPayment()`: 결제 실패 | 실패. 거래 키는 PG 거래가 있을 때만 있다. | `StockReserver.release`가 품목 수량을 한 번 더한다 |
 | 바뀌지 않음, 충돌 | TX B | `Unchanged`, `Conflicted` | 그대로 | 그대로. 충돌은 WARN을 남긴다. | 그대로 |
 
-- 주문은 `Changed`의 `to`가 성공이나 실패일 때만 바뀐다(`OrderPaymentSteps.applyResult`, 2.5). `Changed(UNKNOWN, PENDING)`도 `Changed`이지만 주문을 바꾸지 않는다.
+- 주문은 `Changed`의 `to`가 성공이나 실패일 때만 바뀐다(`OrderPaymentSagaSteps.applyResult`, 2.5). `Changed(UNKNOWN, PENDING)`도 `Changed`이지만 주문을 바꾸지 않는다.
 - 확정된 주문과 결제에 실패한 주문은 끝난 상태다. 결제에 실패한 주문을 다시 결제하지 않으며, 다시 사려면 주문을 새로 만든다(`CONTEXT.md`의 결제에 실패한 주문).
 - 예약을 돌려주는 것은 실패로 바뀌는 그 한 번뿐이다. 주문 잠금 아래에서 결제 중인 주문이 결제에 실패한 주문으로 가는 것은 한 번이고, 끝난 결제는 같은 답에 `Unchanged`다(ADR 0026 규칙 3). 장면 6의 테스트가 반환이 두 번이면 재고가 7이 되는 자리에서 5를 본다.
 - 돌려주기는 상품을 id 차례로 잠가 읽고, 없거나 삭제된 상품은 건너뛴다(ADR 0026 규칙 4). `Product.restoreStock`은 `Math.addExact`로 더해 `Int.MAX_VALUE`를 넘으면 `ArithmeticException`을 던지고, TX B가 되돌아가 주문은 결제 중으로 남는다(`ProductTest`).
@@ -448,29 +448,29 @@ stateDiagram-v2
 
 | 단계 | 자리 | 트랜잭션 | 잠그는 것 | 쓰는 것 | 실패하면 |
 | --- | --- | --- | --- | --- | --- |
-| TX A | `OrderPaymentSteps.startPayment` | 새 트랜잭션 | 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 되면) | 상품 재고, 주문의 상태와 결제수단, 결제(새 행), revision | 모두 되돌아간다. 주문은 확정 전, 재고는 그대로이고 결제가 없어 키도 쓰이지 않았다. PG에는 아무것도 가지 않는다. |
+| TX A | `OrderPaymentSagaSteps.startPayment` | 새 트랜잭션 | 주문 → 상품(id 오름차순) → 상품 목록 revision(품절이 되면) | 상품 재고, 주문의 상태와 결제수단, 결제(새 행), revision | 모두 되돌아간다. 주문은 확정 전, 재고는 그대로이고 결제가 없어 키도 쓰이지 않았다. PG에는 아무것도 가지 않는다. |
 | PG 호출 | `PgTransactionClient.create` | 없음(`NEVER`) | 없음 | PG에 생성 한 번 | 예외의 타입마다 갈린다(11.4). |
-| TX B | `OrderPaymentSteps.applyTransaction`, `applyRejection` | 새 트랜잭션 | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) | 결제의 상태와 거래 키, 주문의 상태와 확정 시각, 실패면 상품 재고와 revision | 모두 되돌아간다. 결제와 주문은 TX A가 남긴 그대로이고, 대사가 같은 PG 거래로 다시 반영한다(장면 7). |
+| TX B | `OrderPaymentSagaSteps.applyTransaction`, `applyRejection` | 새 트랜잭션 | 주문 → 상품(실패일 때만, id 오름차순) → revision(품절이 풀리면) | 결제의 상태와 거래 키, 주문의 상태와 확정 시각, 실패면 상품 재고와 revision | 모두 되돌아간다. 결제와 주문은 TX A가 남긴 그대로이고, 대사가 같은 PG 거래로 다시 반영한다(장면 7). |
 
 - TX A의 커밋이 발송 기록이다. 결과 미확인 결제를 커밋한 요청만 생성을 보내고, "보냈다"는 따로 적지 않는다(ADR 0024 규칙 2).
 - PG 호출 동안 요청은 트랜잭션도 행 잠금도 쥐지 않는다(ADR 0024 규칙 1). 대사(13절)에는 TX A가 없고, PG 조회와 같은 TX B만 있다.
 - TX A와 TX B는 조율하는 서비스와 다른 빈의 메서드다. 프록시를 지나므로 선언한 트랜잭션이 걸리고, 장면 테스트가 TX B만 실패시킬 수 있다(ADR 0028 규칙 2, 장면 7의 spy).
 
-포트와 트랜잭션의 자리는 이렇다. 이름은 명세 147의 자리표시를 구현에서 정한 것이다. (2026-10-23: 3단계가 포트 셋을 더했다. PG가 부르는 `OrderPaymentReconciler.reconcile`(`OrderPaymentOrchestrator`, `NEVER`, `PaymentApi`), `OrderFinder.findForPg`, `PaymentFinder.findByPgOrderId`다. 19.3.)
+포트와 트랜잭션의 자리는 이렇다. 이름은 명세 147의 자리표시를 구현에서 정한 것이다. (2026-10-23: 3단계가 포트 셋을 더했다. PG가 부르는 `OrderPaymentReconciler.reconcile`(`OrderPaymentSaga`, `NEVER`, `PaymentApi`), `OrderFinder.findForPg`, `PaymentFinder.findByPgOrderId`다. 19.3.)
 
 | 포트 | 구현 | 트랜잭션 | 부르는 곳 |
 | --- | --- | --- | --- |
-| `OrderConfirmer.confirm`, `reconcile` | `OrderPaymentOrchestrator` | `NEVER` | `OrderApi` |
-| 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSteps` | 새 트랜잭션 | `OrderPaymentOrchestrator` |
-| `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentOrchestrator`(12.1의 10) |
+| `OrderConfirmer.confirm`, `reconcile` | `OrderPaymentSaga` | `NEVER` | `OrderApi` |
+| 포트 없음: `startPayment`, `applyTransaction`, `applyRejection` | `OrderPaymentSagaSteps` | 새 트랜잭션 | `OrderPaymentSaga` |
+| `PaymentValidator.validateForStart` | `PaymentValidationService` | 읽기 전용. TX A에 참여하고, 경합 뒤에는 자기 트랜잭션 | TX A, 키 경합 뒤의 `OrderPaymentSaga`(12.1의 10) |
 | `PaymentRecorder.start`, `reconcile`, `reject` | `PaymentModifyService` | TX A, TX B에 참여 | TX A, TX B |
 | `PaymentFinder.findByOrder`, `findAllByOrders` | `PaymentQueryService` | 읽기 전용 | TX A, TX B, 대사, 주문 조회 |
-| `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentOrchestrator` |
+| `PgTransactionClient.create`, `retrieve` | `PgTransactionService` | `NEVER` | `OrderPaymentSaga` |
 | `StockReserver.reserve`, `release` | `ProductModifyService` | TX A, TX B에 참여 | TX A, TX B |
 
 - 주문 슬라이스는 PG에 닿는 required 포트 `PaymentGateway`를 바로 부르지 않고 `PgTransactionClient`를 부른다. 다른 슬라이스의 required 포트는 쓰지 않고([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)), 그 구현 `PgTransactionService`가 `NEVER`로 트랜잭션 안의 호출을 PG에 보내기 전에 거절하며(ADR 0028 규칙 2), 결제의 PG 주문 번호와 금액을 PG 요청으로 옮기는 일이 결제 슬라이스에 남는다(ADR 0028 규칙 5). 생성과 조회는 유스케이스가 다르지만 구현, 부르는 쪽, 트랜잭션 조건이 같아 포트 하나다. (2026-10-23: 명세 147의 검토에서 `PgTransactionCreator`와 `PgTransactionRetriever`를 합쳤다. ADR 0013의 "부르는 쪽의 유스케이스마다 포트 하나"에서 벗어나는 자리다.)
 - `PaymentRecorder`, `StockReserver`, 고객의 `OrderConfirmer`(`confirm`, `reconcile`)도 같은 까닭으로 포트 하나다. 쓰기 포트는 구현하는 Service와 부르는 쪽의 짝마다 하나다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 2026-10-23 메모). `PaymentRecorder`는 결제의 기록을 쓰고 PG를 부르지 않는다. PG에 닿는 것은 `PgTransactionClient`다. (2026-10-23: 명세 147의 검토 뒤 `PaymentStarter`와 `PaymentReconciler`, `StockDeductor`와 `StockRestorer`를 합치고, `OrderPaymentReconciler`를 `OrderConfirmer`에 합쳤다. 바로 위 메모의 "벗어나는 자리"는 그 메모가 규칙으로 바꿨다.)
-- 조율하는 구현은 `Service`가 아니라 `Orchestrator`로 끝난다. 같은 접두어의 `OrderPaymentSteps`보다 위에서 트랜잭션 밖에 머물며 TX A, PG 호출, TX B를 차례로 부르는 빈임을 이름이 드러낸다(2026-10-23, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모).
+- 조율하는 구현은 `Service`가 아니라 `Saga`로 끝난다. 같은 접두어의 `OrderPaymentSagaSteps`보다 위에서 트랜잭션 밖에 머물며 TX A, PG 호출, TX B를 차례로 부르는 빈임을 이름이 드러낸다. 사가 구현들이 조율자를 절차의 이름에 `Saga`를 붙여 부르고 그 조각을 step이라 부르는 관례를 따른다(2026-10-23의 `Orchestrator`·`Steps`를 2026-10-26에 바꿨다, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모).
 
 ### 11.2 잠금
 
@@ -491,7 +491,7 @@ stateDiagram-v2
 
 ### 11.3 조율하는 서비스의 `NEVER`
 
-- `OrderPaymentOrchestrator`는 `@ValidatedApplicationService(propagation = Propagation.NEVER)`이고, PG를 부르는 `PgTransactionService`는 `@ApplicationService(propagation = Propagation.NEVER)`다. 두 스테레오타입에 `@Transactional`의 `propagation` 별칭을 더했다(ADR 0028 규칙 2).
+- `OrderPaymentSaga`는 `@ValidatedApplicationService(propagation = Propagation.NEVER)`이고, PG를 부르는 `PgTransactionService`는 `@ApplicationService(propagation = Propagation.NEVER)`다. 두 스테레오타입에 `@Transactional`의 `propagation` 별칭을 더했다(ADR 0028 규칙 2).
 - 트랜잭션 안에서 부르면 Spring이 메서드에 들어가기 전에 `IllegalTransactionStateException`으로 거절한다. 예약도 생성도 조회도 하지 않는다(`confirming inside a transaction is refused before anything is reserved or sent`, `reconciling inside a transaction is refused before anything is looked up`).
 - PG 호출이 트랜잭션에 들면 PG가 늦는 동안 주문과 상품의 잠금을 쥐고, 결과 미확인의 예외가 그 트랜잭션을 되돌려 결제의 기록까지 지운다(ADR 0023 규칙 4, ADR 0024의 고르지 않은 것). `NEVER`는 이 실수를 KDoc이 아니라 실행이 막게 한다. `NOT_SUPPORTED`로는 막지 못한다. 부르는 쪽의 트랜잭션을 멈춰 둘 뿐이라 그 트랜잭션의 잠금이 PG 호출 동안 그대로 남는다.
 - 대가: 테스트를 트랜잭션으로 감싸는 `BaseApplicationServiceTest`와 `BaseWebApiAdapterTest`에서는 확정과 대사를 부를 수 없다. 응용 계층의 장면은 커밋하는 기반(`BaseCommittingApplicationServiceTest`)을, HTTP 테스트는 클래스의 `@Transactional(propagation = NOT_SUPPORTED)`를 쓴다(ADR 0028의 대가).
@@ -531,7 +531,7 @@ stateDiagram-v2
 | 10 | TX A의 결제 저장 | 같은 키로 겨룬 다른 확정 전 주문이 먼저 커밋해, 결제 삽입이 `UK_PAYMENT_ON_IDEMPOTENCY_KEY`에 걸린다 | 409 `IDEMPOTENCY_KEY_IN_USE` |
 
 - 1–3은 주문을 읽기 전이다. 형식이 틀린 키는 없는 주문에도 같은 400이다(`confirming with a malformed Idempotency-Key returns 400 naming the broken rule before anything is reserved or sent`). 헤더 없음은 `MissingRequestHeaderException`이고 400으로 옮긴다.
-- 2의 형식은 조율하는 서비스(`OrderPaymentOrchestrator.confirm`)도 TX A를 열기 전에 본다. 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 7의 `IDEMPOTENCY_KEY_IN_USE`가 된다(`a key with a trailing space is rejected as malformed before it can find the payment of the key without it`). (2026-10-23: 명세 147의 검토에서 더했다.)
+- 2의 형식은 조율하는 서비스(`OrderPaymentSaga.confirm`)도 TX A를 열기 전에 본다. 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD SPACE라서 형식을 보지 않은 키는 뒤 공백만 다른 키의 결제를 찾아 7의 `IDEMPOTENCY_KEY_IN_USE`가 된다(`a key with a trailing space is rejected as malformed before it can find the payment of the key without it`). (2026-10-23: 명세 147의 검토에서 더했다.)
 - 4–7은 상품을 읽기 전이다. 404는 재요청보다 앞서, 남의 주문에 그 주인의 키를 보내도 404다(`requester and ownership checks precede both the first confirmation and a replay of its key`).
 - 6은 `ensureDraft()`를 7보다 먼저 부른다. 8 뒤의 `startPayment()` 안에서만 돌면 상품이 삭제된, 포인트로 확정된 주문이 `ORDER_PRODUCT_NOT_AVAILABLE`로 답한다([issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155)). 5와 6의 주문은 겹치지 않으므로 둘의 차례는 답을 바꾸지 않는다. (2026-10-23: 명세 147의 검토에서 결제수단을 두 번 견주던 TX A를 `Order.paysThroughPg`와 `ensureDraft()`로 바꾸며 5와 6의 차례를 바꿨다. 전에는 POINT를 먼저 보았다.)
 - 7은 8보다 앞서야 한다. 재고가 모자란 주문에 남이 쓴 키를 보내도 `IDEMPOTENCY_KEY_IN_USE`다. 사전 조건을 예약 뒤로 옮긴 변이 실행에서는 `INSUFFICIENT_STOCK`이 나왔다(issue 155, `confirming a draft with a key another user's order used returns 409 IDEMPOTENCY_KEY_IN_USE before reserving`의 재고 1 경우).
@@ -569,7 +569,7 @@ stateDiagram-v2
 
 ## 13. 대사
 
-`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 확정과 같은 `OrderConfirmer`의 `reconcile(userId, orderId)`이고, `OrderPaymentOrchestrator`가 구현하므로 `NEVER`다.
+`POST /api/v1/orders/{orderId}/payment/reconcile`은 본문이 없다. 고객이 끝나지 않은 결제의 결과를 PG에 다시 확인하게 한다. 응답은 확정과 같다(12.3). 포트는 확정과 같은 `OrderConfirmer`의 `reconcile(userId, orderId)`이고, `OrderPaymentSaga`가 구현하므로 `NEVER`다.
 
 ### 13.1 차례
 
@@ -693,7 +693,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | 본문의 `paymentAttemptKey` | 헤더 `Idempotency-Key`, 결제의 `idempotencyKey` | IETF 초안(`draft-ietf-httpapi-idempotency-key-header`)과 Stripe, Toss가 헤더로 받는다. 본문에는 카드만 남아 결제의 입력과 재요청의 열쇠가 섞이지 않는다(ADR 0025 규칙 1). |
 | `providerOrderId`, 주문 42면 `LP-ORD-0000000042` | `pgOrderId`, 결제마다 `PgOrderIdGenerator`가 만드는 UUID 문자열 | 주문 식별자에서 만든 번호는 DB를 비우거나 되살리면 다시 생겨, 이전 생애의 PG 거래가 새 주문을 확정할 수 있다(ADR 0029). |
-| TX A, TX B | `OrderPaymentSteps.startPayment`, `applyTransaction`과 `applyRejection` | 문서와 KDoc은 과제의 이름을 그대로 쓰고, 메서드는 하는 일로 지었다. TX B의 입구는 PG 거래와 생성 전 거절 둘이다(ADR 0028 규칙 3). |
+| TX A, TX B | `OrderPaymentSagaSteps.startPayment`, `applyTransaction`과 `applyRejection` | 문서와 KDoc은 과제의 이름을 그대로 쓰고, 메서드는 하는 일로 지었다. TX B의 입구는 PG 거래와 생성 전 거절 둘이다(ADR 0028 규칙 3). |
 | `PAYMENT_PENDING`, `CONFIRMED`, `PAYMENT_FAILED` | `OrderStatus`의 같은 값 | 그대로다. `CONTEXT.md`는 결제 중인 주문, 확정된 주문, 결제에 실패한 주문이라 부른다. |
 | 이전 `POINT` 주문 | 결제수단 `PaymentMethod.POINT` | 결제수단 열이 포인트로 확정된 주문과 PG로 결제한 주문을 가른다. |
 | 가용 재고, 주문별 수량과 상태 | 팔 수 있는 재고 `Product.stock`, 결제 중인 주문의 품목 수량 | 예약 표도 예약 수량 열도 두지 않는다. 주문의 상태가 곧 예약의 상태다(ADR 0026). |
@@ -825,10 +825,10 @@ PG에 답하는 것은 다시 보낼 값이 있는지다(ADR 0031 규칙 6).
 | 3 | `OrderPaymentReconciler.reconcile(orderId)` | 결제의 주문을 사용자 없이, 잠그지 않고 읽는다(`OrderFinder.findForPg`). | |
 | 4 | 같은 자리 | 확정 전 주문은 409 `PAYMENT_NOT_STARTED`로 거절하고, 결제가 끝난 주문과 포인트로 확정된 주문은 PG에 묻지 않고 돌아간다. | 200 |
 | 5 | `PgTransactionClient.retrieve` | 결제 중인 주문의 결제를 PG 주문 번호로 조회한다. 조회할 수 없으면(`PgUnavailableException`) 조율하는 서비스가 `CoreException(PG_UNAVAILABLE)`을 던진다. PG 거래가 여럿이면 조율하는 서비스가 WARN 한 줄을 남기고, 여럿과 `null`은 반영하지 않고 돌아간다. | 503, 200 |
-| 6 | TX B `OrderPaymentSteps.applyTransaction` | 고객의 대사, 확정과 같은 TX B다. 주문을 잠그고 결제를 다시 읽어 `Payment.reconcile`로 반영한다. | 200 |
+| 6 | TX B `OrderPaymentSagaSteps.applyTransaction` | 고객의 대사, 확정과 같은 TX B다. 주문을 잠그고 결제를 다시 읽어 `Payment.reconcile`로 반영한다. | 200 |
 
 - 1, 2, 4는 PG에 아무것도 보내지 않는다.
-- 3–6은 `OrderPaymentOrchestrator`가 구현하므로 `NEVER`다. 트랜잭션 안에서 부르면 들어가기 전에 거절된다(11.3).
+- 3–6은 `OrderPaymentSaga`가 구현하므로 `NEVER`다. 트랜잭션 안에서 부르면 들어가기 전에 거절된다(11.3).
 - 사용자는 TX B에만 넘긴다. TX B의 잠그는 읽기(`findForUpdate`)가 사용자를 받기 때문이다. 웹 경계의 요청자가 아니라 주문 슬라이스가 자기 주문에서 읽은 값이다. 결제를 PG 주문 번호로 찾은 것이 소유 확인을 대신한다.
 - 답하는 때에 다시 읽지 않는다. 포트가 `Unit`이라 PG에 돌려줄 주문 정보가 없다. 13.3의 다시 읽기는 확정과 고객의 대사에만 있다.
 
@@ -851,7 +851,7 @@ PG에 답하는 것은 다시 보낼 값이 있는지다(ADR 0031 규칙 6).
 
 | 포트 | 구현 | 트랜잭션 | 부르는 곳 |
 | --- | --- | --- | --- |
-| `OrderPaymentReconciler.reconcile` | `OrderPaymentOrchestrator` | `NEVER` | `PaymentApi` |
+| `OrderPaymentReconciler.reconcile` | `OrderPaymentSaga` | `NEVER` | `PaymentApi` |
 | `OrderFinder.findForPg` | `OrderQueryService` | 읽기 전용 | PG의 대사 |
 | `PaymentFinder.findByPgOrderId` | `PaymentQueryService` | 읽기 전용 | `PaymentApi` |
 
@@ -1096,7 +1096,7 @@ PR에 알려진 한계로 적는다.
 | 알림 본문의 `providerOrderId` | 본문의 `orderId`, 결제의 `pgOrderId` | `providerOrderId`는 개념의 이름이다. PG와 주고받는 본문은 PG의 다른 메시지처럼 `orderId`라 부르고(ADR 0031 규칙 1), 코드와 문서는 16.1대로 PG 주문 번호 `pgOrderId`라 부른다. |
 | 알림 본문의 `transactionKey`, `status` | `PaymentCallbackRequest`의 읽지 않는 두 필드 | 결과는 조회로만 안다. 필드가 바뀌어도 알림을 잃지 않도록 enum이 아니라 문자열로 받는다. |
 | 해당 거래의 권위 조회 | PG 주문 번호 조회 `PgTransactionClient.retrieve`, 게이트웨이의 `retrieveTransactionByPgOrderId` | 거래 키 조회가 아니다(ADR 0031 규칙 4). |
-| 같은 결과 적용 경계 | TX B `OrderPaymentSteps.applyTransaction` | 확정, 고객의 대사, 알림이 같은 입구를 쓴다. |
+| 같은 결과 적용 경계 | TX B `OrderPaymentSagaSteps.applyTransaction` | 확정, 고객의 대사, 알림이 같은 입구를 쓴다. |
 | 제공자 계정의 확인 | 모든 조회의 `X-USER-ID: 135135` | 어댑터가 싣는다(3.1). |
 | 알림이 결제를 찾는 것 | `PaymentFinder.findByPgOrderId`, 없으면 `PAYMENT_NOT_FOUND` | |
 | 알림의 대사 | `OrderPaymentReconciler.reconcile(orderId)` | 고객의 `OrderConfirmer.reconcile`과 부르는 쪽이 달라 포트를 따로 둔다(19.3). |

@@ -22,7 +22,9 @@ class OrderInfoAssembler(
             return OrderInfo(order, paymentStatus = null)
         }
 
-        return OrderInfo(order, paymentFinder.findByOrder(order.id).status)
+        val payment = paymentFinder.findByOrder(order.id)
+
+        return OrderInfo(order, payment.status)
     }
 
     /** 목록의 한 조각. 결제수단이 PG인 주문의 결제를 한 번에 읽는다. 주문마다 읽으면 조각 크기만큼 조회가 는다. */

@@ -33,6 +33,7 @@ import com.loopers.support.SqlCaptureConfig
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TestPgOrderIdGenerator
+import com.loopers.testcontainers.KafkaTestContainersConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
@@ -47,12 +48,17 @@ import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 /**
- * provided 포트 테스트의 기반. 전체 컨텍스트를 실제 MySQL·Redis 위에 띄우고, 테스트 트랜잭션이 포트의 트랜잭션을 감싸
+ * provided 포트 테스트의 기반. 전체 컨텍스트를 실제 MySQL·Redis·Kafka 위에 띄우고, 테스트 트랜잭션이 포트의 트랜잭션을 감싸
  * 테스트마다 롤백으로 정리한다. `@Import`가 [com.loopers.CommerceApiContextTest]와 같아 그 컨텍스트를 나눠 쓴다.
  * [SqlCaptureConfig]는 `com.loopers.support`의 `captureSql`이 블록 안의 SQL을 잡게 한다. 블록 밖에서는 아무것도 하지 않는다.
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소,
- * 캐시 writer를 spy하는 `@MockkSpyBean` 필드, 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
- * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`뿐이다(ADR 0012).
+ * 캐시 writer, Kafka 템플릿을 spy하는 `@MockkSpyBean` 필드, 누락 구간 테스트가 Kafka 템플릿을 바꾸는 `@MockkBean` 필드,
+ * 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
+ * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`뿐이다(ADR 0012).
+ *
+ * Every context here needs the Kafka broker, not only the tests that read it: the application declares its order events topic,
+ * and in the test profile the admin fails the context when it has no broker. [KafkaTestContainersConfig] starts the broker once
+ * per JVM, and since every base that starts a full context imports it, it splits no cached context.
  *
  * 데이터는 `prepare<Type>`과 변경 도우미로 준비한다. 포트가 만들 수 있는 상태는 그 슬라이스의 provided 포트로 만든다.
  * 포트가 엔티티를 돌려주면 그대로 쓰고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다(ADR 0014).
@@ -73,7 +79,12 @@ import java.util.UUID
  * 비우는 것은 JVM마다 띄우는 테스트 컨테이너다. 공유 Redis가 아니다.
  */
 @SpringBootTest
-@Import(MySqlTestContainersConfig::class, RedisTestContainersConfig::class, SqlCaptureConfig::class)
+@Import(
+    MySqlTestContainersConfig::class,
+    RedisTestContainersConfig::class,
+    KafkaTestContainersConfig::class,
+    SqlCaptureConfig::class,
+)
 @Transactional
 abstract class BaseApplicationServiceTest {
     @Autowired
@@ -122,9 +133,12 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var circuitBreakerRegistry: CircuitBreakerRegistry
 
-    /** PG 조회의 브레이커가 읽는 시계. `@EnableTestPg`가 가져온 컨텍스트에만 있다. */
+    /**
+     * The context's clock: the PG lookup breaker waits by it and an order is confirmed at its instant. Only contexts that
+     * `@EnableTestPg` imports have one.
+     */
     @Autowired
-    private lateinit var pgLookupClocks: ObjectProvider<TestClock>
+    private lateinit var clocks: ObjectProvider<TestClock>
 
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
@@ -146,8 +160,8 @@ abstract class BaseApplicationServiceTest {
 
     /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
     @BeforeEach
-    fun resetPgLookupBreaker() {
-        pgLookupClocks.ifAvailable { it.reset() }
+    fun resetClockAndPgLookupBreaker() {
+        clocks.ifAvailable { it.reset() }
         circuitBreakerRegistry.circuitBreaker(LocalPgGateway.PG_LOOKUP).reset()
     }
 

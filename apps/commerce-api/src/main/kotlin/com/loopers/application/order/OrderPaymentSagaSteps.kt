@@ -2,6 +2,8 @@ package com.loopers.application.order
 
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
+import com.loopers.application.order.required.OrderConfirmedEvent
+import com.loopers.application.order.required.OrderEventPublisher
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentRecorder
@@ -16,25 +18,28 @@ import com.loopers.domain.payment.ReconcileResult
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ApplicationService
+import java.time.Clock
 
 /**
  * 주문 확정의 두 트랜잭션 단계(ADR 0024 규칙 1). TX A는 결제를 시작하고, TX B는 PG의 답을 결제와 주문에 반영한다. TX B의 입구는
  * PG 거래의 반영과 생성 전 거절의 반영 둘이다(ADR 0028 규칙 3). 대사도 조회로 찾은 PG 거래를 같은 PG 거래 입구로 반영한다(ADR 0024 규칙 5).
- * 둘 사이의 PG 호출은 [OrderPaymentOrchestrator]가 트랜잭션 밖에서 한다. 단계마다 이 빈의 메서드라서 프록시를 지나 선언한 트랜잭션이 걸리고,
+ * 둘 사이의 PG 호출은 [OrderPaymentSaga]가 트랜잭션 밖에서 한다. 단계마다 이 빈의 메서드라서 프록시를 지나 선언한 트랜잭션이 걸리고,
  * 장면 테스트가 한 단계만 실패시킬 수 있다(ADR 0028 규칙 2). provided 포트가 아니라 조율하는 Service만 부른다.
  *
  * 두 단계 모두 첫 문장에서 주문을 잠근다. 같은 주문의 확정은 이 잠금에서 차례로 지나가고, 결제를 바꾸는 트랜잭션이 모두 주문을 먼저 잠그므로
  * 결제 행은 잠그지 않는다(ADR 0028 규칙 4). 포인트 계정은 읽지 않는다(ADR 0027).
  */
 @ApplicationService
-class OrderPaymentSteps(
+class OrderPaymentSagaSteps(
     private val orderRepository: OrderRepository,
+    private val orderEventPublisher: OrderEventPublisher,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
     private val stockReserver: StockReserver,
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
     private val paymentRecorder: PaymentRecorder,
+    private val clock: Clock,
 ) {
     /**
      * TX A. 요청자의 주문을 잠그고 이 차례로 본다(ADR 0025 규칙 3).
@@ -57,8 +62,10 @@ class OrderPaymentSteps(
      */
     fun startPayment(userId: Long, orderId: Long, idempotencyKey: String): StartedPayment {
         val order = orderFinder.findForUpdate(userId, orderId)
+
         if (order.paysThroughPg) {
             val payment = paymentFinder.findByOrder(order.id)
+
             if (!payment.isStartedWith(idempotencyKey)) {
                 throw CoreException(ErrorType.IDEMPOTENCY_KEY_MISMATCH)
             }
@@ -68,13 +75,15 @@ class OrderPaymentSteps(
 
         order.ensureDraft()
         paymentValidator.validateForStart(idempotencyKey)
+
         reserveStock(order)
+
         order.startPayment()
         val payment = paymentRecorder.start(orderId = order.id, idempotencyKey = idempotencyKey, amount = order.totalAmount)
 
-        val saved = orderRepository.save(order)
+        val savedOrder = orderRepository.save(order)
 
-        return StartedPayment(OrderInfo(saved, payment.status), payment)
+        return StartedPayment(OrderInfo(savedOrder, payment.status), payment)
     }
 
     /**
@@ -86,9 +95,10 @@ class OrderPaymentSteps(
      */
     fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
-        val result = paymentRecorder.reconcile(orderId = order.id, transaction = transaction)
 
-        return applyResult(order, result)
+        val reconcileResult = paymentRecorder.reconcile(orderId = order.id, transaction = transaction)
+
+        return applyResult(order, reconcileResult)
     }
 
     /**
@@ -97,9 +107,10 @@ class OrderPaymentSteps(
      */
     fun applyRejection(userId: Long, orderId: Long, rejection: PgRejection): OrderInfo {
         val order = orderFinder.findForUpdate(userId, orderId)
-        val result = paymentRecorder.reject(orderId = order.id, rejection = rejection)
 
-        return applyResult(order, result)
+        val reconcileResult = paymentRecorder.reject(orderId = order.id, rejection = rejection)
+
+        return applyResult(order, reconcileResult)
     }
 
     /**
@@ -110,13 +121,20 @@ class OrderPaymentSteps(
      *   결제에 실패한 주문으로 가는 것은 한 번이고, 끝난 결제는 같은 답에 `Unchanged`라 다시 실패로 가지 않는다(ADR 0026 규칙 3).
      * - 처리 중, 바뀌지 않음, 충돌이면 주문은 그대로다.
      *
+     * A change to success also publishes the confirmation. Once the order is saved, the step hands its [OrderConfirmedEvent]
+     * to [OrderEventPublisher] inside this transaction, so the event is delivered only if TX B commits (ADR 0032 rules 1
+     * and 7). This is the port's only caller. No other result publishes: a failure or a payment still in progress leaves the
+     * order unconfirmed, `Conflicted` changes nothing, and `Unchanged` (a late create answer, or a callback or reconcile that
+     * waited on the order lock while another applied the same answer) repeats an answer that an earlier change applied and,
+     * if that change confirmed the order, published.
+     *
      * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockReserver.release]가,
      * revision은 커밋 앞의 훅이 잠근다. 결제는 주문 잠금 뒤의 일반 읽기로 가장 최근에 커밋된 것을 본다.
      */
     private fun applyResult(order: Order, result: ReconcileResult): OrderInfo {
         if (result is ReconcileResult.Changed) {
             when (result.to) {
-                PaymentStatus.SUCCESS -> order.completePayment()
+                PaymentStatus.SUCCESS -> order.completePayment(clock.instant())
 
                 PaymentStatus.FAILED -> {
                     order.failPayment()
@@ -127,9 +145,13 @@ class OrderPaymentSteps(
             }
         }
 
-        val saved = orderRepository.save(order)
+        val savedOrder = orderRepository.save(order)
 
-        return orderInfoAssembler.toInfo(saved)
+        if (result is ReconcileResult.Changed && result.to == PaymentStatus.SUCCESS) {
+            orderEventPublisher.publish(OrderConfirmedEvent.from(savedOrder))
+        }
+
+        return orderInfoAssembler.toInfo(savedOrder)
     }
 
     /**

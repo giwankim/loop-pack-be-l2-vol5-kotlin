@@ -9,5 +9,6 @@ dependencies {
     testImplementation(libs.springBootStarterKafkaTest)
     testImplementation(libs.testcontainers.kafka)
 
+    testFixturesImplementation(libs.springBootTest)
     testFixturesImplementation(libs.testcontainers.kafka)
 }

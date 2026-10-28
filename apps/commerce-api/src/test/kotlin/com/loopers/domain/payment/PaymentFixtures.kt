@@ -43,3 +43,12 @@ fun createPgTransaction(
         status = status ?: gen().enumOf(PgStatus::class.java).get(),
     )
 }
+
+/**
+ * The PG transaction [payment] already holds: its PG order ID and amount, and the transaction key the PG answered its create
+ * with, in PG status [status]. Unlike [createPgTransaction], nothing is drawn, so the payment reconciles it as its own PG
+ * transaction rather than a conflicting one.
+ */
+fun createPgTransactionOf(payment: Payment, status: PgStatus): PgTransaction {
+    return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = status)
+}
