@@ -24,7 +24,7 @@ Added 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5
 | [179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179) | the recorder, which reads first | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179#issuecomment-6467757042) | [Issue 179](#issue-179-the-recorder-reads-first-and-records-both-roots-in-one-transaction) |
 | [180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180) | the listener | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180#issuecomment-6469017935) | [Issue 180](#issue-180-the-listener-records-what-reaches-the-broker-and-acknowledges-after-the-commit) |
 | [181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181) | the stop scenes and the week 7 consumed case | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181#issuecomment-6470087611) | [Issue 181](#issue-181-an-unprocessable-record-stops-the-consumer-and-the-consumed-case-is-recorded-for-week-7) and the [W7 handoff](#w7-handoff-consumed-case) |
-| [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | the documents: dated notes, commands and counts, this preface and the draft PR body | recorded below once posted | Issue 182 |
+| [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | the documents: dated notes, commands and counts, this preface and the draft PR body | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182#issuecomment-6470850336) | [Issue 182](#issue-182-the-steps-documents-match-the-code-with-its-commands-and-counts-and-a-draft-pr-body) |
 
 Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
@@ -368,7 +368,7 @@ A two-axis review ran on the uncommitted tree before the commit.
 
 ## Issue 182: the step's documents match the code, with its commands and counts and a draft PR body
 
-Recorded 2026-10-28 from the closing comment of [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), the last of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176)'s tickets. Nothing in the code changed. The documents are:
+Recorded 2026-10-28 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182#issuecomment-6470850336) of [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), the last of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176)'s tickets. Nothing in the code changed. The documents are:
 
 - the [purchase activity design](../design/purchase-activity.md): the ticket table (1.3), dated notes in sections 1, 4, 5, 7 and 11, two rows in section 10, and the commands and counts (11)
 - [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md): dated notes on rules 3, 5 and 7
