@@ -625,3 +625,33 @@ The schema doesn't change and there is no migration. A revert removes the port, 
   - backfilling orders confirmed with points
   - the partition and redelivery experiments
 ````
+
+## Spec 167: the closing review
+
+Recorded 2026-10-28 from the closing comment of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). It closes the spec after a two-axis review of the step 1 branch, whose fixes landed on 2026-10-27.
+
+
+Tickets 168–173 are closed, and the branch had a two-axis review of `origin/week6...b0fc848` (24 commits) on 2026-10-27. It checked the diff against the repo's standards (`CODING_STANDARDS.md`, `CONTEXT.md`, catalog design §5, ADRs 0009–0032) and against this spec, its six tickets and ADR 0032. Its four fixes are [`4e06cc3`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/4e06cc3), [`0cb8baa`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/0cb8baa), [`2e3cb5e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2e3cb5e) and [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658). `feat/order-events` is at [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658), the head of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) into `week6`. On that tree, `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check :modules:kafka:ktlintCheck` passes: 79 classes, 943 tests, 0 failures, 0 skipped. That is the count design §12 records. The streamer's `ktlintCheck` and `check` pass too.
+
+The comment itself was drafted on 2026-10-27 and lost with that session, so this one was rebuilt on 2026-10-28 from the four commits and the documents they touched.
+
+### Spec
+
+All 27 user stories were checked. Nothing in production code goes beyond the spec, and no requirement was found implemented wrongly.
+
+- **Stories 5 and 18: accepted by construction.** The pending, unknown, failed, rejected and conflicting outcomes have broker-reading scenes. A draft order and a restart have none, and need none: the port's only caller is `applyResult`, which runs inside TX B on a `Changed` result, and nothing is stored that a restart could replay.
+- **Seam 1's scene for an order confirmed with points: not added.** Ticket 171's dated note left it to this review. Such an order is refused in TX A by `Order.ensureDraft` with `ORDER_ALREADY_CONFIRMED` and never reaches TX B, so a scene would test the week 3 guard, not the publish. The Testing Decisions line keeps a dated note.
+- **`confirmedAt` on the wire: decided.** It stays Jackson 3's `ISO_INSTANT` form, micro precision with trailing zero groups trimmed (`…03.100Z`, `…03Z`), and no `@JsonFormat` fixes six digits. A consumer reads and compares it as an instant. Dated notes on design §2 and ADR 0032 rule 6 in [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658).
+- **Kept: `applyResult`'s second SUCCESS check.** The `when` applies the outcome, the save follows, and the publish tests `result.to == SUCCESS` once more after it. The event is built from the saved order, so the check cannot move into the `when` branch without moving the save, and the repetition stays.
+
+### Standards
+
+- **Fixed: the glossary's publish wording.** `CONTEXT.md`'s context summary and its order confirmed event entry, ADR 0028's dated note and ADR 0032's changed-decision paragraph said the event 알린다 or called it an 알림, words the glossary keeps for the PG callback and lists under 발행하다's Avoid. They say 발행된다 now, and "다시 보내도" became "다시 발행해도". [`4e06cc3`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/4e06cc3)
+- **Fixed: KDoc and names in the Kafka adapter and the saga.** KDoc says publish and unpublished instead of send, sent and lost, and "order confirmed event" instead of a bare "order event". `OrderPaymentSaga`'s lookup check is `checkLookupNeeded` again, the name spec 159's review kept: the saga rename had changed it to `isLookupNeeded` unannounced, leaving its KDoc and the payments design stale. `OrderPaymentSagaSteps` names both saved orders `savedOrder`. `OrderEventsKafkaConfig`'s executor KDoc no longer says "an `afterCommit`", since the listener runs in `afterCompletion` (ADR 0032 rule 4). `OrderConfirmedKafkaRelay` declares its `whenComplete` parameter types and reads the result through `checkNotNull`, so no inferred type carries the `@UnknownNullability` the IDE warns about. [`0cb8baa`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/0cb8baa)
+- **Fixed: copied test helpers moved to support.** The three spy stubs `OrderEventPublishingTest` had copied from `OrderPaymentIntegrationTest` are extension functions in `com.loopers.support`'s `OrderPaymentSpies.kt`. Both broker-reading classes read their log appender through `LogLines.kt`'s `linesAt` and `awaitLinesAt`. `confirmPending(testPg, order)` joins `confirmOrder` on the committing base, and the fixtures gain `createPgTransactionOf` and `createOrderIn`. `createPgTransactionOf` has its own name because an overload of `createPgTransaction` would capture the existing `createPgTransaction(payment, status = …)` calls and take the payment's transaction key instead of drawing one. `CODING_STANDARDS.md` points at them. [`2e3cb5e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2e3cb5e)
+- **Fixed: the payments design's ticket 151 row** names `OrderPaymentSteps` again, the bean's name at that ticket, which the saga rename had rewritten beside the older `OrderPaymentService`. [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658)
+
+### Records
+
+- The dated notes on this spec's body carry the label 닫는 검토.
+- The commit after `f792658` records this comment in `docs/research/week6-order-events-writing-material.md`.
