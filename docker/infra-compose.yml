@@ -3,7 +3,7 @@ services:
   mysql:
     image: mysql:8.4
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_USER=application
@@ -18,7 +18,7 @@ services:
     image: redis:8.10
     container_name: redis-master
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_master_data:/data
     command:
@@ -41,7 +41,7 @@ services:
       redis-master:
         condition: service_healthy
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_readonly_data:/data
     command:
@@ -63,8 +63,8 @@ services:
     image: bitnamilegacy/kafka:3.5
     container_name: kafka
     ports:
-      - "9092:9092" # 카프카 브로커 PORT
-      - "19092:19092"
+      - "127.0.0.1:9092:9092" # 카프카 브로커 PORT
+      - "127.0.0.1:19092:19092"
     environment:
       - KAFKA_CFG_NODE_ID=1 # 브로커 고유 ID
       - KAFKA_CFG_PROCESS_ROLES=broker,controller # KRaft 모드여서, broker / controller 역할 모두 부여
@@ -95,7 +95,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "9099:8080"
+      - "127.0.0.1:9099:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local  # kafka-ui 에서 보이는 클러스터명
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092 # kafka-ui 가 연겷할 브로커 주소
