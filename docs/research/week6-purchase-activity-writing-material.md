@@ -1,6 +1,6 @@
 # Week 6 purchase activity: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment, with three exceptions. The [W7 handoff](#w7-handoff-consumed-case) is recorded from one run of issue 181's consumed case. Issue 182 added the preface below and the [draft PR body](#draft-pr-body) at the end. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment, with four exceptions. The [W7 handoff](#w7-handoff-consumed-case) is recorded from one run of issue 181's consumed case. Issue 182 added the preface below and the [draft PR body](#draft-pr-body). The last section, [Spec 176: the closing review](#spec-176-the-closing-review), is recorded from the spec's own closing comment. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
 
 ## Preface: what this branch is and where its comments sit
 
@@ -25,6 +25,7 @@ Added 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5
 | [180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180) | the listener | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180#issuecomment-6469017935) | [Issue 180](#issue-180-the-listener-records-what-reaches-the-broker-and-acknowledges-after-the-commit) |
 | [181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181) | the stop scenes and the week 7 consumed case | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181#issuecomment-6470087611) | [Issue 181](#issue-181-an-unprocessable-record-stops-the-consumer-and-the-consumed-case-is-recorded-for-week-7) and the [W7 handoff](#w7-handoff-consumed-case) |
 | [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | the documents: dated notes, commands and counts, this preface and the draft PR body | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182#issuecomment-6470850336) | [Issue 182](#issue-182-the-steps-documents-match-the-code-with-its-commands-and-counts-and-a-draft-pr-body) |
+| [176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176) | the spec's closing review: a stop scene for a value that is not JSON, KDoc and comment wording, dated notes | recorded below once posted | [Spec 176](#spec-176-the-closing-review) |
 
 Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
@@ -615,3 +616,45 @@ Two new tables, `processed_order_confirmation` and `purchase_activity`. Hibernat
   - a retention period for processed confirmations
   - deleting `DemoKafkaConsumer` and cleaning up the template's `kafka.yml`
 ````
+
+## Spec 176: the closing review
+
+Recorded 2026-10-28 from the closing comment of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176). It closes the spec after a two-axis review of this branch.
+
+Tickets 177–182 are closed, and the branch had a two-axis review of `week6...d492156` (`1abac34...d492156`, 23 commits) on 2026-10-28. One axis checked the diff against the repo's standards: `CODING_STANDARDS.md`, the two glossaries and `CONTEXT-MAP.md`, catalog design §5, ADRs 0010, 0012, 0013, 0016 and 0033, and a baseline of Fowler's code smells. The other checked it against this spec, its six tickets, the purchase activity design and ADR 0033. Every claim about spring-kafka was checked against its 4.1.1 sources before anything changed. The fixes are [`de86c7a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/de86c7a), [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c) and [`c948c5a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c948c5a).
+
+On [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c), `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check` passes with no `BOOTSTRAP_SERVERS` in the shell: 13 classes, 56 tests (55 before the review), 0 failures, 0 skipped. `:modules:kafka:ktlintCheck` passes. No commerce-api or `modules` code changed after `8313f00`, where commerce-api's `cleanTest check` gave 79 classes and 943 tests, so it was not run again. The PR into `week6` is not open yet. Its draft body is at the end of the writing material.
+
+### Spec
+
+All 19 user stories and the six tickets' acceptance criteria were checked, and each is shown by a test or accepted by a dated note. Nothing in production code goes beyond the spec.
+
+- **Fixed: no scene for an unreadable body.** The Testing Decisions say "읽을 수 없는 본문과 모르는 schemaVersion도 세운다", and ticket 180's dated note had left the body without a scene, because the shared template writes a byte array as a base64 string. `OrderEventsListenerStopTest` now publishes `not json` through a `KafkaProducer` with a `ByteArraySerializer`. The container stops with every consumer closed and `isInExpectedState` false, the group's commits and both tables stay as they were, and the listener logs nothing. spring-kafka's `Error handler threw an exception` is the one ERROR line, and its cause chain is `KafkaException` → `ListenerExecutionFailedException` → `ConversionException` → Jackson's `StreamReadException`. [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c)
+- **Fixed: the converter's exception had the wrong name.** Design §5 and §6, ADR 0033 rule 5's ticket 181 note and this spec's ticket 181 note called it `MessageConversionException`. It is spring-kafka's `ConversionException`, and a mutant of the new scene that asserts the old name fails. Both types are in `DefaultErrorHandler`'s not-retryable defaults (`ExceptionClassifier`), so design §6's production shape stands. Dated notes in [`c948c5a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c948c5a).
+- **Recorded: story 17 reads the factory, not the running consumer.** `OrderEventsListenerConfigTest` reads `consumerFactory.configurationProperties`, as ticket 177's criterion says. A running `KafkaConsumer` exposes no configuration through its public API. A container changes the factory's settings only through `@KafkaListener`'s `properties`, which the listener does not set, or through the group, which every consuming scene checks by waiting on group `commerce-streamer`'s commits. Dated note on design §7.
+- **Recorded: the comparison is tested through the port.** The Testing Decisions put "견줌의 정의(차례 무관, 시각 비교)" under domain units, but the comparison lives in `PurchaseActivityModifyService` (ticket 179), so `PurchaseActivityRecorderTest` shows it: items in another order, and a time finer than microseconds, are the same fact. The entity tests keep the entities' own checks.
+- **Recorded: the validation starter.** `springBootStarterValidation` joined the streamer's compile path in ticket 179 (`d0e9473`), for the port's `@Valid` and the request's constraints. The spec's dependency line did not list it.
+- **Refuted: "`isInExpectedState` proves nothing after the first stop in the class."** The spec reviewer read that spring-kafka 4.1.1 never resets the parent container's `stoppedNormally` on `start()`. That is true, but `doStop` rewrites it on every stop, true for a normal stop and false otherwise (`ConcurrentMessageListenerContainer` line 380), under the lock `isInExpectedState` takes. A later scene that stopped normally would read true and fail. Design §7 says so.
+- **Left as the dated notes already say:** the race retry `recordSettlingARace` has a probe and no permanent test; the entity's `IllegalArgumentException` sits outside design §6's not-retryable set, which waits for the stop-policy study; the demo listener prints byte arrays under `local` (not tried).
+- **Not scope creep:** the context-map section of `docs/agents/domain.md`, which a second context needs, and the copied InstancioExtension service file, which `CODING_STANDARDS.md` documents.
+
+### Standards
+
+No hard violations. Block bodies, braced guards, backticked test names, no `@Nested` or Mockito, `exception` as the name of an `assertThrows` result, `UK_`/`CK_` constraint names, explicit saves, nullable repositories and the roots' soft delete all hold.
+
+- **Fixed: wording that contradicted the glossary or the code.** [`de86c7a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/de86c7a)
+  - The two entities' KDoc said "order confirmation event". The glossary's term is "order confirmed event".
+  - `OrderEventsListenerConfig`'s KDoc said an unreadable body fails in the listener, and that the handler stops on a record that cannot be processed. The body fails in the adapter's converter, and the handler stops on any exception, a transient DB failure included.
+  - `application.yml` called recording idempotent, a word the streamer's glossary lists under _Avoid_ (멱등 처리). It now says recording the same fact again writes nothing.
+- **Fixed: a literal next to its constant.** `orderEventValue` and `orderConfirmedValue` default `schemaVersion` to `OrderConfirmedPayload.SCHEMA_VERSION`, as `eventType` defaults to its constant. [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c)
+- **Documented:** the stop-scene bullet of `CODING_STANDARDS.md` describes the raw-bytes producer and the read of the container's log. [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c)
+- **Kept, by choice:**
+  - the copied `ApplicationService` KDoc's commerce-api examples (`OrderPaymentSaga`, PG, ADR 0028). The copy says it is word for word.
+  - the stored-row reads in both `PurchaseActivityRecorderTest` and `BaseConsumerTest`. The rollback base flushes first and the committing base cannot, since `flush()` throws outside a transaction. The rows-equal-the-items assertion repeated in three classes stays where it is.
+  - the fixtures' five ID draws and two eventId derivations.
+  - `PurchaseActivityConflictException`'s `List<String>` of differences, which only a message reads; the `key`, `partition` and `offset` parameters of the listener's private functions; and `PurchaseActivityRepository.save`, whose test-only callers ticket 178's dated note records.
+  - "멱등" in the prose of design §5 and ADR 0033 rule 6. Only the code comment changed.
+
+### Records
+
+- The dated notes on this spec's body carry the label 닫는 검토.
