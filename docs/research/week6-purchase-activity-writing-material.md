@@ -1,6 +1,6 @@
 # Week 6 purchase activity: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment, with one exception: the [W7 handoff](#w7-handoff-consumed-case) is recorded from one run of issue 181's consumed case. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
 
 ## Issue 177: the streamer becomes a testable app with the listener factory it will consume order events with
 
@@ -277,3 +277,112 @@ A two-axis review ran on the uncommitted tree before the commit.
 - **An unreadable body** (spec 176: 읽을 수 없는 본문도 세운다) has no scene and no owner; 181 lists only a missing `orderId`. The shared template cannot send bytes that are not JSON, but a JSON value that is not an envelope, such as a bare string, fails in the converter the same way.
 - **Spec 176's body** still says `waitForAssignment` and that the topic default is the Kotlin default argument; it could take dated notes, as for issues 178 and 179.
 - **commerce-api's `check`** was not run; design section 11 leaves it to the last ticket.
+
+## Issue 181: an unprocessable record stops the consumer, and the consumed case is recorded for week 7
+
+Recorded 2026-10-28 from the closing comment of [issue 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181). The rule is rule 5 of [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) (an unprocessable event stops the consumer, provisionally), and the scenes are sections 5, 6 and 8 of the [purchase activity design](../design/purchase-activity.md). The code is:
+
+- [`OrderEventsListener`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/adapter/consumer/OrderEventsListener.kt): one ERROR line for an unprocessable event, naming the order by the record key
+- [`UnprocessableOrderEventException`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/support/error/UnprocessableOrderEventException.kt): its KDoc on the line and the two not-retryable types
+- [`OrderEventsListenerStopTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventsListenerStopTest.kt): the four failure scenes and the restart
+- [`OrderEventConsumedCaseTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventConsumedCaseTest.kt): the week 7 consumed case
+- [`BaseConsumerTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/support/test/BaseConsumerTest.kt): the scene helpers, the stop wait, and the restart of a stopped container on an emptied topic; [`OrderEventValues.kt`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/support/OrderEventValues.kt): the envelope builders; [`OrderEventsListenerTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventsListenerTest.kt) now uses both
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the stop scene, the cleanup of a stopped container and the consumed case under 도우미; the [purchase activity design](../design/purchase-activity.md): dated notes in sections 5 to 8
+
+### Landed
+
+Two commits on `feat/purchase-activity`, on top of `6b35510`:
+
+- [`b054b4f`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/b054b4f) is the code, the tests, the standards and the design notes.
+- The commit after it adds this section and the [W7 handoff](#w7-handoff-consumed-case).
+
+### Acceptance criteria
+
+- [x] **The four failure scenes pass with the assertions above; no scene leaves a stopped container for the next.** A conflict (the same event ID with product 1's quantity 3 instead of 2, after the recorded event), a payload without `orderId`, `schemaVersion` 2 and empty `items`. Each scene waits until the container is not running and every consumer has closed (`isChildRunning` false), so a stop that left a consumer running fails the wait. It then asserts `isInExpectedState` false, which is true only after an abnormal stop and reads the flag behind each `ConsumerStoppedEvent`'s `ABNORMAL`. The group's committed offsets are the ones read before the record; for the conflict, the commit stays at the conflicting record's offset. The rows are unchanged: the recorded event's for the conflict, none for the others. There is one ERROR line, compared whole, for example `Refused an order confirmed event that cannot be processed. eventId=…, orderId=…, partition=0, offset=1, cause=com.loopers.application.purchaseactivity.provided.PurchaseActivityConflictException: Order confirmed event … of order … conflicts with the recorded one: items (product=quantity) recorded {1=2, 2=1}, incoming {1=3, 2=1}.` The other causes are `MalformedOrderEventException: … cannot be read: Missing required creator property 'orderId' (index 0)`, `UnsupportedOrderEventException: … is at schema version 2, and the streamer reads version 1.` and `jakarta.validation.ConstraintViolationException: record.request.items: An order confirmed event must have at least one item.` The five scenes share one context: the base's `@AfterEach` empties the topic and restarts a stopped container, and the next scene's `@BeforeEach` fails at once on one still stopped. **Red check:** the conflict scene failed only on the ERROR line (`Expecting actual: []`); the stop, the abnormal flag, the uncommitted offset and the rows already held from issue 180.
+- [x] **The restart scene shows redelivery of the same offset and a second stop.** It calls `start()` on the stopped container and waits for the second stop. The two ERROR lines are the same line, `partition=2, offset=1` in the run, the commit is still at the conflicting offset, and the recorded rows stand. `start()` sets the container running before it returns, so the second wait cannot end on the first stop.
+- [x] **The consumed case's run values are in the writing material with the stitching stated.** [W7 handoff: consumed case](#w7-handoff-consumed-case): the commit, the command, the pinned inputs, the topic, partition 0, offset 0, the commit and both tables' rows, and a section on the stitch to step 1's run. No card values or secrets.
+- [x] **`./gradlew :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check` passes with executed test counts checked.** With `:modules:kafka:ktlintCheck` as design section 11 lists: **13 classes, 55 tests, 0 failures, 0 skipped**, up from 11 classes and 49 tests at issue 180. The new tests are `OrderEventsListenerStopTest`'s 5 and `OrderEventConsumedCaseTest`'s 1. The counts come from the JUnit XML reports after deleting the old ones. `BOOTSTRAP_SERVERS` was unset. The pre-commit hook's tree-wide `ktlintCheck` passed.
+
+### Red checks and probes
+
+Each mutant was temporary, run and reverted before the commit.
+
+- **Without the `ConstraintViolationException` catch**, only the empty-items scene failed, on an empty ERROR list.
+- **Restarting without emptying the topic** failed 4 of 5 scenes in `@BeforeEach` with `The listener container order-events is not running.`: the restarted container read the previous scene's uncommitted record again and stopped before the next scene began. That is the restart scene's own finding, turned on the cleanup.
+- **The emptied topic.** After a restart, the consumers logged `Resetting offset for partition order-events-listener-stop-N to position FetchPosition{offset=1, …}` on the partitions that had held a refused record: the group's committed offset sat below the new log start, and `earliest` is then the log's end.
+- **Two ERROR lines per stop.** A run of the stop class logged six listener lines and six `Error handler threw an exception` lines on `KafkaMessageListenerContainer`'s logger, one of each per stop (four scenes and the restart's two). The scenes count the listener's logger only; "one ERROR line" means that one.
+- **From the sources.** spring-kafka 4.1.1: `CommonContainerStoppingErrorHandler` runs `stopAbnormally` on a `containerStop-` thread, waits until the container is not running (at most 10 s) and throws `KafkaException("Stopped container")`; `ConcurrentMessageListenerContainer.doStop` sets the container not running before it stops the children; the last child to stop clears the children (`childStopped`); `isInExpectedState` is `isRunning() || isStoppedNormally()`; a restart builds new children. `MessageConverter` sets `RECEIVED_KEY` only for a non-null key, so the header is optional. kafka-clients 4.2.1: `RecordsToDelete.beforeOffset(-1)` truncates to the high watermark.
+- One `apache/kafka-native` container failed to start once (`Timed out waiting for log output matching '.*Transitioning from RECOVERY to RUNNING.*'`) and passed on the rerun, as issues 178 and 180 saw.
+
+### Decisions made while implementing
+
+- **One class for the stopping scenes, not a context per scene.** The ticket allowed either a per-class context or a restart in `@AfterEach`. A restart alone stops again (the mutant above), so the base empties the topic first: `deleteRecords` is to the broker what `TRUNCATE` is to the tables. Moving the group past the record (`alterConsumerGroupOffsets`, design 6's way to flow again) was not chosen, because it needs an empty group and every context's listener joins `commerce-streamer`. A scene after the first costs about a second for the restart and the settled assignment.
+- **The stop is read by polling, not by `ConsumerStoppedEvent`.** `isInExpectedState` reads the flag behind `ABNORMAL` without a listener bean, which would be one more import and one more context key.
+- **The wait covers both phases of a stop:** the container not running, then every consumer closed.
+- **The ERROR line names the order by the record key.** Two of the four refused records have no `orderId` to read (missing, or a version 2 payload, which is not read), and the contract makes the key the order ID's string (order-events design 2).
+- **The line is for the two not-retryable types**, `UnprocessableOrderEventException` and the request validation's `ConstraintViolationException` (design 6). A transient failure, a second `DataIntegrityViolationException` or an entity's `IllegalArgumentException` stops with spring-kafka's line only. A `MessageConversionException` never reaches the listener.
+- **The cause is the exception's `toString`**, as step 1's relay WARN writes it: one line, no stack trace. spring-kafka's line carries the stack trace.
+- **The consumed case has a class and a topic of its own**, so its record is offset 0. On the listener test's topic the offset would depend on the scenes before it, and their partitions on the fixture's drawn order IDs.
+- **The helpers moved** to `BaseConsumerTest` (`publish`, `awaitCommittedPast`, `committedOffset`, `listenerLines`, the row reads, `awaitStopped`) and `com.loopers.support` (`orderEventValue`, `orderConfirmedValue`, whose `schemaVersion` parameter is back now that a scene sets it). `committedOffsets` stays in the stop test, its one user.
+
+### Review
+
+A two-axis review ran on the uncommitted tree before the commit.
+
+- **Standards:** two hard findings. Fixed: a sentence in `CODING_STANDARDS.md` still had `OrderEventsListenerTest` taking the template and the properties in its constructor. Kept: the consumed case's KDoc and design section 8 point at this file's W7 handoff, which the commit after the code adds, as step 1's `e492cf1` and `ff6c238` did. Of the judgement calls, fixed: `committedOffsets` moved from the base into the stop test; "commits nothing" became "commits no offset" in the test names, since the glossary's 읽었다고 표시하다 avoids 커밋하다 for the offset; the exception's KDoc names both not-retryable types. Kept: the two identical catch arms (Kotlin has no multi-catch), the key, partition and offset travelling together (they are header parameters), and the row tuples each scene writes out (each states what it compares).
+- **Spec:** nothing missing or wrong in the scenes. Fixed: design section 5's note said every unprocessable event gets the listener's line, but a `MessageConversionException` fails in the converter before the listener runs. Noted: the unreadable body still has no scene; "one ERROR line" means the listener's logger; spec 176 has no dated note from this ticket; step 1's run has two PG order IDs, one per scene, so the handoff names both.
+
+### Left for later
+
+- **An unreadable body** (spec 176: 읽을 수 없는 본문도 세운다) still has no scene and no owner. It fails in the converter, so it would not get the listener's ERROR line either; spring-kafka's line is its only evidence.
+- **The race retry** still has no permanent test (issue 180).
+- **Spec 176's body** could take dated notes for the ERROR line's scope and the one stop class, next to issue 180's two leftovers there (`waitForAssignment`, the topic default).
+- **A way to flow again** is still a person's job (design 6). The base's emptied-topic restart is test cleanup, not that tool.
+- **commerce-api's `check`** was not run; design section 11 leaves it to the last ticket.
+
+## W7 handoff: consumed case
+
+Recorded 2026-10-28 from one run of [issue 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181)'s consumed case, [`OrderEventConsumedCaseTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventConsumedCaseTest.kt). This is the published-and-consumed case of [purchase activity design](../design/purchase-activity.md) section 8 that week 6 hands to week 7's outbox. Its other half is step 1's [unpublished case](./week6-order-events-writing-material.md#w7-handoff-unpublished-case): the same order, confirmed while its event reached nothing. Here the record that order's confirmation would have published is on the broker, and the streamer records it.
+
+### How to run it
+
+- **Commit:** [`b054b4f`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/b054b4f) on `feat/purchase-activity`
+- **Command:** `./gradlew :apps:commerce-streamer:test --tests 'com.loopers.adapter.consumer.OrderEventConsumedCaseTest'`
+- **Run:** 2026-10-28T13:09:29Z, 1 test, 0 failures, 0 skipped (5.0 s)
+- **Containers:** MySQL 8.4 and `apache/kafka-native:4.3.2` from the Testcontainers fixtures, one per JVM, stopped when the JVM ends
+
+### Fixed inputs
+
+| Input | Value |
+| --- | --- |
+| Topic | `order-events-consumed-case`, the class's own (3 partitions), so the record is its first |
+| Key | `1`, the order ID's string (order-events design 2) |
+| orderId / eventId | `1` / `order-confirmed:v1:1` |
+| confirmedAt | `2026-10-27T01:02:03.123456Z`, step 1's pinned clock |
+| items | `[{productId 1, quantity 2}, {productId 2, quantity 1}]`, in ascending product ID |
+| Value | `{"eventId":"order-confirmed:v1:1","eventType":"OrderConfirmed","schemaVersion":1,"payload":{"orderId":1,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1,"quantity":2},{"productId":2,"quantity":1}]}}`, written by hand. commerce-api's `OrderEventPublishingTest` publishes the same order at the same instant and pins this form, with the order ID as the key and no headers |
+| Group | `commerce-streamer`, `auto.offset.reset` `earliest`, the streamer's listener factory (`MANUAL_IMMEDIATE`, concurrency 3) |
+
+The record carries no card values, no PG values and no secrets (order-events design 2).
+
+### Observed
+
+| | |
+| --- | --- |
+| Partition / offset | 0 / 0 |
+| Committed offset of `commerce-streamer` on partition 0 | 1 |
+| Listener line | `Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED` |
+| `processed_order_confirmation` | id 1: event_id `order-confirmed:v1:1`, order_id 1, confirmed_at `2026-10-27T01:02:03.123456Z` |
+| `purchase_activity` | id 1: order_id 1, product_id 1, quantity 2, confirmed_at `2026-10-27T01:02:03.123456Z`; id 2: order_id 1, product_id 2, quantity 1, confirmed_at `2026-10-27T01:02:03.123456Z` |
+
+The test logs these values in one INFO line, `W7 handoff, consumed case`, after the assertions.
+
+### The stitch
+
+The commerce-side values are step 1's run, not this one. The PG order ID is a fresh UUID per payment: `2d50c75c-dc9f-4bf3-97c4-fd5186da94ce` in scene 1 (the publish failed) and `7c92525b-8893-408e-9f7c-f348acc2efa8` in scene 2 (the publish is stopped). The transaction key is `20261027:TR:9e3b71` in both. They come from `OrderEventPublishGapTest` at [`e492cf1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e492cf1). Both scenes confirm order 1 at the same instant, so either one's event is this record. The streamer knows neither value, and no commerce-api ran here. So this record stitches two runs, one per app, joined by the order ID, the event ID and the record's bytes; one run of both apps on compose is not kept as reproduction code (design 8).
+
+### What it shows and what it does not
+
+- Together the two cases are week 7's starting point. In the unpublished case the order is confirmed and its event exists nowhere. In this one the same event, once on the broker, becomes one processed confirmation and two activities at the order's confirmation time, to the microsecond, and the group commits past it. An outbox row written inside TX B is what would carry the first case to the second.
+- The value is written by hand, not published by commerce-api's relay. `OrderEventPublishingTest` is what ties it to the relay's form.
+- It shows no redelivery. `OrderEventsListenerTest`'s same-record scene shows that a second delivery writes nothing.
