@@ -12,32 +12,19 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## File structure
 
-Single-context repo (most repos):
-
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-├── apps/
-├── modules/
-└── supports/
-```
-
-Multi-context repo (presence of `CONTEXT-MAP.md` at the root):
+This repo has two contexts since 2026-10-28, so `CONTEXT-MAP.md` exists at the root. Both contexts keep their ADRs in the root `docs/adr/`; there is no per-context ADR directory.
 
 ```
 /
 ├── CONTEXT-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── CONTEXT.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── CONTEXT.md
-        └── docs/adr/
+├── CONTEXT.md                         ← 커머스 (commerce-api)
+├── docs/adr/                          ← decisions of both contexts
+├── apps/
+│   ├── commerce-api/
+│   └── commerce-streamer/
+│       └── CONTEXT.md                 ← 구매 활동 (commerce-streamer)
+├── modules/
+└── supports/
 ```
 
 ## Use the glossary's vocabulary
