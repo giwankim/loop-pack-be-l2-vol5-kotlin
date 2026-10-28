@@ -50,7 +50,7 @@
 
 - `order_id`와 `product_id`는 값이다. `orders`·`product`로 가는 외래 키는 없고 streamer는 그 표를 읽지 않는다(1.1절). `scalar-foreign-keys.sql`에도 넣지 않는다.
 - `confirmed_at`은 구매 활동에도 둔다. 9주차의 시간 창이 처리한 주문 확정을 거치지 않고 읽는다. 그 인덱스는 9주차가 둔다.
-- 엔티티는 `domain.purchaseactivity`, 포트는 `application.purchaseactivity.required.ProcessedOrderConfirmationRepository`와 `PurchaseActivityRepository`(Spring Data, 없으면 null), 구현은 `adapter.persistence.purchaseactivity`다. commerce-api와 같은 헥사고날 구조(ADR 0013)이고, 지금 streamer의 `interfaces.consumer`는 `adapter.consumer`가 된다.
+- 엔티티는 `domain.purchaseactivity`, 포트는 `application.purchaseactivity.required.ProcessedOrderConfirmationRepository`와 `PurchaseActivityRepository`(Spring Data, 없으면 null), 구현은 `adapter.persistence.purchaseactivity`다. commerce-api와 같은 헥사고날 구조(ADR 0013)이고, 지금 streamer의 `interfaces.consumer`는 `adapter.consumer`가 된다. (2026-10-28, [티켓 178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178): 두 엔티티는 생성자에서 `confirmedAt`을 마이크로초로 자른다. MySQL은 일곱째 자리를 버리지 않고 반올림한다. 자르지 않은 `…03.123456789Z`를 저장하자 `…03.123457Z`로 읽혔다(탐침). 자르지 않으면 같은 사실의 재전달이 저장된 시각과 어긋나 충돌로 보인다. 생성자가 필드를 계산하므로 fixture는 ADR 0010의 기준대로 Instancio가 아니라 진짜 생성자를 부른다. 두 표의 쿼리는 모두 파생 조회라 `adapter.persistence.purchaseactivity`는 아직 없다. 포트에는 테스트가 쓰는 `save`와 조회만 두었고, 4절의 `saveAll`은 그것을 처음 부르는 기록 티켓이 더한다.)
 - 스키마는 두 앱이 같은 `loopers`를 쓴다. Hibernate의 `create`는 그 앱이 매핑한 표만 지우고 만들므로 서로의 표를 건드리지 않는다.
 
 ## 4. 기록
@@ -109,7 +109,7 @@ streamer가 던지는 셋(`Unsupported…`, `Malformed…`, `…Conflict…`)은
 - **테스트 리소스.** `junit-platform.properties`(생성자 주입, 확장 자동 감지)와 `instancio.properties`를 commerce-api에서 베낀다. Gradle은 모듈마다 테스트 classpath가 따로다.
 - **장면.**
   - 포트: 새 요청은 두 표에 행을 남긴다. 같은 요청은 `ALREADY_RECORDED`이고 행이 늘지 않는다. 같은 eventId의 다른 수량, 다른 품목, 다른 confirmedAt, 같은 orderId의 다른 eventId는 충돌이다. 품목의 차례가 달라도 같은 사실이다. 빈 품목과 0 수량은 거절된다.
-  - 저장소: 두 유일 제약과 CHECK가 이름 그대로 있고 어긴 저장은 실패한다. 삭제된 것은 없는 것이다.
+  - 저장소: 두 유일 제약과 CHECK가 이름 그대로 있고 어긴 저장은 실패한다. 삭제된 것은 없는 것이다. (2026-10-28, [티켓 178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178): 저장소 테스트는 `BaseApplicationServiceTest`를 상속한다. JPA 슬라이스의 기반을 두지 않았으므로 기반은 여전히 둘이고, 컨텍스트도 하나 더 뜨지 않는다. 표의 제약은 `information_schema.table_constraints`에서 모두 읽어, 외래 키가 없음도 함께 본다. CHECK는 엔티티가 먼저 거절하므로 엔티티를 거치지 않는 UPDATE로 MySQL의 3819를 본다.)
   - 리스너: 발행한 record가 처리한 주문 확정 하나와 상품 수만큼의 구매 활동이 된다. 같은 record를 두 번 넣으면 행은 한 벌이고 두 offset이 모두 커밋된다. 모르는 eventType은 건너뛰고 offset이 커밋된다. 충돌 record는 컨테이너를 세우고(`isRunning == false`), 행은 그대로이며, ERROR 한 줄이 남고, 그 offset은 커밋되지 않는다.
   - 설정: 리스너 컨테이너의 consumer 설정에 `enable.auto.commit=false`가 있다. 팩토리의 ack 모드는 `MANUAL_IMMEDIATE`다.
   - 컨텍스트: 두 fixture를 `@Import`한 컨텍스트가 뜬다. 빠뜨리면 commerce-api처럼 뜨지 않는다. (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): streamer의 컨텍스트는 Kafka 설정 없이도 뜬다. `KafkaAdmin`은 `NewTopic` 빈이 있을 때만 admin을 만드는데 streamer는 토픽을 선언하지 않고, test에서는 데모 컨테이너도 뜨지 않는다. 뜨지 않는 것은 테스트가 토픽을 선언한 `BaseConsumerTest`의 컨텍스트다(`Could not create admin` ← `Invalid url in bootstrap.servers: ${BOOTSTRAP_SERVERS}`). 컨텍스트와 함께 뜨는 `order-events` 리스너가 생기면 리스너 티켓이 다시 확인한다.)
