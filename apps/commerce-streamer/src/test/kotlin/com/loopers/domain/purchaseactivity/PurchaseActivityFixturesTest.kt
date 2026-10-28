@@ -1,5 +1,7 @@
 package com.loopers.domain.purchaseactivity
 
+import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
+import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -13,6 +15,8 @@ class PurchaseActivityFixturesTest {
     companion object {
         private const val SAMPLES = 1_000
     }
+
+    private val validator = Validation.buildDefaultValidatorFactory().validator
 
     /** If two drawn activities shared an order and a product, a test saving both would now and then hit the unique key. */
     @Test
@@ -44,5 +48,54 @@ class PurchaseActivityFixturesTest {
         assertThat(activity.productId).isEqualTo(3)
         assertThat(activity.quantity).isEqualTo(11)
         assertThat(activity.confirmedAt).isEqualTo(Instant.parse("2026-10-27T01:02:03.123456Z"))
+    }
+
+    /**
+     * Requests built apart never share an order or an event. The time has no digit past the microsecond, as commerce-api
+     * publishes it, so a test comparing a stored time with the request's sees the same value.
+     */
+    @Test
+    fun `createPurchaseActivityRecordRequest satisfies its constraints with distinct orders and microsecond times`() {
+        val requests = List(SAMPLES) { createPurchaseActivityRecordRequest() }
+        val now = Instant.now()
+
+        assertThat(requests.flatMap { validator.validate(it) }).isEmpty()
+        assertThat(requests.map { it.orderId }).doesNotHaveDuplicates()
+        assertThat(requests).allSatisfy { request ->
+            assertThat(request.orderId).isPositive()
+            assertThat(request.eventId).isEqualTo("order-confirmed:v1:${request.orderId}")
+            assertThat(request.confirmedAt).isAfterOrEqualTo(Instant.EPOCH).isBefore(now)
+            assertThat(request.confirmedAt.nano % 1_000).isZero()
+            assertThat(request.items).hasSizeBetween(1, 5).allSatisfy { item ->
+                assertThat(item.productId).isPositive()
+                assertThat(item.quantity).isBetween(1, 10)
+            }
+        }
+    }
+
+    @Test
+    fun `createPurchaseActivityRecordRequest uses every argument it is given`() {
+        val request = createPurchaseActivityRecordRequest(
+            eventId = "order-confirmed:v2:7",
+            orderId = 7,
+            confirmedAt = Instant.parse("2026-10-27T01:02:03.123456789Z"),
+            items = listOf(PurchaseActivityRecordRequest.Item(productId = 3, quantity = 11)),
+        )
+
+        assertThat(request).isEqualTo(
+            PurchaseActivityRecordRequest(
+                eventId = "order-confirmed:v2:7",
+                orderId = 7,
+                confirmedAt = Instant.parse("2026-10-27T01:02:03.123456789Z"),
+                items = listOf(PurchaseActivityRecordRequest.Item(productId = 3, quantity = 11)),
+            ),
+        )
+    }
+
+    @Test
+    fun `createPurchaseActivityRecordRequest derives the event id from the order id it is given`() {
+        val request = createPurchaseActivityRecordRequest(orderId = 7)
+
+        assertThat(request.eventId).isEqualTo("order-confirmed:v1:7")
     }
 }

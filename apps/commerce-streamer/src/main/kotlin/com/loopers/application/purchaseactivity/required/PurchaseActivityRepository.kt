@@ -11,5 +11,8 @@ import org.springframework.data.repository.Repository
 interface PurchaseActivityRepository : Repository<PurchaseActivity, Long> {
     fun save(purchaseActivity: PurchaseActivity): PurchaseActivity
 
+    /** The same name and parameter as `CrudRepository.saveAll`, so it goes to `SimpleJpaRepository`, which saves each one. */
+    fun saveAll(purchaseActivities: Iterable<PurchaseActivity>): List<PurchaseActivity>
+
     fun findAllByOrderId(orderId: Long): List<PurchaseActivity>
 }

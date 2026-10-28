@@ -15,6 +15,9 @@ dependencies {
     implementation(libs.springBootStarterWebmvc)
     implementation(libs.springBootStarterActuator)
 
+    // validation: the convention adds it runtimeOnly, and the recording request's constraints need it on the compile path
+    implementation(libs.springBootStarterValidation)
+
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:kafka")))

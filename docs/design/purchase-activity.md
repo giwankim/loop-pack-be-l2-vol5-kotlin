@@ -55,14 +55,15 @@
 
 ## 4. 기록
 
-provided 포트 `application.purchaseactivity.provided.PurchaseActivityRecorder.record(request): PurchaseActivityRecordResult`. 구현은 `@ValidatedApplicationService` 하나이고 트랜잭션도 하나다(ADR 0033 규칙 3).
+provided 포트 `application.purchaseactivity.provided.PurchaseActivityRecorder.record(request): PurchaseActivityRecordResult`. 구현은 `@ValidatedApplicationService` 하나이고 트랜잭션도 하나다(ADR 0033 규칙 3). (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179): 구현의 이름은 `PurchaseActivityModifyService`다. 티켓과 명세 176은 `PurchaseActivityRecorderService`라 했지만, ADR 0013은 슬라이스의 쓰기 포트를 `<X>ModifyService`가 구현한다고 정하고, 3절이 streamer도 그 구조를 따른다고 한다.)
 
 1. eventId로 처리한 주문 확정을 읽는다. 없으면 orderId로 읽는다.
 2. 둘 다 없으면 처리한 주문 확정을 저장하고 구매 활동을 `saveAll`한다. `RECORDED`.
 3. eventId로 찾았으면 견준다. orderId, 시각으로 읽은 confirmedAt, 상품별 수량의 집합이 모두 같으면 아무것도 쓰지 않는다. `ALREADY_RECORDED`. 하나라도 다르면 `PurchaseActivityConflictException`.
 4. orderId로만 찾았으면 다른 eventId다. `PurchaseActivityConflictException`.
 
-- **견줌의 정의.** 속성의 차례와 `items`의 차례는 사실이 아니다. 구매 활동 행을 상품별 `(productId, quantity)`의 집합으로 만들어 요청의 것과 견준다. 지문은 저장하지 않는다.
+- **견줌의 정의.** 속성의 차례와 `items`의 차례는 사실이 아니다. 구매 활동 행을 상품별 `(productId, quantity)`의 집합으로 만들어 요청의 것과 견준다. 지문은 저장하지 않는다. (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179): 견주는 것은 요청 자체가 아니라 요청으로 만든 엔티티다. 엔티티가 시각을 마이크로초로 자르므로, 요청의 시각을 그대로 견주면 일곱째 자리가 있는 같은 사실이 저장된 자기와 충돌한다. 변이 탐침에서 `…03.123456Z`를 저장한 뒤 `…03.123456789Z`가 충돌이 되었다. 상품은 양쪽에서 한 번씩이므로(구매 활동의 유일 키, 요청의 검증) 집합은 상품에서 수량으로 가는 맵이고, 충돌의 메시지가 그 맵을 상품 차례로 적는다. 메시지는 온 eventId와 orderId, 그리고 다른 값마다 `<이름> recorded <저장된 값>, incoming <온 값>`이다.)
+- **겹친 상품.** (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179)) 요청의 `@AssertTrue`가 `ConstraintViolationException`으로 거절한다. 엔티티는 한 행이라 겹침을 볼 수 없다. 거절이 없으면 처리한 주문 확정을 삽입한 뒤 구매 활동의 유일 키가 둘째 품목을 `DataIntegrityViolationException`으로 거절하고(변이 탐침), 리스너 어댑터가 그것을 경합으로 읽어 다시 부른다. 6절의 운영 모양이 재시도하지 않는 것으로 등록할 예외 쪽에 둔 것이다.
 - **경합.** 같은 eventId를 두 consumer가 같은 순간 다루는 일은 key가 orderId라 한 파티션의 record를 둘이 나눠 가질 때, 곧 rebalance를 건너는 순간에만 생긴다. 진 쪽은 유일 제약의 `DataIntegrityViolationException`을 받는다. 리스너 어댑터가 같은 호출을 한 번 다시 하면 읽는 경로가 `ALREADY_RECORDED`나 충돌로 푼다. 이 재시도는 error handler의 재시도가 아니다.
 - **왜 먼저 읽는가.** 1단계는 "유일 제약이 막고, 위반 뒤 별도 TX에서 다시 본다"로 넘겼다. 그러면 흔한 경로인 재전달이 예외와 롤백이 되고, 위반 뒤의 JPA 세션은 쓸 수 없어 두 번째 트랜잭션과 steps 빈이 필요하다. 먼저 읽으면 재전달은 SELECT 하나이고 제약은 경합의 뒷받침이다.
 - **왜 견주는가.** 운영의 inbox 구현은 대개 메시지 ID를 보면 그냥 건너뛴다. 과제와 용어집의 이벤트 ID는 같은 ID의 다른 내용을 충돌이라 하므로 견준다. 발행 쪽의 버그로 바뀐 이벤트가 소리 없이 읽었다고 표시되지 않는다. 비용은 어차피 하는 읽기 한 번의 비교다.

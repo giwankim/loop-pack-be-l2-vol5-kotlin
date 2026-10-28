@@ -1,11 +1,14 @@
 package com.loopers.support.test
 
+import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
+import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecorder
 import com.loopers.application.purchaseactivity.required.ProcessedOrderConfirmationRepository
 import com.loopers.application.purchaseactivity.required.PurchaseActivityRepository
 import com.loopers.domain.purchaseactivity.ProcessedOrderConfirmation
 import com.loopers.domain.purchaseactivity.PurchaseActivity
 import com.loopers.domain.purchaseactivity.createProcessedOrderConfirmation
 import com.loopers.domain.purchaseactivity.createPurchaseActivity
+import com.loopers.domain.purchaseactivity.createPurchaseActivityRecordRequest
 import com.loopers.testcontainers.KafkaTestContainersConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import jakarta.persistence.EntityManager
@@ -22,8 +25,13 @@ import java.time.Instant
  * test annotation (ADR 0012).
  *
  * The streamer has no JPA slice base like commerce-api's `BaseRepositoryTest`. Its repository tests run in this context, which
- * is cached anyway, instead of starting a second one. No provided port records anything yet, so `prepare<Type>` saves an
- * entity fixture through its repository, and the change helpers save explicitly instead of relying on dirty checking.
+ * is cached anyway, instead of starting a second one.
+ *
+ * A state the recording port makes is prepared through it: [prepareRecordedEvent] records an event, which writes both roots
+ * (ADR 0012). The repository tests stand where commerce-api's `BaseRepositoryTest` does: they check the repositories below
+ * the port, so they do not prepare through it. That would fail every repository test whenever recording breaks, and it could
+ * not prepare an order's activities one at a time. So `prepare<Type>` saves one entity fixture through its repository, under
+ * the names `BaseRepositoryTest` uses, and the change helpers save explicitly instead of relying on dirty checking.
  *
  * Every full context imports the broker. One that declares a topic, as [BaseConsumerTest]'s do, cannot start without it: the
  * `test` profile of `kafka.yml` has no broker address and turns on `spring.kafka.admin.fail-fast`, as in commerce-api. This
@@ -45,11 +53,31 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var purchaseActivityRepository: PurchaseActivityRepository
 
+    @Autowired
+    private lateinit var purchaseActivityRecorder: PurchaseActivityRecorder
+
     /** The processed order confirmation prepared last. */
     protected lateinit var processedOrderConfirmation: ProcessedOrderConfirmation
 
     /** The purchase activity prepared last. */
     protected lateinit var purchaseActivity: PurchaseActivity
+
+    /**
+     * An order confirmed event recorded through [PurchaseActivityRecorder]: one processed order confirmation and one purchase
+     * activity per item. The recorder returns only whether it recorded, so this returns the request it recorded, which a
+     * test sends again, or sends with one value changed, to meet the recorded fact. It sets no entity field.
+     */
+    protected fun prepareRecordedEvent(
+        eventId: String? = null,
+        orderId: Long? = null,
+        confirmedAt: Instant? = null,
+        items: List<PurchaseActivityRecordRequest.Item>? = null,
+    ): PurchaseActivityRecordRequest {
+        val request = createPurchaseActivityRecordRequest(eventId, orderId, confirmedAt, items)
+        purchaseActivityRecorder.record(request)
+
+        return request
+    }
 
     /** A processed order confirmation saved through its repository. */
     protected fun prepareProcessedOrderConfirmation(
