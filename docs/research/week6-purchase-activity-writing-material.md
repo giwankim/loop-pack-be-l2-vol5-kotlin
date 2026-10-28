@@ -366,6 +366,89 @@ A two-axis review ran on the uncommitted tree before the commit.
 - **A way to flow again** is still a person's job (design 6). The base's emptied-topic restart is test cleanup, not that tool.
 - **commerce-api's `check`** was not run; design section 11 leaves it to the last ticket.
 
+## Issue 182: the step's documents match the code, with its commands and counts and a draft PR body
+
+Recorded 2026-10-28 from the closing comment of [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), the last of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176)'s tickets. Nothing in the code changed. The documents are:
+
+- the [purchase activity design](../design/purchase-activity.md): the ticket table (1.3), dated notes in sections 1, 4, 5, 7 and 11, two rows in section 10, and the commands and counts (11)
+- [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md): dated notes on rules 3, 5 and 7
+- the [order events design](../design/order-events.md): step 2's row in 1.1 says 구현 끝남
+- [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176)'s body: dated notes under "브랜치와 단계" and under the final-check bullet of Testing Decisions
+- this file: the [preface](#preface-what-this-branch-is-and-where-its-comments-sit) and the [draft PR body](#draft-pr-body)
+
+### Landed
+
+Three commits on `feat/purchase-activity`, on top of `8313f00`:
+
+- [`40af67e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/40af67e) is the design docs and ADR 0033.
+- [`354b839`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/354b839) is this file's preface and the draft PR body.
+- The commit after it adds this section.
+
+### Acceptance criteria
+
+- [x] **Every placeholder name in spec 176's "브랜치와 단계" is either confirmed or replaced by a dated note on the spec.** All thirteen are the final names, unchanged in `apps/commerce-streamer/src/main`: `PurchaseActivityRecorder`, `PurchaseActivityRecordRequest`, `PurchaseActivityRecordResult`, `PurchaseActivityConflictException`, `UnsupportedOrderEventException`, `MalformedOrderEventException`, `UnprocessableOrderEventException`, `OrderEventsListenerConfig`, `ORDER_EVENTS_LISTENER`, `OrderEventsListener`, `OrderEventMessage`, `OrderConfirmedPayload` and `OrderEventsProperties`. The spec's note under that bullet says so. The one name that changed sits in the spec's 기록 section, `PurchaseActivityRecorderService` → `PurchaseActivityModifyService`, and issue 179's note is already there. Design section 1.3 lists the thirteen, and the note points to it for the names the spec never gave.
+- [x] **Both commands pass at the documented commit, and the counts in design section 11 match the run.** The run was at `8313f00` (2026-10-28T13:29Z) with `BOOTSTRAP_SERVERS` unset. Only documents changed after it, and the pre-commit ktlint passed for every commit.
+  - `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck` passed in 33 s. `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` read **13 classes, 55 tests, 0 failures, 0 errors, 0 skipped**.
+  - `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passed in 3 min 39 s. `scripts/test-counts` read **79 classes, 943 tests, 0 failures, 0 errors, 0 skipped**, the counts at step 1's end.
+  - Each filter in section 11 was run as written, after the counts were read: 12; 6 + 5; 1; 3 + 1 + 1; 6 + 7; 13. Together they cover the thirteen classes once each.
+
+### Decisions made while implementing
+
+- **The two glossaries are unchanged.** `CONTEXT-MAP.md` and `apps/commerce-streamer/CONTEXT.md` were read against the code. Each term's English twin is the code's name:
+  - `PurchaseActivity` and `ProcessedOrderConfirmation`
+  - `PurchaseActivityConflictException` and `UnprocessableOrderEventException`
+  - `PurchaseActivityRecorder.record` and `Acknowledgment.acknowledge()`
+  - the `Skipped…` line and the stopping handler
+
+  Each definition matches what the code does. The drift runs the other way: two entity KDocs say "order confirmation event" where the glossary's English is "order confirmed event". That is `src/main`, so it is left for later.
+- **ADR 0033 got three notes, where the code showed a rule's wording was imprecise:**
+  - Rule 3: the port has no `@Transactional`; the implementation's stereotype carries it. The time compared is the one the entities cut to microseconds.
+  - Rule 5: an unreadable body fails in the converter and never reaches the listener. The validation's `ConstraintViolationException` is not under the marker type, so the listener logs and rethrows both.
+  - Rule 7: the streamer's factory sets the value deserializer and auto-commit itself, so the module's typo fix reaches only the template's factories. The group needs `idIsGroup = false`.
+
+  Rules 1, 2, 4 and 6 still describe the code.
+- **commerce-api's check ran with `cleanTest`.** The ticket's command alone could have found the test task up to date from issue 177's run, since the only change outside the streamer that its build reads, `kafka.yml`, came before that run. With `cleanTest`, the 943 tests ran again.
+- **An empty streamer filter fails.** `--tests '*NoSuchClassTest'` failed with `No tests found for given includes`. A filter in commerce-api always runs `HexagonalArchitectureTest` too, so it cannot fail that way. Section 11 says so.
+- **Design section 11 keeps its three planned bullets** and adds the commands below them, as `scripts/check-doc-notes` requires of a design doc: insert only.
+- **"Ending with the full-check command and counts"** is read as PR 174 is laid out: Evidence ends with the whole check, and Merge Danger follows.
+- **The preface holds what the ticket names**: the branch, and where each closing comment sits. Step 1's preface also listed writing-quest topics, and this one does not. Instead it points the instructor's "왜??" at design section 1.1, where step 2's grilling answered it.
+
+### Review
+
+A two-axis review ran on the uncommitted tree before the commits.
+
+- **Standards:** no hard violations, and `scripts/check-doc-notes` passed.
+  - **Fixed:**
+    - ADR 0033's notes mentioned issues 178 and 179 without links.
+    - 멈추다, the glossary's word for stopping the consumer, was used for a Kafka container that failed to start.
+    - The PR body said the consumed case "publishes" its record. 발행하다 is commerce's word, and the test puts a record written by hand.
+    - "stops all three partitions" now says consumers, as ADR 0033 rule 5 does.
+    - The design's status line now mentions the two section 10 rows.
+    - Step 1's end is named as `b84646d` on `week6` beside `f792658`, which no branch reaches since PR 174 was squashed.
+  - **Kept:**
+    - Section 7's notes overlap `CODING_STANDARDS.md`. The ticket asks the design for the test-declared topic and how the stop is asserted, as ticket 173's notes did.
+    - The ADR notes carry their evidence, as ADR 0032's do.
+    - `e492cf1` stays in the PR body, because step 1's run happened at that commit.
+- **Spec:** nothing missing.
+  - **Fixed:**
+    - Section 7's stop note had every scene compare the commit with the offsets read before the record. The conflict and restart scenes compare the partition's commit with the conflicting record's own offset.
+    - The PR body said every stop logs two ERROR lines. Only a refusal the listener sees does. A transient failure, a second `DataIntegrityViolationException`, an entity's `IllegalArgumentException` or an unreadable body logs only spring-kafka's line.
+    - The PR body had every scene wait for the committed offset. A stop scene waits for the stop.
+    - Section 11's first bullet now points to `cleanTest`.
+    - The two section 10 rows had credited tickets 177 and 181, which did not write them.
+
+### Left for later
+
+For the review that closes spec 176:
+
+- **The two entity KDocs** (`ProcessedOrderConfirmation`, `PurchaseActivity`) say "order confirmation event"; the glossary says "order confirmed event".
+- **`OrderEventsListenerConfig`'s KDoc** says a body that cannot be read "fails in the listener". It fails in the message converter, before the listener method, as ADR 0033 rule 5's note now says.
+- **An unreadable body** (spec 176: 읽을 수 없는 본문도 세운다) has no scene. That it stops the consumer rests on the spring-kafka source.
+- **The race retry** has no permanent test (issue 180).
+- **The entity's `IllegalArgumentException`** is not among design section 6's not-retryable types (issue 178).
+- **The demo listener under `local`** now receives byte arrays where it got strings, after the `kafka.yml` fix (not tried).
+- **Before the PR opens**, `feat/purchase-activity` must be pushed, so that the PR body's `blob/feat/purchase-activity` links resolve.
+
 ## W7 handoff: consumed case
 
 Recorded 2026-10-28 from one run of [issue 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181)'s consumed case, [`OrderEventConsumedCaseTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventConsumedCaseTest.kt). This is the published-and-consumed case of [purchase activity design](../design/purchase-activity.md) section 8 that week 6 hands to week 7's outbox. Its other half is step 1's [unpublished case](./week6-order-events-writing-material.md#w7-handoff-unpublished-case): the same order, confirmed while its event reached nothing. Here the record that order's confirmation would have published is on the broker, and the streamer records it.
