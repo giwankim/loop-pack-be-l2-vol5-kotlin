@@ -10,7 +10,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * The record that one order confirmation event was recorded as purchase activity (`CONTEXT.md` 처리한 주문 확정). When an
+ * The record that one order confirmed event was recorded as purchase activity (`CONTEXT.md` 처리한 주문 확정). When an
  * event comes again, this is what tells the same fact from a conflict.
  *
  * It is an aggregate root of its own, not the parent of the purchase activities it was recorded with: it answers "was this

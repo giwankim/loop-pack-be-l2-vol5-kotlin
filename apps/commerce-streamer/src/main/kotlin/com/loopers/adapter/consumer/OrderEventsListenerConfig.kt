@@ -30,8 +30,9 @@ class OrderEventsListenerConfig {
 
     /**
      * Values are read as bytes and converted by the listener adapter to the listener method's parameter type, so a body that
-     * cannot be read fails in the listener and reaches the error handler, not inside `poll()`. The deserializer is set here
-     * rather than left to `kafka.yml`, because the converter depends on it.
+     * cannot be read fails in the adapter's converter, before the listener method is called, and reaches the error handler as
+     * spring-kafka's `ConversionException`, not inside `poll()`. The deserializer is set here rather than left to `kafka.yml`,
+     * because the converter depends on it.
      *
      * `MANUAL_IMMEDIATE` commits a record's offset on the consumer thread when the listener calls `acknowledge()`, after its
      * transaction has committed (ADR 0033 rule 6). That only holds if the consumer never commits on its own, so auto-commit is
@@ -39,8 +40,9 @@ class OrderEventsListenerConfig {
      * as written, and Kafka's key is `enable.auto.commit`. The container would turn auto-commit off anyway when the factory
      * leaves the key out, but the factory states it.
      *
-     * [CommonContainerStoppingErrorHandler] stops all three consumers on a record that cannot be processed, leaving its offset
-     * uncommitted; that policy is provisional (ADR 0033 rule 5).
+     * [CommonContainerStoppingErrorHandler] stops all three consumers on any exception from the converter or the listener, an
+     * unprocessable event and a transient failure alike, leaving the record's offset uncommitted; that policy is provisional
+     * (ADR 0033 rule 5).
      */
     @Bean(ORDER_EVENTS_LISTENER)
     fun orderEventsListenerContainerFactory(

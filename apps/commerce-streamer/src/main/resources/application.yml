@@ -32,8 +32,8 @@ demo-kafka:
 # The order events listener's promises (ADR 0033 rules 6 and 7). They sit in a document of their own, below the one that
 # imports kafka.yml: an imported file overrides the document that imports it, and kafka.yml sets the template's group-id.
 # A new group starts from the earliest retained record, so a streamer deployed after commerce-api skips no confirmation;
-# recording is idempotent, so reading again is safe. The topic belongs to commerce-api, so a missing topic must not be
-# auto-created as a one-partition topic.
+# recording the same fact again writes nothing, so reading again is safe. The topic belongs to commerce-api, so a missing
+# topic must not be auto-created as a one-partition topic.
 spring:
   kafka:
     consumer:

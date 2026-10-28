@@ -12,7 +12,7 @@ import java.time.temporal.ChronoUnit
 
 /**
  * The fact that one confirmed order bought one product in some quantity at its confirmation time (`CONTEXT.md` 구매 활동).
- * It is made only from an order confirmation event, never from commerce-api's tables, and week 9's ranking reads it.
+ * It is made only from an order confirmed event, never from commerce-api's tables, and week 9's ranking reads it.
  *
  * It is an aggregate root of its own, not a child of the [ProcessedOrderConfirmation] it was recorded with (ADR 0033 rule 2).
  * The confirmation time is kept here too, so week 9's time window reads it without going through that record.
