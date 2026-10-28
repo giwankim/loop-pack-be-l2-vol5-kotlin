@@ -1,6 +1,10 @@
 package com.loopers.adapter.consumer
 
 import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.spi.IThrowableProxy
+import ch.qos.logback.core.read.ListAppender
 import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
 import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest.Item
 import com.loopers.domain.purchaseactivity.createPurchaseActivityRecordRequest
@@ -8,16 +12,30 @@ import com.loopers.support.TestOrderEventsTopicConfig
 import com.loopers.support.orderConfirmedValue
 import com.loopers.support.orderEventValue
 import com.loopers.support.test.BaseConsumerTest
+import org.apache.kafka.clients.producer.KafkaProducer
+import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.clients.producer.RecordMetadata
+import org.apache.kafka.common.serialization.ByteArraySerializer
+import org.apache.kafka.common.serialization.StringSerializer
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
+import org.springframework.boot.kafka.autoconfigure.KafkaProperties
+import org.springframework.kafka.KafkaException
+import org.springframework.kafka.listener.KafkaMessageListenerContainer
+import org.springframework.kafka.listener.ListenerExecutionFailedException
+import org.springframework.kafka.support.converter.ConversionException
 import org.springframework.test.context.TestPropertySource
+import java.util.concurrent.TimeUnit
 
 /**
  * An unprocessable event stops the order events listener's container (ADR 0033 rule 5, purchase activity design 6). The
  * listener refuses the record with one ERROR line and rethrows, and the factory's `CommonContainerStoppingErrorHandler`
  * stops the container: all three consumers, since a record listener's error handler is given the parent container. The
- * record is never acknowledged, so the group stays on it.
+ * record is never acknowledged, so the group stays on it. A value that is not JSON stops the container too, but it never
+ * reaches the listener: the factory's converter throws first, and only spring-kafka's own ERROR line says why.
  *
  * Each scene waits until the container has stopped and every one of its consumers has closed, so a stop that left a consumer
  * running fails the wait. It then reads that the container did not stop as expected: `isInExpectedState` is false only after
@@ -25,13 +43,36 @@ import org.springframework.test.context.TestPropertySource
  * no event listener in the context.
  */
 @TestPropertySource(properties = ["order-events.topic=order-events-listener-stop"])
-class OrderEventsListenerStopTest : BaseConsumerTest() {
+class OrderEventsListenerStopTest(
+    private val kafkaProperties: KafkaProperties,
+    private val orderEventsProperties: OrderEventsProperties,
+) : BaseConsumerTest() {
     companion object {
         /** The items of the event a conflict scene records first. */
         private val RECORDED_ITEMS = listOf(Item(productId = 1, quantity = 2), Item(productId = 2, quantity = 1))
 
         /** The same products as [RECORDED_ITEMS], with product 1's quantity changed. */
         private val CONFLICTING_ITEMS = listOf(Item(productId = 1, quantity = 3), Item(productId = 2, quantity = 1))
+
+        /** As long as the base waits for the broker to take a record. */
+        private const val PUBLISH_WAIT_SECONDS = 10L
+    }
+
+    /** Logs from the listener's consumers, where spring-kafka logs what the error handler threw when it stopped the container. */
+    private val containerLogs = ListAppender<ILoggingEvent>()
+
+    private val containerLogger = LoggerFactory.getLogger(KafkaMessageListenerContainer::class.java) as Logger
+
+    @BeforeEach
+    fun captureContainerLogs() {
+        containerLogs.start()
+        containerLogger.addAppender(containerLogs)
+    }
+
+    @AfterEach
+    fun releaseContainerLogs() {
+        containerLogger.detachAppender(containerLogs)
+        containerLogs.stop()
     }
 
     /**
@@ -147,6 +188,32 @@ class OrderEventsListenerStopTest : BaseConsumerTest() {
     }
 
     /**
+     * A value that is not JSON cannot be read as an [OrderEventMessage]. The factory's converter throws spring-kafka's
+     * `ConversionException` before the listener method is called, so the listener never sees the record and logs no refusal
+     * (design 5). The error handler stops the container all the same, and spring-kafka's own ERROR line, which it logs on every
+     * stop, is the one that names the conversion.
+     */
+    @Test
+    fun `a record whose value is not JSON stops the container before the listener and commits no offset`() {
+        val committedBefore = committedOffsets()
+
+        publishBytes(orderId = 1, value = "not json".toByteArray())
+
+        val container = awaitStopped()
+        assertThat(container.isInExpectedState).isFalse()
+        assertThat(committedOffsets()).isEqualTo(committedBefore)
+        assertNoRows()
+        assertThat(listenerLines(Level.ERROR)).isEmpty()
+        val stop = containerErrors().single()
+        assertThat(stop.formattedMessage).isEqualTo("Error handler threw an exception")
+        assertThat(causeChainOf(stop.throwableProxy)).startsWith(
+            KafkaException::class.java.name,
+            ListenerExecutionFailedException::class.java.name,
+            ConversionException::class.java.name,
+        )
+    }
+
+    /**
      * Publishes [event] and waits until it is recorded, then publishes the same event ID with [CONFLICTING_ITEMS], and returns
      * where the broker put that record. The key is the same, so the two land on one partition, one after the other.
      */
@@ -163,6 +230,34 @@ class OrderEventsListenerStopTest : BaseConsumerTest() {
         return "com.loopers.application.purchaseactivity.provided.PurchaseActivityConflictException: Order confirmed event " +
             "${event.eventId} of order ${event.orderId} conflicts with the recorded one: " +
             "items (product=quantity) recorded {1=2, 2=1}, incoming {1=3, 2=1}."
+    }
+
+    /**
+     * Publishes [value] as it is, keyed by [orderId], and returns where the broker put it. The base's shared template would
+     * write a byte array as a base64 JSON string, so this producer writes the bytes unchanged.
+     */
+    private fun publishBytes(orderId: Long, value: ByteArray): RecordMetadata {
+        val producer = KafkaProducer(kafkaProperties.buildProducerProperties(), StringSerializer(), ByteArraySerializer())
+
+        return producer.use {
+            it.send(ProducerRecord(orderEventsProperties.topic, orderId.toString(), value))
+                .get(PUBLISH_WAIT_SECONDS, TimeUnit.SECONDS)
+        }
+    }
+
+    /**
+     * The ERROR lines the listener's consumers logged in this test. A line is added on a consumer's thread, under the appender's
+     * own lock, so the list is read under it.
+     */
+    private fun containerErrors(): List<ILoggingEvent> {
+        return synchronized(containerLogs) {
+            containerLogs.list.filter { it.level == Level.ERROR }
+        }
+    }
+
+    /** The class names of [throwable] and its causes, outermost first. */
+    private fun causeChainOf(throwable: IThrowableProxy?): List<String> {
+        return generateSequence(throwable) { it.cause }.map { it.className }.toList()
     }
 
     /** The streamer's group's committed offset on each partition of the class's topic, in partition order. */

@@ -15,7 +15,7 @@ fun orderEventValue(
     eventId: String,
     payload: String,
     eventType: String = OrderConfirmedPayload.EVENT_TYPE,
-    schemaVersion: Int = 1,
+    schemaVersion: Int = OrderConfirmedPayload.SCHEMA_VERSION,
 ): JsonNode {
     return JsonMapper.shared().readTree(
         """{"eventId":"$eventId","eventType":"$eventType","schemaVersion":$schemaVersion,"payload":$payload}""",
@@ -29,7 +29,7 @@ fun orderEventValue(
 fun orderConfirmedValue(
     event: PurchaseActivityRecordRequest,
     confirmedAt: String = event.confirmedAt.toString(),
-    schemaVersion: Int = 1,
+    schemaVersion: Int = OrderConfirmedPayload.SCHEMA_VERSION,
 ): JsonNode {
     val items = event.items.joinToString(",", "[", "]") { """{"productId":${it.productId},"quantity":${it.quantity}}""" }
     val payload = """{"orderId":${event.orderId},"confirmedAt":"$confirmedAt","items":$items}"""
