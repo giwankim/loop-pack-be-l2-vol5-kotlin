@@ -18,7 +18,7 @@
 | 단계 | 하는 것 | 브랜치 | 상태 |
 | --- | --- | --- | --- |
 | 1 | 주문 확정 이벤트의 발행. `modules:kafka` 의존, Kafka 테스트 컨테이너, 포트와 어댑터, 토픽, 시계 빈, 누락 구간의 재현. | `feat/order-events` | 인터뷰 끝남(2026-10-27). 구현 끝남(2026-10-27, 1.2절) |
-| 2 | commerce-streamer의 소비. `processed_order_confirmation`과 상품별 구매 행, record 리스너 팩토리(`MANUAL_IMMEDIATE`, 중단형 error handler), 중복과 충돌, 실패 경로. | `feat/purchase-activity` | 인터뷰 끝남(2026-10-28). [구매 활동 설계](./purchase-activity.md), [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) |
+| 2 | commerce-streamer의 소비. `processed_order_confirmation`과 상품별 구매 행, record 리스너 팩토리(`MANUAL_IMMEDIATE`, 중단형 error handler), 중복과 충돌, 실패 경로. | `feat/purchase-activity` | 인터뷰 끝남(2026-10-28). [구매 활동 설계](./purchase-activity.md), [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md). 구현 끝남(2026-10-28, [구매 활동 설계](./purchase-activity.md) 1.3절) |
 | 3 | 전달 실험. 파티션 2개와 consumer 1→2→3, key→partition, DB 커밋 뒤 offset 미커밋 재전달, 실제 리스너의 실패·재시작, 7주차에 넘기는 두 사례의 정리. | `feat/kafka-delivery` | 다음 인터뷰 |
 
 셋은 모두 `week6`로 PR한다. 기술 글은 `week6`에 둔다.

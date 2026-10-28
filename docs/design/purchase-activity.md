@@ -2,7 +2,7 @@
 
 6주차 과제 2단계(`feat/purchase-activity`)의 설계 문서다. 용어는 [`apps/commerce-streamer/CONTEXT.md`](../../apps/commerce-streamer/CONTEXT.md)를 따르고, 계약은 [주문 이벤트 설계](./order-events.md) 2절이다. 결정은 [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md)에 있다.
 
-상태: 2026-10-28 소비 쪽(2단계)을 인터뷰하고 썼다. 구현이 바꾸는 것은 날짜 메모로 단다. 전달 실험(3단계, `feat/kafka-delivery`)은 저마다의 인터뷰 뒤에 쓴다.
+상태: 2026-10-28 소비 쪽(2단계)을 인터뷰하고 썼다. 구현이 바꾸는 것은 날짜 메모로 단다. 전달 실험(3단계, `feat/kafka-delivery`)은 저마다의 인터뷰 뒤에 쓴다. 같은 날 2단계([명세 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176))의 티켓을 마치고, 구현이 바꾼 것을 날짜 메모와 10절의 새 줄 둘로 달고 1.3절과 11절의 명령과 수를 더했다.
 
 ## 1. 근거와 범위
 
@@ -13,7 +13,7 @@
   4. **YAML.** `kafka.yml`의 `consumer.value-serializer`는 `value-deserializer`다.
   5. **7주차에 넘기는 사례.** 정상 발행·소비 사례 1건의 기록. 미발행 사례는 1단계가 남겼다(주문 이벤트 설계 6절).
 - 1단계의 결과에서 시작한다. 랭킹 API, Outbox, 전달 실험은 이번 단계가 아니다.
-- 구현 기록: 티켓마다의 닫는 댓글을 옮길 `docs/research/week6-purchase-activity-writing-material.md`. 첫 티켓이 만든다.
+- 구현 기록: 티켓마다의 닫는 댓글을 옮길 `docs/research/week6-purchase-activity-writing-material.md`. 첫 티켓이 만든다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): [6주차 구매 활동 글감](../research/week6-purchase-activity-writing-material.md)이다. 티켓 177이 만들었고, 7주차에 넘기는 소비 사례의 실행 값(8절), 머리말과 PR 본문 초안도 그 파일에 있다.)
 
 ### 1.1 왜 이벤트인가
 
@@ -30,6 +30,21 @@
 ### 1.2 세 단계
 
 주문 이벤트 설계 1.1절의 표다. 이 문서는 둘째 줄이다.
+
+### 1.3 2단계가 만든 것
+
+2026-10-28 [명세 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176)의 티켓이다. 명세가 "브랜치와 단계"에 자리표시로 둔 열세 이름(`PurchaseActivityRecorder`, `PurchaseActivityRecordRequest`, `PurchaseActivityRecordResult`, `PurchaseActivityConflictException`, `UnsupportedOrderEventException`, `MalformedOrderEventException`, `UnprocessableOrderEventException`, `OrderEventsListenerConfig`, `ORDER_EVENTS_LISTENER`, `OrderEventsListener`, `OrderEventMessage`, `OrderConfirmedPayload`, `OrderEventsProperties`)은 모두 그대로 최종 이름이 됐다. 명세의 다른 자리가 적은 `PurchaseActivityRecorderService`만 `PurchaseActivityModifyService`가 됐다(4절의 날짜 메모).
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177) | streamer의 정리(이름 `commerce-streamer`, `modules:redis` 뺌, `interfaces.consumer` → `adapter.consumer`, 데모 리스너의 `autoStartup`), `kafka.yml`의 `value-deserializer`, 베낀 stereotype 둘과 표지 타입 `UnprocessableOrderEventException`, `OrderEventsListenerConfig`의 record 팩토리 `ORDER_EVENTS_LISTENER`와 `OrderEventsProperties`, 두 기반과 테스트가 선언하는 토픽 `TestOrderEventsTopicConfig`, 컨텍스트와 설정을 읽는 테스트(5절, 7절). |
+| [178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178) | 루트 `ProcessedOrderConfirmation`과 `PurchaseActivity`, 저장소 포트 둘, 이름 붙은 유일 키 둘과 CHECK, 확정 시각을 마이크로초로 자르는 생성자, 진짜 생성자를 부르는 fixture(3절). |
+| [179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179) | provided 포트 `PurchaseActivityRecorder`와 요청·결과·충돌 예외, 먼저 읽는 구현 `PurchaseActivityModifyService`, `saveAll`, 포트로 준비하는 기반의 `prepareRecordedEvent`(4절). |
+| [180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180) | 리스너 `OrderEventsListener`, 봉투 `OrderEventMessage`와 `OrderConfirmedPayload`, `UnsupportedOrderEventException`과 `MalformedOrderEventException`, 경합을 푸는 `recordSettlingARace`, 기본 토픽 `OrderEventsProperties.DEFAULT_TOPIC`, broker에서 표까지의 `OrderEventsListenerTest`, 기반의 배정 기다림(2절, 5절, 7절). |
+| [181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181) | 처리할 수 없는 이벤트의 ERROR 한 줄, 멈춤 장면 `OrderEventsListenerStopTest`, 기반의 멈춤 기다림과 비운 토픽 위의 재시작, 봉투를 만드는 `OrderEventValues.kt`, 7주차에 넘기는 소비 사례 `OrderEventConsumedCaseTest`(5절, 6절, 8절). |
+| [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | 문서의 날짜 메모, 이 표, 11절의 명령과 수, ADR 0033의 날짜 메모, 글감의 머리말과 PR 본문 초안. |
+
+운영 코드에서 `PurchaseActivityRecorder`를 부르는 곳은 `OrderEventsListener` 하나다. commerce-api의 코드는 바뀌지 않았고, `modules:kafka`에서 바뀐 것은 `kafka.yml`의 한 줄이다.
 
 ## 2. 계약을 읽는 쪽
 
@@ -64,7 +79,7 @@ provided 포트 `application.purchaseactivity.provided.PurchaseActivityRecorder.
 
 - **견줌의 정의.** 속성의 차례와 `items`의 차례는 사실이 아니다. 구매 활동 행을 상품별 `(productId, quantity)`의 집합으로 만들어 요청의 것과 견준다. 지문은 저장하지 않는다. (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179): 견주는 것은 요청 자체가 아니라 요청으로 만든 엔티티다. 엔티티가 시각을 마이크로초로 자르므로, 요청의 시각을 그대로 견주면 일곱째 자리가 있는 같은 사실이 저장된 자기와 충돌한다. 변이 탐침에서 `…03.123456Z`를 저장한 뒤 `…03.123456789Z`가 충돌이 되었다. 상품은 양쪽에서 한 번씩이므로(구매 활동의 유일 키, 요청의 검증) 집합은 상품에서 수량으로 가는 맵이고, 충돌의 메시지가 그 맵을 상품 차례로 적는다. 메시지는 온 eventId와 orderId, 그리고 다른 값마다 `<이름> recorded <저장된 값>, incoming <온 값>`이다.)
 - **겹친 상품.** (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179)) 요청의 `@AssertTrue`가 `ConstraintViolationException`으로 거절한다. 엔티티는 한 행이라 겹침을 볼 수 없다. 거절이 없으면 처리한 주문 확정을 삽입한 뒤 구매 활동의 유일 키가 둘째 품목을 `DataIntegrityViolationException`으로 거절하고(변이 탐침), 리스너 어댑터가 그것을 경합으로 읽어 다시 부른다. 6절의 운영 모양이 재시도하지 않는 것으로 등록할 예외 쪽에 둔 것이다.
-- **경합.** 같은 eventId를 두 consumer가 같은 순간 다루는 일은 key가 orderId라 한 파티션의 record를 둘이 나눠 가질 때, 곧 rebalance를 건너는 순간에만 생긴다. 진 쪽은 유일 제약의 `DataIntegrityViolationException`을 받는다. 리스너 어댑터가 같은 호출을 한 번 다시 하면 읽는 경로가 `ALREADY_RECORDED`나 충돌로 푼다. 이 재시도는 error handler의 재시도가 아니다.
+- **경합.** 같은 eventId를 두 consumer가 같은 순간 다루는 일은 key가 orderId라 한 파티션의 record를 둘이 나눠 가질 때, 곧 rebalance를 건너는 순간에만 생긴다. 진 쪽은 유일 제약의 `DataIntegrityViolationException`을 받는다. 리스너 어댑터가 같은 호출을 한 번 다시 하면 읽는 경로가 `ALREADY_RECORDED`나 충돌로 푼다. 이 재시도는 error handler의 재시도가 아니다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 한 번 더 부르는 것은 `OrderEventsListener.recordSettlingARace`이고, 두 번째 위반은 리스너 밖으로 나가 컨테이너를 세운다. 이 경로는 티켓 180의 탐침으로만 봤다. 저장소 spy가 진 쪽의 첫 조회를 비워 경합을 흉내 내자 다시 부른 호출이 `ALREADY_RECORDED`로 끝났고, 다시 부르지 않는 변이는 컨테이너를 세웠다. 남은 테스트는 없다.)
 - **왜 먼저 읽는가.** 1단계는 "유일 제약이 막고, 위반 뒤 별도 TX에서 다시 본다"로 넘겼다. 그러면 흔한 경로인 재전달이 예외와 롤백이 되고, 위반 뒤의 JPA 세션은 쓸 수 없어 두 번째 트랜잭션과 steps 빈이 필요하다. 먼저 읽으면 재전달은 SELECT 하나이고 제약은 경합의 뒷받침이다.
 - **왜 견주는가.** 운영의 inbox 구현은 대개 메시지 ID를 보면 그냥 건너뛴다. 과제와 용어집의 이벤트 ID는 같은 ID의 다른 내용을 충돌이라 하므로 견준다. 발행 쪽의 버그로 바뀐 이벤트가 소리 없이 읽었다고 표시되지 않는다. 비용은 어차피 하는 읽기 한 번의 비교다.
 - 저장은 명시적이다(카탈로그 설계 5.37). dirty checking에 기대지 않는다.
@@ -73,9 +88,9 @@ provided 포트 `application.purchaseactivity.provided.PurchaseActivityRecorder.
 
 **소유의 경계.** `modules:kafka`는 연결과 직렬화를 갖는다. 주소, 역직렬화 클래스, `KafkaTemplate`, `ByteArrayJacksonJsonMessageConverter`다. 리스너의 약속은 앱이 갖는다. commerce-api의 토픽 빈과 실행기가 `adapter.integration.kafka`에 있는 것과 같은 선이다(ADR 0033 규칙 7). 템플릿의 batch 팩토리는 그대로 두고 쓰지 않는다.
 
-- **팩토리.** `adapter.consumer.OrderEventsListenerConfig`의 빈 `ORDER_EVENTS_LISTENER`. `KafkaProperties.buildConsumerProperties()`에 값 역직렬화 `ByteArrayDeserializer`를 명시해 `DefaultKafkaConsumerFactory`를 만들고, `MANUAL_IMMEDIATE`, `CommonContainerStoppingErrorHandler`, concurrency 3, 공유 변환기를 record 변환기로 둔다. 3은 토픽의 파티션 수와 짝이다(주문 이벤트 설계 7절). (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): 팩토리는 `enable.auto.commit=false`도 명시한다. `kafka.yml`의 `consumer.properties.enable-auto-commit`은 날것의 `properties` 맵에 있어 Kafka에 그 철자대로 넘어가고, Kafka의 키는 `enable.auto.commit`이라 쓰이지 않는다. 컨테이너는 키가 없으면 false로 두지만, `MANUAL_IMMEDIATE`가 기대는 값을 팩토리가 밝힌다. 모듈의 키는 템플릿 정리와 함께 범위 밖이다.)
+- **팩토리.** `adapter.consumer.OrderEventsListenerConfig`의 빈 `ORDER_EVENTS_LISTENER`. `KafkaProperties.buildConsumerProperties()`에 값 역직렬화 `ByteArrayDeserializer`를 명시해 `DefaultKafkaConsumerFactory`를 만들고, `MANUAL_IMMEDIATE`, `CommonContainerStoppingErrorHandler`, concurrency 3, 공유 변환기를 record 변환기로 둔다. 3은 토픽의 파티션 수와 짝이다(주문 이벤트 설계 7절). (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 빈 이름은 상수 `ORDER_EVENTS_LISTENER`의 값 `orderEventsListenerContainerFactory`다. commerce-api의 `ORDER_EVENTS_EXECUTOR = "orderEventsExecutor"`와 같은 꼴이다.) (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): 팩토리는 `enable.auto.commit=false`도 명시한다. `kafka.yml`의 `consumer.properties.enable-auto-commit`은 날것의 `properties` 맵에 있어 Kafka에 그 철자대로 넘어가고, Kafka의 키는 `enable.auto.commit`이라 쓰이지 않는다. 컨테이너는 키가 없으면 false로 두지만, `MANUAL_IMMEDIATE`가 기대는 값을 팩토리가 밝힌다. 모듈의 키는 템플릿 정리와 함께 범위 밖이다.)
 - **역직렬화.** `ByteArrayDeserializer`는 실패하지 않는다. JSON의 변환은 리스너 어댑터가 메서드의 매개변수 타입으로 하고, 실패는 `MessageConversionException`으로 error handler에 간다. 값 역직렬화기로 `JacksonJsonDeserializer`를 쓰면 변환이 `poll()` 안에서 돌아 실패한 record가 `ErrorHandlingDeserializer` 없이는 되풀이되고, 타입을 header나 기본 타입으로 정해야 한다. 발행 쪽은 타입 header를 끄고 있다. `kafka.yml`의 `consumer.value-serializer`는 `value-deserializer`로 고친다. 지금은 Boot의 기본값 `StringDeserializer`가 들어가 변환기와 어긋난다.
-- **리스너.** `adapter.consumer.OrderEventsListener`. `@KafkaListener(id = "order-events", topics = ["\${order-events.topic}"], containerFactory = ORDER_EVENTS_LISTENER)`. 매개변수는 봉투, `RECEIVED_PARTITION`과 `OFFSET` header, `Acknowledgment`다. 차례는 `eventType` 확인 → payload 변환 → 요청 → 기록 → `acknowledge()`다. `id`가 있어야 테스트와 3단계가 registry로 세우고 다시 띄운다. (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): `@KafkaListener`의 `idIsGroup`은 기본이 true라 `groupId` 없이 `id`만 주면 그 id가 group이 되어 `spring.kafka.consumer.group-id`를 덮는다. 177의 탐침에서 `id = "probe"`인 리스너가 group `probe`로 들어갔고, `idIsGroup = false`를 주자 `commerce-streamer`로 들어갔다. 리스너는 `idIsGroup = false`를 함께 둔다. 팩토리의 설정을 읽는 테스트는 이것을 잡지 못하므로 리스너 티켓이 뜬 컨테이너의 `groupId`를 단언한다.) (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): `groupId`를 따로 단언하지 않았다. 소비 장면이 group `commerce-streamer`의 커밋된 offset을 기다리므로, 다른 group에 든 리스너는 그 장면에서 실패한다. 토픽은 `${order-events.topic:order-events}`다. 기본값을 빼면 컨텍스트가 `PlaceholderResolutionException`으로 뜨지 않았다. 자리표시자는 `Environment`를 읽는데 Kotlin의 기본 인자는 binder에만 있다. 기본값은 `OrderEventsProperties.DEFAULT_TOPIC` 한 곳에 두고 둘이 함께 쓴다. payload는 공유 `JsonMapper`의 `treeToValue`로 옮긴다. Jackson의 실패와 JSON `null`인 payload가 `MalformedOrderEventException`이다(탐침: 빠진 `orderId`는 `Missing required creator property 'orderId'`). INFO는 `acknowledge()` 앞에 남긴다.)
+- **리스너.** `adapter.consumer.OrderEventsListener`. `@KafkaListener(id = "order-events", topics = ["\${order-events.topic}"], containerFactory = ORDER_EVENTS_LISTENER)`. 매개변수는 봉투, `RECEIVED_PARTITION`과 `OFFSET` header, `Acknowledgment`다. 차례는 `eventType` 확인 → payload 변환 → 요청 → 기록 → `acknowledge()`다. `id`가 있어야 테스트와 3단계가 registry로 세우고 다시 띄운다. (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): `@KafkaListener`의 `idIsGroup`은 기본이 true라 `groupId` 없이 `id`만 주면 그 id가 group이 되어 `spring.kafka.consumer.group-id`를 덮는다. 177의 탐침에서 `id = "probe"`인 리스너가 group `probe`로 들어갔고, `idIsGroup = false`를 주자 `commerce-streamer`로 들어갔다. 리스너는 `idIsGroup = false`를 함께 둔다. 팩토리의 설정을 읽는 테스트는 이것을 잡지 못하므로 리스너 티켓이 뜬 컨테이너의 `groupId`를 단언한다.) (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): `groupId`를 따로 단언하지 않았다. 소비 장면이 group `commerce-streamer`의 커밋된 offset을 기다리므로, 다른 group에 든 리스너는 그 장면에서 실패한다. 토픽은 `${order-events.topic:order-events}`다. 기본값을 빼면 컨텍스트가 `PlaceholderResolutionException`으로 뜨지 않았다. 자리표시자는 `Environment`를 읽는데 Kotlin의 기본 인자는 binder에만 있다. 기본값은 `OrderEventsProperties.DEFAULT_TOPIC` 한 곳에 두고 둘이 함께 쓴다. payload는 공유 `JsonMapper`의 `treeToValue`로 옮긴다. Jackson의 실패와 JSON `null`인 payload가 `MalformedOrderEventException`이다(탐침: 빠진 `orderId`는 `Missing required creator property 'orderId'`). INFO는 `acknowledge()` 앞에 남긴다.) (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 매개변수에는 `RECEIVED_KEY` header도 있다. 티켓 181이 ERROR 줄의 orderId를 record의 key에서 읽으려고 더했고(아래 로그의 날짜 메모), key가 null인 record에는 그 header가 없어 `required = false`다. 차례는 `eventType` 확인 → `schemaVersion` 확인 → payload 변환 → 요청 → 기록 → INFO → `acknowledge()`이고, 처리할 수 없는 이벤트는 ERROR 한 줄을 남기고 다시 던진다.)
 - **설정.** streamer의 `application.yml`에 `spring.kafka.consumer.group-id: commerce-streamer`, `spring.kafka.consumer.properties.auto.offset.reset: earliest`, `spring.kafka.consumer.properties.allow.auto.create.topics: false`. 토픽 이름은 `@ConfigurationProperties("order-events")`의 `topic`(기본 `order-events`)이다. commerce-api의 것과 같은 접두사이고 streamer의 복사본이다. 토픽은 commerce-api가 선언하고 만든다. streamer는 만들지 않고, 없으면 한 파티션짜리가 저절로 생기지 않게 consumer의 자동 생성을 끈다. (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): 이 셋은 `kafka.yml`을 가져오는 문서 아래의 별도 문서에 둔다. 가져온 파일은 가져오는 문서를 덮으므로, 같은 문서에 둔 `group-id`가 `kafka.yml`의 `loopers-default-consumer`에 졌다. 뒤의 문서는 가져온 파일을 덮는다.)
 - **왜 `earliest`인가.** `auto.offset.reset`은 group에 커밋된 offset이 없을 때만 쓰인다. 새 group이거나 broker의 `offsets.retention.minutes`(기본 7일)가 지났을 때다. `latest`는 새 group을 머리에서 시작해 그 전의 확정을 소리 없이 건너뛰고, 보관 기간보다 오래 멈췄다 돌아온 consumer도 그 사이를 건너뛴다. 기록하는 consumer는 멱등하므로 되읽기가 안전하고, 발행 쪽보다 늦게 배포된 streamer가 확정을 놓치지 않는다. 실시간 대시보드처럼 밀린 것이 해로운 consumer가 `latest`를 고른다.
 - **MANUAL_IMMEDIATE.** `acknowledge()`를 부르는 그 자리에서 consumer 스레드가 동기로 offset을 커밋한다. `MANUAL`은 poll한 묶음을 다 처리한 뒤에 커밋해, 기록과 표시 사이에 멈추면 이미 표시한 record까지 다시 온다. 중단형 handler와 짝이다. 실패한 record는 표시되지 않으므로 다시 시작하면 정확히 그 record부터 읽는다.
@@ -105,13 +120,13 @@ streamer가 던지는 셋(`Unsupported…`, `Malformed…`, `…Conflict…`)은
 ## 7. 테스트 기반
 
 - **기반 클래스.** streamer의 `support.test`에 둘이다(ADR 0012). commerce-api의 기반은 그 포트의 `prepare*`를 품어 나눠 쓸 수 없다.
-  - `BaseApplicationServiceTest`: 전체 컨텍스트를 실제 MySQL·Kafka 위에 띄우고 테스트 트랜잭션으로 감싸 롤백한다. `MySqlTestContainersConfig`와 `KafkaTestContainersConfig`를 `@Import`한다. 기록하는 포트의 장면이 쓴다.
-  - `BaseConsumerTest`: 커밋한다. 리스너 스레드의 트랜잭션은 테스트 트랜잭션 밖이다. 클래스마다 `@TestPropertySource`로 `order-events.topic`을 덮고, `@TestConfiguration`이 그 이름의 `NewTopic`(파티션 3)을 선언한다. streamer는 토픽을 만들지 않으므로 테스트가 만든다. `@BeforeEach`에서 `ContainerTestUtils.waitForAssignment`로 배정을 기다리고, `@AfterEach`에서 `DatabaseCleanUp`으로 비운다. record는 `modules:kafka`의 `KafkaTemplate`으로 넣고 행은 Awaitility로 기다린다. (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): 배정은 consumer 셋이 저마다 파티션을 쥘 때까지 기다린다. Testcontainers의 broker는 `group.initial.rebalance.delay.ms`가 0이라 첫 consumer 혼자 첫 세대를 이루고 세 파티션을 다 쥐었다. `waitForAssignment`는 파티션 수를 더해 세므로 그때 돌아왔고, 나머지 둘을 들이는 세대는 3 s쯤 뒤에 장면 안에서 왔다(로그). 멈춘 컨테이너는 곧바로 실패한다. 모든 컨텍스트의 리스너가 같은 group `commerce-streamer`에 드는데, Spring Framework 7이 쓰이지 않는 캐시된 컨텍스트를 멈추므로(`spring.test.context.cache.pause`) 그 consumer는 group을 떠나고 장면의 consumer만 남는다(로그의 `consumer pro-actively leaving the group`). record의 값은 바이트가 아니라 손으로 적은 JSON의 트리다. 템플릿의 `JacksonJsonSerializer`가 바이트 배열을 base64 문자열로 쓰기 때문이다. 장면은 행이 아니라 group의 커밋된 offset을 기다린 뒤 행을 읽는다. 리스너는 기록의 커밋 뒤에 표시하므로 그 뒤에 일어나는 일이 없다.)
+  - `BaseApplicationServiceTest`: 전체 컨텍스트를 실제 MySQL·Kafka 위에 띄우고 테스트 트랜잭션으로 감싸 롤백한다. `MySqlTestContainersConfig`와 `KafkaTestContainersConfig`를 `@Import`한다. 기록하는 포트의 장면이 쓴다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 이 기반에 서는 클래스는 다섯이다. 포트의 `PurchaseActivityRecorderTest`, 저장소 테스트 둘, 설정을 읽는 `OrderEventsListenerConfigTest`와 `DemoKafkaConsumerTest`. `CommerceStreamerContextTest`는 기반을 상속하지 않고 같은 `@Import`를 달아 같은 캐시 컨텍스트를 쓴다. 이 컨텍스트의 리스너는 기본 토픽 `order-events`를 듣는데, 아무도 그 토픽을 만들지 않고 consumer의 자동 생성이 꺼져 있어 아무것도 읽지 않는다.)
+  - `BaseConsumerTest`: 커밋한다. 리스너 스레드의 트랜잭션은 테스트 트랜잭션 밖이다. 클래스마다 `@TestPropertySource`로 `order-events.topic`을 덮고, `@TestConfiguration`이 그 이름의 `NewTopic`(파티션 3)을 선언한다. streamer는 토픽을 만들지 않으므로 테스트가 만든다. `@BeforeEach`에서 `ContainerTestUtils.waitForAssignment`로 배정을 기다리고, `@AfterEach`에서 `DatabaseCleanUp`으로 비운다. record는 `modules:kafka`의 `KafkaTemplate`으로 넣고 행은 Awaitility로 기다린다. (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): 배정은 consumer 셋이 저마다 파티션을 쥘 때까지 기다린다. Testcontainers의 broker는 `group.initial.rebalance.delay.ms`가 0이라 첫 consumer 혼자 첫 세대를 이루고 세 파티션을 다 쥐었다. `waitForAssignment`는 파티션 수를 더해 세므로 그때 돌아왔고, 나머지 둘을 들이는 세대는 3 s쯤 뒤에 장면 안에서 왔다(로그). 멈춘 컨테이너는 곧바로 실패한다. 모든 컨텍스트의 리스너가 같은 group `commerce-streamer`에 드는데, Spring Framework 7이 쓰이지 않는 캐시된 컨텍스트를 멈추므로(`spring.test.context.cache.pause`) 그 consumer는 group을 떠나고 장면의 consumer만 남는다(로그의 `consumer pro-actively leaving the group`). record의 값은 바이트가 아니라 손으로 적은 JSON의 트리다. 템플릿의 `JacksonJsonSerializer`가 바이트 배열을 base64 문자열로 쓰기 때문이다. 장면은 행이 아니라 group의 커밋된 offset을 기다린 뒤 행을 읽는다. 리스너는 기록의 커밋 뒤에 표시하므로 그 뒤에 일어나는 일이 없다.) (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 토픽을 선언하는 것은 기반 안의 `@TestConfiguration`이 아니라 `com.loopers.support`의 최상위 클래스 `TestOrderEventsTopicConfig`이고, 기반이 `@Import`한다. 티켓 177이 중첩해 두자 Spring Framework 7이 테스트 계층의 중첩 설정 클래스를 기본 설정으로 본다고 경고했다(지금은 무시하고 Spring Framework 7.1부터 쓴다). 빈 `testOrderEventsTopic`이 `TopicBuilder`로 그 클래스의 `order-events.topic`을 파티션 3, 복제 1로 선언하고, 컨텍스트의 `KafkaAdmin`이 뜰 때 만든다. 토픽은 클래스마다 하나다. `OrderEventsListenerTest`의 `order-events-listener`, `OrderEventsListenerStopTest`의 `order-events-listener-stop`, `OrderEventConsumedCaseTest`의 `order-events-consumed-case`이고, 셋 다 저마다의 컨텍스트를 띄운다.)
 - **테스트 리소스.** `junit-platform.properties`(생성자 주입, 확장 자동 감지)와 `instancio.properties`를 commerce-api에서 베낀다. Gradle은 모듈마다 테스트 classpath가 따로다.
 - **장면.**
   - 포트: 새 요청은 두 표에 행을 남긴다. 같은 요청은 `ALREADY_RECORDED`이고 행이 늘지 않는다. 같은 eventId의 다른 수량, 다른 품목, 다른 confirmedAt, 같은 orderId의 다른 eventId는 충돌이다. 품목의 차례가 달라도 같은 사실이다. 빈 품목과 0 수량은 거절된다.
   - 저장소: 두 유일 제약과 CHECK가 이름 그대로 있고 어긴 저장은 실패한다. 삭제된 것은 없는 것이다. (2026-10-28, [티켓 178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178): 저장소 테스트는 `BaseApplicationServiceTest`를 상속한다. JPA 슬라이스의 기반을 두지 않았으므로 기반은 여전히 둘이고, 컨텍스트도 하나 더 뜨지 않는다. 표의 제약은 `information_schema.table_constraints`에서 모두 읽어, 외래 키가 없음도 함께 본다. CHECK는 엔티티가 먼저 거절하므로 엔티티를 거치지 않는 UPDATE로 MySQL의 3819를 본다.)
-  - 리스너: 발행한 record가 처리한 주문 확정 하나와 상품 수만큼의 구매 활동이 된다. 같은 record를 두 번 넣으면 행은 한 벌이고 두 offset이 모두 커밋된다. 모르는 eventType은 건너뛰고 offset이 커밋된다. 충돌 record는 컨테이너를 세우고(`isRunning == false`), 행은 그대로이며, ERROR 한 줄이 남고, 그 offset은 커밋되지 않는다. (2026-10-28, [티켓 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181): 멈추는 장면은 `OrderEventsListenerStopTest` 한 클래스에 있다. 충돌, `orderId`가 빠진 payload, schemaVersion 2, 빈 품목, 그리고 충돌로 선 컨테이너를 다시 시작하는 장면이다. 장면이 세운 컨테이너는 `BaseConsumerTest`의 `@AfterEach`가 토픽을 비운 뒤(`deleteRecords`) 다시 시작한다. 그 record는 커밋되지 않았으므로 비우지 않고 다시 시작하면 다음 장면 전에 다시 선다(변이 탐침). 그래서 장면마다 컨텍스트를 띄우지 않는다. 넣고 기다리고 읽는 도우미는 세 클래스가 쓰게 되어 기반과 `com.loopers.support`로 옮겼다. `CODING_STANDARDS.md`의 멈춤 장면과 정리.)
+  - 리스너: 발행한 record가 처리한 주문 확정 하나와 상품 수만큼의 구매 활동이 된다. 같은 record를 두 번 넣으면 행은 한 벌이고 두 offset이 모두 커밋된다. 모르는 eventType은 건너뛰고 offset이 커밋된다. 충돌 record는 컨테이너를 세우고(`isRunning == false`), 행은 그대로이며, ERROR 한 줄이 남고, 그 offset은 커밋되지 않는다. (2026-10-28, [티켓 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181): 멈추는 장면은 `OrderEventsListenerStopTest` 한 클래스에 있다. 충돌, `orderId`가 빠진 payload, schemaVersion 2, 빈 품목, 그리고 충돌로 선 컨테이너를 다시 시작하는 장면이다. 장면이 세운 컨테이너는 `BaseConsumerTest`의 `@AfterEach`가 토픽을 비운 뒤(`deleteRecords`) 다시 시작한다. 그 record는 커밋되지 않았으므로 비우지 않고 다시 시작하면 다음 장면 전에 다시 선다(변이 탐침). 그래서 장면마다 컨텍스트를 띄우지 않는다. 넣고 기다리고 읽는 도우미는 세 클래스가 쓰게 되어 기반과 `com.loopers.support`로 옮겼다. `CODING_STANDARDS.md`의 멈춤 장면과 정리.) (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 멈춤은 `isRunning == false` 하나로 보지 않았다. 부모 컨테이너는 멈춤이 시작되자마자 `isRunning`이 false가 되고 consumer는 그 뒤에 닫히므로(6절의 티켓 181 메모), 기반의 `awaitStopped`가 `isRunning`과 `isChildRunning`이 모두 false가 되기를 기다린다. 장면은 그 뒤 `isInExpectedState`가 false임을 본다. 비정상 멈춤 뒤에만 false인 값이고, `ConsumerStoppedEvent`의 `ABNORMAL`과 같은 깃발을 읽는다. 커밋되지 않은 offset은 두 꼴로 본다. 충돌과 재시작의 장면은 그 파티션의 커밋된 offset이 충돌한 record의 offset 그대로임을, 나머지 셋은 group의 커밋된 offset들이 record를 넣기 전에 읽은 것과 같음을 본다.)
   - 설정: 리스너 컨테이너의 consumer 설정에 `enable.auto.commit=false`가 있다. 팩토리의 ack 모드는 `MANUAL_IMMEDIATE`다.
   - 컨텍스트: 두 fixture를 `@Import`한 컨텍스트가 뜬다. 빠뜨리면 commerce-api처럼 뜨지 않는다. (2026-10-28, [티켓 177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177): streamer의 컨텍스트는 Kafka 설정 없이도 뜬다. `KafkaAdmin`은 `NewTopic` 빈이 있을 때만 admin을 만드는데 streamer는 토픽을 선언하지 않고, test에서는 데모 컨테이너도 뜨지 않는다. 뜨지 않는 것은 테스트가 토픽을 선언한 `BaseConsumerTest`의 컨텍스트다(`Could not create admin` ← `Invalid url in bootstrap.servers: ${BOOTSTRAP_SERVERS}`). 컨텍스트와 함께 뜨는 `order-events` 리스너가 생기면 리스너 티켓이 다시 확인한다.) (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): 다시 확인했다. Kafka 설정을 뺀 streamer 컨텍스트는 이제 뜨지 않는다. `internalKafkaListenerEndpointRegistry`를 시작하지 못하고, 그 원인은 `Failed to construct kafka consumer` ← `Invalid url in bootstrap.servers: ${BOOTSTRAP_SERVERS}`다(탐침). 컨텍스트와 함께 뜨는 리스너 컨테이너가 consumer를 만들다 실패한다. `KafkaAdmin`의 `fail-fast`를 거치지 않는다.)
 - **의존.** `testImplementation(testFixtures(project(":modules:kafka")))`, `testImplementation(libs.springBootStarterKafkaTest)`(`ContainerTestUtils`만). `@EmbeddedKafka`는 쓰지 않는다. (2026-10-28, [티켓 180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180): `ContainerTestUtils`는 더 쓰지 않는다. 배정은 기반이 Awaitility로 기다린다(위의 `BaseConsumerTest`). 이 의존은 소비 장면이 group의 커밋된 offset을 읽는 `KafkaTestUtils.getCurrentOffset`을 위해 남는다.)
@@ -139,9 +154,46 @@ streamer가 던지는 셋(`Unsupported…`, `Malformed…`, `…Conflict…`)은
 | 오류(같은 eventId의 다른 내용) | 충돌 | 커머스 `CONTEXT.md`의 이벤트 ID 항목과 같은 말. |
 | 중단형 error handler | 멈추다 | `CommonContainerStoppingErrorHandler`. |
 | ack | 읽었다고 표시하다 | `Acknowledgment.acknowledge()`. |
+| record 리스너 팩토리 | `OrderEventsListenerConfig`의 `ORDER_EVENTS_LISTENER`(빈 `orderEventsListenerContainerFactory`) | (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 티켓 177이 만들었다. 템플릿의 batch 팩토리 `BATCH_LISTENER_DEFAULT`와 나란히 있고, 리스너가 `containerFactory`로 이름 부른다(5절).) |
+| 정상 발행·소비 사례 | 소비 사례(consumed case), `OrderEventConsumedCaseTest` | (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 티켓 181이 만들었다. 1단계의 미발행 사례(unpublished case)와 짝이다(8절).) |
 
 ## 11. 2단계의 명령
 
-- `./gradlew :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck`. Docker가 있어야 한다.
+- `./gradlew :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck`. Docker가 있어야 한다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 수를 읽는 실행은 아래 블록처럼 앞에 `cleanTest`를 둔다.)
 - commerce-api의 `check`는 `kafka.yml`의 오타 고침과 stereotype 베낌에 영향받지 않아야 하므로 마지막 티켓이 한 번 돌린다.
-- 테스트 수와 클래스 수는 마지막 티켓이 적는다.
+- 테스트 수와 클래스 수는 마지막 티켓이 적는다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 아래에 적었다.)
+
+```bash
+# 기록하는 포트(명세 176의 이음매 1): PurchaseActivityRecorderTest(12). 롤백하는 기반이다.
+./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityRecorderTest'
+
+# broker에서 리스너까지(이음매 2): OrderEventsListenerTest(6), OrderEventsListenerStopTest(5). 클래스마다 토픽과 컨텍스트가 따로다.
+./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerTest' --tests '*OrderEventsListenerStopTest'
+
+# 7주차에 넘기는 소비 사례(8절): OrderEventConsumedCaseTest(1). 실행 값을 INFO 한 줄로 남긴다.
+./gradlew :apps:commerce-streamer:test --tests '*OrderEventConsumedCaseTest'
+
+# 설정과 컨텍스트: OrderEventsListenerConfigTest(3), DemoKafkaConsumerTest(1), CommerceStreamerContextTest(1)
+./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerConfigTest' --tests '*DemoKafkaConsumerTest' --tests '*CommerceStreamerContextTest'
+
+# 저장소: ProcessedOrderConfirmationRepositoryTest(6), PurchaseActivityRepositoryTest(7)
+./gradlew :apps:commerce-streamer:test --tests '*RepositoryTest'
+
+# 도메인 단위와 fixture의 계약: PurchaseActivityTest(4), ProcessedOrderConfirmationTest(1), PurchaseActivityFixturesTest(5), ProcessedOrderConfirmationFixturesTest(3). 컨텍스트를 띄우지 않는다.
+./gradlew :apps:commerce-streamer:test --tests 'com.loopers.domain.*'
+
+# 끝의 확인. 수는 cleanTest부터 돈 실행의 JUnit XML 보고서에서 읽는다.
+./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck
+scripts/test-counts --results apps/commerce-streamer/build/test-results/test
+
+# commerce-api의 check. kafka.yml의 고침이 그 앱에도 닿는다. cleanTest가 있어야 테스트가 UP-TO-DATE로 지나가지 않고 실제로 돈다.
+./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check
+scripts/test-counts
+```
+
+- 괄호의 수는 2026-10-28 `8313f00`의 트리에서 끝의 확인을 돌려 읽은 것이다. streamer는 13개 클래스, 55개 테스트, 실패 0, 건너뜀 0이다(33 s). commerce-api는 79개 클래스, 943개 테스트, 실패 0, 건너뜀 0으로 1단계의 끝과 같다(3 min 39 s). 1단계의 끝은 PR 174의 head `f792658`이고, `week6`에는 `b84646d`로 합쳐졌다. 셸에 `BOOTSTRAP_SERVERS`는 없었다. 거른 명령들도 같은 날 돌려 같은 수를 확인했다. 여섯 필터가 열세 클래스를 한 번씩 덮는다. `8313f00` 뒤로는 문서만 바뀌었다.
+- 2단계가 더한 테스트는 streamer의 55개 전부다. 이 브랜치 전에는 streamer에 테스트가 없었다. 티켓마다 177이 5개, 178이 23개, 179가 15개, 180이 6개, 181이 6개다.
+- 거른 실행은 보고서 디렉터리를 그 실행의 것으로 갈아 치운다. 수는 끝의 확인 바로 뒤에 읽는다.
+- streamer에는 `HexagonalArchitectureTest`가 없다. 거른 실행의 수는 고른 클래스의 것뿐이고, 아무것도 찾지 못한 필터는 `No tests found for given includes`로 실패한다. commerce-api의 필터는 그 클래스가 늘 함께 돌아 아무것도 찾지 못해도 실패하지 않는다([주문 이벤트 설계](./order-events.md)의 "1단계의 명령").
+- Spring 컨텍스트는 넷이다. 롤백하는 기반과 `CommerceStreamerContextTest`가 나눠 쓰는 하나와, 커밋하는 기반의 클래스마다 하나씩 셋이다. 컨텍스트를 띄우는 명령은 Docker가 있어야 하고, MySQL과 Kafka 컨테이너를 JVM마다 하나씩 띄운다. Redis는 띄우지 않는다. 도메인의 네 클래스는 컨텍스트를 띄우지 않는다.
+- `apache/kafka-native:4.3.2` 컨테이너가 한 번씩 시작하지 못했다(`Container exited with code 1`, 또는 `Transitioning from RECOVERY to RUNNING`을 기다리다 시간이 다 됨). 티켓 178, 180, 181에서 한 번씩이고, 바꾼 것 없이 다시 돌리자 지나갔다.
