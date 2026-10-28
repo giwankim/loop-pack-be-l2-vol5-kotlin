@@ -498,7 +498,7 @@ The commerce-side values are step 1's run, not this one. The PG order ID is a fr
 
 ## Draft PR body
 
-Drafted 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), in the shape of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) (Summary / Evidence / Merge Danger). The user opens the PR in the UI.
+Drafted 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), in the shape of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) (Summary / Evidence / Merge Danger), and brought up to date the same day by spec 176's closing review (the section after this one). The user opens the PR in the UI.
 
 - **Base:** `week6` ← **head:** `feat/purchase-activity`
 - **Title:** `feat(commerce-streamer): record order confirmed events as purchase activity, and stop on one that cannot be processed`
@@ -516,6 +516,7 @@ This is week 6 step 2, the consumer. commerce-streamer now reads the order confi
 - **Writing material:** [`docs/research/week6-purchase-activity-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/docs/research/week6-purchase-activity-writing-material.md).
 
 ```text
+converter: bytes → OrderEventMessage                 # not JSON → ConversionException; listen() is never called
 OrderEventsListener.listen(OrderEventMessage)       # @KafkaListener(id = "order-events", idIsGroup = false), group commerce-streamer
   eventType != OrderConfirmed → INFO "Skipped…", acknowledge()        # skipped, not an error
   schemaVersion != 1 → UnsupportedOrderEventException
@@ -543,12 +544,13 @@ purchase_activity             (order_id, product_id) UK, quantity CHECK > 0, con
 - **Tests.**
   - `BaseApplicationServiceTest` rolls back on MySQL and Kafka. `BaseConsumerTest` commits and gives each class its own topic, declared by `TestOrderEventsTopicConfig`.
   - Before each scene, the consumer base waits until each of the three consumers holds a partition. It restarts a container a scene stopped, on an emptied topic.
-  - Scenes send hand-written JSON trees through the shared `KafkaTemplate`. A scene that records waits for the group's committed offset before reading the tables and the listener's lines. A scene that stops waits for the container to stop and its consumers to close.
+  - Scenes send hand-written JSON trees through the shared `KafkaTemplate`, except the one that sends raw bytes through a `KafkaProducer` of its own. A scene that records waits for the group's committed offset before reading the tables and the listener's lines. A scene that stops waits for the container to stop and its consumers to close.
 - **Dependencies.** The streamer adds `modules:kafka`'s test fixtures, `spring-boot-starter-kafka-test` (for `KafkaTestUtils` only) and the validation starter on its compile path. It drops `modules:redis`.
 - **Also on this branch:**
   - `1aa19ab`, `eaddd52`: the decision documents and the glossary, before ticket 177
   - `552f49b`: the glossary's 같은 사실 says the time compares to the microsecond
   - `a2bd12c`: the compose ports bound to `127.0.0.1`, which is not the spec's
+  - `de86c7a`, `dc6d03c`: spec 176's closing review (KDoc and comment wording, the scene for a value that is not JSON)
 
 ## Evidence
 
@@ -570,14 +572,16 @@ The mutations were run at ticket time and reverted ("Red checks" of issues 177�
   Refused an order confirmed event that cannot be processed. eventId=…, orderId=…, partition=0, offset=1, cause=com.loopers.application.purchaseactivity.provided.PurchaseActivityConflictException: Order confirmed event … of order … conflicts with the recorded one: items (product=quantity) recorded {1=2, 2=1}, incoming {1=3, 2=1}.
   ```
   A payload without `orderId`, schema version 2 and empty items stop the same way. A restart reads the conflicting record again and stops again.
+- **Before:** no scene sent a value that is not JSON, and the documents named the converter's failure `MessageConversionException`. Asserting that name in the new scene fails.
+  **After:** `not json`, published as raw bytes, stops the container and commits nothing, and the listener logs no line. spring-kafka's `Error handler threw an exception` is the one ERROR line, and its cause chain is `KafkaException` → `ListenerExecutionFailedException` → `ConversionException` → Jackson's `StreamReadException`.
 - **The consumed case handed to week 7.** `OrderEventConsumedCaseTest` at `b054b4f` puts the record of step 1's unpublished event (order 1, `order-confirmed:v1:1`, `2026-10-27T01:02:03.123456Z`, products 1 × 2 and 2 × 1), written by hand, on its own topic:
   - Partition 0, offset 0. The group commits 1.
   - One processed confirmation and two activities, all at `2026-10-27T01:02:03.123456Z`.
   - The commerce-side values (the PG order IDs and the transaction key) come from step 1's `e492cf1` run, so the record stitches two runs, and says so.
-- **Whole check.** At `8313f00` (2026-10-28; only documents changed after it), `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck` passes with no `BOOTSTRAP_SERVERS` in the shell. `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 13 classes and 55 tests (none before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes, and `scripts/test-counts` reads 79 classes and 943 tests, as before this branch. The filters from design §11:
+- **Whole check.** At `dc6d03c` (2026-10-28; only documents changed after it), `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck` passes with no `BOOTSTRAP_SERVERS` in the shell. `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 13 classes and 56 tests (none before this branch), with 0 failures and 0 skips. At `8313f00`, `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes, and `scripts/test-counts` reads 79 classes and 943 tests, as before this branch. No commerce-api or `modules` code changed after `8313f00`. The filters from design §11:
   ```bash
   ./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityRecorderTest'   # 12: the recording port
-  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerTest' --tests '*OrderEventsListenerStopTest'   # 6 + 5: broker to tables, and the stops
+  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerTest' --tests '*OrderEventsListenerStopTest'   # 6 + 6: broker to tables, and the stops
   ./gradlew :apps:commerce-streamer:test --tests '*OrderEventConsumedCaseTest'   # 1: the week 7 consumed case
   ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerConfigTest' --tests '*DemoKafkaConsumerTest' --tests '*CommerceStreamerContextTest'   # 3 + 1 + 1
   ./gradlew :apps:commerce-streamer:test --tests '*RepositoryTest'   # 6 + 7: the unique keys, the CHECK, the deletion filter
@@ -595,9 +599,9 @@ Two new tables, `processed_order_confirmation` and `purchase_activity`. Hibernat
 - **One unprocessable record stops all three consumers, so no partition flows.**
   - Nothing flows until a person fixes the stored row or moves the group past the record. This week has no tool for either (design §6).
   - A transient failure, such as a lost DB connection, stops it too, and a restart fixes it.
-  - A stop on an unprocessable event the listener sees logs two ERROR lines: the listener's `Refused…` and spring-kafka's `Error handler threw an exception`. Every other stop logs only spring-kafka's line. That covers a transient failure, a second `DataIntegrityViolationException`, an entity's `IllegalArgumentException`, and an unreadable body, which fails in the converter before the listener; no scene covers the body.
+  - A stop on an unprocessable event the listener sees logs two ERROR lines: the listener's `Refused…` and spring-kafka's `Error handler threw an exception`. Every other stop logs only spring-kafka's line. That covers a transient failure, a second `DataIntegrityViolationException`, an entity's `IllegalArgumentException`, and a value that is not JSON, which fails in the converter with `ConversionException` before the listener is called, as the stop scene shows.
 - **The race retry has no permanent test.** Two consumers recording one event at once happens only across a rebalance. A repository-spy probe showed the second call ending in `ALREADY_RECORDED`, and the mutant without it stopping the container. The probe was not kept.
-- **`earliest`.** A new group reads everything the broker retains on `order-events`. Recording is idempotent, so that is safe but takes time. Locally, a streamer started against compose records every confirmation already on the topic.
+- **`earliest`.** A new group reads everything the broker retains on `order-events`. Recording the same fact again writes nothing, so that is safe but takes time. Locally, a streamer started against compose records every confirmation already on the topic.
 - **Startup involves Kafka.** The listener container starts with the context. In the test profile, a context with no broker address fails with `Failed to construct kafka consumer`. Outside it, the address comes from `BOOTSTRAP_SERVERS`, and a missing topic is not auto-created (not tried against a real broker).
 - **One database, two apps.** Both use `loopers`. Under `local`, `ddl-auto: create` drops and recreates only the starting app's mapped tables, so starting the streamer empties its two tables.
 - **The `kafka.yml` fix reaches the template's factories.** The template's `consumerFactory` and batch factory now read values as bytes, which their converter expects. The demo listener, their only user, takes raw `ConsumerRecord`s, so under `local` it now prints byte arrays where it printed strings (not tried). commerce-api has no consumer, and its check is unchanged.
