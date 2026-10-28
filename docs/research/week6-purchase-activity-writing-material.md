@@ -25,7 +25,7 @@ Added 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5
 | [180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180) | the listener | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180#issuecomment-6469017935) | [Issue 180](#issue-180-the-listener-records-what-reaches-the-broker-and-acknowledges-after-the-commit) |
 | [181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181) | the stop scenes and the week 7 consumed case | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181#issuecomment-6470087611) | [Issue 181](#issue-181-an-unprocessable-record-stops-the-consumer-and-the-consumed-case-is-recorded-for-week-7) and the [W7 handoff](#w7-handoff-consumed-case) |
 | [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | the documents: dated notes, commands and counts, this preface and the draft PR body | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182#issuecomment-6470850336) | [Issue 182](#issue-182-the-steps-documents-match-the-code-with-its-commands-and-counts-and-a-draft-pr-body) |
-| [176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176) | the spec's closing review: a stop scene for a value that is not JSON, KDoc and comment wording, dated notes | recorded below once posted | [Spec 176](#spec-176-the-closing-review) |
+| [176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176) | the spec's closing review: a stop scene for a value that is not JSON, KDoc and comment wording, dated notes | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176#issuecomment-6471942482) | [Spec 176](#spec-176-the-closing-review) |
 
 Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
@@ -619,7 +619,7 @@ Two new tables, `processed_order_confirmation` and `purchase_activity`. Hibernat
 
 ## Spec 176: the closing review
 
-Recorded 2026-10-28 from the closing comment of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176). It closes the spec after a two-axis review of this branch.
+Recorded 2026-10-28 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176#issuecomment-6471942482) of [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176). It closes the spec after a two-axis review of this branch.
 
 Tickets 177–182 are closed, and the branch had a two-axis review of `week6...d492156` (`1abac34...d492156`, 23 commits) on 2026-10-28. One axis checked the diff against the repo's standards: `CODING_STANDARDS.md`, the two glossaries and `CONTEXT-MAP.md`, catalog design §5, ADRs 0010, 0012, 0013, 0016 and 0033, and a baseline of Fowler's code smells. The other checked it against this spec, its six tickets, the purchase activity design and ADR 0033. Every claim about spring-kafka was checked against its 4.1.1 sources before anything changed. The fixes are [`de86c7a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/de86c7a), [`dc6d03c`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/dc6d03c) and [`c948c5a`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c948c5a).
 
@@ -658,3 +658,4 @@ No hard violations. Block bodies, braced guards, backticked test names, no `@Nes
 ### Records
 
 - The dated notes on this spec's body carry the label 닫는 검토.
+- [`5be1de6`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/5be1de6) records this comment in `docs/research/week6-purchase-activity-writing-material.md`.
