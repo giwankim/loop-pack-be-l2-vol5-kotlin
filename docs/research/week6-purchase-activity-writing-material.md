@@ -280,7 +280,7 @@ A two-axis review ran on the uncommitted tree before the commit.
 
 ## Issue 181: an unprocessable record stops the consumer, and the consumed case is recorded for week 7
 
-Recorded 2026-10-28 from the closing comment of [issue 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181). The rule is rule 5 of [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) (an unprocessable event stops the consumer, provisionally), and the scenes are sections 5, 6 and 8 of the [purchase activity design](../design/purchase-activity.md). The code is:
+Recorded 2026-10-28 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181#issuecomment-6470087611) of [issue 181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181). The rule is rule 5 of [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) (an unprocessable event stops the consumer, provisionally), and the scenes are sections 5, 6 and 8 of the [purchase activity design](../design/purchase-activity.md). The code is:
 
 - [`OrderEventsListener`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/adapter/consumer/OrderEventsListener.kt): one ERROR line for an unprocessable event, naming the order by the record key
 - [`UnprocessableOrderEventException`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/support/error/UnprocessableOrderEventException.kt): its KDoc on the line and the two not-retryable types
