@@ -33,9 +33,11 @@ import java.time.Instant
  * not prepare an order's activities one at a time. So `prepare<Type>` saves one entity fixture through its repository, under
  * the names `BaseRepositoryTest` uses, and the change helpers save explicitly instead of relying on dirty checking.
  *
- * Every full context imports the broker. One that declares a topic, as [BaseConsumerTest]'s do, cannot start without it: the
- * `test` profile of `kafka.yml` has no broker address and turns on `spring.kafka.admin.fail-fast`, as in commerce-api. This
- * base's own context declares no topic and starts no listener container under `test`, so for now it would start without it.
+ * Every full context imports the broker, and none starts without it: the `test` profile of `kafka.yml` has no broker address,
+ * so the order events listener's container cannot build its consumers from the literal `${BOOTSTRAP_SERVERS}`. One that
+ * declares a topic, as [BaseConsumerTest]'s do, fails earlier still, because the profile turns on
+ * `spring.kafka.admin.fail-fast`, as in commerce-api. In this base's own context the container listens to `order-events`,
+ * which nothing creates, so it reads nothing.
  */
 @SpringBootTest
 @Import(

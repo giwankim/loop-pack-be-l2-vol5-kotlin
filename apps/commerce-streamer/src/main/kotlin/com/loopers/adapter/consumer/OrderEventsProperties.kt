@@ -9,5 +9,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  */
 @ConfigurationProperties("order-events")
 data class OrderEventsProperties(
-    val topic: String = "order-events",
-)
+    val topic: String = DEFAULT_TOPIC,
+) {
+    companion object {
+        /**
+         * The default of [topic]. [OrderEventsListener] names its topic with a placeholder, which reads the `Environment`, and
+         * a Kotlin default exists only in the binder, so the placeholder repeats it from here.
+         */
+        const val DEFAULT_TOPIC = "order-events"
+    }
+}

@@ -22,7 +22,7 @@ dependencies {
     testImplementation(testFixtures(project(":modules:jpa")))
     testImplementation(testFixtures(project(":modules:kafka")))
 
-    // Only for ContainerTestUtils, which waits for a listener container's partitions. @EmbeddedKafka is not used
-    // (purchase activity design 7).
+    // Only for KafkaTestUtils, which reads a group's committed offset. @EmbeddedKafka is not used (purchase activity
+    // design 7).
     testImplementation(libs.springBootStarterKafkaTest)
 }
