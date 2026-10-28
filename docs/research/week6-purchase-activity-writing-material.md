@@ -1,6 +1,32 @@
 # Week 6 purchase activity: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment, with one exception: the [W7 handoff](#w7-handoff-consumed-case) is recorded from one run of issue 181's consumed case. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 2 ticket's closing comment, with three exceptions. The [W7 handoff](#w7-handoff-consumed-case) is recorded from one run of issue 181's consumed case. Issue 182 added the preface below and the [draft PR body](#draft-pr-body) at the end. The rules behind it are in [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) and the [purchase activity design](../design/purchase-activity.md). The step is [spec 176](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176).
+
+## Preface: what this branch is and where its comments sit
+
+Added 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182).
+
+### The branch
+
+`feat/purchase-activity` is step 2 of week 6's three, the consumer. It was cut from `week6` at `1abac34`, after step 1's [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) (the producer) and [PR 175](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/175) (step 1's closing-review record), and it goes back into `week6` by its own PR. Step 3, the delivery experiments on `feat/kafka-delivery`, comes after it.
+
+- **What it adds.** commerce-streamer reads the order confirmed events commerce-api publishes to `order-events` and records each as one processed order confirmation and one purchase activity per product, in one transaction that reads first. The same fact again writes nothing. A conflict, an unknown schema version, an unreadable payload or a request that fails validation stops the consumer with the offset uncommitted. An unknown event type is skipped. The streamer is a second bounded context: it knows orders and products by ID only and never reads commerce-api's tables ([`CONTEXT-MAP.md`](../../CONTEXT-MAP.md)).
+- **What it does not change.** commerce-api's code is untouched. Its `check` still gives 79 classes and 943 tests. `modules:kafka` changed by one line, the `value-deserializer` typo in `kafka.yml`.
+- **The instructor's "왜??"** on the assignment's opening paragraph, which step 1's preface found with little written evidence, is answered in section 1.1 of the [purchase activity design](../design/purchase-activity.md) (an event, not a shared table or a read of commerce-api's tables).
+- **The draft PR body** is [at the end](#draft-pr-body).
+
+### Where each closing comment sits
+
+| Issue | What it built | Closing comment | Section |
+| --- | --- | --- | --- |
+| [177](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177) | the rails: the cleaned-up streamer, the listener factory, the two test bases | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/177#issuecomment-6466319429) | [Issue 177](#issue-177-the-streamer-becomes-a-testable-app-with-the-listener-factory-it-will-consume-order-events-with) |
+| [178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178) | the two roots and their repositories | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178#issuecomment-6467052939) | [Issue 178](#issue-178-processed-order-confirmations-and-purchase-activity-are-two-roots-with-their-own-repositories) |
+| [179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179) | the recorder, which reads first | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179#issuecomment-6467757042) | [Issue 179](#issue-179-the-recorder-reads-first-and-records-both-roots-in-one-transaction) |
+| [180](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180) | the listener | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/180#issuecomment-6469017935) | [Issue 180](#issue-180-the-listener-records-what-reaches-the-broker-and-acknowledges-after-the-commit) |
+| [181](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181) | the stop scenes and the week 7 consumed case | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/181#issuecomment-6470087611) | [Issue 181](#issue-181-an-unprocessable-record-stops-the-consumer-and-the-consumed-case-is-recorded-for-week-7) and the [W7 handoff](#w7-handoff-consumed-case) |
+| [182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182) | the documents: dated notes, commands and counts, this preface and the draft PR body | recorded below once posted | Issue 182 |
+
+Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
 ## Issue 177: the streamer becomes a testable app with the listener factory it will consume order events with
 
@@ -386,3 +412,119 @@ The commerce-side values are step 1's run, not this one. The PG order ID is a fr
 - Together the two cases are week 7's starting point. In the unpublished case the order is confirmed and its event exists nowhere. In this one the same event, once on the broker, becomes one processed confirmation and two activities at the order's confirmation time, to the microsecond, and the group commits past it. An outbox row written inside TX B is what would carry the first case to the second.
 - The value is written by hand, not published by commerce-api's relay. `OrderEventPublishingTest` is what ties it to the relay's form.
 - It shows no redelivery. `OrderEventsListenerTest`'s same-record scene shows that a second delivery writes nothing.
+
+## Draft PR body
+
+Drafted 2026-10-28 by [issue 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182), in the shape of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) (Summary / Evidence / Merge Danger). The user opens the PR in the UI.
+
+- **Base:** `week6` ← **head:** `feat/purchase-activity`
+- **Title:** `feat(commerce-streamer): record order confirmed events as purchase activity, and stop on one that cannot be processed`
+- The `blob/feat/purchase-activity` links resolve once the branch is pushed.
+
+````markdown
+## Summary
+
+This is week 6 step 2, the consumer. commerce-streamer now reads the order confirmed events commerce-api publishes to `order-events`, and records each one as purchase activity: one processed order confirmation and one activity per product, in one transaction that reads first. The delivery experiments (`feat/kafka-delivery`) come next and start from this listener.
+
+- **Spec:** https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/176, with tickets 177–182.
+- **Decision:** [ADR 0033](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/docs/adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md).
+- **Design:** [`docs/design/purchase-activity.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/docs/design/purchase-activity.md). §1.1 says why an event rather than a shared table or a read of commerce-api's tables, §1.3 maps the tickets to what they built, and §11 has the commands and counts.
+- **Glossary:** the streamer is a second bounded context, 구매 활동, with its own [`CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/apps/commerce-streamer/CONTEXT.md) and a root [`CONTEXT-MAP.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/CONTEXT-MAP.md). It knows orders and products by ID only.
+- **Writing material:** [`docs/research/week6-purchase-activity-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/purchase-activity/docs/research/week6-purchase-activity-writing-material.md).
+
+```text
+OrderEventsListener.listen(OrderEventMessage)       # @KafkaListener(id = "order-events", idIsGroup = false), group commerce-streamer
+  eventType != OrderConfirmed → INFO "Skipped…", acknowledge()        # skipped, not an error
+  schemaVersion != 1 → UnsupportedOrderEventException
+  jsonMapper.treeToValue(payload) → OrderConfirmedPayload             # Jackson failure or null → MalformedOrderEventException
+  recordSettlingARace(request)                                         # once more on DataIntegrityViolationException
+    PurchaseActivityRecorder.record                                    # PurchaseActivityModifyService, one transaction, @Valid request
+      findByEventId → same fact: ALREADY_RECORDED, nothing written | else PurchaseActivityConflictException
+      findByOrderId → another event ID for the order: PurchaseActivityConflictException
+      save(confirmation), saveAll(activities) → RECORDED
+  INFO "Recorded… result=…", acknowledge()                             # MANUAL_IMMEDIATE commits the offset here, after the commit
+  catch UnprocessableOrderEventException | ConstraintViolationException → ERROR "Refused…", rethrow
+… CommonContainerStoppingErrorHandler stops all three consumers; the record's offset stays uncommitted; no restart on its own …
+```
+
+```text
+processed_order_confirmation  event_id UK, order_id UK, confirmed_at                  # tells the same fact from a conflict
+purchase_activity             (order_id, product_id) UK, quantity CHECK > 0, confirmed_at   # what week 9's ranking reads
+```
+
+- **Same fact or conflict.** The same event ID with the same order, confirmation time (to the microsecond, as stored) and product-to-quantity map is the same fact, whatever the order of the items. Any difference, or the same order under another event ID, is a conflict, and the stored fact is never overwritten.
+- **Two roots, not one aggregate.** Each has its own repository, and the service, not a JPA cascade, writes both in one transaction. There is no foreign key to commerce-api's tables.
+- **The listener's promises live in the streamer.** `OrderEventsListenerConfig`'s `ORDER_EVENTS_LISTENER` sets `ByteArrayDeserializer`, `enable.auto.commit=false`, `MANUAL_IMMEDIATE`, the stopping handler and concurrency 3. `application.yml` gives group `commerce-streamer`, `earliest` and no topic auto-creation. `modules:kafka` changed by one line: `consumer.value-serializer` → `value-deserializer`.
+- **The stop is provisional** (ADR 0033 rule 5). Design §6 writes down the production shape: a `DefaultErrorHandler` with the marker type and `ConstraintViolationException` not retryable, and a dead-letter topic.
+- **Streamer housekeeping.** Named `commerce-streamer`, `modules:redis` dropped, `interfaces.consumer` → `adapter.consumer`, the template's demo listener kept but off under `test`, and the two stereotypes copied rather than shared.
+- **Tests.**
+  - `BaseApplicationServiceTest` rolls back on MySQL and Kafka. `BaseConsumerTest` commits and gives each class its own topic, declared by `TestOrderEventsTopicConfig`.
+  - Before each scene, the consumer base waits until each of the three consumers holds a partition. It restarts a container a scene stopped, on an emptied topic.
+  - Scenes send hand-written JSON trees through the shared `KafkaTemplate`. A scene that records waits for the group's committed offset before reading the tables and the listener's lines. A scene that stops waits for the container to stop and its consumers to close.
+- **Dependencies.** The streamer adds `modules:kafka`'s test fixtures, `spring-boot-starter-kafka-test` (for `KafkaTestUtils` only) and the validation starter on its compile path. It drops `modules:redis`.
+- **Also on this branch:**
+  - `1aa19ab`, `eaddd52`: the decision documents and the glossary, before ticket 177
+  - `552f49b`: the glossary's 같은 사실 says the time compares to the microsecond
+  - `a2bd12c`: the compose ports bound to `127.0.0.1`, which is not the spec's
+
+## Evidence
+
+The mutations were run at ticket time and reverted ("Red checks" of issues 177–181 in the writing material).
+
+- **Before:** with no read by event ID, recording the same request again fails with `DataIntegrityViolationException` on `UK_PROCESSED_ORDER_CONFIRMATION_ON_EVENT_ID`. That is the shape step 1 handed over, where the common redelivery is the exception path.
+  **After:** `ALREADY_RECORDED`, and every row of both tables, ID included, is unchanged.
+- **Before:** comparing the request's own time, the same fact recorded with `…03.123456789Z` conflicts with itself: `confirmation time recorded 2026-10-27T01:02:03.123456Z, incoming 2026-10-27T01:02:03.123456789Z`. MySQL rounds a seventh fractional digit, so the entities cut it.
+  **After:** `ALREADY_RECORDED`.
+- **Before:** without `@Valid` on the port's parameter, an event with no items is **recorded**: a confirmation with no activities, and nothing thrown. A repeated product reaches `DataIntegrityViolationException` after the confirmation's insert, which the listener would take for a race.
+  **After:** each is refused with `ConstraintViolationException`, and both tables stay empty.
+- **Before:** without the skip, an `OrderCancelled` record fails payload conversion and stops the container. Each later test then waits 60 s for an assignment, a 4 min 26 s run.
+  **After:** it is acknowledged with no row and one INFO line, `Skipped an order event of a type the streamer does not record. eventId=order-cancelled:v1:1, eventType=OrderCancelled, partition=0, offset=0`.
+- **Before:** with only the deserializer set, the factory's consumer configuration holds `"enable-auto-commit"="false"`, `"auto.offset.reset"="latest"` and `"group.id"="loopers-default-consumer"`, and no `enable.auto.commit` key.
+  **After:** `enable.auto.commit=false`, `group.id=commerce-streamer`, `auto.offset.reset=earliest`, `allow.auto.create.topics=false`.
+- **Before:** the conflict scene fails only on the ERROR line (`Expecting actual: []`). The stop, the uncommitted offset and the rows already held.
+  **After:** the container stops with every consumer closed and `isInExpectedState` false, the commit stays at the conflicting record, the recorded rows stand, and the listener logs one line:
+  ```text
+  Refused an order confirmed event that cannot be processed. eventId=…, orderId=…, partition=0, offset=1, cause=com.loopers.application.purchaseactivity.provided.PurchaseActivityConflictException: Order confirmed event … of order … conflicts with the recorded one: items (product=quantity) recorded {1=2, 2=1}, incoming {1=3, 2=1}.
+  ```
+  A payload without `orderId`, schema version 2 and empty items stop the same way. A restart reads the conflicting record again and stops again.
+- **The consumed case handed to week 7.** `OrderEventConsumedCaseTest` at `b054b4f` puts the record of step 1's unpublished event (order 1, `order-confirmed:v1:1`, `2026-10-27T01:02:03.123456Z`, products 1 × 2 and 2 × 1), written by hand, on its own topic:
+  - Partition 0, offset 0. The group commits 1.
+  - One processed confirmation and two activities, all at `2026-10-27T01:02:03.123456Z`.
+  - The commerce-side values (the PG order IDs and the transaction key) come from step 1's `e492cf1` run, so the record stitches two runs, and says so.
+- **Whole check.** At `8313f00` (2026-10-28; only documents changed after it), `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check :modules:kafka:ktlintCheck` passes with no `BOOTSTRAP_SERVERS` in the shell. `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 13 classes and 55 tests (none before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes, and `scripts/test-counts` reads 79 classes and 943 tests, as before this branch. The filters from design §11:
+  ```bash
+  ./gradlew :apps:commerce-streamer:test --tests '*PurchaseActivityRecorderTest'   # 12: the recording port
+  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerTest' --tests '*OrderEventsListenerStopTest'   # 6 + 5: broker to tables, and the stops
+  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventConsumedCaseTest'   # 1: the week 7 consumed case
+  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerConfigTest' --tests '*DemoKafkaConsumerTest' --tests '*CommerceStreamerContextTest'   # 3 + 1 + 1
+  ./gradlew :apps:commerce-streamer:test --tests '*RepositoryTest'   # 6 + 7: the unique keys, the CHECK, the deletion filter
+  ./gradlew :apps:commerce-streamer:test --tests 'com.loopers.domain.*'   # 13: the entities and the fixture contracts
+  ```
+
+## Merge Danger
+
+**Door:** two-way
+
+Two new tables, `processed_order_confirmation` and `purchase_activity`. Hibernate creates them only under `local` and `test` (`ddl-auto: create`). dev, qa and prd use `none`, and the repo has no migration tool, so a deployed streamer needs them made by hand, as earlier weeks' tables do. A revert removes the listener and the entities. Rows already written stay in the shared database, and group `commerce-streamer`'s committed offsets stay on the broker. Nothing in commerce-api reads either.
+
+**Blast Radius:** commerce-streamer
+
+- **One unprocessable record stops all three consumers, so no partition flows.**
+  - Nothing flows until a person fixes the stored row or moves the group past the record. This week has no tool for either (design §6).
+  - A transient failure, such as a lost DB connection, stops it too, and a restart fixes it.
+  - A stop on an unprocessable event the listener sees logs two ERROR lines: the listener's `Refused…` and spring-kafka's `Error handler threw an exception`. Every other stop logs only spring-kafka's line. That covers a transient failure, a second `DataIntegrityViolationException`, an entity's `IllegalArgumentException`, and an unreadable body, which fails in the converter before the listener; no scene covers the body.
+- **The race retry has no permanent test.** Two consumers recording one event at once happens only across a rebalance. A repository-spy probe showed the second call ending in `ALREADY_RECORDED`, and the mutant without it stopping the container. The probe was not kept.
+- **`earliest`.** A new group reads everything the broker retains on `order-events`. Recording is idempotent, so that is safe but takes time. Locally, a streamer started against compose records every confirmation already on the topic.
+- **Startup involves Kafka.** The listener container starts with the context. In the test profile, a context with no broker address fails with `Failed to construct kafka consumer`. Outside it, the address comes from `BOOTSTRAP_SERVERS`, and a missing topic is not auto-created (not tried against a real broker).
+- **One database, two apps.** Both use `loopers`. Under `local`, `ddl-auto: create` drops and recreates only the starting app's mapped tables, so starting the streamer empties its two tables.
+- **The `kafka.yml` fix reaches the template's factories.** The template's `consumerFactory` and batch factory now read values as bytes, which their converter expects. The demo listener, their only user, takes raw `ConsumerRecord`s, so under `local` it now prints byte arrays where it printed strings (not tried). commerce-api has no consumer, and its check is unchanged.
+- **Logs only.** There are no metrics. Each line carries the event ID, the order ID, the partition and the offset.
+- **Docker for every streamer test context.** There are four: one for the rollback base and one per consumer class. Each JVM runs one MySQL and one `apache/kafka-native:4.3.2` container, and no longer a Redis. The Kafka container failed to start once in each of three ticket runs, and passed on the rerun.
+- **Out of scope:**
+  - `DefaultErrorHandler` and the dead-letter topic
+  - the partition and redelivery experiments (step 3)
+  - the outbox
+  - the ranking API and its indexes
+  - a retention period for processed confirmations
+  - deleting `DemoKafkaConsumer` and cleaning up the template's `kafka.yml`
+````
