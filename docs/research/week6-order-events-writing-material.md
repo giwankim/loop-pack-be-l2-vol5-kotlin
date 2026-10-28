@@ -628,7 +628,7 @@ The schema doesn't change and there is no migration. A revert removes the port, 
 
 ## Spec 167: the closing review
 
-Recorded 2026-10-28 from the closing comment of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). It closes the spec after a two-axis review of the step 1 branch, whose fixes landed on 2026-10-27.
+Recorded 2026-10-28 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167#issuecomment-6457812800) of [spec 167](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/167). It closes the spec after a two-axis review of the step 1 branch, whose fixes landed on 2026-10-27.
 
 
 Tickets 168–173 are closed, and the branch had a two-axis review of `origin/week6...b0fc848` (24 commits) on 2026-10-27. It checked the diff against the repo's standards (`CODING_STANDARDS.md`, `CONTEXT.md`, catalog design §5, ADRs 0009–0032) and against this spec, its six tickets and ADR 0032. Its four fixes are [`4e06cc3`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/4e06cc3), [`0cb8baa`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/0cb8baa), [`2e3cb5e`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/2e3cb5e) and [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658). `feat/order-events` is at [`f792658`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/f792658), the head of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) into `week6`. On that tree, `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check :modules:kafka:ktlintCheck` passes: 79 classes, 943 tests, 0 failures, 0 skipped. That is the count design §12 records. The streamer's `ktlintCheck` and `check` pass too.
@@ -654,4 +654,4 @@ All 27 user stories were checked. Nothing in production code goes beyond the spe
 ### Records
 
 - The dated notes on this spec's body carry the label 닫는 검토.
-- The commit after `f792658` records this comment in `docs/research/week6-order-events-writing-material.md`.
+- [`c0b2896`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c0b2896) records this comment in `docs/research/week6-order-events-writing-material.md`.
