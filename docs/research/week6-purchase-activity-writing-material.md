@@ -137,3 +137,74 @@ A two-axis review ran before the commit.
 - **The future `DefaultErrorHandler` would retry the entity's `IllegalArgumentException`.** Design section 6's production shape registers only `UnprocessableOrderEventException` and `ConstraintViolationException` as not retryable. Bean Validation should keep the entity's exception unreachable, but the stop-policy study should name it or give the entity a subtype.
 - **Spec 176's body** still lists `saveAll` on the port; it could take a dated note like issue 177's.
 - **ADR 0012** has no dated note for any of the streamer's bases.
+
+## Issue 179: the recorder reads first and records both roots in one transaction
+
+Recorded 2026-10-28 from the closing comment of [issue 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179). The rules are rules 3 and 4 of [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md) (read first, in one transaction; tell the same fact from a conflict), and the recording is section 4 of the [purchase activity design](../design/purchase-activity.md). Nothing reads Kafka yet; the listener is issue 180. The code is:
+
+- [`PurchaseActivityRecorder`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/provided/PurchaseActivityRecorder.kt), [`PurchaseActivityRecordRequest`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/provided/PurchaseActivityRecordRequest.kt), [`PurchaseActivityRecordResult`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/provided/PurchaseActivityRecordResult.kt) and [`PurchaseActivityConflictException`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/provided/PurchaseActivityConflictException.kt): the provided port and its types
+- [`PurchaseActivityModifyService`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/PurchaseActivityModifyService.kt): the implementation
+- [`PurchaseActivityRepository`](../../apps/commerce-streamer/src/main/kotlin/com/loopers/application/purchaseactivity/required/PurchaseActivityRepository.kt): `saveAll`
+- [`PurchaseActivityRecorderTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/application/purchaseactivity/provided/PurchaseActivityRecorderTest.kt): the port's scenes
+- [`PurchaseActivityFixtures.kt`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/domain/purchaseactivity/PurchaseActivityFixtures.kt): `createPurchaseActivityRecordRequest`, with its contract tests in [`PurchaseActivityFixturesTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/domain/purchaseactivity/PurchaseActivityFixturesTest.kt)
+- [`BaseApplicationServiceTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/support/test/BaseApplicationServiceTest.kt): `prepareRecordedEvent`
+- [`build.gradle.kts`](../../apps/commerce-streamer/build.gradle.kts): the validation starter on the compile path
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): the streamer's prepare rule under 도우미, the new fixture under Fixture; the [purchase activity design](../design/purchase-activity.md): dated notes in section 4
+
+### Landed
+
+Two commits on `feat/purchase-activity`, on top of `ad38c0a`:
+
+- [`d0e9473`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/d0e9473) is the code, the tests, the standards and the design notes.
+- The commit after it adds this section.
+
+### Acceptance criteria
+
+- [x] **On `BaseApplicationServiceTest`: a new request yields one processed confirmation and one activity row per item, all with the request's `confirmedAt`; the result is `RECORDED`.** The request is the fixture's, with 1..5 drawn items. After flush and clear the test reads both tables whole: exactly one confirmation with the request's event ID, order ID and time, and one activity per item as (order, product, quantity, time) in any order. **Red check:** `NotImplementedError` from the empty service, so the context, the validation proxy and the port were all wired before any logic existed.
+- [x] **The same request again is `ALREADY_RECORDED` and no row is added; a request whose items are in a different order is also `ALREADY_RECORDED`.** "No row is added" compares every row of both tables, ID included, before and after the call, so an added, removed or changed row shows. **Red check:** before the event-ID read, recording the same request again failed with `DataIntegrityViolationException` on `UK_PROCESSED_ORDER_CONFIRMATION_ON_EVENT_ID`. That is step 1's shape, where the common redelivery becomes the exception path, which ADR 0033 rule 3 rejected. The reordered items passed at once, since the items compare as a map. **Beyond the criterion:** a fact recorded with `…03.123456789Z` and sent again is `ALREADY_RECORDED` (below).
+- [x] **Same eventId with a different quantity, a different product set, a different `confirmedAt`, or a different orderId throws `PurchaseActivityConflictException`; same orderId under a different eventId throws it too; no row changes in any of these.** Each test records an event, sends a copy with one value changed, and asserts the whole message and the unchanged rows:
+  - quantity: `items (product=quantity) recorded {1=2, 2=1}, incoming {1=3, 2=1}`
+  - product set: `items (product=quantity) recorded {1=2, 2=1}, incoming {1=2, 3=1}`
+  - time, one microsecond apart, the smallest difference the column keeps: `confirmation time recorded 2026-10-27T01:02:03.123456Z, incoming 2026-10-27T01:02:03.123457Z`
+  - order: `Order confirmed event order-confirmed:v1:1 of order 2 conflicts with the recorded one: order ID recorded 1, incoming 2.`
+  - event ID: `Order confirmed event order-confirmed:v2:1 of order 1 conflicts with the recorded one: event ID recorded order-confirmed:v1:1, incoming order-confirmed:v2:1.`
+
+  **Red checks:** each failed with "nothing was thrown" until its comparison existed. The event-ID case failed with `DataIntegrityViolationException` on `UK_PROCESSED_ORDER_CONFIRMATION_ON_ORDER_ID` until the order-ID read existed.
+- [x] **Empty items, a zero quantity and a repeated product ID are refused before anything is written.** Each throws `ConstraintViolationException` with one message, and both tables are empty afterwards: `An order confirmed event must have at least one item.`, `An item's quantity must be positive.`, `An order confirmed event must name each product once.` These passed on the first run, because the constraints came with the request type, so the mutants below are their red checks.
+- [x] **`./gradlew :apps:commerce-streamer:ktlintCheck :apps:commerce-streamer:check` passes with executed test counts checked.** With `:modules:kafka:ktlintCheck` as design section 11 lists: **10 classes, 43 tests, 0 failures, 0 skipped**, up from 9 classes and 28 tests at issue 178. The new tests are `PurchaseActivityRecorderTest` 12 and three request-fixture contracts. The counts come from the JUnit XML reports after deleting the old ones. `BOOTSTRAP_SERVERS` was unset. The pre-commit hook's tree-wide `ktlintCheck` passed.
+
+### Red checks and probes
+
+Each mutant was a temporary edit, run and undone before the commit.
+
+- **Comparing the raw request time.** The same fact recorded with `…03.123456789Z` became a conflict with itself: `confirmation time recorded 2026-10-27T01:02:03.123456Z, incoming 2026-10-27T01:02:03.123456789Z`. Issue 178 found MySQL rounds a seventh digit; the entities cut it, so the comparison must use the cut value too.
+- **No `@Valid` on the port's parameter.** All three refusals failed, each differently. An empty event was **recorded**: a confirmation with no activities, with nothing thrown. A zero quantity reached the entity's `IllegalArgumentException`. A repeated product reached `DataIntegrityViolationException` on the activities' unique key, after the confirmation's INSERT. So Bean Validation is the only guard against an empty event, and the only guard that keeps a repeated product from looking like a race.
+- **No `@AssertTrue`.** The repeated product failed alone, with the same `DataIntegrityViolationException`.
+- **No `truncatedTo(MICROS)` in the request fixture.** The contract test failed on drawn times such as `2003-04-05T04:15:49.998859357Z`. Instancio's temporal generator (instancio-core 6.1.0, `JavaTimeTemporalGenerator`) draws the nanosecond of the second at random, and its spec has `truncatedTo`.
+
+### Decisions made while implementing
+
+- **The service is `PurchaseActivityModifyService`, not the ticket's `PurchaseActivityRecorderService`.** ADR 0013 has a slice's write port implemented by `<X>ModifyService`, and design section 3 puts the streamer on that structure. The review caught it; design section 4 has a dated note.
+- **The incoming fact is compared as the entities it would be saved as.** The service builds the confirmation and the activities from the request before it reads, compares those, and saves them as they are when the event is new. The microsecond cut stays in the entities' constructors, in one place.
+- **The items compare as a map from product to quantity.** Each product appears once on both sides, by the activities' unique key and by the request's validation, so the map is the ticket's set of (productId, quantity). Sorted by product, it is also what the message prints.
+- **A repeated product is refused by the request's `@get:AssertTrue`.** Spec 176 allowed the entity's check or the request's. The entity is one row and cannot see a repeat. In the request it becomes a `ConstraintViolationException`, which design section 6's production shape already registers as not retryable, instead of a `DataIntegrityViolationException` that issue 180's adapter would retry as a race.
+- **Bare constraint annotations, not the ticket's `@field:`.** The convention plugin passes `-Xannotation-default-target=param-property`, so a bare annotation on a constructor property lands on the field too. commerce-api's requests are written that way, and the zero-quantity test shows the cascade reaching the item.
+- **Every constraint has an English message.** Hibernate Validator's default messages follow the JVM locale, so an explicit message keeps the tests and the log line the same on every machine.
+- **The message names the incoming event and order IDs**, then each difference as `<name> recorded <value>, incoming <value>`, joined by `; `. Issue 180's ERROR line can carry it with the partition and offset.
+- **`prepareRecordedEvent` goes through the port** (ADR 0012) and returns the request it recorded, because the port returns only what it did; it sets no entity field. Tests send that request again, or a `copy` with one value changed. **The repository tests keep their repository prepares.** They stand where commerce-api's `BaseRepositoryTest` does, below the port. Through the port, every repository test would fail whenever recording broke, and an order's activities could not be prepared one at a time. This answers issue 178's first "Left for later" item: `preparePurchaseActivity` stays.
+- **The request fixture draws microsecond times,** as commerce-api publishes them, so a stored time equals the request's. The sub-microsecond case is a named value in its own test.
+
+### Review
+
+A two-axis review ran on the uncommitted tree before the commit.
+
+- **Standards:** one hard finding, the service name against ADR 0013. **Fixed:** the rename; the standards bullet had called a lone root "a state the port blocks", which contradicted the Fixture rule that such helpers show the bypass in their name, so it now gives the real reason; the Fixture bullet lists the new fixture; `difference`/`mismatch` became `differenceOrNull`/`difference`. **Kept:** the message is framed by the exception and each difference is formatted by the service (a `Difference` type would give the exception the whole format, but no caller needs the structure yet); the event-ID derivation in both fixtures; the expected messages spelled out in each test; the comparison in the service, where ADR 0033 rule 3 puts it.
+- **Spec:** implements the ticket, with this section then pending. It noted the bare annotations, the `@AssertTrue`, the additions beyond the ticket (`prepareRecordedEvent`, the standards edits, the sub-microsecond test), and that the glossary's 같은 사실 says the time compares "as a time" without naming the stored precision.
+
+### Left for later
+
+- **The glossary's 같은 사실** could say the time compares at the microsecond precision it is stored with. Not edited here; `CONTEXT.md` is the grilled vocabulary.
+- **Spec 176's body** names `PurchaseActivityRecorderService` and `@field:` annotations; it could take a dated note under its 기록 bullets.
+- **Issue 180** calls the port once more on `DataIntegrityViolationException`, and its ERROR line can use the conflict's message.
+- **The entity's `IllegalArgumentException`** is now reachable only with Bean Validation off (the mutant above). Issue 178's note for the stop-policy study stands.
+- **commerce-api's `check`** was not run; design section 11 leaves it to the last ticket.
