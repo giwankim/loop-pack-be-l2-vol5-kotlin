@@ -29,8 +29,10 @@ Commits made here end up in upstream through a PR, and GitHub resolves a bare `#
 repo displaying the commit. Upstream's #13 is another student's PR, so the reference links to it
 and posts a mention on its timeline. Keep `#<number>` out of commit subjects and bodies, including
 the `(#13)` suffix that older commits in `git log` carry. To name a ticket, write `issue 13`, or
-`giwankim/loop-pack-be-l2-vol5-kotlin#13` when a working link is wanted. Issue bodies, comments
-and PR descriptions on the fork are unaffected.
+`giwankim/loop-pack-be-l2-vol5-kotlin#13` when a working link is wanted. `.githooks/commit-msg`
+rejects a message with a bare `#<number>`, skipping git's `# ` comment lines and letting the qualified
+form through; squash merges made on GitHub never run it. Issue bodies, comments and PR descriptions
+on the fork are unaffected.
 
 ## Pull requests as a triage surface
 

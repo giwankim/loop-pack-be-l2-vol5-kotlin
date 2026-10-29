@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-GitHub Issues on the fork `giwankim/loop-pack-be-l2-vol5-kotlin` via the `gh` CLI. Never on upstream. Never write `#<number>` in a commit message: once merged upstream it links to someone else's PR. See `docs/agents/issue-tracker.md`.
+GitHub Issues on the fork `giwankim/loop-pack-be-l2-vol5-kotlin` via the `gh` CLI. Never on upstream. A commit message names a ticket as `issue 13`; `.githooks/commit-msg` rejects a bare `#13`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
