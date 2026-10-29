@@ -3,6 +3,9 @@ package com.loopers.support
 import com.loopers.adapter.consumer.OrderEventsListenerConfig.Companion.ORDER_EVENTS_LISTENER
 import com.loopers.support.test.BaseApplicationServiceTest
 import org.apache.kafka.clients.admin.Admin
+import org.apache.kafka.clients.consumer.Consumer
+import org.apache.kafka.clients.consumer.OffsetAndMetadata
+import org.apache.kafka.common.TopicPartition
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.awaitility.Awaitility.await
@@ -89,18 +92,34 @@ class ExperimentBrokerTest(
         assertThatCode { broker.close() }.doesNotThrowAnyException()
     }
 
+    /** Nothing checks a committed offset against the log, so the group commits 3 on a partition that holds no record. */
+    @Test
+    fun `the committed offset reader answers what a group committed on a partition, and null where it committed none`() {
+        val topic = broker.createTopic("experiment-broker", partitions = 2)
+        val group = broker.nameGroup("experiment-broker")
+        val neverJoined = broker.nameGroup("experiment-broker")
+
+        joinAndLeave(group, topic) { it.commitSync(mapOf(TopicPartition(topic, 1) to OffsetAndMetadata(3))) }
+
+        assertThat(broker.committedOffset(group, TopicPartition(topic, 1))).isEqualTo(3)
+        assertThat(broker.committedOffset(group, TopicPartition(topic, 0))).isNull()
+        assertThat(broker.committedOffset(neverJoined, TopicPartition(topic, 1))).isNull()
+    }
+
     /**
      * A consumer of the listener factory's consumer factory, in [group], subscribes to [topic], waits to be assigned its
-     * partition, commits its position and leaves. The group then exists on the broker with no member.
+     * partitions, runs [commit], which commits its position unless told otherwise, and leaves. The group then exists on the
+     * broker with no member. The polls run on the test thread, so a wait that times out leaves no poll running as the consumer
+     * closes.
      */
-    private fun joinAndLeave(group: String, topic: String) {
+    private fun joinAndLeave(group: String, topic: String, commit: (Consumer<*, *>) -> Unit = { it.commitSync() }) {
         checkNotNull(factory.consumerFactory).createConsumer(group, null).use { consumer ->
             consumer.subscribe(listOf(topic))
-            await().atMost(ASSIGNMENT_WAIT).until {
+            await().atMost(ASSIGNMENT_WAIT).pollInSameThread().until {
                 consumer.poll(POLL_TIMEOUT)
                 consumer.assignment().isNotEmpty()
             }
-            consumer.commitSync()
+            commit(consumer)
         }
     }
 

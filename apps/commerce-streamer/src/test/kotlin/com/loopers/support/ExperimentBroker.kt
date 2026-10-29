@@ -1,6 +1,7 @@
 package com.loopers.support
 
 import org.apache.kafka.clients.admin.Admin
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.GroupIdNotFoundException
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException
 import org.awaitility.Awaitility.await
@@ -63,6 +64,19 @@ class ExperimentBroker(kafkaAdmin: KafkaAdmin) : AutoCloseable {
         groups += group
 
         return group
+    }
+
+    /**
+     * The offset [group] has committed on [partition], as the broker answers it, or null where the group has committed none, a
+     * group no consumer joined included. It is the broker's word on where the group reads next, which a consumer's own
+     * position is not.
+     */
+    fun committedOffset(group: String, partition: TopicPartition): Long? {
+        val offsets = admin.listConsumerGroupOffsets(group)
+            .partitionsToOffsetAndMetadata()
+            .get(ADMIN_WAIT.toSeconds(), TimeUnit.SECONDS)
+
+        return offsets[partition]?.offset()
     }
 
     /**
