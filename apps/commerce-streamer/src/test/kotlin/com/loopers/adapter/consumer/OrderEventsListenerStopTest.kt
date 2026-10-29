@@ -275,14 +275,4 @@ class OrderEventsListenerStopTest(
         assertThat(storedConfirmations()).isEmpty()
         assertThat(storedActivities()).isEmpty()
     }
-
-    /** The tables hold [event]'s confirmation and its activities, and nothing else. */
-    private fun assertOnlyTheRowsOf(event: PurchaseActivityRecordRequest) {
-        assertThat(storedConfirmations().map { Triple(it.eventId, it.orderId, it.confirmedAt) })
-            .containsExactly(Triple(event.eventId, event.orderId, event.confirmedAt))
-        assertThat(storedActivities().map { listOf(it.orderId, it.productId, it.quantity, it.confirmedAt) })
-            .containsExactlyInAnyOrderElementsOf(
-                event.items.map { listOf(event.orderId, it.productId, it.quantity, event.confirmedAt) },
-            )
-    }
 }

@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.loopers.adapter.consumer.OrderEventsProperties
+import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
 import com.loopers.domain.purchaseactivity.ProcessedOrderConfirmation
 import com.loopers.domain.purchaseactivity.PurchaseActivity
 import com.loopers.support.DatabaseCleanUp
@@ -250,5 +251,32 @@ abstract class BaseConsumerTest : BaseApplicationServiceTest() {
         return entityManager
             .createQuery("select a from PurchaseActivity a order by a.id", PurchaseActivity::class.java)
             .resultList
+    }
+
+    /** The confirmations as stored, on one line, for a scene that logs what it observed. */
+    protected fun storedConfirmationsLine(): String {
+        return "processed_order_confirmation: " + storedConfirmations().joinToString("; ") {
+            "id=${it.id}, event_id=${it.eventId}, order_id=${it.orderId}, confirmed_at=${it.confirmedAt}"
+        }
+    }
+
+    /** The activities as stored, on one line. */
+    protected fun storedActivitiesLine(): String {
+        return "purchase_activity: " + storedActivities().joinToString("; ") {
+            "id=${it.id}, order_id=${it.orderId}, product_id=${it.productId}, quantity=${it.quantity}, " +
+                "confirmed_at=${it.confirmedAt}"
+        }
+    }
+
+    /** The tables hold the confirmation and the activities of each of [events], and nothing else. */
+    protected fun assertOnlyTheRowsOf(vararg events: PurchaseActivityRecordRequest) {
+        assertThat(storedConfirmations().map { Triple(it.eventId, it.orderId, it.confirmedAt) })
+            .containsExactlyInAnyOrderElementsOf(events.map { Triple(it.eventId, it.orderId, it.confirmedAt) })
+        assertThat(storedActivities().map { listOf(it.orderId, it.productId, it.quantity, it.confirmedAt) })
+            .containsExactlyInAnyOrderElementsOf(
+                events.flatMap { event ->
+                    event.items.map { listOf(event.orderId, it.productId, it.quantity, event.confirmedAt) }
+                },
+            )
     }
 }
