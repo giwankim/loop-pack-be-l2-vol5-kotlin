@@ -20,7 +20,8 @@ while IFS= read -r -d '' path; do
   markdown+=("$path")
 done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.md')
 if [ ${#markdown[@]} -gt 0 ] && ! scripts/check-doc-links --cached --base HEAD "${markdown[@]}"; then
-  echo "pre-commit: a link above points at a path or heading that doesn't exist. Rules: top of scripts/check-doc-links." >&2
+  echo "pre-commit: a link above points at a path or heading that doesn't exist in the staged files. One marked" >&2
+  echo "(unstaged: …) resolves in the working tree: stage its target too. Rules: top of scripts/check-doc-links." >&2
   exit 1
 fi
 

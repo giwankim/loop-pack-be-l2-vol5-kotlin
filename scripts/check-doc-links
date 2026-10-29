@@ -10,7 +10,9 @@ For each FILE (a path from the repo root), reads every link outside code (`[text
 - an anchor into Markdown (`#5-주문`, `other.md#5-주문`) must be the GitHub slug of one of its headings,
   or an `<a id>`/`<a name>` in it. Anchors into other files (`Foo.kt#L12`) are not checked.
 
---cached reads FILE and its targets from the index instead of the working tree.
+--cached reads FILE and its targets from the index instead of the working tree. A link it reports that the
+working tree resolves is marked `(unstaged: …)`: the target file or heading exists, but only in a file not yet
+staged, as when two new documents link to each other and must land in one commit.
 --base REV checks only the lines that REV's version of FILE doesn't have, so links that went stale with
 the code they point at (dated write-ups, comments recorded as posted) don't block the next edit.
 The pre-commit hook passes both, with HEAD.
@@ -137,7 +139,8 @@ def base_lines(base: str, path: str):
     return {line for _, line in outside_code(shown.stdout)} if shown.returncode == 0 else set()
 
 
-def check(repo: Repo, path: str, base) -> int:
+def check(repo: Repo, path: str, base, tree) -> int:
+    """Reports each broken link of `path` in `repo`; `tree`, the working tree under --cached, marks the unstaged ones."""
     old = base_lines(base, path) if base else set()
     problems = 0
     for number, line in outside_code(repo.read(path)):
@@ -146,7 +149,9 @@ def check(repo: Repo, path: str, base) -> int:
         for target in targets(line):
             kind = problem(repo, path, target)
             if kind:
-                print(f"{path}:{number} {kind} {target}")
+                unstaged = " (unstaged: the working tree has it, so stage that file in this commit)"
+                note = unstaged if tree and problem(tree, path, target) is None else ""
+                print(f"{path}:{number} {kind} {target}{note}")
                 problems += 1
     return problems
 
@@ -162,7 +167,8 @@ def main() -> int:
         print(f"not a commit: {args.base}", file=sys.stderr)
         return 2
     repo = Repo(args.cached)
-    problems = sum(check(repo, path, args.base) for path in args.files)
+    tree = Repo(cached=False) if args.cached else None
+    problems = sum(check(repo, path, args.base, tree) for path in args.files)
     print(f"{problems} problem(s)" if problems else "ok")
     return 1 if problems else 0
 
