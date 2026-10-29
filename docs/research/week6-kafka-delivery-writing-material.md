@@ -30,6 +30,7 @@ Added 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5
 | [186](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/186) | E1, group assignment, and the group-description reader | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/186#issuecomment-6491130512) | [Issue 186](#issue-186-a-consumer-groups-assignment-as-members-join-one-two-then-three) |
 | [187](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/187) | E4, the real listener failure, and the failure line | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/187#issuecomment-6490587755) | [Issue 187](#issue-187-a-transient-db-failure-after-a-partial-write-rolls-back-stops-the-consumer-with-a-line-naming-the-record-and-is-recorded-after-a-restart) |
 | [188](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/188) | E3, redelivery after commit, the committed-offset reader, and step 2's republish scene renamed | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/188#issuecomment-6491392437) | [Issue 188](#issue-188-a-record-recorded-but-not-acknowledged-is-redelivered-to-the-groups-next-consumer-and-writes-nothing) |
+| [189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189) | the documents: the design, this preface, one run, the counterexamples, both week 7 cases, the draft PR body and the dated notes | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189#issuecomment-6492297157) | [Issue 189](#issue-189-step-3s-documents-match-the-code-with-the-limits-the-counterexamples-both-week-7-cases-the-commands-and-counts-and-a-draft-pr-body) |
 
 Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
@@ -397,6 +398,116 @@ A two-axis review ran on the uncommitted tree before the commit.
 - **Issue 187's `BaseConsumerTest` helpers** (`storedConfirmationsLine`, `storedActivitiesLine`, `assertOnlyTheRowsOf`) are not in this base. Once they land, the scene's `storedRows()` and row checks can lean on them. 187 adds to the end of `BaseConsumerTest` and this change to its class KDoc, so the two do not overlap.
 - **The design document** (issue 189) can take the facts above: the classic protocol is kafka-clients 4.2.2's default, a close commits only for auto-commit, and the experiment needs the earlier record and the commit on assignment.
 - **The blob and commit links above** resolve once this branch is merged into `feat/kafka-delivery` and pushed.
+
+## Issue 189: step 3's documents match the code, with the limits, the counterexamples, both week 7 cases, the commands and counts, and a draft PR body
+
+Recorded 2026-10-29 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189#issuecomment-6492297157) of [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189). The decisions are spec 184's "문서" and "반례 셋" sections. The preface above, the four sections after this one and the dated notes are what it wrote.
+
+Implemented on `feat/kafka-delivery` in [`33b851d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/33b851d), on top of `756f0b7`. Documents only; this is the last of [spec 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184)'s tickets, and the spec stays open for its closing review. At `756f0b7`, `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-streamer:ktlintCheck :modules:kafka:ktlintCheck` passed; `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:check`: **18 classes, 67 tests, 0 failures, 0 errors, 0 skipped**; `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check`: **79 classes, 943 tests, 0 failures, 0 errors, 0 skipped**.
+
+The documents are:
+
+- the [Kafka delivery design](../design/kafka-delivery.md), new, in Korean
+- the [week 6 Kafka delivery writing material](week6-kafka-delivery-writing-material.md): the preface, [one run of the four experiments](#one-run-of-the-four-experiments), [the counterexamples](#counterexamples-the-assignments-three-answered-by-a-test-or-a-red-check), [both week 7 cases](#w7-handoff-both-cases-side-by-side) and the [draft PR body](#draft-pr-body)
+- the [order events design](../design/order-events.md): step 3's status in 1.1 and a dated note on section 10's 실험(3단계)
+- [spec 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184)'s body: eleven dated notes, each starting `2026-10-29 ([issue 189]`
+
+### Landed
+
+Two commits on `feat/kafka-delivery`, on top of `756f0b7`:
+
+- [`33b851d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/33b851d) is the design, the order events notes and the writing material's new sections.
+- The commit after it appends this comment to the writing material and adds this ticket's row to the preface's table.
+
+### Acceptance criteria
+
+- [x] **`docs/design/kafka-delivery.md` exists, matches the code, and has every limit listed.** It has seven sections:
+  1. background and scope, with the per-ticket table in 1.2
+  2. the four experiments, E1–E4, with what each asserts and the facts confirmed from source
+  3. topics and groups, and `ExperimentBroker`'s methods
+  4. the evidence rules
+  5. config and limits
+  6. the assignment's names against this repo's
+  7. the commands and counts
+
+  Section 5 has all eight limits:
+  - `acks: all` on one broker is the leader alone
+  - the endpoint `KafkaTestContainersConfig` injects, Ryuk at JVM exit, and E1–E3 deleting their own topics and groups
+  - local's `localhost:19092` against compose's advertised `kafka:9092`, and the unused admin line
+  - `fetch.min.bytes` and `fetch.max.wait.ms` at the client defaults, 1 byte and 500 ms (`ConsumerConfig` in kafka-clients 4.2.2)
+  - the classic protocol with `[RangeAssignor, CooperativeStickyAssignor]`, eager rebalances and `range`
+  - the DB → broker gap, linked to ADR 0032 and order events design 4 and 6, handed to week 7's outbox
+  - controlled stops only, with `session.timeout.ms` 45 s by default for a killed consumer
+  - the stitched consumed case
+
+  A standards reviewer checked every code name against the code.
+- [x] **The writing material has the preface, one run of all four experiments at one commit, the counterexample section with the cumulative table, both week 7 cases with the representative rows, and the draft PR body.**
+  - **The run** is the streamer's half of the final check at `756f0b7`, started 2026-10-29T08:31:50Z. Its INFO lines were copied from the JUnit XML reports' `system-out`:
+    - E1's three tables: `member-1` takes [0, 1], then [0] with `member-2` on [1], then `member-3` on nothing. The group was Stable / Classic / range at every size.
+    - E2's key → partition table, the same as issue 185's run.
+    - E3's committed offsets: 1 → 1 → 1 → 2.
+    - E4's offsets (1 → 1 → 2), the stop 3319 ms after publish, and the rows during the stop and after the restart.
+  - **The counterexamples** are C1 to E3, C2 to E4's red check and C3 to step 2's conflict tests. Each comes with its guard, its test and its red check, and a 14-row table covers the three steps.
+  - **The two week 7 cases** come from their recorded runs (`e492cf1`, `b054b4f`), with the stitch and the consumed case's three rows as the representative order.
+  - **The PR body** has Summary, Evidence and Merge Danger.
+- [x] **Dated notes are on order events design 1.1 and 10 and on spec 184.**
+  - In order events design 1.1, row 3's status cell now reads 인터뷰 끝남 / 구현 끝남. It was replaced in place, as rows 1 and 2 were.
+  - Section 10 has a dated note.
+  - Spec 184 has eleven notes:
+    - the glossary commit `9554a35`
+    - the two documents
+    - the four names kept final, plus `ExperimentBroker`
+    - the INFO line headings
+    - kafka-clients 4.2.2 and its defaults
+    - the redelivery scene's three additions (an earlier record so n = 1, the commit in `onPartitionsAssigned`, one partition)
+    - `CannotAcquireLockException`
+    - where the red checks are recorded
+    - the fifth place for notes (order events design 10)
+    - the final counts
+    - E4 on the class topic rather than `ExperimentBroker`
+- [x] **The ktlint checks and both apps' `check` pass.** The design records the executed test counts. Nothing was zero, skipped or unable to reach the broker.
+  - The runs were at `756f0b7` with `BOOTSTRAP_SERVERS` unset. The streamer took 56 s and commerce-api 3 min 21 s.
+  - Each filter in design section 7 was then run on its own: 1, 1, 1, 1 and 7 tests, all passing.
+  - Only documents changed after `756f0b7`, and the pre-commit hook's tree-wide `ktlintCheck` passed.
+
+### Decisions made while implementing
+
+- **One run of all four is the final check's streamer run.** All four ran in one JVM against one broker. Their lines are in that run's JUnit XML, so the counts and the recorded lines come from the same execution. Each ticket's section keeps its own run at its own commit.
+- **The consumed case was not rerun on purpose.** The whole check ran it as one of the 67 tests, and its line held step 2's values, as its fixed inputs make it. The writing material still cites step 2's run (`b054b4f`) and says this.
+- **E4 does not own its broker state.** Spec 184's 공통 규칙 says every experiment deletes its own topic and group. Its 실제 리스너의 실패 section puts E4 on the base's class topic and the registry's container, and the code follows that section. The design (sections 3 and 5), the preface and the PR body say E1–E3, and a dated note on the common rule records it.
+- **The cumulative table cites recorded red checks only.** No new mutant was run for this ticket. Every row's red check is quoted from a closing comment of steps 1–3 or from spec 176's review.
+- **The ticket names order events design section 4 for the gap.** Section 4 is the mechanism and section 6 is 누락 구간, so the design links both.
+- **The design and the writing material landed in one commit.** They link each other's headings, and the pre-commit link check reads the index, so neither could land alone.
+- **The PR title is `feat(commerce-streamer): …`.** The listener's failure line is a production change, however small.
+
+### Review
+
+A two-axis review ran on the uncommitted tree before the commit.
+
+- **Standards:** no hard violation; both doc checks passed. Fixed:
+  - Design section 3 said `close()` deletes groups one by one. It sends one `deleteConsumerGroups` and reads each result.
+  - The preface's version list had dropped liberica and typesafe-conventions.
+  - E3's offsets were written n → n → n+1 in some places and as four reads in others. The design now says the assignment's three reads are before the first read, after the first close and after the second read, and that the scene reads once more.
+  - Design section 4's red-check table repeated the writing material's. It is now a pointer.
+  - Order events 1.1 row 3 kept a stale "다음 인터뷰" ahead of the note. The cell is now replaced in place, as the precedent rows are.
+  - The counterexamples' provenance line now names its sources.
+
+  Kept:
+  - the counterexample table, the cumulative table and the PR body's red lines, which the ticket asks for separately, and the PR body has to stand alone
+  - "offset을 커밋한다", Kafka's own term for the offset, not the 읽었다고 표시하다 the glossary keeps apart
+  - "이음매 C = 2단계의 이음매 2", spec 184's own labels
+- **Spec:** nothing missing but this comment. Fixed:
+  - E4's cleanup was overclaimed in three places, as above.
+  - "파티션 1" read as partition 1 where it meant one partition, in the design and in spec 184's note.
+
+  Refuted: the reviewer read the ktlint command as lacking `:modules:kafka:ktlintCheck` from zsh's truncated `time` line. The log's task list shows `:modules:kafka:ktlintCheck` ran.
+
+### Left for later
+
+- **Push `feat/kafka-delivery`.** The PR body's `blob/feat/kafka-delivery` links and this comment's links resolve once `33b851d` and the commit after it are on the remote. The user opens the PR into `week6`.
+- **Spec 184's closing review**, as steps 1 and 2 had.
+- **After the merge into `week6`:** the week 6 blog (`docs/blog/week6.md`), then the upstream `[volume-6]` PR.
+- **Carried over from step 2:** the race retry `recordSettlingARace` still has no permanent scene (issue 180), and its second violation gets the failure line by construction only (issue 187).
 
 ## One run of the four experiments
 
