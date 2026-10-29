@@ -739,7 +739,7 @@ Drafted 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vo
 
 This is week 6 step 3, the delivery experiments. Step 2's tests showed that a record becomes rows, that the offset is committed after the recording, and that an unprocessable event stops the consumer. Four experiments on the test broker now show what they did not: how a group deals partitions as members join, where a key's records land, a redelivery after the recording committed, and a real failure after a partial write. The one production change is a failure line in the listener.
 
-- **Spec:** https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184, with tickets 185–189. No new ADR: nothing here is hard to reverse.
+- **Spec:** https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184, with tickets 185–189, closed after a two-axis review ([closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184#issuecomment-6496099667)). No new ADR: nothing here is hard to reverse.
 - **Design:** [`docs/design/kafka-delivery.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/docs/design/kafka-delivery.md). §2 covers the experiments, §4 the evidence rules, §5 the config and the limits, and §7 the commands and counts.
 - **Glossary:** the streamer's [`CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/apps/commerce-streamer/CONTEXT.md) separates 다시 발행하다 (republish: a new record of the same event) from 다시 전달되다 (redeliver: the same record at the same offset), and widens 멈추다 to every failure to record.
 - **Writing material:** [`docs/research/week6-kafka-delivery-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/docs/research/week6-kafka-delivery-writing-material.md). It holds one run of all four experiments, the assignment's three counterexamples with the three steps' cumulative verification table, and both week 7 cases side by side.
@@ -809,7 +809,7 @@ The values are from one run of all four experiments at `756f0b7` (2026-10-29), o
 
 One production change: a log line on a path that already stopped the consumer. The rest is tests and documents. A revert removes the line, the four experiments and the helper, and nothing on a broker or in a table depends on them.
 
-**Blast Radius:** commerce-streamer, plus the version bumps for both apps
+**Blast Radius:** both apps
 
 - **The failure line changes what a stop logs, not what it does.** Every exception other than the two refusal types now logs `Could not record an order confirmed event; the consumer stops until it is restarted. …` before it leaves the listener. That covers a transient failure, a second unique-key violation in the race retry, and an entity's `IllegalArgumentException`. The refusal line is unchanged. A body the converter cannot read still logs only spring-kafka's line.
 - **A transient failure still stops all three consumers** until a person restarts the container or the process (ADR 0033 rule 5, purchase activity design §9). E4 shows that the restart alone recovers it. The production shape, a `DefaultErrorHandler` with backoff and a dead-letter topic, stays out of scope.
