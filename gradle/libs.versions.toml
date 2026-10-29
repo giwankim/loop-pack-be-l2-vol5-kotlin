@@ -1,12 +1,12 @@
 [versions]
 kotlin = "2.3.21"
-springBoot = "4.1.1"
+springBoot = "4.1.2"
 springDependencyManagement = "1.1.7"
 # ktlint Gradle 플러그인의 버전이다.
 ktlintGradle = "14.2.0"
 # ktlint 엔진의 버전이다. 라이브러리나 플러그인 항목이 아니라 ktlint 확장의 version 에 넣는다.
 ktlint = "1.8.0"
-springdoc = "3.1.1"
+springdoc = "3.2.0"
 springmockk = "5.0.1"
 instancio = "6.1.0"
 archunit = "1.5.1"
@@ -14,7 +14,7 @@ logbackSlackAppender = "1.6.1"
 kotlinLogging = "8.0.4"
 wiremockSpringBoot = "4.4.3"
 # wiremock-spring-boot 의 Jetty EE10 jar 를 맞추는 BOM 의 판. Boot 의 jetty.version 과 같아야 한다(commerce-api 의 check 가 견준다).
-jettyEe10 = "12.1.12"
+jettyEe10 = "12.1.14"
 # Boot BOM 에 없다. resilience4j-bom 2.4.0 은 boot4 모듈을 빠뜨리므로 BOM 을 들이지 않고 판을 여기 고정한다(ADR 0030 규칙 1).
 resilience4j = "2.4.0"
 

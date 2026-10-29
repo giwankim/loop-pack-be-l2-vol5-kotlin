@@ -42,7 +42,9 @@ class OrderEventsListenerConfig {
      *
      * [CommonContainerStoppingErrorHandler] stops all three consumers on any exception from the converter or the listener, an
      * unprocessable event and a transient failure alike, leaving the record's offset uncommitted; that policy is provisional
-     * (ADR 0033 rule 5).
+     * (ADR 0033 rule 5). The listener's ERROR line says which it was: a refusal (`Refused an order confirmed event that cannot
+     * be processed`), which a restart meets again, or a failure (`Could not record an order confirmed event`), which a restart
+     * records once its cause is gone. A record the converter could not read has neither, only spring-kafka's own line.
      */
     @Bean(ORDER_EVENTS_LISTENER)
     fun orderEventsListenerContainerFactory(

@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.loopers.adapter.consumer.OrderEventsProperties
+import com.loopers.application.purchaseactivity.provided.PurchaseActivityRecordRequest
 import com.loopers.domain.purchaseactivity.ProcessedOrderConfirmation
 import com.loopers.domain.purchaseactivity.PurchaseActivity
 import com.loopers.support.DatabaseCleanUp
@@ -62,6 +63,11 @@ import java.util.concurrent.TimeUnit
  * A scene whose record stops the container waits for the stop instead ([awaitStopped]). It leaves the container stopped, and
  * the base restarts it on a topic emptied of what the scene left there, so the next test starts from a running container
  * ([restartAStoppedContainer]).
+ *
+ * Step 3's redelivery experiment, `RedeliveryAfterCommitTest`, extends the base for the committed recording, the listener's
+ * log lines and the clean-up, but no container records its record. Plain consumers read it from a topic of the experiment's
+ * own, and the test calls the listener itself (issue 184, seam B). It still names a class topic, which the base's container
+ * reads and the base waits on.
  */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(TestOrderEventsTopicConfig::class)
@@ -250,5 +256,32 @@ abstract class BaseConsumerTest : BaseApplicationServiceTest() {
         return entityManager
             .createQuery("select a from PurchaseActivity a order by a.id", PurchaseActivity::class.java)
             .resultList
+    }
+
+    /** The confirmations as stored, on one line, for a scene that logs what it observed. */
+    protected fun storedConfirmationsLine(): String {
+        return "processed_order_confirmation: " + storedConfirmations().joinToString("; ") {
+            "id=${it.id}, event_id=${it.eventId}, order_id=${it.orderId}, confirmed_at=${it.confirmedAt}"
+        }
+    }
+
+    /** The activities as stored, on one line. */
+    protected fun storedActivitiesLine(): String {
+        return "purchase_activity: " + storedActivities().joinToString("; ") {
+            "id=${it.id}, order_id=${it.orderId}, product_id=${it.productId}, quantity=${it.quantity}, " +
+                "confirmed_at=${it.confirmedAt}"
+        }
+    }
+
+    /** The tables hold the confirmation and the activities of each of [events], and nothing else. */
+    protected fun assertOnlyTheRowsOf(vararg events: PurchaseActivityRecordRequest) {
+        assertThat(storedConfirmations().map { Triple(it.eventId, it.orderId, it.confirmedAt) })
+            .containsExactlyInAnyOrderElementsOf(events.map { Triple(it.eventId, it.orderId, it.confirmedAt) })
+        assertThat(storedActivities().map { listOf(it.orderId, it.productId, it.quantity, it.confirmedAt) })
+            .containsExactlyInAnyOrderElementsOf(
+                events.flatMap { event ->
+                    event.items.map { listOf(event.orderId, it.productId, it.quantity, event.confirmedAt) }
+                },
+            )
     }
 }

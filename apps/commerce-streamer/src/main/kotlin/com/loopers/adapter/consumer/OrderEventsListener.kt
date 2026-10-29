@@ -25,7 +25,9 @@ private val log = KotlinLogging.logger {}
  * The listener acknowledges a record only after [PurchaseActivityRecorder.record] has returned, so after its transaction has
  * committed, and `MANUAL_IMMEDIATE` commits the offset right there. A process that stops in between reads the record again,
  * and recording the same fact again writes nothing. Every exception leaves the listener unacknowledged, and the factory's
- * error handler stops the container on it (ADR 0033 rule 5).
+ * error handler stops the container on it (ADR 0033 rule 5). The listener logs one ERROR line before it leaves: a refusal for
+ * an event that cannot be processed, which a restart refuses again, or a failure for anything else, which a restart records
+ * once its cause is gone ([listen]).
  *
  * The listener `id` lets a test and step 3 find the container in the `KafkaListenerEndpointRegistry`. `idIsGroup` is false
  * because by default the `id` becomes the group, over `spring.kafka.consumer.group-id`.
@@ -46,6 +48,13 @@ class OrderEventsListener(
      * two types a `DefaultErrorHandler` would register as not retryable (purchase activity design 6), and the line is the
      * evidence a person gets (design 5). It names the order by the record's [key], the order ID's string by the contract
      * (order-events design 2), because a payload that cannot be read, or is not read at its schema version, gives none.
+     *
+     * Any other exception from recording is a failure to record (`CONTEXT.md` 멈추다): a transient failure, such as a lock
+     * wait that ran out or a lost connection, or a second unique-key violation from [recordSettlingARace]. It gets one ERROR
+     * line too, with the same fields, saying that the consumer stops until it is restarted; the transaction has rolled back,
+     * so a restart redelivers the record and records it once the cause is gone. Two exceptions get neither line, only
+     * spring-kafka's own: a body the factory's converter cannot read never reaches the listener, and an exception from
+     * acknowledging comes after the recording has committed, so it is not a failure to record.
      */
     @KafkaListener(
         id = "order-events",
@@ -77,6 +86,9 @@ class OrderEventsListener(
         } catch (e: ConstraintViolationException) {
             logRefusal(message, key, partition, offset, e)
             throw e
+        } catch (e: Exception) {
+            logFailure(message, key, partition, offset, e)
+            throw e
         }
 
         acknowledgment.acknowledge()
@@ -103,6 +115,13 @@ class OrderEventsListener(
         }
     }
 
+    private fun logFailure(message: OrderEventMessage, key: String?, partition: Int, offset: Long, cause: Exception) {
+        log.error {
+            "Could not record an order confirmed event; the consumer stops until it is restarted. eventId=${message.eventId}, " +
+                "orderId=$key, partition=$partition, offset=$offset, cause=$cause"
+        }
+    }
+
     /** The payload of [message], which is an order confirmed event at the schema version the streamer reads. */
     private fun readPayload(message: OrderEventMessage): OrderConfirmedPayload {
         val payload: OrderConfirmedPayload? = try {
@@ -119,7 +138,8 @@ class OrderEventsListener(
      * once only across a rebalance, and the one whose insert loses gets a [DataIntegrityViolationException] after its
      * transaction rolled back. Calling again reads what the other wrote, so the answer is [PurchaseActivityRecordResult
      * .ALREADY_RECORDED] or a conflict (ADR 0033 rule 3). This is not a retry of the error handler: a second violation leaves
-     * the listener and stops the container.
+     * the listener with the failure line and stops the container. A lock wait that ran out is not a violation: Spring
+     * translates MySQL 1205 into `CannotAcquireLockException`, so it leaves at once.
      */
     private fun recordSettlingARace(request: PurchaseActivityRecordRequest): PurchaseActivityRecordResult {
         return try {

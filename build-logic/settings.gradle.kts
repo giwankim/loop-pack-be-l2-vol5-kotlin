@@ -2,7 +2,7 @@
 // plugins {} 의 alias(libs.plugins.x) 마다 플러그인 의존성을 이 빌드에 더하고, 루트 빌드에는 conventions 카탈로그를 만든다.
 // settings 의 plugins {} 는 카탈로그를 읽지 못해 버전을 여기에 적는다. [plugins] 밖에 있는 유일한 플러그인 버전이다.
 plugins {
-    id("dev.panuszewski.typesafe-conventions") version "0.11.1"
+    id("dev.panuszewski.typesafe-conventions") version "0.12.1"
 }
 
 dependencyResolutionManagement {
