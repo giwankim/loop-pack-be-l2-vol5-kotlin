@@ -24,7 +24,7 @@ import org.testcontainers.utility.DockerImageName
 @TestConfiguration(proxyBeanMethods = false)
 class KafkaTestContainersConfig {
     companion object {
-        private val kafkaContainer: KafkaContainer = KafkaContainer(DockerImageName.parse("apache/kafka-native:4.3.2"))
+        private val kafkaContainer: KafkaContainer = KafkaContainer(DockerImageName.parse("apache/kafka-native:4.4.0"))
             .apply {
                 start()
             }
