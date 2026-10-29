@@ -56,9 +56,13 @@ class OrderEventsListenerTest : BaseConsumerTest() {
             )
     }
 
-    /** The same key twice lands on one partition, so the second record is read after the first is recorded and acknowledged. */
+    /**
+     * The same key twice lands on one partition, so the second record is read after the first is recorded and acknowledged.
+     * The second is a new record of the same event at the next offset, so the event is republished (`CONTEXT.md` 다시
+     * 발행하다), not redelivered. [RedeliveryAfterCommitTest] has one record delivered twice at the same offset.
+     */
     @Test
-    fun `the same record published twice leaves one set of rows and commits both offsets`() {
+    fun `the same event published twice leaves one set of rows and commits both offsets`() {
         val event = createPurchaseActivityRecordRequest()
 
         val first = publish(event.orderId, orderConfirmedValue(event))

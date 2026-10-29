@@ -63,6 +63,11 @@ import java.util.concurrent.TimeUnit
  * A scene whose record stops the container waits for the stop instead ([awaitStopped]). It leaves the container stopped, and
  * the base restarts it on a topic emptied of what the scene left there, so the next test starts from a running container
  * ([restartAStoppedContainer]).
+ *
+ * Step 3's redelivery experiment, `RedeliveryAfterCommitTest`, extends the base for the committed recording, the listener's
+ * log lines and the clean-up, but no container records its record. Plain consumers read it from a topic of the experiment's
+ * own, and the test calls the listener itself (issue 184, seam B). It still names a class topic, which the base's container
+ * reads and the base waits on.
  */
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import(TestOrderEventsTopicConfig::class)
