@@ -6,7 +6,7 @@ springDependencyManagement = "1.1.7"
 ktlintGradle = "14.2.0"
 # ktlint 엔진의 버전이다. 라이브러리나 플러그인 항목이 아니라 ktlint 확장의 version 에 넣는다.
 ktlint = "1.8.0"
-springdoc = "3.1.1"
+springdoc = "3.2.0"
 springmockk = "5.0.1"
 instancio = "6.1.0"
 archunit = "1.5.1"
