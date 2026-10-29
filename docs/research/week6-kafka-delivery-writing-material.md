@@ -765,10 +765,12 @@ OrderEventsListener.listen
 - **Also on this branch:**
   - `9554a35`: the glossary, before the tickets
   - `1618ee7`, `5ba74ca`, `2daf469`, `0be006d`: JDK 25.0.5, Boot 4.1.2 with Jetty EE10 12.1.14, Gradle 9.8.2 with typesafe-conventions 0.12.1, springdoc 3.2.0
+  - `3aa0b1d`, `98cd1b9`, `33c58da`, `5bfe295`: the spec's closing review. Steps 1 and 2's ADRs and designs take the glossary's new words, each experiment gets its own standards bullet, E3 closes its broker even when a consumer's close throws and checks its rows with the base's helper, and E4's evidence for the partial write is worded as what it shows
+  - `414e300`: the test broker `apache/kafka-native` 4.3.2 → 4.4.0
 
 ## Evidence
 
-The values are from one run of all four experiments at `756f0b7` (2026-10-29). The mutants were run at ticket time and reverted ("Red checks" of issues 185–188 in the writing material).
+The values are from one run of all four experiments at `756f0b7` (2026-10-29), on `apache/kafka-native:4.3.2`. The rerun at `414e300` on 4.4.0 printed the same E1–E3 values, and E4 read 1 → 1 → 2 and stopped after 3306 ms. The mutants were run at ticket time and reverted ("Red checks" of issues 185–188 in the writing material).
 
 - **E1, group assignment.** At each size the broker described the group as `Stable`, `Classic`, `range`:
 
@@ -791,7 +793,7 @@ The values are from one run of all four experiments at `756f0b7` (2026-10-29). T
   **Before:** before the failure line existed, the scene failed only on the empty ERROR list. **Red:** a listener that swallows the failure and acknowledges it skips the record with no rows, and the container never stops.
 - **The assignment's counterexamples.** C1, a stop after the recording commits and before the offset commit, is E3. C2, a handler that swallows the exception, is E4's red check. C3, the same ID with another quantity, is step 2's conflict tests. The writing material's "Counterexamples" section has each with its red check, and a 14-row table of what the three steps show.
 - **The representative order's rows** are the consumed case's, recorded at step 2 (`b054b4f`). Order 1 has one processed confirmation (`order-confirmed:v1:1`) and two activities: product 1 × 2 and product 2 × 1, all at `2026-10-27T01:02:03.123456Z`. The writing material sets that case beside the unpublished case of step 1 (`e492cf1`) and states the stitch between the two runs.
-- **Whole check.** At `756f0b7`, `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-streamer:ktlintCheck :modules:kafka:ktlintCheck` passes. `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:check` passes in 56 s, and `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 18 classes and 67 tests (13 and 56 before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes in 3 min 21 s, and `scripts/test-counts` reads 79 classes and 943 tests, as before. `BOOTSTRAP_SERVERS` was unset. Only documents changed after `756f0b7`.
+- **Whole check.** At `756f0b7`, `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-streamer:ktlintCheck :modules:kafka:ktlintCheck` passes. `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:check` passes in 56 s, and `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 18 classes and 67 tests (13 and 56 before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes in 3 min 21 s, and `scripts/test-counts` reads 79 classes and 943 tests, as before. `BOOTSTRAP_SERVERS` was unset. After the closing review and the broker bump, the same commands pass at `414e300` on `apache/kafka-native:4.4.0`, with the same counts and every context on the 4.4.0 container.
   ```bash
   ./gradlew :apps:commerce-streamer:test --tests '*ConsumerGroupAssignmentTest'     # 1: E1
   ./gradlew :apps:commerce-streamer:test --tests '*KeyPartitioningTest'             # 1: E2
@@ -814,7 +816,7 @@ One production change: a log line on a path that already stopped the consumer. T
 - **Only controlled stops.** E3's consumer leaves by a bounded `close`, and E4's container is stopped by the error handler and restarted by `start()`. No process was killed. A killed consumer leaves the group only after `session.timeout.ms` (45 s by default).
 - **The DB → broker gap remains.** A crash after TX B commits and before the relay's `send` completes loses the event (ADR 0032, order-events design §4 and §6). Week 7's outbox closes it.
 - **Test time.** The streamer's check takes 56 s, up from 39 s at step 2's end. E1 waits for three rebalances (8.4 s), E4 for a 3 s lock wait (5.2 s), and E3 and E4 start one Spring context each, for six in all.
-- **Versions.** Boot 4.1.2 (kafka-clients 4.2.2), Jetty EE10 12.1.14, springdoc 3.2.0, Gradle 9.8.2 and JDK 25.0.5 reach both apps. commerce-api's check gives the same 943 tests.
+- **Versions.** Boot 4.1.2 (kafka-clients 4.2.2), Jetty EE10 12.1.14, springdoc 3.2.0, Gradle 9.8.2, JDK 25.0.5 and the test broker `apache/kafka-native:4.4.0` reach both apps. commerce-api's check gives the same 943 tests.
 - **`local` keeps an unused admin address.** `kafka.yml`'s `admin.properties.bootstrap.servers: kafka:9092` is rewritten by Boot to the connection's address, and it is left as the template wrote it (design §5).
 - **Out of scope:**
   - killing a process mid-record
