@@ -1,10 +1,37 @@
 # Week 6 Kafka delivery: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 3 ticket's closing comment. The step is [spec 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184), the third of week 6's three branches (`feat/kafka-delivery`, cut from `week6` at `5d5e567`), after [step 1's material](week6-order-events-writing-material.md) and [step 2's](week6-purchase-activity-writing-material.md). The rules it rests on are [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md); the step's design document, `docs/design/kafka-delivery.md`, is written by its documents ticket.
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one step 3 ticket's closing comment, with five exceptions, all added by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189), the step's documents ticket: the preface below, [one run of the four experiments](#one-run-of-the-four-experiments), [the counterexamples](#counterexamples-the-assignments-three-answered-by-a-test-or-a-red-check) with the three steps' cumulative verification table, [the two week 7 cases side by side](#w7-handoff-both-cases-side-by-side), and the [draft PR body](#draft-pr-body). The step is [spec 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184), the third of week 6's three branches (`feat/kafka-delivery`, cut from `week6` at `5d5e567`), after [step 1's material](week6-order-events-writing-material.md) and [step 2's](week6-purchase-activity-writing-material.md). The rules it rests on are [ADR 0032](../adr/0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md) and [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md), and the step's design is the [Kafka delivery design](../design/kafka-delivery.md).
 
-## Preface
+## Preface: what this branch is and where its comments sit
 
-A placeholder. [Issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189), the step's documents ticket, writes the preface: what the branch is and where each closing comment sits, the assignment's tables and offsets from one run, the red checks, the three counterexamples with the three steps' cumulative verification table, the two week 7 cases side by side, and the draft PR body.
+Added 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189).
+
+### The branch
+
+`feat/kafka-delivery` is step 3 of week 6's three, the delivery experiments. It was cut from `week6` at `5d5e567`, the squash of step 2's [PR 183](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/183) (the consumer), and it goes back into `week6` by its own PR.
+
+- **What it adds.** Four experiments on the test broker, each one test class in commerce-streamer that runs in the regular `check`:
+  - E1, a consumer group's assignment as members join one, two, then three, read from the broker's description of the group;
+  - E2, every send of a key landing on one partition, read from the send metadata;
+  - E3, a record recorded but not acknowledged, redelivered at its offset to the group's next consumer, writing nothing;
+  - E4, a real lock wait failure after a partial write, which rolls back, stops the consumer, and is recorded after a restart.
+
+  E1–E3 create and delete their own topic and group through `ExperimentBroker`. E4 uses its class topic, as step 2's consumer scenes do, because the real listener has to read it. The one production change is a failure line: the listener logs one ERROR line for any exception other than the two refusal types, worded to say that a restart is the remedy once the cause is gone.
+- **What it does not change.** No code in commerce-api or `modules` changed, and commerce-api's check still gives 79 classes and 943 tests. There is no new ADR, table or production topic.
+- **Before the tickets.** Five commits: the glossary's three changes (`9554a35`: 다시 발행하다 and 다시 전달되다, and a wider 멈추다), and four version bumps: liberica JDK 25.0.5 (`1618ee7`), Boot 4.1.2 with Jetty EE10 12.1.14 (`5ba74ca`), Gradle 9.8.2 with typesafe-conventions 0.12.1 (`2daf469`) and springdoc 3.2.0 (`0be006d`).
+- **How the tickets landed.** Each ticket ran on a worktree branch. 185 and 186 reached `feat/kafka-delivery` as a fast-forward, since 186 was cut from 185's tip once 185's branch was gone. 187 merged as `342d605`, and 188, also cut from 185's tip, as `756f0b7`. Both merges kept both sides of their conflicts.
+- **The design** is the [Kafka delivery design](../design/kafka-delivery.md): the four experiments (§2), their topics and groups (§3), the evidence rules (§4), the config and limits (§5), the assignment's names (§6), and the commands and counts (§7). The [draft PR body](#draft-pr-body) is at the end.
+
+### Where each closing comment sits
+
+| Issue | What it built | Closing comment | Section |
+| --- | --- | --- | --- |
+| [185](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/185) | E2, key → partition, and the experiment-broker helper | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/185#issuecomment-6490410714) | [Issue 185](#issue-185-the-same-key-lands-on-one-partition-shown-on-an-experiment-topic-the-test-creates-and-deletes) |
+| [186](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/186) | E1, group assignment, and the group-description reader | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/186#issuecomment-6491130512) | [Issue 186](#issue-186-a-consumer-groups-assignment-as-members-join-one-two-then-three) |
+| [187](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/187) | E4, the real listener failure, and the failure line | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/187#issuecomment-6490587755) | [Issue 187](#issue-187-a-transient-db-failure-after-a-partial-write-rolls-back-stops-the-consumer-with-a-line-naming-the-record-and-is-recorded-after-a-restart) |
+| [188](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/188) | E3, redelivery after commit, the committed-offset reader, and step 2's republish scene renamed | [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/188#issuecomment-6491392437) | [Issue 188](#issue-188-a-record-recorded-but-not-acknowledged-is-redelivered-to-the-groups-next-consumer-and-writes-nothing) |
+
+Each section starts with a "Recorded …" line that links its comment. The comments themselves carry full blob URLs where these sections link files relatively.
 
 ## Issue 185: the same key lands on one partition, shown on an experiment topic the test creates and deletes
 
@@ -370,3 +397,320 @@ A two-axis review ran on the uncommitted tree before the commit.
 - **Issue 187's `BaseConsumerTest` helpers** (`storedConfirmationsLine`, `storedActivitiesLine`, `assertOnlyTheRowsOf`) are not in this base. Once they land, the scene's `storedRows()` and row checks can lean on them. 187 adds to the end of `BaseConsumerTest` and this change to its class KDoc, so the two do not overlap.
 - **The design document** (issue 189) can take the facts above: the classic protocol is kafka-clients 4.2.2's default, a close commits only for auto-commit, and the experiment needs the earlier record and the commit on assignment.
 - **The blob and commit links above** resolve once this branch is merged into `feat/kafka-delivery` and pushed.
+
+## One run of the four experiments
+
+Recorded 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189) from one run of all four experiments at one commit. Each ticket's section above holds its own run at its own commit. This run puts the four side by side, at the commit where all four had landed.
+
+### How it ran
+
+- **Commit:** [`756f0b7`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/756f0b7) on `feat/kafka-delivery`, the merge that brought the last of 185–188 in
+- **Command:** `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:check`, the streamer's half of the step's final check ([design](../design/kafka-delivery.md) §7)
+- **Run:** started 2026-10-29T08:31:50Z, 56 s. 18 classes, 67 tests, 0 failures, 0 errors and 0 skipped, read by `scripts/test-counts --results apps/commerce-streamer/build/test-results/test`. `BOOTSTRAP_SERVERS` was unset.
+- **Order and time:** E1 at 08:32:08Z (8.4 s), E2 at 08:32:17Z (0.5 s), E4 at 08:32:22Z (5.2 s) and E3 at 08:32:38Z (3.0 s), in one JVM against one broker. E1 and E2 share the rollback base's cached context. E3 and E4 each start their own, for their class topics.
+- **Containers:** MySQL 8.4 and `apache/kafka-native:4.3.2` from the Testcontainers fixtures, one per JVM, removed by Ryuk when the JVM ends
+- **The lines** are copied as logged, after each scene's assertions, from the `system-out` of the run's JUnit XML reports. The event and product IDs in E3 and E4 are drawn by the fixtures, so they differ between runs.
+
+### E1: group assignment
+
+```
+E1 group assignment, 1 of 3 members
+topic=consumer-group-assignment-fb3fbfe8, partitions=2, group=consumer-group-assignment-03c09edf
+state=Stable, type=Classic, assignor=range
+member-1: partitions=[0, 1]
+probe partition=0, offset=0: read by [member-1]
+probe partition=1, offset=0: read by [member-1]
+
+E1 group assignment, 2 of 3 members
+topic=consumer-group-assignment-fb3fbfe8, partitions=2, group=consumer-group-assignment-03c09edf
+state=Stable, type=Classic, assignor=range
+member-1: partitions=[0]
+member-2: partitions=[1]
+probe partition=0, offset=1: read by [member-1]
+probe partition=1, offset=1: read by [member-2]
+
+E1 group assignment, 3 of 3 members
+topic=consumer-group-assignment-fb3fbfe8, partitions=2, group=consumer-group-assignment-03c09edf
+state=Stable, type=Classic, assignor=range
+member-1: partitions=[0]
+member-2: partitions=[1]
+member-3: partitions=[]
+probe partition=0, offset=2: read by [member-1]
+probe partition=1, offset=2: read by [member-2]
+```
+
+| Members | `member-1` | `member-2` | `member-3` | Probe on partition 0 read by | Probe on partition 1 read by |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0, 1 | | | `member-1` (offset 0) | `member-1` (offset 0) |
+| 2 | 0 | 1 | | `member-1` (offset 1) | `member-2` (offset 1) |
+| 3 | 0 | 1 | none | `member-1` (offset 2) | `member-2` (offset 2) |
+
+At every size the broker described the group as `Stable`, of type `Classic`, with assignor `range`. The table is the same as issue 186's run at `38f20d3`: range deals partitions by member ID, and the member ID starts with the client ID.
+
+### E2: key → partition
+
+```
+E2 key → partition
+topic=key-partitioning-10b8706c, partitions=3, sends per key=3
+key=1: partition=0, offsets=[0, 1, 2]
+key=2: partition=2, offsets=[0, 1, 2]
+key=42: partition=1, offsets=[0, 1, 2]
+key=1000: partition=1, offsets=[3, 4, 5]
+key=123456789: partition=0, offsets=[3, 4, 5]
+```
+
+| Key | Partition | Offsets of its three sends |
+| --- | --- | --- |
+| `1` | 0 | 0, 1, 2 |
+| `2` | 2 | 0, 1, 2 |
+| `42` | 1 | 0, 1, 2 |
+| `1000` | 1 | 3, 4, 5 |
+| `123456789` | 0 | 3, 4, 5 |
+
+The table matches issue 185's run at `d7ca27e` key for key, as it must: the partition is murmur2 of the key's bytes modulo the partition count. Two pairs of keys share a partition, which is why nothing asserts a spread.
+
+### E3: redelivery after commit
+
+```
+E3 redelivery after commit
+topic=redelivery-after-commit-1452a17f, partitions=1, group=redelivery-after-commit-55f87357
+earlier record of another order: partition=0, offset=0
+the event's record: partition=0, offset=1
+redelivery-first (member redelivery-first-0b3f06c3-d043-422c-8fe3-c7173e8f96e1): given partition=0, offset=1
+redelivery-second (member redelivery-second-7ad578aa-f124-44a9-b23d-ca5cb9d1d196): given partition=0, offset=1
+position of redelivery-first before its close=2
+committed offset of the group on partition 0: before the first read=1, after the first read=1, after the first close=1, after the second read=2
+listener: Recorded the order confirmed event. eventId=order-confirmed:v1:6190984331424076010, orderId=6190984331424076010, partition=0, offset=1, result=RECORDED
+listener: Recorded the order confirmed event. eventId=order-confirmed:v1:6190984331424076010, orderId=6190984331424076010, partition=0, offset=1, result=ALREADY_RECORDED
+processed_order_confirmation id=1, event_id=order-confirmed:v1:6190984331424076010, order_id=6190984331424076010, confirmed_at=1993-05-21T07:06:09.176780Z, updated_at=2026-10-29T08:32:40.368568Z
+purchase_activity id=1, order_id=6190984331424076010, product_id=936314317140507397, quantity=5, confirmed_at=1993-05-21T07:06:09.176780Z, updated_at=2026-10-29T08:32:40.371965Z
+purchase_activity id=2, order_id=6190984331424076010, product_id=1408337261201094095, quantity=9, confirmed_at=1993-05-21T07:06:09.176780Z, updated_at=2026-10-29T08:32:40.373845Z
+purchase_activity id=3, order_id=6190984331424076010, product_id=314668332910751450, quantity=3, confirmed_at=1993-05-21T07:06:09.176780Z, updated_at=2026-10-29T08:32:40.375885Z
+```
+
+n = 1. The record of another order sits at offset 0, so a reset or a rewind would have handed that one over.
+
+| Step | Group's committed offset on partition 0, from the broker | What happened |
+| --- | --- | --- |
+| Before the first read | 1 (n) | `redelivery-first` committed n as it was assigned the partition |
+| After the first read | 1 (n) | given (0, 1), `RECORDED` at 08:32:40.382Z, the `Acknowledgment` only noted the call |
+| After the first close | 1 (n) | the consumer's own position was 2 before `close`, and the close committed nothing |
+| After the second read | 2 (n+1) | `redelivery-second` given (0, 1) again, `ALREADY_RECORDED` at 08:32:41.023Z, and the `Acknowledgment` committed n+1 |
+
+The four rows above, IDs and `updated_at` included, were read after the first delivery and again at the end, and the two reads were equal.
+
+### E4: real listener failure
+
+```
+Real listener failure, a lock wait timeout after a partial write
+topic=order-events-listener-failure, partition=0, normal record offset=0, failing record offset=1
+committed offset of commerce-streamer on partition 0: before=1, during the stop=1, after the restart=2
+the container had stopped 3319 ms after the failing record was published (innodb_lock_wait_timeout=3)
+failure line: Could not record an order confirmed event; the consumer stops until it is restarted. eventId=order-confirmed:v1:6528876687823705029, orderId=6528876687823705029, partition=0, offset=1, cause=org.springframework.dao.CannotAcquireLockException: could not execute statement [Lock wait timeout exceeded; try restarting transaction] [insert into purchase_activity (confirmed_at,created_at,deleted_at,order_id,product_id,quantity,updated_at) values (?,?,?,?,?,?,?)]; SQL [insert into purchase_activity (confirmed_at,created_at,deleted_at,order_id,product_id,quantity,updated_at) values (?,?,?,?,?,?,?)]
+rows during the stop
+processed_order_confirmation: id=1, event_id=order-confirmed:v1:2384763225657083949, order_id=2384763225657083949, confirmed_at=1978-04-29T12:23:01.339574Z
+purchase_activity: id=1, order_id=2384763225657083949, product_id=3034232887047408800, quantity=1, confirmed_at=1978-04-29T12:23:01.339574Z; id=2, order_id=2384763225657083949, product_id=1592607632369364806, quantity=1, confirmed_at=1978-04-29T12:23:01.339574Z; id=3, order_id=2384763225657083949, product_id=1111402851457735210, quantity=3, confirmed_at=1978-04-29T12:23:01.339574Z
+rows after the restart
+processed_order_confirmation: id=1, event_id=order-confirmed:v1:2384763225657083949, order_id=2384763225657083949, confirmed_at=1978-04-29T12:23:01.339574Z; id=3, event_id=order-confirmed:v1:6528876687823705029, order_id=6528876687823705029, confirmed_at=2002-03-29T12:05:45.912758Z
+purchase_activity: id=1, order_id=2384763225657083949, product_id=3034232887047408800, quantity=1, confirmed_at=1978-04-29T12:23:01.339574Z; id=2, order_id=2384763225657083949, product_id=1592607632369364806, quantity=1, confirmed_at=1978-04-29T12:23:01.339574Z; id=3, order_id=2384763225657083949, product_id=1111402851457735210, quantity=3, confirmed_at=1978-04-29T12:23:01.339574Z; id=7, order_id=6528876687823705029, product_id=1, quantity=2, confirmed_at=2002-03-29T12:05:45.912758Z; id=8, order_id=6528876687823705029, product_id=2, quantity=1, confirmed_at=2002-03-29T12:05:45.912758Z
+```
+
+| Moment | Committed offset of `commerce-streamer` on partition 0 | Rows of the failing order |
+| --- | --- | --- |
+| Before: the normal record (offset 0) recorded | 1 (n) | none yet |
+| During the stop | 1 (n) | none in either table |
+| After the restart | 2 (n+1) | confirmation id 3, activities ids 7 and 8 |
+
+The log lines of the scene, in order:
+
+| Time (UTC) | Thread | Line |
+| --- | --- | --- |
+| 08:32:24.199 | `er-events-0-C-1` | `Recorded … partition=0, offset=0, result=RECORDED`, the normal event |
+| 08:32:27.357 | `er-events-0-C-1` | the failure line above, `partition=0, offset=1` |
+| 08:32:27.466 | `er-events-0-C-1` | spring-kafka's `Error handler threw an exception`, caused by `KafkaException: Stopped container` |
+| 08:32:27.700 | `er-events-0-C-2` | `Recorded … partition=0, offset=1, result=RECORDED`, read by a consumer of the restarted container |
+
+The id gaps are the partial write's trace, as in issue 187's run:
+
+- The confirmations go 1, 3. Id 2 went to the confirmation the listener inserted and rolled back.
+- The activities go 1–3 (the normal event's three items), then 7, 8. Id 4 went to the row the blocking connection held, 5 to the first item the listener inserted and rolled back, and 6 to the second item's insert, which took its value before it waited and failed.
+
+InnoDB does not give auto-increment values back on rollback.
+
+## Counterexamples: the assignment's three, answered by a test or a red check
+
+Recorded 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189) from the red checks the closing comments of steps 1–3 record: issues 170–172 in [step 1's material](week6-order-events-writing-material.md), issues 177–181 and spec 176's review in [step 2's](week6-purchase-activity-writing-material.md), and issues 185–188 above. The assignment's AI review gives three counterexamples to try against the consumer. Spec 184's "반례 셋" assigns each one to a test. Each is answered by a test that shows the guard, and by a red check, a mutant of the guard that turned the test red. Every red check was a local edit, run and reverted. None is committed.
+
+| Counterexample | What would go wrong | The guard | The test | The red check |
+| --- | --- | --- | --- | --- |
+| **C1. DB 저장 뒤 commit 전에 멈춤.** The consumer stops after the recording commits and before the offset is committed. | The record comes again. An offset committed before the recording would lose it, and recording it again could write a second set of rows. | The listener acknowledges only after the recorder has returned, and `MANUAL_IMMEDIATE` commits there (ADR 0033 rule 6). The recorder reads first, so the same fact writes nothing (rule 3). | E3, `RedeliveryAfterCommitTest`: given (0, 1) twice, `RECORDED` then `ALREADY_RECORDED`, rows unchanged, committed offset 1 → 1 → 1 → 2 ([one run](#e3-redelivery-after-commit)) | Two mutants made the first consumer's offset move past n: auto-commit on, so that its `close` committed 2, and an `Acknowledgment` that committed n+1. Both turned the scene red at step 5: `redelivery-second given a record` timed out after 10 s, so the second consumer never got n. A `seekToBeginning` on the second consumer was handed the other order's record, `(0, 0)` (issue 188). In step 2, with no read by event ID, recording the same request again failed with `DataIntegrityViolationException` on `UK_PROCESSED_ORDER_CONFIRMATION_ON_EVENT_ID` (issue 179). |
+| **C2. handler가 예외를 삼킴.** The handler catches the failure and acknowledges anyway. | The record is marked read with nothing written. The event is lost without a trace, and the partition moves on. | The listener logs its line and rethrows every exception. The stopping error handler stops all three consumers with the offset uncommitted (ADR 0033 rule 5). | E4, `OrderEventsListenerFailureTest`: offset 1 during the stop, container stopped abnormally, no rows for the order, one failure line, recorded after the restart ([one run](#e4-real-listener-failure)) | The third catch arm's `throw e` was replaced by `acknowledgment.acknowledge(); return`. The scene went red in `awaitStopped` after 10 s. The log had the failure line once, one `RECORDED` (the normal event's) and no `Stopped container`, so the record was skipped with no rows and the container went on (issue 187). |
+| **C3. 같은 ID로 다른 수량 수신.** The same event ID arrives with another quantity. | The stored fact is overwritten, or the record is silently marked read, and a producer bug goes unseen. | The recorder compares the stored fact with the incoming one: the order, the time cut to microseconds, and the product → quantity map. Any difference throws `PurchaseActivityConflictException`. The listener refuses with one ERROR line, and the container stops. | Step 2: `PurchaseActivityRecorderTest`'s `the same event id with another quantity conflicts and changes no row`, and `OrderEventsListenerStopTest`'s `a record conflicting with the recorded one stops the container, commits no offset and leaves the recorded rows`, with its restart scene | Each conflict test failed with "nothing was thrown" until its comparison existed (issue 179). The conflict scene failed only on the ERROR line before the refusal line existed, `Expecting actual: []`; the stop, the uncommitted offset and the rows already held (issue 181). |
+
+C1 and C2 prove different things. C1 stops after the recording committed: the same fact comes again and writes nothing. C2 fails before the recording commits: nothing partial stays, and the offset does not move. A unit test that calls the handler twice shows neither, since neither the broker nor the commit is in it.
+
+### The three steps' verification, cumulative
+
+What week 6 shows, step by step, with the red check that proves each test would catch the guard's absence. Each step's tests still run in its app's `check`. Step 1's are in commerce-api, steps 2 and 3's in commerce-streamer.
+
+| # | Step | What is shown | Test | Red check |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | A first PG confirmation publishes one record under the order's key, only after TX B commits. A rolled-back TX B publishes nothing. | `OrderEventPublishingTest` | `@EventListener` in place of the AFTER_COMMIT listener: the rolled-back TX B scene found a record (issue 171) |
+| 2 | 1 | A pending, failed or rejected payment publishes nothing. | `OrderEventPublishingTest` | publish on any `Changed`: those scenes and the first-confirming ones failed (issue 170) |
+| 3 | 1 | A duplicate callback, a racing duplicate or a late create answer publishes no second record. | `OrderEventPublishingTest` | publish whenever the saved order is CONFIRMED: the late create answer and the racing duplicate failed (issue 170) |
+| 4 | 1 | The relay publishes off the confirming thread. | `OrderEventPublishingTest` | `@Async` removed: published from `Test worker` (issue 171) |
+| 5 | 1 | A publish that fails or stops after TX B commits leaves the order confirmed and no record: the publish gap | `OrderEventPublishGapTest` | the relay's `catch` narrowed so the exception leaves it: no WARN within 10 s (issue 172) |
+| 6 | 2 | The same event published twice leaves one set of rows and commits both offsets: a republish. | `OrderEventsListenerTest`, `PurchaseActivityRecorderTest` | no read by event ID: `DataIntegrityViolationException` on the event ID's unique key (issue 179) |
+| 7 | 2 | The same event ID with another quantity, product set, time or order is a conflict, and the stored fact stands. (C3) | `PurchaseActivityRecorderTest` | each failed with "nothing was thrown" until its comparison existed (issue 179) |
+| 8 | 2 | A conflict, a payload without `orderId`, schema version 2, empty items and a value that is not JSON stop the consumer with the offset uncommitted. (C3) | `OrderEventsListenerStopTest` | conflict scene: an empty ERROR list before the refusal line (issue 181); no `ConstraintViolationException` catch: the empty-items scene logged no line (issue 181); `MessageConversionException` asserted for the not-JSON chain: failed, it is `ConversionException` (spec 176's review) |
+| 9 | 2 | An unknown event type is skipped: acknowledged with no row and one INFO line. | `OrderEventsListenerTest` | without the skip, an `OrderCancelled` record stopped the container (issue 180) |
+| 10 | 2 | Auto-commit is off in the listener factory's consumer configuration. | `OrderEventsListenerConfigTest` | before the factory set it, the configuration held only the misspelt `enable-auto-commit` (issue 177) |
+| 11 | 3 | E1: at every size each partition has exactly one member, and at three a member has none. The probes are read by their partition's member. | `ConsumerGroupAssignmentTest` | member 3 in another group: the wait for three timed out after 30 s; probes not acknowledged: `member-1` read size 1's probe three times (issue 186) |
+| 12 | 3 | E2: every send of a key lands on one partition. | `KeyPartitioningTest` | key 42's third send forced to another partition: `[1, 1, 2]` (issue 185) |
+| 13 | 3 | E3: a record recorded but not acknowledged is redelivered at its offset and writes nothing, and the committed offsets read n → n → n → n+1. (C1) | `RedeliveryAfterCommitTest` | a close that commits, or an acknowledgment of n+1: the second consumer is never given n; a rewind: given `(0, 0)` (issue 188) |
+| 14 | 3 | E4: a transient failure after a partial write rolls everything back, stops the consumer with the offset unmoved and a failure line, and a restart records the record. (C2) | `OrderEventsListenerFailureTest` | swallow and acknowledge: `awaitStopped` timed out; no blocking connection: the same; before the production change, an empty ERROR list (issue 187) |
+
+Rows 6 and 13 are the two ways an event comes again. Row 6 is a republish, a new record of the same event at the next offset. Row 13 is a redelivery, the same record at the same offset, which the streamer's `CONTEXT.md` now names apart (다시 발행하다, 다시 전달되다).
+
+## W7 handoff: both cases side by side
+
+Recorded 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189) from the two recorded runs, not rerun. Week 6 hands two cases to week 7's outbox. Step 1 recorded the unpublished case, in [step 1's material](week6-order-events-writing-material.md#w7-handoff-unpublished-case). Step 2 recorded the consumed case, in [step 2's material](week6-purchase-activity-writing-material.md#w7-handoff-consumed-case). Both are the same order confirmed at the same instant.
+
+| | Unpublished case | Consumed case |
+| --- | --- | --- |
+| Test | `OrderEventPublishGapTest`, commerce-api | `OrderEventConsumedCaseTest`, commerce-streamer |
+| Commit, run | [`e492cf1`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/e492cf1), 2026-10-27T11:15:22Z | [`b054b4f`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/b054b4f), 2026-10-28T13:09:29Z |
+| Command | `./gradlew :apps:commerce-api:test --tests 'com.loopers.application.order.provided.OrderEventPublishGapTest'` | `./gradlew :apps:commerce-streamer:test --tests 'com.loopers.adapter.consumer.OrderEventConsumedCaseTest'` |
+| orderId | 1 | 1 |
+| eventId | `order-confirmed:v1:1`, never published | `order-confirmed:v1:1` |
+| confirmedAt | `2026-10-27T01:02:03.123456Z`, the pinned `TestClock` | `2026-10-27T01:02:03.123456Z`, in the hand-written record |
+| items | `[{productId 1, quantity 2}, {productId 2, quantity 1}]` | the same |
+| PG order ID | `2d50c75c-dc9f-4bf3-97c4-fd5186da94ce` (the publish failed), `7c92525b-8893-408e-9f7c-f348acc2efa8` (the publish stopped): a fresh UUID per payment | none: the streamer knows no PG value. Stitched from the unpublished case |
+| Transaction key | `20261027:TR:9e3b71` | none. Stitched as above |
+| Order | `CONFIRMED` at the pinned instant, read in a fresh transaction | not run: no commerce-api in this case |
+| Payment | `SUCCESS` under the transaction key | not run |
+| Stock | product 1: 3, product 2: 4 (reserved from 5, not released) | not run |
+| Broker | 0 records on `order-events-publish-gap` | 1 record on `order-events-consumed-case`, partition 0, offset 0. Group `commerce-streamer` committed 1 |
+| Log | relay WARN: `Could not publish the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, cause=org.springframework.kafka.KafkaException: Send failed` | listener INFO: `Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED` |
+| Streamer's tables | nothing to read | one processed confirmation and two activities, below |
+
+### The representative order's rows
+
+The consumed case's recorded rows are the representative order the assignment asks the PR to show. That is order 1, two products, at its confirmation time to the microsecond.
+
+| Table | id | Values |
+| --- | --- | --- |
+| `processed_order_confirmation` | 1 | event_id `order-confirmed:v1:1`, order_id 1, confirmed_at `2026-10-27T01:02:03.123456Z` |
+| `purchase_activity` | 1 | order_id 1, product_id 1, quantity 2, confirmed_at `2026-10-27T01:02:03.123456Z` |
+| `purchase_activity` | 2 | order_id 1, product_id 2, quantity 1, confirmed_at `2026-10-27T01:02:03.123456Z` |
+
+This step's whole check ran the consumed case too, at `756f0b7`, as one of the streamer's 67 tests. Its line held the same values, as its fixed inputs make it. The record above stays step 2's run.
+
+### The stitch
+
+No single run spans both apps. The repo has no PG simulator: commerce-api's `pg.base-url` comes from `PG_BASE_URL`, and the tests' PG is WireMock inside commerce-api's JVM. So the two cases are two runs, one per app. They are joined by the order ID, the event ID, the confirmation instant and the items. They are also joined by the record's bytes: commerce-api's `OrderEventPublishingTest` publishes the same order at the same instant and pins the envelope the consumed case writes by hand. The commerce-side values of the consumed case (the PG order IDs, the transaction key, the order, payment and stock) are the unpublished case's. Both scenes of that run confirm order 1 at the same instant, so either one's event is this record. The [design](../design/kafka-delivery.md) §5 lists this among the limits.
+
+### What week 7 starts from
+
+In the first case the order is confirmed, and its event exists nowhere but in one WARN line. In the second, the same event, once on the broker, becomes one confirmation and two activities, and the group commits past it. An outbox row written inside TX B carries the first case to the second. ADR 0032's 다시 볼 조건 plans a `BEFORE_COMMIT` listener on the same Spring event, which leaves the saga step and the port unchanged. Step 3 did not narrow that gap. It showed what the consumer does once a record is on the broker.
+
+## Draft PR body
+
+Drafted 2026-10-29 by [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189), in the shape of [PR 174](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/174) and [PR 183](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/183) (Summary / Evidence / Merge Danger). The user opens the PR in the UI.
+
+- **Base:** `week6` ← **head:** `feat/kafka-delivery`
+- **Title:** `feat(commerce-streamer): show Kafka delivery in four experiments on the test broker, and log a failure line when the listener cannot record`
+- The `blob/feat/kafka-delivery` links resolve once the branch is pushed with this commit.
+
+````markdown
+## Summary
+
+This is week 6 step 3, the delivery experiments. Step 2's tests showed that a record becomes rows, that the offset is committed after the recording, and that an unprocessable event stops the consumer. Four experiments on the test broker now show what they did not: how a group deals partitions as members join, where a key's records land, a redelivery after the recording committed, and a real failure after a partial write. The one production change is a failure line in the listener.
+
+- **Spec:** https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184, with tickets 185–189. No new ADR: nothing here is hard to reverse.
+- **Design:** [`docs/design/kafka-delivery.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/docs/design/kafka-delivery.md). §2 covers the experiments, §4 the evidence rules, §5 the config and the limits, and §7 the commands and counts.
+- **Glossary:** the streamer's [`CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/apps/commerce-streamer/CONTEXT.md) separates 다시 발행하다 (republish: a new record of the same event) from 다시 전달되다 (redeliver: the same record at the same offset), and widens 멈추다 to every failure to record.
+- **Writing material:** [`docs/research/week6-kafka-delivery-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/kafka-delivery/docs/research/week6-kafka-delivery-writing-material.md). It holds one run of all four experiments, the assignment's three counterexamples with the three steps' cumulative verification table, and both week 7 cases side by side.
+
+```text
+E1 ConsumerGroupAssignmentTest     2 partitions, members join 1 → 2 → 3    broker's group description: Stable, member → partitions
+E2 KeyPartitioningTest             3 partitions, 5 keys × 3 sends          SendResult metadata: one partition per key
+E3 RedeliveryAfterCommitTest       1 partition, two plain consumers        same (partition, offset) twice; committed n → n → n → n+1
+E4 OrderEventsListenerFailureTest  the class topic, the real container     MySQL 1205 after a partial write → rollback, stop, restart
+```
+
+```text
+OrderEventsListener.listen
+  record → INFO "Recorded… result=…", acknowledge()
+  catch UnprocessableOrderEventException | ConstraintViolationException → ERROR "Refused…", rethrow   # a restart refuses again
+  catch Exception → ERROR "Could not record…; the consumer stops until it is restarted.", rethrow     # new: a restart records once the cause is gone
+```
+
+- **E1–E3 own their broker state.** `ExperimentBroker` creates each one's topic and names its group under a random suffix, and deletes both after the test, so their records reach no listener's topic. E4 runs the real container on its class topic, unique to the class as in step 2, and leaves that topic and group `commerce-streamer`'s offsets behind. No experiment record reaches `order-events`. The broker address is only the one the Testcontainers fixture injects.
+- **Evidence is what the broker and the DB say.** That means the broker's group description, committed offsets read from the broker, send metadata, the two tables' rows and the listener's lines. Consumer objects, poll positions and container fields are never counted. Every wait is bounded.
+- **E3 runs no container.** Plain consumers from the listener factory's consumer factory poll, close and commit under the test's control. The shared converter and the real `OrderEventsListener.listen` record what they read. A record of another order goes first, so a reset or rewind would show.
+- **E4 injects a real failure.** A second JDBC connection holds an uncommitted `purchase_activity` row for the event's second item, so the listener's transaction waits out `innodb_lock_wait_timeout=3`. Spring translates MySQL 1205 into `CannotAcquireLockException`, which `recordSettlingARace` does not retry.
+- **Step 2's republish scene is renamed** `the same event published twice leaves one set of rows and commits both offsets`.
+- **Also on this branch:**
+  - `9554a35`: the glossary, before the tickets
+  - `1618ee7`, `5ba74ca`, `2daf469`, `0be006d`: JDK 25.0.5, Boot 4.1.2 with Jetty EE10 12.1.14, Gradle 9.8.2 with typesafe-conventions 0.12.1, springdoc 3.2.0
+
+## Evidence
+
+The values are from one run of all four experiments at `756f0b7` (2026-10-29). The mutants were run at ticket time and reverted ("Red checks" of issues 185–188 in the writing material).
+
+- **E1, group assignment.** At each size the broker described the group as `Stable`, `Classic`, `range`:
+
+  | Members | member-1 | member-2 | member-3 | probes p0 / p1 read by |
+  | --- | --- | --- | --- | --- |
+  | 1 | 0, 1 | | | member-1 / member-1 |
+  | 2 | 0 | 1 | | member-1 / member-2 |
+  | 3 | 0 | 1 | none | member-1 / member-2 |
+
+  **Red:** a third member started in another group never joined, and the wait for three timed out after 30 s. With the probe listener not acknowledging, each eager rebalance put `member-1` back at the earliest offset, and it read size 1's probe three times.
+- **E2, key → partition.** Keys `1` → 0, `2` → 2, `42` → 1, `1000` → 1, `123456789` → 0, three sends each, all on one partition per key. Two pairs share a partition, so nothing asserts a spread. The default partitioner is `murmur2(key) % partitions`, so this holds only while the partition count stays the same.
+  **Red:** key 42's third send forced elsewhere read `[1, 1, 2]`.
+- **E3, redelivery after commit.** n = 1. Both consumers were given partition 0, offset 1. The broker's committed offset read 1 before the first read, 1 after it, 1 after the first close (whose position was 2), and 2 after the second read. The listener logged `result=RECORDED` and then `result=ALREADY_RECORDED` at the same partition and offset. Both tables, IDs and `updated_at` included, were unchanged by the second delivery.
+  **Red:** a first consumer whose close commits (auto-commit on), or an acknowledgment that commits n+1, and the second consumer is never given n. A rewind hands over the other order's record `(0, 0)`.
+- **E4, a real listener failure.** The container stopped 3319 ms after the failing record was published. During the stop the failing order had no row in either table, and the committed offset stayed at 1. The listener logged one line:
+  ```text
+  Could not record an order confirmed event; the consumer stops until it is restarted. eventId=order-confirmed:v1:6528876687823705029, orderId=6528876687823705029, partition=0, offset=1, cause=org.springframework.dao.CannotAcquireLockException: could not execute statement [Lock wait timeout exceeded; try restarting transaction] [insert into purchase_activity (…) values (…)]; SQL […]
+  ```
+  The failed statement is an activity insert, so the confirmation and the first item had been written and rolled back with it. After the blocking connection rolled back and the container restarted, the same record was recorded and the committed offset read 2.
+  **Before:** before the failure line existed, the scene failed only on the empty ERROR list. **Red:** a listener that swallows the failure and acknowledges it skips the record with no rows, and the container never stops.
+- **The assignment's counterexamples.** C1, a stop after the recording commits and before the offset commit, is E3. C2, a handler that swallows the exception, is E4's red check. C3, the same ID with another quantity, is step 2's conflict tests. The writing material's "Counterexamples" section has each with its red check, and a 14-row table of what the three steps show.
+- **The representative order's rows** are the consumed case's, recorded at step 2 (`b054b4f`). Order 1 has one processed confirmation (`order-confirmed:v1:1`) and two activities: product 1 × 2 and product 2 × 1, all at `2026-10-27T01:02:03.123456Z`. The writing material sets that case beside the unpublished case of step 1 (`e492cf1`) and states the stitch between the two runs.
+- **Whole check.** At `756f0b7`, `./gradlew :apps:commerce-api:ktlintCheck :apps:commerce-streamer:ktlintCheck :modules:kafka:ktlintCheck` passes. `./gradlew :apps:commerce-streamer:cleanTest :apps:commerce-streamer:check` passes in 56 s, and `scripts/test-counts --results apps/commerce-streamer/build/test-results/test` reads 18 classes and 67 tests (13 and 56 before this branch), with 0 failures and 0 skips. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:check` passes in 3 min 21 s, and `scripts/test-counts` reads 79 classes and 943 tests, as before. `BOOTSTRAP_SERVERS` was unset. Only documents changed after `756f0b7`.
+  ```bash
+  ./gradlew :apps:commerce-streamer:test --tests '*ConsumerGroupAssignmentTest'     # 1: E1
+  ./gradlew :apps:commerce-streamer:test --tests '*KeyPartitioningTest'             # 1: E2
+  ./gradlew :apps:commerce-streamer:test --tests '*RedeliveryAfterCommitTest'       # 1: E3
+  ./gradlew :apps:commerce-streamer:test --tests '*OrderEventsListenerFailureTest'  # 1: E4
+  ./gradlew :apps:commerce-streamer:test --tests '*ExperimentBrokerTest'            # 7: the helper
+  ```
+
+## Merge Danger
+
+**Door:** two-way
+
+One production change: a log line on a path that already stopped the consumer. The rest is tests and documents. A revert removes the line, the four experiments and the helper, and nothing on a broker or in a table depends on them.
+
+**Blast Radius:** commerce-streamer, plus the version bumps for both apps
+
+- **The failure line changes what a stop logs, not what it does.** Every exception other than the two refusal types now logs `Could not record an order confirmed event; the consumer stops until it is restarted. …` before it leaves the listener. That covers a transient failure, a second unique-key violation in the race retry, and an entity's `IllegalArgumentException`. The refusal line is unchanged. A body the converter cannot read still logs only spring-kafka's line.
+- **A transient failure still stops all three consumers** until a person restarts the container or the process (ADR 0033 rule 5, purchase activity design §9). E4 shows that the restart alone recovers it. The production shape, a `DefaultErrorHandler` with backoff and a dead-letter topic, stays out of scope.
+- **What one broker cannot show.** `acks: all` on one broker is the leader alone, there is one replica, and failover was not tested.
+- **Only controlled stops.** E3's consumer leaves by a bounded `close`, and E4's container is stopped by the error handler and restarted by `start()`. No process was killed. A killed consumer leaves the group only after `session.timeout.ms` (45 s by default).
+- **The DB → broker gap remains.** A crash after TX B commits and before the relay's `send` completes loses the event (ADR 0032, order-events design §4 and §6). Week 7's outbox closes it.
+- **Test time.** The streamer's check takes 56 s, up from 39 s at step 2's end. E1 waits for three rebalances (8.4 s), E4 for a 3 s lock wait (5.2 s), and E3 and E4 start one Spring context each, for six in all.
+- **Versions.** Boot 4.1.2 (kafka-clients 4.2.2), Jetty EE10 12.1.14, springdoc 3.2.0, Gradle 9.8.2 and JDK 25.0.5 reach both apps. commerce-api's check gives the same 943 tests.
+- **`local` keeps an unused admin address.** `kafka.yml`'s `admin.properties.bootstrap.servers: kafka:9092` is rewritten by Boot to the connection's address, and it is left as the template wrote it (design §5).
+- **Out of scope:**
+  - killing a process mid-record
+  - several brokers and replication
+  - `DefaultErrorHandler` and the dead-letter topic
+  - tuning `fetch.min.bytes` and `fetch.max.wait.ms`, which are at the client defaults (1 byte, 500 ms)
+  - the new group protocol (KIP-848)
+  - the outbox
+  - rerunning the two week 7 cases
+````

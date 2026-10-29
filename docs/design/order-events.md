@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | 1 | 주문 확정 이벤트의 발행. `modules:kafka` 의존, Kafka 테스트 컨테이너, 포트와 어댑터, 토픽, 시계 빈, 누락 구간의 재현. | `feat/order-events` | 인터뷰 끝남(2026-10-27). 구현 끝남(2026-10-27, 1.2절) |
 | 2 | commerce-streamer의 소비. `processed_order_confirmation`과 상품별 구매 행, record 리스너 팩토리(`MANUAL_IMMEDIATE`, 중단형 error handler), 중복과 충돌, 실패 경로. | `feat/purchase-activity` | 인터뷰 끝남(2026-10-28). [구매 활동 설계](./purchase-activity.md), [ADR 0033](../adr/0033-purchase-activity-is-recorded-by-reading-first-and-an-unprocessable-event-stops-the-consumer.md). 구현 끝남(2026-10-28, [구매 활동 설계](./purchase-activity.md) 1.3절) |
-| 3 | 전달 실험. 파티션 2개와 consumer 1→2→3, key→partition, DB 커밋 뒤 offset 미커밋 재전달, 실제 리스너의 실패·재시작, 7주차에 넘기는 두 사례의 정리. | `feat/kafka-delivery` | 다음 인터뷰 |
+| 3 | 전달 실험. 파티션 2개와 consumer 1→2→3, key→partition, DB 커밋 뒤 offset 미커밋 재전달, 실제 리스너의 실패·재시작, 7주차에 넘기는 두 사례의 정리. | `feat/kafka-delivery` | 인터뷰 끝남(2026-10-29). [Kafka 전달 설계](./kafka-delivery.md), [명세 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184). 구현 끝남(2026-10-29, [Kafka 전달 설계](./kafka-delivery.md) 1.2절) |
 
 셋은 모두 `week6`로 PR한다. 기술 글은 `week6`에 둔다.
 
@@ -164,7 +164,7 @@ OrderPaymentSagaSteps.applyResult  (TX B, 주문 잠금 아래)
 ## 10. 다음 단계로 넘기는 것
 
 - **소비(2단계).** `processed_order_confirmation`(eventId 유일, orderId 유일, confirmedAt)과 상품별 구매 행(orderId·productId 유일, quantity, confirmedAt). 행 표의 이름은 그 인터뷰에서 정한다. 둘을 한 TX에 커밋한다. 같은 eventId·같은 사실은 no-op, 같은 eventId의 다른 사실과 같은 orderId의 다른 eventId는 충돌이다. 중복 판단은 DB 유일 제약이 지키고, 위반 뒤 별도 TX에서 같은 사실인지 다시 본다. streamer 전용 record 리스너 팩토리(`MANUAL_IMMEDIATE`, `CommonContainerStoppingErrorHandler`, concurrency 3, `ByteArrayDeserializer`와 `ByteArrayJacksonJsonMessageConverter`). `kafka.yml`의 `value-serializer` 오타는 `value-deserializer`로 고친다. `spring.application.name`이 `commerce-api`인 streamer의 `application.yml`도 그때 본다. 소비 쪽 DTO는 따로 둔다. 재시도 뒤 중단하는 handler는 대안으로 적는다. (2026-10-27: `kafka.yml`의 `test` 프로필에 broker 주소가 없어졌다(7절의 날짜 메모). streamer의 컨텍스트 테스트도 `KafkaTestContainersConfig`를 `@Import`해야 뜬다. 지금 streamer에는 테스트가 없다.) (2026-10-28, 2단계 인터뷰: 중복 판단은 유일 제약이 아니라 먼저 읽기다. `PurchaseActivityRecorder`가 한 트랜잭션에서 eventId와 orderId로 읽은 뒤 저장하거나 no-op이거나 충돌을 던지고, 유일 제약은 rebalance 경합의 뒷받침이며 위반은 어댑터가 한 번 다시 불러 푼다. 두 표는 한 애그리거트가 아니라 루트 둘이고, 행 표의 이름은 `purchase_activity`다. 팩토리와 group·offset reset은 streamer가 갖고 `modules:kafka`는 오타만 고친다. 소비 쪽 DTO는 `OrderEventMessage`(payload는 `JsonNode`)와 `OrderConfirmedPayload`다. [구매 활동 설계](./purchase-activity.md) 3–5절, ADR 0033 규칙 2·3·7.)
-- **실험(3단계).** 파티션 2개의 격리 토픽, consumer 1→2→3, key→partition metadata, DB 커밋 뒤 offset 미커밋 재전달(n → n → n+1, seek 없음), 실제 리스너의 실패·롤백·재시작. 7주차에 넘기는 두 사례의 기록.
+- **실험(3단계).** 파티션 2개의 격리 토픽, consumer 1→2→3, key→partition metadata, DB 커밋 뒤 offset 미커밋 재전달(n → n → n+1, seek 없음), 실제 리스너의 실패·롤백·재시작. 7주차에 넘기는 두 사례의 기록. (2026-10-29, [issue 189](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/189): [Kafka 전달 설계](./kafka-delivery.md)가 이 줄을 이어받았다. 네 실험은 commerce-streamer의 `ConsumerGroupAssignmentTest`, `KeyPartitioningTest`, `RedeliveryAfterCommitTest`, `OrderEventsListenerFailureTest`다. 재전달은 같은 record가 같은 파티션과 offset으로 다시 오는 다시 전달(streamer의 `CONTEXT.md`)이고, 한 실행에서 커밋된 offset이 1 → 1 → 1 → 2였다. 운영 코드의 변경은 리스너의 실패 줄 하나다. 두 사례는 다시 돌리지 않고 [6주차 Kafka 전달 글감](../research/week6-kafka-delivery-writing-material.md#w7-handoff-both-cases-side-by-side)에 나란히 두었다. 이 문서 6절의 누락 구간은 그대로이고 7주차의 outbox가 닫는다.)
 - **7주차.** Outbox. 6절.
 
 ## 11. 과제의 이름과 이 저장소의 이름
