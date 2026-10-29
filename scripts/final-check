@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Run a step's final check and print what ran: ktlint across the build, then each app's tests from clean, with counts.
+
+Usage: scripts/final-check [--app APP ...]
+
+Runs these in order, printing each command exactly before it runs, and its exit code and time after:
+
+    ./gradlew ktlintCheck :build-logic:ktlintCheck       # the pre-commit hook's ktlint, every project included
+    ./gradlew :apps:APP:cleanTest :apps:APP:check        # per APP; cleanTest so no test task passes UP-TO-DATE
+    scripts/test-counts --results build/final-check/APP-test-results
+
+APP may repeat and keeps its order. It defaults to commerce-streamer, then commerce-api: the two apps whose
+`ktlintCheck` and `check` the assignment's done check names since week 6.
+
+The header has the commit, whether the tree has uncommitted changes, the UTC start, and whether BOOTSTRAP_SERVERS
+is set, because a design doc records all four with the counts. Gradle's output goes to build/final-check/*.log,
+and a failed command prints its log's last lines. Each app's JUnit XML reports are copied to
+build/final-check/APP-test-results, so the run's counts and its scene lines (scripts/scene-lines --results …) can
+still be read after a later filtered run replaces apps/APP/build/test-results.
+
+Exits 1 when a command fails, a test failed, errored or was skipped, or an app's run left no reports.
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+OUT = REPO / "build/final-check"
+DEFAULT_APPS = ("commerce-streamer", "commerce-api")
+TAIL_LINES = 40
+
+
+def duration(seconds: float) -> str:
+    """Seconds as the design docs write them: `56 s`, `3 min 21 s`."""
+    minutes, rest = divmod(round(seconds), 60)
+    return f"{minutes} min {rest} s" if minutes else f"{rest} s"
+
+
+def run(command: list, log: Path) -> int:
+    """Runs `command` from the repo root with its output in `log`, and prints the command, then how it ended."""
+    print(f"$ {' '.join(command)}", flush=True)
+    start = time.monotonic()
+    with log.open("w", encoding="utf-8") as out:
+        code = subprocess.run(command, cwd=REPO, stdout=out, stderr=subprocess.STDOUT).returncode
+    print(f"  exit {code}, {duration(time.monotonic() - start)}, log {log.relative_to(REPO)}", flush=True)
+    if code:
+        tail = log.read_text(encoding="utf-8").splitlines()[-TAIL_LINES:]
+        print("\n".join(f"  | {line}" for line in tail))
+    return code
+
+
+def counts(results: Path) -> tuple:
+    """`scripts/test-counts` on `results`: its exit code and its totals line."""
+    command = ["scripts/test-counts", "--results", str(results.relative_to(REPO))]
+    print(f"$ {' '.join(command)}", flush=True)
+    done = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+    output = (done.stdout + done.stderr).strip()
+    print("\n".join(f"  {line}" for line in output.splitlines()))
+    return done.returncode, output.splitlines()[0] if output else "no output"
+
+
+def git(*arguments: str) -> str:
+    return subprocess.run(["git", *arguments], cwd=REPO, capture_output=True, text=True).stdout.strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--app", action="append", help="app under apps/ to check, repeatable (default: both)")
+    args = parser.parse_args()
+    apps = args.app or list(DEFAULT_APPS)
+    unknown = [app for app in apps if not (REPO / "apps" / app).is_dir()]
+    if unknown:
+        print(f"no such app under apps/: {', '.join(unknown)}", file=sys.stderr)
+        return 2
+
+    shutil.rmtree(OUT, ignore_errors=True)
+    OUT.mkdir(parents=True)
+    tree = "uncommitted changes" if git("status", "--porcelain") else "clean"
+    bootstrap = "set" if os.environ.get("BOOTSTRAP_SERVERS") else "unset"
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"commit {git('rev-parse', '--short', 'HEAD')} ({tree}), started {started}, BOOTSTRAP_SERVERS {bootstrap}")
+
+    summary = []
+    failed = run(["./gradlew", "ktlintCheck", ":build-logic:ktlintCheck"], OUT / "ktlint.log") != 0
+    summary.append(f"ktlint: {'failed' if failed else 'passed'}")
+
+    for app in apps:
+        start = time.monotonic()
+        task = f":apps:{app}"
+        code = run(["./gradlew", f"{task}:cleanTest", f"{task}:check"], OUT / f"{app}-check.log")
+        took = duration(time.monotonic() - start)
+        reports = REPO / "apps" / app / "build/test-results/test"
+        if not reports.is_dir():
+            print(f"  no JUnit XML reports in {reports.relative_to(REPO)}")
+            summary.append(f"{app}: check exit {code}, no reports ({took})")
+            failed = True
+            continue
+        results = OUT / f"{app}-test-results"
+        shutil.copytree(reports, results)
+        counted, line = counts(results)
+        summary.append(f"{app}: check exit {code}, {line} ({took})")
+        failed = failed or code != 0 or counted != 0
+
+    print()
+    print("\n".join(summary))
+    print("final check failed" if failed else "final check passed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

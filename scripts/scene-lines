@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Print the log lines a test class wrote in the last Gradle test run, read from its JUnit XML report's system-out.
+
+Usage: scripts/scene-lines [--app APP | --results DIR] [--source] CLASS [PATTERN]
+
+A scene that logs what it observed, in one INFO line after its assertions (OrderEventConsumedCaseTest's
+`W7 handoff, consumed case`, the step 3 experiments' `E1 group assignment …`), is read back here, so a writing
+material copies the lines of one recorded run.
+
+- Without PATTERN, prints the lines CLASS's own logger wrote. Logback abbreviates the package, so the logger is
+  matched by the class's simple name. Spring Boot logs a context's startup (`Starting …`, `Started … in …`)
+  under the test class's logger too; those lines are left out.
+- With PATTERN, a regular expression, prints the lines of any logger whose message matches it, such as the
+  listener's `Recorded the order confirmed event` lines inside a consumer scene.
+
+Each line prints as its message and the lines that continue it (a multi-line message), up to the next log line,
+a `Hibernate:` SQL line or a stack frame. --source puts the time, level, thread and logger in front, as logged.
+A blank line follows each multi-line message.
+
+Reads apps/APP/build/test-results/test (APP defaults to commerce-api) unless --results names another DIR, such as
+the copy scripts/final-check keeps. A filtered run replaces an app's reports, so read them right after the run they
+record. Exits 1 when CLASS has no report, or one in more than one package, or nothing matched.
+"""
+
+import argparse
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+
+# Boot's console pattern: time, level, PID, ---, [app name], [thread], [correlation IDs], logger, " : ", message.
+# The app name and the correlation IDs depend on the configuration, so both brackets are optional.
+LOG_LINE = re.compile(
+    r"^(?P<time>\d{4}-\d{2}-\d{2}T\S+)\s+(?P<level>[A-Z]+)\s+\d+\s+---\s+(?:\[[^\]]*\]\s+)?"
+    r"\[\s*(?P<thread>[^\]]*?)\]\s+(?:\[[^\]]*\]\s+)?(?P<logger>[^\s\[]\S*)\s+:\s(?P<message>.*)$"
+)
+NOT_CONTINUATION = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T|Hibernate:|\s+at |\t)")
+# Spring Boot's StartupInfoLogger, which logs through the main class's logger: a test context's is the test class.
+BOOT_STARTUP = re.compile(
+    r"^(?:Starting \S+ using Java|Running with Spring Boot|The following \d+ profiles? (?:is|are) active|"
+    r"No active profile set|Started \S+ in )"
+)
+
+
+def entries(out: str):
+    """Yields each log line of `out` as its match and the lines that continue its message."""
+    lines = out.splitlines()
+    index = 0
+    while index < len(lines):
+        match = LOG_LINE.match(lines[index])
+        index += 1
+        if not match:
+            continue
+        continuation = []
+        while index < len(lines) and not NOT_CONTINUATION.match(lines[index]):
+            continuation.append(lines[index])
+            index += 1
+        yield match, continuation
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--app", default="commerce-api", help="app under apps/ whose reports to read")
+    source.add_argument("--results", type=Path, help="directory of TEST-*.xml reports")
+    parser.add_argument("--source", action="store_true", help="prefix each line with its time, level, thread, logger")
+    parser.add_argument("test_class", metavar="CLASS", help="simple class name, as OrderEventConsumedCaseTest")
+    parser.add_argument("pattern", metavar="PATTERN", nargs="?", help="regular expression a message must match")
+    args = parser.parse_args()
+
+    results = args.results or REPO / "apps" / args.app / "build/test-results/test"
+    reports = sorted(results.glob(f"TEST-*.{args.test_class}.xml"))
+    if len(reports) != 1:
+        found = "no report" if not reports else f"{len(reports)} reports"
+        print(f"{args.test_class}: {found} in {results}", file=sys.stderr)
+        return 1
+
+    out = ET.parse(reports[0]).getroot().findtext("system-out") or ""
+    pattern = re.compile(args.pattern) if args.pattern else None
+    printed = 0
+    for match, continuation in entries(out):
+        logger = match.group("logger")
+        if pattern:
+            if not pattern.search(match.group("message")):
+                continue
+        elif logger.rsplit(".", 1)[-1] != args.test_class or BOOT_STARTUP.match(match.group("message")):
+            continue
+        head = match.group("message")
+        if args.source:
+            head = f"{match.group('time')} {match.group('level')} [{match.group('thread')}] {logger}: {head}"
+        print("\n".join([head, *continuation]))
+        if continuation:
+            print()
+        printed += 1
+
+    if not printed:
+        print(f"{args.test_class}: no line matched in {reports[0].name}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
