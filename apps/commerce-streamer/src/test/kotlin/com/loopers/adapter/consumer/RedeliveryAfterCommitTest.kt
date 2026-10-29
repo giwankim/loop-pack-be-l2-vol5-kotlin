@@ -114,11 +114,12 @@ class RedeliveryAfterCommitTest(
         group = broker.nameGroup("redelivery-after-commit")
     }
 
-    /** Closes the consumers first: the broker refuses to delete a group that still has a member. */
+    /** Closes every consumer before the broker deletes the group, which it refuses while the group has a member. */
     @AfterEach
     fun closeTheConsumersAndTheBroker() {
-        consumers.forEach { it.close() }
-        broker.close()
+        broker.use {
+            consumers.forEach { it.close() }
+        }
     }
 
     @Test
@@ -156,9 +157,7 @@ class RedeliveryAfterCommitTest(
             entry("after the first close", sent.offset()),
             entry("after the second read", sent.offset() + 1),
         )
-        assertThat(storedConfirmations().map { it.eventId }).containsExactly(event.eventId)
-        assertThat(storedActivities().map { it.productId to it.quantity })
-            .containsExactlyInAnyOrderElementsOf(event.items.map { it.productId to it.quantity })
+        assertOnlyTheRowsOf(event)
         assertThat(storedRows()).isEqualTo(rowsAfterTheFirstRead)
         assertThat(listenerLines(Level.INFO)).containsExactly(
             "Recorded the order confirmed event. eventId=${event.eventId}, orderId=${event.orderId}, " +
