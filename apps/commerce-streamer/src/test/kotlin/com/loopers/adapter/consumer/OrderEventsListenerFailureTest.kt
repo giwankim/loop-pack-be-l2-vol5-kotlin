@@ -28,8 +28,10 @@ private val log = KotlinLogging.logger {}
  * event's second item. The listener's transaction inserts the processed order confirmation and the first item, then waits for
  * that row's unique key, and the session's `innodb_lock_wait_timeout` of 3 s (ADR 0018 rule 7) ends the wait with MySQL 1205,
  * `Lock wait timeout exceeded`. The failure line quotes the statement that failed, an activity insert, which is how the scene
- * sees that the write was partial: the recorder had got past the confirmation and the first item. Hibernate reads 1205 as
- * its `LockTimeoutException`, a `LockAcquisitionException`, and Spring translates that into [CannotAcquireLockException]. It
+ * sees that the write was partial: the recorder saves the confirmation before the activities, so the confirmation was in. The
+ * message names no key, so that the first item was in too follows from the insert order and the held key, not from anything
+ * the scene reads. Hibernate reads 1205 as its `LockTimeoutException`, a `LockAcquisitionException`, and Spring translates
+ * that into [CannotAcquireLockException]. It
  * is not a `DataIntegrityViolationException`, so the listener's `recordSettlingARace` does not call the recorder again; the
  * exception leaves the listener, Spring rolls the whole transaction back, the listener logs its failure line, and the
  * factory's error handler stops the container.
@@ -63,8 +65,8 @@ class OrderEventsListenerFailureTest(
         private const val LOCK_WAIT_TIMEOUT_MESSAGE = "Lock wait timeout exceeded; try restarting transaction"
 
         /**
-         * The statement that failed, as Hibernate's message quotes it. The recorder inserts the confirmation first and the items
-         * in order, so an activity insert failing on the second item's key means the confirmation and the first item were in.
+         * The statement that failed, as Hibernate's message quotes it. The recorder inserts the confirmation before the items,
+         * so an activity insert failing means the confirmation was in. The message names no key, so it cannot say which item.
          */
         private const val FAILED_STATEMENT = "[insert into purchase_activity "
     }
