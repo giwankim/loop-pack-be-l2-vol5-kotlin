@@ -869,4 +869,4 @@ No hard violations. Block bodies, backticked test names, no `@DisplayName`, `@Ne
 
 ### Records
 
-- The commit that adds this section records this comment in `docs/research/week6-kafka-delivery-writing-material.md`.
+- [`51d53f7`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/51d53f7) records this comment in `docs/research/week6-kafka-delivery-writing-material.md`.
