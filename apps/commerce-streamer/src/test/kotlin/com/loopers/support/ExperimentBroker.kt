@@ -1,6 +1,7 @@
 package com.loopers.support
 
 import org.apache.kafka.clients.admin.Admin
+import org.apache.kafka.clients.admin.ConsumerGroupDescription
 import org.apache.kafka.common.errors.GroupIdNotFoundException
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException
 import org.awaitility.Awaitility.await
@@ -66,6 +67,25 @@ class ExperimentBroker(kafkaAdmin: KafkaAdmin) : AutoCloseable {
     }
 
     /**
+     * [group] as the broker describes it now: its state, its members by client ID, and the partitions each holds. A group's
+     * membership is read here, never counted from consumer or container objects, which can hold an assignment the broker has
+     * already moved on from. The description is one moment's, so a test waits on it until the group has settled.
+     *
+     * Null while the broker does not know the group, as before its first consumer joins: a 4.x broker answers an unknown group
+     * with `GroupIdNotFoundException`, where an older one described it as `Dead` with no members.
+     */
+    fun describeGroup(group: String): ConsumerGroupDescription? {
+        return try {
+            admin.describeConsumerGroups(listOf(group))
+                .describedGroups()
+                .getValue(group)
+                .get(ADMIN_WAIT.toSeconds(), TimeUnit.SECONDS)
+        } catch (e: ExecutionException) {
+            if (e.cause is GroupIdNotFoundException) null else throw e
+        }
+    }
+
+    /**
      * Deletes every group this experiment named and every topic it created, waits until the broker no longer describes the
      * topics, and closes the client. The test closes its consumers first: the broker refuses to delete a group with a member.
      */
@@ -123,5 +143,16 @@ class ExperimentBroker(kafkaAdmin: KafkaAdmin) : AutoCloseable {
 
     private fun uniqueName(prefix: String): String {
         return "$prefix-${UUID.randomUUID().toString().take(8)}"
+    }
+}
+
+/**
+ * The member → partitions table of a group's description: each member by client ID, with the numbers of the partitions the
+ * broker says it holds, in order. A member that holds none has an empty list. An experiment gives each member a client ID
+ * of its own, since two members with one client ID would share a row.
+ */
+fun ConsumerGroupDescription.partitionsByMember(): Map<String, List<Int>> {
+    return members().associate { member ->
+        member.clientId() to member.assignment().topicPartitions().map { it.partition() }.sorted()
     }
 }

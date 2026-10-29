@@ -3,6 +3,8 @@ package com.loopers.support
 import com.loopers.adapter.consumer.OrderEventsListenerConfig.Companion.ORDER_EVENTS_LISTENER
 import com.loopers.support.test.BaseApplicationServiceTest
 import org.apache.kafka.clients.admin.Admin
+import org.apache.kafka.clients.consumer.Consumer
+import org.apache.kafka.common.GroupState
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.awaitility.Awaitility.await
@@ -18,8 +20,9 @@ import java.util.concurrent.TimeUnit
 /**
  * The helper every step 3 experiment opens on the shared test broker. What it creates is read back from the broker with an
  * admin client of this test's own, on the same address, so a topic or group the helper only believes it made or removed
- * fails here. Each test closes the helper itself to see what closing does, and the base's close after it must then do
- * nothing, so a test that fails before its own close still leaves the broker clean.
+ * fails here. The tests of closing close the helper themselves to see what closing does, and the class's close after it
+ * must then do nothing, so a test that fails before its own close still leaves the broker clean. The tests of the group
+ * description leave the close to `@AfterEach`.
  */
 class ExperimentBrokerTest(
     private val kafkaAdmin: KafkaAdmin,
@@ -34,6 +37,9 @@ class ExperimentBrokerTest(
 
         /** How long one poll blocks, so the wait above checks the assignment often. */
         private val POLL_TIMEOUT: Duration = Duration.ofMillis(100)
+
+        /** The client ID of the consumer that joins a group, which the broker names in the group's description. */
+        private const val MEMBER = "experiment-broker-member"
     }
 
     private lateinit var broker: ExperimentBroker
@@ -75,6 +81,28 @@ class ExperimentBrokerTest(
     }
 
     @Test
+    fun `the group description is the broker's, a stable group whose member holds the partitions it was assigned`() {
+        val topic = broker.createTopic("experiment-broker", partitions = 2)
+        val group = broker.nameGroup("experiment-broker")
+
+        checkNotNull(factory.consumerFactory).createConsumer(group, MEMBER, null).use { consumer ->
+            awaitAssignment(consumer, topic)
+
+            val description = checkNotNull(broker.describeGroup(group))
+
+            assertThat(description.groupState()).isEqualTo(GroupState.STABLE)
+            assertThat(description.partitionsByMember()).isEqualTo(mapOf(MEMBER to listOf(0, 1)))
+        }
+    }
+
+    @Test
+    fun `a named group that no consumer has joined has no description yet`() {
+        val group = broker.nameGroup("experiment-broker")
+
+        assertThat(broker.describeGroup(group)).isNull()
+    }
+
+    @Test
     fun `closing skips a named group that no consumer joined`() {
         broker.nameGroup("experiment-broker")
 
@@ -95,12 +123,17 @@ class ExperimentBrokerTest(
      */
     private fun joinAndLeave(group: String, topic: String) {
         checkNotNull(factory.consumerFactory).createConsumer(group, null).use { consumer ->
-            consumer.subscribe(listOf(topic))
-            await().atMost(ASSIGNMENT_WAIT).until {
-                consumer.poll(POLL_TIMEOUT)
-                consumer.assignment().isNotEmpty()
-            }
+            awaitAssignment(consumer, topic)
             consumer.commitSync()
+        }
+    }
+
+    /** [consumer] subscribes to [topic] and polls until the broker has assigned it a partition: it is a member of its group. */
+    private fun awaitAssignment(consumer: Consumer<*, *>, topic: String) {
+        consumer.subscribe(listOf(topic))
+        await().atMost(ASSIGNMENT_WAIT).until {
+            consumer.poll(POLL_TIMEOUT)
+            consumer.assignment().isNotEmpty()
         }
     }
 
