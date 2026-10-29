@@ -4,7 +4,8 @@ Loopers 에서 제공하는 스프링 코틀린 템플릿 프로젝트입니다.
 ## Getting Started
 현재 프로젝트 안정성 및 유지보수성 등을 위해 아래와 같은 장치를 운용하고 있습니다. 이에 아래 명령어를 통해 프로젝트의 기반을 설치해주세요.
 ### Setup
-- pre-commit : 커밋 이전에 `ktlint` 를 통해 점검, 코드 안정성 확보
+- pre-commit : 커밋 이전에 `ktlint` 를 통해 점검, 코드 안정성 확보. 스테이징한 설계 문서·ADR 이 더하는 절 번호와 Markdown 링크도 점검
+- commit-msg : 커밋 메시지의 `#<번호>` 를 거부, upstream 의 다른 PR 로 링크되지 않도록 함
 ```shell
 make init
 ```

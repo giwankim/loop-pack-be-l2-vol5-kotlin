@@ -14,13 +14,12 @@ spring:
   main:
     web-application-type: servlet
   application:
-    name: commerce-api
+    name: commerce-streamer
   profiles:
     active: local
   config:
     import:
       - jpa.yml
-      - redis.yml
       - kafka.yml
       - logging.yml
       - monitoring.yml
@@ -30,10 +29,34 @@ demo-kafka:
     topic-name: demo.internal.topic-v1
 
 ---
+# The order events listener's promises (ADR 0033 rules 6 and 7). They sit in a document of their own, below the one that
+# imports kafka.yml: an imported file overrides the document that imports it, and kafka.yml sets the template's group-id.
+# A new group starts from the earliest retained record, so a streamer deployed after commerce-api skips no confirmation;
+# recording the same fact again writes nothing, so reading again is safe. The topic belongs to commerce-api, so a missing
+# topic must not be auto-created as a one-partition topic.
+spring:
+  kafka:
+    consumer:
+      group-id: commerce-streamer
+      properties:
+        auto.offset.reset: earliest
+        allow.auto.create.topics: false
+
+---
 spring:
   config:
     activate:
       on-profile: local, test
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+
+# The template's demo listener stays registered, but its container does not start, so no test consumes its topic.
+demo-kafka:
+  auto-startup: false
 
 ---
 spring:

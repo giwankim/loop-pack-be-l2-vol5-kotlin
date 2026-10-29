@@ -1,4 +1,4 @@
-package com.loopers.interfaces.consumer
+package com.loopers.adapter.consumer
 
 import com.loopers.config.kafka.KafkaConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
@@ -11,6 +11,7 @@ class DemoKafkaConsumer {
     @KafkaListener(
         topics = ["\${demo-kafka.test.topic-name}"],
         containerFactory = KafkaConfig.BATCH_LISTENER,
+        autoStartup = "\${demo-kafka.auto-startup:true}",
     )
     fun demoListener(
         messages: List<ConsumerRecord<Any, Any>>,

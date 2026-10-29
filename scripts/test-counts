@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Print the test counts of the last Gradle test run, read from its JUnit XML reports.
 
-Usage: scripts/test-counts [--results DIR] [CLASS ...]
+Usage: scripts/test-counts [--app APP | --results DIR] [CLASS ...]
 
 Prints the totals (classes, tests, failures, errors, skipped), then one row per CLASS,
 matched by simple class name (OrderPaymentIntegrationTest, not a suffix filter).
 Exits 1 when any test failed, errored or was skipped, when a named CLASS has no report,
-or when DIR holds no reports. Run it after `./gradlew :apps:commerce-api:cleanTest ... check`
+or when DIR holds no reports. Reads apps/APP/build/test-results/test (APP defaults to commerce-api)
+unless --results names another DIR. Run it after `./gradlew :apps:APP:cleanTest ... check`
 so stale reports from an earlier run can't leak into the counts.
 """
 
@@ -15,19 +16,22 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-DEFAULT_RESULTS = Path(__file__).resolve().parent.parent / "apps/commerce-api/build/test-results/test"
+REPO = Path(__file__).resolve().parent.parent
 FIELDS = ("tests", "failures", "errors", "skipped")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS, help="directory of TEST-*.xml reports")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--app", default="commerce-api", help="app under apps/ whose reports to read")
+    source.add_argument("--results", type=Path, help="directory of TEST-*.xml reports")
     parser.add_argument("classes", nargs="*", help="simple class names to list")
     args = parser.parse_args()
 
-    reports = sorted(args.results.glob("TEST-*.xml"))
+    results = args.results or REPO / "apps" / args.app / "build/test-results/test"
+    reports = sorted(results.glob("TEST-*.xml"))
     if not reports:
-        print(f"no JUnit XML reports in {args.results}", file=sys.stderr)
+        print(f"no JUnit XML reports in {results}", file=sys.stderr)
         return 1
 
     per_class = {}

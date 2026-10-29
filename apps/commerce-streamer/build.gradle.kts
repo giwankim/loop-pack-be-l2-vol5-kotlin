@@ -6,7 +6,6 @@ plugins {
 dependencies {
     // add-ons
     implementation(project(":modules:jpa"))
-    implementation(project(":modules:redis"))
     implementation(project(":modules:kafka"))
     implementation(project(":supports:jackson"))
     implementation(project(":supports:logging"))
@@ -16,7 +15,14 @@ dependencies {
     implementation(libs.springBootStarterWebmvc)
     implementation(libs.springBootStarterActuator)
 
+    // validation: the convention adds it runtimeOnly, and the recording request's constraints need it on the compile path
+    implementation(libs.springBootStarterValidation)
+
     // test-fixtures
     testImplementation(testFixtures(project(":modules:jpa")))
-    testImplementation(testFixtures(project(":modules:redis")))
+    testImplementation(testFixtures(project(":modules:kafka")))
+
+    // Only for KafkaTestUtils, which reads a group's committed offset. @EmbeddedKafka is not used (purchase activity
+    // design 7).
+    testImplementation(libs.springBootStarterKafkaTest)
 }
