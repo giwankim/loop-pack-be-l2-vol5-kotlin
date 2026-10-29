@@ -153,7 +153,7 @@
 | DB 커밋 뒤 offset 미커밋 재전달 | 다시 전달되다, `RedeliveryAfterCommitTest`(E3) | 용어집이 다시 발행하다와 가른다. 2단계의 `the same event published twice …`는 다시 발행이다. |
 | 실제 리스너의 실패·롤백·재시작 | 실패 실험 `OrderEventsListenerFailureTest`(E4)와 실패 줄 | 일시 장애다. 처리할 수 없는 이벤트의 멈춤은 2단계의 멈춤 장면이 본다. |
 | 격리 토픽 | 실험의 토픽(`ExperimentBroker.createTopic`) | 실험마다 만들고 지운다(3절). |
-| 재전달, 중복 | 다시 전달되다, 다시 발행하다 | 같은 record의 같은 자리인지, 같은 이벤트의 새 record인지로 가른다. |
+| 재전달, 중복 | 다시 전달되다, 다시 발행하다 | 같은 record의 같은 자리인지, 같은 이벤트의 새 record인지로 가른다. 둘 다 구매 활동에는 같은 사실로 온다([구매 활동 설계](./purchase-activity.md) 10절). |
 | 중단, 재시작 | 멈추다, 다시 시작하다(`start()`) | 용어집의 멈추다는 기록하지 못한 모든 경우다. |
 | ack | 읽었다고 표시하다 | `Acknowledgment.acknowledge()`. |
 | handler | 리스너 `OrderEventsListener`와 error handler `CommonContainerStoppingErrorHandler` | 과제의 handler는 둘을 함께 가리킨다. |

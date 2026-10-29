@@ -8,7 +8,7 @@
 
 - 과제: [6주차 실습 · Kafka 설정 변화로 전달 상태 설명하기](https://app.notion.com/p/6-Kafka-4025f76d2654800da946cb2b4ad1bc88). 2단계의 근거는 과제의 소비 부분 다섯이다.
   1. **저장.** `order-events`의 `OrderConfirmed`가 오면 처리한 주문 확정 하나와 상품별 구매 활동 행을 한 트랜잭션에, DB 유일 제약 아래 쓴다.
-  2. **재전달과 충돌.** 같은 record가 다시 오면 아무것도 바꾸지 않고 읽었다고 표시한다. 같은 eventId의 다른 내용은 오류다.
+  2. **같은 사실과 충돌.** 같은 사실이 다시 오면(다시 발행되거나 다시 전달되어) 아무것도 바꾸지 않고 읽었다고 표시한다. 같은 eventId의 다른 내용은 충돌이다.
   3. **리스너 설정.** 템플릿의 batch 팩토리와 다른 record 리스너 팩토리, `MANUAL_IMMEDIATE`, 중단형 error handler. 실제 consumer 설정의 `enable.auto.commit`이 false임을 테스트가 읽는다.
   4. **YAML.** `kafka.yml`의 `consumer.value-serializer`는 `value-deserializer`다.
   5. **7주차에 넘기는 사례.** 정상 발행·소비 사례 1건의 기록. 미발행 사례는 1단계가 남겼다(주문 이벤트 설계 6절).
@@ -66,7 +66,7 @@
 
 - `order_id`와 `product_id`는 값이다. `orders`·`product`로 가는 외래 키는 없고 streamer는 그 표를 읽지 않는다(1.1절). `scalar-foreign-keys.sql`에도 넣지 않는다.
 - `confirmed_at`은 구매 활동에도 둔다. 9주차의 시간 창이 처리한 주문 확정을 거치지 않고 읽는다. 그 인덱스는 9주차가 둔다.
-- 엔티티는 `domain.purchaseactivity`, 포트는 `application.purchaseactivity.required.ProcessedOrderConfirmationRepository`와 `PurchaseActivityRepository`(Spring Data, 없으면 null), 구현은 `adapter.persistence.purchaseactivity`다. commerce-api와 같은 헥사고날 구조(ADR 0013)이고, 지금 streamer의 `interfaces.consumer`는 `adapter.consumer`가 된다. (2026-10-28, [티켓 178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178): 두 엔티티는 생성자에서 `confirmedAt`을 마이크로초로 자른다. MySQL은 일곱째 자리를 버리지 않고 반올림한다. 자르지 않은 `…03.123456789Z`를 저장하자 `…03.123457Z`로 읽혔다(탐침). 자르지 않으면 같은 사실의 재전달이 저장된 시각과 어긋나 충돌로 보인다. 생성자가 필드를 계산하므로 fixture는 ADR 0010의 기준대로 Instancio가 아니라 진짜 생성자를 부른다. 두 표의 쿼리는 모두 파생 조회라 `adapter.persistence.purchaseactivity`는 아직 없다. 포트에는 테스트가 쓰는 `save`와 조회만 두었고, 4절의 `saveAll`은 그것을 처음 부르는 기록 티켓이 더한다.)
+- 엔티티는 `domain.purchaseactivity`, 포트는 `application.purchaseactivity.required.ProcessedOrderConfirmationRepository`와 `PurchaseActivityRepository`(Spring Data, 없으면 null), 구현은 `adapter.persistence.purchaseactivity`다. commerce-api와 같은 헥사고날 구조(ADR 0013)이고, 지금 streamer의 `interfaces.consumer`는 `adapter.consumer`가 된다. (2026-10-28, [티켓 178](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/178): 두 엔티티는 생성자에서 `confirmedAt`을 마이크로초로 자른다. MySQL은 일곱째 자리를 버리지 않고 반올림한다. 자르지 않은 `…03.123456789Z`를 저장하자 `…03.123457Z`로 읽혔다(탐침). 자르지 않으면 다시 온 같은 사실이 저장된 시각과 어긋나 충돌로 보인다. 생성자가 필드를 계산하므로 fixture는 ADR 0010의 기준대로 Instancio가 아니라 진짜 생성자를 부른다. 두 표의 쿼리는 모두 파생 조회라 `adapter.persistence.purchaseactivity`는 아직 없다. 포트에는 테스트가 쓰는 `save`와 조회만 두었고, 4절의 `saveAll`은 그것을 처음 부르는 기록 티켓이 더한다.)
 - 스키마는 두 앱이 같은 `loopers`를 쓴다. Hibernate의 `create`는 그 앱이 매핑한 표만 지우고 만들므로 서로의 표를 건드리지 않는다.
 
 ## 4. 기록
@@ -81,7 +81,7 @@ provided 포트 `application.purchaseactivity.provided.PurchaseActivityRecorder.
 - **견줌의 정의.** 속성의 차례와 `items`의 차례는 사실이 아니다. 구매 활동 행을 상품별 `(productId, quantity)`의 집합으로 만들어 요청의 것과 견준다. 지문은 저장하지 않는다. (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179): 견주는 것은 요청 자체가 아니라 요청으로 만든 엔티티다. 엔티티가 시각을 마이크로초로 자르므로, 요청의 시각을 그대로 견주면 일곱째 자리가 있는 같은 사실이 저장된 자기와 충돌한다. 변이 탐침에서 `…03.123456Z`를 저장한 뒤 `…03.123456789Z`가 충돌이 되었다. 상품은 양쪽에서 한 번씩이므로(구매 활동의 유일 키, 요청의 검증) 집합은 상품에서 수량으로 가는 맵이고, 충돌의 메시지가 그 맵을 상품 차례로 적는다. 메시지는 온 eventId와 orderId, 그리고 다른 값마다 `<이름> recorded <저장된 값>, incoming <온 값>`이다.)
 - **겹친 상품.** (2026-10-28, [티켓 179](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/179)) 요청의 `@AssertTrue`가 `ConstraintViolationException`으로 거절한다. 엔티티는 한 행이라 겹침을 볼 수 없다. 거절이 없으면 처리한 주문 확정을 삽입한 뒤 구매 활동의 유일 키가 둘째 품목을 `DataIntegrityViolationException`으로 거절하고(변이 탐침), 리스너 어댑터가 그것을 경합으로 읽어 다시 부른다. 6절의 운영 모양이 재시도하지 않는 것으로 등록할 예외 쪽에 둔 것이다.
 - **경합.** 같은 eventId를 두 consumer가 같은 순간 다루는 일은 key가 orderId라 한 파티션의 record를 둘이 나눠 가질 때, 곧 rebalance를 건너는 순간에만 생긴다. 진 쪽은 유일 제약의 `DataIntegrityViolationException`을 받는다. 리스너 어댑터가 같은 호출을 한 번 다시 하면 읽는 경로가 `ALREADY_RECORDED`나 충돌로 푼다. 이 재시도는 error handler의 재시도가 아니다. (2026-10-28, [티켓 182](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/182): 한 번 더 부르는 것은 `OrderEventsListener.recordSettlingARace`이고, 두 번째 위반은 리스너 밖으로 나가 컨테이너를 세운다. 이 경로는 티켓 180의 탐침으로만 봤다. 저장소 spy가 진 쪽의 첫 조회를 비워 경합을 흉내 내자 다시 부른 호출이 `ALREADY_RECORDED`로 끝났고, 다시 부르지 않는 변이는 컨테이너를 세웠다. 남은 테스트는 없다.)
-- **왜 먼저 읽는가.** 1단계는 "유일 제약이 막고, 위반 뒤 별도 TX에서 다시 본다"로 넘겼다. 그러면 흔한 경로인 재전달이 예외와 롤백이 되고, 위반 뒤의 JPA 세션은 쓸 수 없어 두 번째 트랜잭션과 steps 빈이 필요하다. 먼저 읽으면 재전달은 SELECT 하나이고 제약은 경합의 뒷받침이다.
+- **왜 먼저 읽는가.** 1단계는 "유일 제약이 막고, 위반 뒤 별도 TX에서 다시 본다"로 넘겼다. 그러면 흔한 경로인 다시 온 같은 사실이 예외와 롤백이 되고, 위반 뒤의 JPA 세션은 쓸 수 없어 두 번째 트랜잭션과 steps 빈이 필요하다. 먼저 읽으면 그것은 SELECT 하나이고 제약은 경합의 뒷받침이다.
 - **왜 견주는가.** 운영의 inbox 구현은 대개 메시지 ID를 보면 그냥 건너뛴다. 과제와 용어집의 이벤트 ID는 같은 ID의 다른 내용을 충돌이라 하므로 견준다. 발행 쪽의 버그로 바뀐 이벤트가 소리 없이 읽었다고 표시되지 않는다. 비용은 어차피 하는 읽기 한 번의 비교다.
 - 저장은 명시적이다(카탈로그 설계 5.37). dirty checking에 기대지 않는다.
 
@@ -151,7 +151,7 @@ streamer가 던지는 셋(`Unsupported…`, `Malformed…`, `…Conflict…`)은
 | --- | --- | --- |
 | 상품 구매 활동 | 구매 활동(`PurchaseActivity`, `purchase_activity`) | 맥락의 이름이 상품 구매 활동이라 "상품"이 겹친다. |
 | processed(처리한 이벤트의 기록) | 처리한 주문 확정(`ProcessedOrderConfirmation`, `processed_order_confirmation`) | 1단계의 인터뷰에서 과제의 이름을 골랐다. 이벤트 종류마다 하나다. |
-| 중복·재전달 | 같은 사실 | 재전달은 전달의 말이고, 가르는 것은 사실이다. |
+| 중복·재전달 | 같은 사실 | 재전달은 전달의 말이고, 가르는 것은 사실이다. (2026-10-29, [명세 184](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/184)의 검토: 전달의 말은 다시 발행하다와 다시 전달되다로 가르고, 둘 다 같은 사실로 온다. [Kafka 전달 설계](./kafka-delivery.md) 6절.) |
 | 오류(같은 eventId의 다른 내용) | 충돌 | 커머스 `CONTEXT.md`의 이벤트 ID 항목과 같은 말. |
 | 중단형 error handler | 멈추다 | `CommonContainerStoppingErrorHandler`. |
 | ack | 읽었다고 표시하다 | `Acknowledgment.acknowledge()`. |
