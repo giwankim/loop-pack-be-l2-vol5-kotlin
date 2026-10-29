@@ -74,13 +74,6 @@ class OrderEventConsumedCaseTest : BaseConsumerTest() {
      */
     private fun logTheConsumedCase(topic: String, partition: Int, offset: Long) {
         val listenerLine = listenerLines(Level.INFO).single()
-        val confirmations = storedConfirmations().joinToString("; ") {
-            "id=${it.id}, event_id=${it.eventId}, order_id=${it.orderId}, confirmed_at=${it.confirmedAt}"
-        }
-        val activities = storedActivities().joinToString("; ") {
-            "id=${it.id}, order_id=${it.orderId}, product_id=${it.productId}, quantity=${it.quantity}, " +
-                "confirmed_at=${it.confirmedAt}"
-        }
 
         log.info {
             """
@@ -89,8 +82,8 @@ class OrderEventConsumedCaseTest : BaseConsumerTest() {
             |value=$VALUE
             |committed offset of commerce-streamer on partition $partition=${committedOffset(partition)}
             |listener: $listenerLine
-            |processed_order_confirmation: $confirmations
-            |purchase_activity: $activities
+            |${storedConfirmationsLine()}
+            |${storedActivitiesLine()}
             """.trimMargin()
         }
     }
