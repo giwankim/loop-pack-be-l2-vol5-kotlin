@@ -15,17 +15,19 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
       retries: 3
+      # Wait for every in-sync replica. On a single broker that is the leader alone, so this is no stronger than acks=1.
+      acks: all
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-serializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
       properties:
         enable-auto-commit: false
     listener:
       ack-mode: manual
 
 ---
-spring.config.activate.on-profile: local, test
+spring.config.activate.on-profile: local
 
 spring:
   kafka:
@@ -33,6 +35,17 @@ spring:
     admin:
       properties:
         bootstrap.servers: kafka:9092
+
+---
+# No broker address: KafkaTestContainersConfig supplies the container's, as MySqlTestContainersConfig does for MySQL.
+# Without it the literal ${BOOTSTRAP_SERVERS} reaches the admin client, and fail-fast turns the admin's logged error into a
+# failed context. By default KafkaAdmin logs that it could not create the admin or the topics and lets the context start.
+spring.config.activate.on-profile: test
+
+spring:
+  kafka:
+    admin:
+      fail-fast: true
 
 ---
 spring.config.activate.on-profile: dev

@@ -230,7 +230,7 @@ After the migration, the seeded row is intact, `checkout-42` is accepted, lookup
 Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151#issuecomment-6340388224) of [issue 151](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/151), the tracer. The decisions are [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) and [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), with the header rule from [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md) and the test generator from [ADR 0029](../adr/0029-pg-order-id-is-minted-per-payment.md). The code is:
 
 - [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
-- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt)
 - [`PaymentModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentModifyService.kt)
 - [`PgTransactionService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PgTransactionService.kt)
 - [`IdempotencyKeyArgumentResolver`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/IdempotencyKeyArgumentResolver.kt)
@@ -244,7 +244,7 @@ Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-
 Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issue 150:
 
 - [`c2eb03d`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/c2eb03d) is the code and tests:
-  - the `NEVER` orchestrator `OrderPaymentService`, with TX A and TX B on `OrderPaymentSteps`
+  - the `NEVER` orchestrator `OrderPaymentService`, with TX A and TX B on `OrderPaymentSagaSteps`
   - the payment slice's four provided ports
   - `OrderInfo` and `OrderFinder.findInfo`
   - the `Idempotency-Key` resolver and the 200/202 confirm handler
@@ -336,7 +336,7 @@ Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issu
   - Payment slice services: `PaymentModifyService`, `PaymentQueryService` and `PgTransactionService`.
   - Order slice:
     - `OrderPaymentService` implements `OrderConfirmer` as the `NEVER` orchestrator.
-    - `OrderPaymentSteps` holds TX A (`startPayment`) and TX B (`applyTransaction`) and implements no port.
+    - `OrderPaymentSagaSteps` holds TX A (`startPayment`) and TX B (`applyTransaction`) and implements no port.
     - `OrderInfo(order, paymentStatus)` is the cross-aggregate result.
     - `OrderFinder.findInfo` sits beside `find`, as `ProductFinder` has both `find` and `findInfo`.
     - `OrderInfoAssembler` reads the payment only when the payment method is PG.
@@ -378,7 +378,7 @@ Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issu
     - two test variable names and one status assertion in the API test
     - the handler locals, now `order` as catalog design 5.33 asks
     - "결제를 요청하다" in the API doc, which `CONTEXT.md` avoids
-    - missing dated notes on ADR 0013, and the `@ApplicationService` KDoc, because `OrderPaymentSteps` implements no port
+    - missing dated notes on ADR 0013, and the `@ApplicationService` KDoc, because `OrderPaymentSagaSteps` implements no port
   - Three copies of the accepted-create stub became one base helper, `acceptNextCreate`.
 
 ### For later tickets
@@ -390,7 +390,7 @@ Two commits on `feat/order-payment` (pushed, `5ec65f5..94dd580`), on top of issu
 - **[Issue 153](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/153):** the customer list still maps `OrderResponse.from(order)`, so a PG order in the list has no `paymentStatus` yet. `PAYMENT_MISSING` exists, but no test covers it.
 - **[Issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155):** replays and key conflicts go where TX A checks "non-draft → `ORDER_ALREADY_CONFIRMED`". The web boundary already rejects malformed keys before any lookup.
 - **[Issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156):**
-  - The reconcile entry can reuse `OrderPaymentSteps.applyTransaction`.
+  - The reconcile entry can reuse `OrderPaymentSagaSteps.applyTransaction`.
   - The unknown-outcome path answers with TX A's snapshot. Once reconcile can change the order between TX A and the response, decide whether that path should read the order again.
 - **[Issue 157](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/157):** carry the PG amount cap into the payments design doc as a deviation.
 
@@ -593,7 +593,7 @@ Three commits on `feat/order-payment` (pushed, `15fda3b..2cafc0b`), on top of is
 Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152#issuecomment-6341594995) of [issue 152](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/152). The rules are [ADR 0026](../adr/0026-stock-reservation-is-the-pending-orders-line-items.md), rules 3 and 4 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), and rules 1 and 3 of [ADR 0020](../adr/0020-product-list-cache-keyed-by-a-db-revision-locked-last.md). The code is:
 
 - [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
-- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt)
 - [`PaymentModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentModifyService.kt)
 - [`StockRestorer`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/product/provided/StockRestorer.kt) and its implementation in [`ProductModifyService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/product/ProductModifyService.kt)
 - [`Product.restoreStock`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/product/Product.kt)
@@ -604,7 +604,7 @@ Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-
 Three commits on `feat/order-payment` (pushed, `595dfc5..4ce2f98`), on top of issues 154 and 153:
 
 - [`1b67ce0`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/1b67ce0) is the code and tests:
-  - The orchestrator catches `PgRejectedException` outside any transaction and hands it to TX B's new rejection entry, `OrderPaymentSteps.applyRejection`. An accepted create whose transaction says FAILED takes the same path through `applyTransaction`.
+  - The orchestrator catches `PgRejectedException` outside any transaction and hands it to TX B's new rejection entry, `OrderPaymentSagaSteps.applyRejection`. An accepted create whose transaction says FAILED takes the same path through `applyTransaction`.
   - Both entries share one rule. The order changes only on `Changed`: `completePayment()` on SUCCESS, and `failPayment()` plus the return of stock on FAILED.
   - `PaymentReconciler.reject(orderId, rejection)` applies `Payment.reject` inside TX B and logs a WARN, without card data, on `Conflicted`.
   - The new product port `StockRestorer.restore(quantities)` locks products by id, skips missing or deleted ones, and adds the units back. It bumps the list revision only when a sold-out product becomes buyable.
@@ -703,7 +703,7 @@ Fixed in [`fda7f0b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/com
 Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155#issuecomment-6343745417) of [issue 155](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/155). The contract is [ADR 0025](../adr/0025-confirm-requires-an-idempotency-key-and-replays-stored-state.md), the check order is in [spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)'s "주문 슬라이스의 조율", and rule 5 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md) decides who compares the key. The code is:
 
 - [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
-- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt)
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt)
 - [`PaymentValidator`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PaymentValidator.kt) and its implementation [`PaymentValidationService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PaymentValidationService.kt)
 - [`Payment.isStartedWith`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/payment/Payment.kt)
 - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt) and [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt)
@@ -713,7 +713,7 @@ Recorded 2026-10-22 from the [closing comment](https://github.com/giwankim/loop-
 Two commits on `feat/order-payment` (pushed, `7071838..773f9eb`):
 
 - [`8d02f60`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/8d02f60) is the code and tests:
-  - TX A (`OrderPaymentSteps.startPayment`) checks in ADR 0025's order:
+  - TX A (`OrderPaymentSagaSteps.startPayment`) checks in ADR 0025's order:
     1. It locks the order. A missing order, or someone else's, is 404, even with the owner's key.
     2. A point-confirmed order is 409 `ORDER_ALREADY_CONFIRMED`.
     3. An order that has a payment replays on the key that started it. Any other key is 409 `IDEMPOTENCY_KEY_MISMATCH`.
@@ -811,7 +811,7 @@ Two commits on `feat/order-payment` (pushed, `7071838..773f9eb`):
 Recorded 2026-10-23 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156#issuecomment-6344945061) of [issue 156](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/156). The rules are rules 4 and 5 of [ADR 0024](../adr/0024-confirm-calls-the-pg-between-two-transactions.md) and rule 3 of [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md), and the scenes are the reconcile halves of [spec 147](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/147)'s integration-test list. The code is:
 
 - [`OrderPaymentReconciler`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/provided/OrderPaymentReconciler.kt) and its implementation [`OrderPaymentService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentService.kt)
-- [`OrderPaymentSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSteps.kt), whose TX B the reconcile reuses
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt), whose TX B the reconcile reuses
 - [`PgTransactionRetriever`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PgTransactionRetriever.kt) and its implementation [`PgTransactionService`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/PgTransactionService.kt)
 - [`OrderApi`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderApi.kt) and [`OrderApiSpec`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/webapi/v1/order/OrderApiSpec.kt)
 - [`OrderPaymentIntegrationTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderPaymentIntegrationTest.kt), [`OrderConfirmationApiTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/OrderConfirmationApiTest.kt) and [`ProductCacheTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/product/provided/ProductCacheTest.kt)
@@ -828,7 +828,7 @@ Two commits on `feat/order-payment` (pushed, `a96f2d9..59a6551`):
     3. A point-confirmed order and a finished PG order answer their stored state without calling the PG.
     4. A payment pending order is looked up.
   - The new payment port [`PgTransactionRetriever`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/payment/provided/PgTransactionRetriever.kt)`.retrieve(payment)`, implemented by `PgTransactionService` (`NEVER`), looks the transaction up by the payment's PG order ID. It rethrows `PgUnavailableException` and `MultiplePgTransactionsException`.
-  - A found transaction goes through `OrderPaymentSteps.applyTransaction`, the confirmation's TX B, unchanged. Success confirms the order. Failure fails it and returns the stock once.
+  - A found transaction goes through `OrderPaymentSagaSteps.applyTransaction`, the confirmation's TX B, unchanged. Success confirms the order. Failure fails it and returns the stock once.
   - `null` and `PgUnavailableException` answer the stored state. `MultiplePgTransactionsException` logs a WARN and answers the stored state. A mismatched transaction is logged by TX B's `Conflicted`. None of them changes the payment or the reservation, and no path sends a create.
   - The new error type `PAYMENT_NOT_STARTED` is 409. `OrderApi` shares the 202-with-`Location` / 200 mapping between confirm and reconcile, and `OrderApiSpec` documents the endpoint.
   - The confirmation's unknown create now re-reads the stored state when it answers (see the decisions below).
@@ -849,7 +849,7 @@ Two commits on `feat/order-payment` (pushed, `a96f2d9..59a6551`):
   - Both answers carry the same status and the same `confirmedAt`. Stock ends at 3 for SUCCESS and 5 for FAILED; a double return would be 7. There is one create, and two lookups (two reconciles) or one (reconcile against confirm).
   - **Mutation check:** TX B reading the order without `FOR UPDATE` fails all four rows.
 - [x] **Scene 7: the TX B bean is spied to throw once after the PG succeeded. The order stays payment pending and the payment UNKNOWN. A later reconcile confirms it once, and creates stay at 1.**
-  - A `@MockkSpyBean OrderPaymentSteps` makes `applyTransaction` run the original, flush, then throw `DataAccessResourceFailureException` once.
+  - A `@MockkSpyBean OrderPaymentSagaSteps` makes `applyTransaction` run the original, flush, then throw `DataAccessResourceFailureException` once.
   - The confirm throws. A re-read shows PAYMENT_PENDING, UNKNOWN, no transaction key and stock 3.
   - The reconcile then confirms it: CONFIRMED / SUCCESS with the transaction key recorded, one create, one lookup.
 - [x] **Scene 8: the payment slice's create is spied to throw before sending. The payment is UNKNOWN, the stock held, and there are zero creates. After a same-key confirm replay and a reconcile that sees zero transactions, nothing has changed and creates are still zero.**

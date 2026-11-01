@@ -1,5 +1,29 @@
 #!/bin/bash
 
-GIT_DIR=$(git rev-parse --show-toplevel)
+# Not GIT_DIR: git may export that to hooks, and the doc checks below run git.
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT" || exit 1
+
+# The doc checks read the staged files and judge only what this commit adds to HEAD.
+notes=()
+while IFS= read -r -d '' path; do
+  notes+=("$path")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- 'docs/design/*.md' 'docs/adr/*.md')
+if [ ${#notes[@]} -gt 0 ] && ! scripts/check-doc-notes --cached --warn-changed HEAD "${notes[@]}"; then
+  echo "pre-commit: a section number above matches no heading of its file. Point it at the right section," >&2
+  echo "or name the doc it points into ([결제 설계](./payments.md) 11절). Rules: top of scripts/check-doc-notes." >&2
+  exit 1
+fi
+
+markdown=()
+while IFS= read -r -d '' path; do
+  markdown+=("$path")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.md')
+if [ ${#markdown[@]} -gt 0 ] && ! scripts/check-doc-links --cached --base HEAD "${markdown[@]}"; then
+  echo "pre-commit: a link above points at a path or heading that doesn't exist in the staged files. One marked" >&2
+  echo "(unstaged: …) resolves in the working tree: stage its target too. Rules: top of scripts/check-doc-links." >&2
+  exit 1
+fi
+
 # ktlintCheck 만으로는 포함된 빌드인 build-logic 을 검사하지 않는다. 그래서 따로 적는다.
-$GIT_DIR/gradlew ktlintCheck :build-logic:ktlintCheck
+$ROOT/gradlew ktlintCheck :build-logic:ktlintCheck

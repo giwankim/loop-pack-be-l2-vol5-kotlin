@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Check a design doc edit against a base revision: notes are insert-only and section references resolve.
 
-Usage: scripts/check-doc-notes BASE FILE [FILE ...]
+Usage: scripts/check-doc-notes [--cached] [--warn-changed] BASE FILE [FILE ...]
 
-For each FILE (a path in the repo), compares `git show BASE:FILE` with the working tree.
+For each FILE (a path in the repo), compares `git show BASE:FILE` with the working tree, or with the index
+under --cached. A FILE that BASE doesn't have is all added lines.
 
 - Insert-only: every line of BASE that the edit touched must still appear, character by character
   and in order, inside one of the lines that replaced it. A dated note appended to a sentence passes;
   a reworded sentence is reported as CHANGED. A reported line may be a deliberate edit (a status cell);
-  the report is for a person to judge.
+  the report is for a person to judge, and --warn-changed prints it without failing.
 - References: every section number cited in an added line (`12.3`, `17절`) must be a heading of FILE
-  (`## 17.`, `### 12.3`). Numbers inside code spans, right after a link (`[catalog design](…) 5.17`
-  points into another doc), and right after a capitalized word (`Boot 4.1`) are skipped.
+  (`## 17.`, `### 12.3`). Skipped: numbers inside code spans; numbers that point into another doc, right
+  after a link (`[결제 설계](./payments.md) 11절`) or after `설계` (`카탈로그 설계 5.17`); numbers right
+  after a Latin word (`Boot 4.1`, `spring-kafka 4.1`); measurements (`1.42 ms다`, `2.6 KB`, `10.1행`,
+  `1.22 → 0.101`); and every number in a FILE with no numbered headings (an ADR), where a section number
+  can only point into another doc. A list after a link or `설계` (`카탈로그 설계 5.28, 5.29`) points there too.
 
-Exits 1 when anything is reported.
+Exits 1 when anything is reported, CHANGED lines aside under --warn-changed.
 """
 
+import argparse
 import difflib
 import re
 import subprocess
@@ -23,11 +28,27 @@ import sys
 from pathlib import Path
 
 HEADING = re.compile(r"^#{2,3} (\d+(?:\.\d+)?)\.? ", re.M)
-SECTION_REF = re.compile(r"(?<![\d.])(\d{1,2}\.\d{1,2})(?![\d.]| ?m?s\b)|(?<![\d.])(\d{1,2})절")
+SECTION_REF = re.compile(
+    r"(?<![\d.→])(?<!→ )(\d{1,2}\.\d{1,2})(?!\.?\d| ?(?:m?s|[KMG]B|행)(?![A-Za-z])| ?→)|(?<![\d.])(\d{1,2})절"
+)
+OTHER_DOC_REF = re.compile(r"(?:\]\([^)]*\)|설계) ?\d{1,2}(?:\.\d{1,2})?절?(?:, ?\d{1,2}(?:\.\d{1,2})?절?)*")
+VERSION = re.compile(r"\b[A-Za-z][A-Za-z0-9-]* \d{1,2}\.\d{1,2}")
+
+
+def is_commit(rev: str) -> bool:
+    verify = ["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"]
+    return subprocess.run(verify, stdout=subprocess.DEVNULL).returncode == 0
 
 
 def git_show(base: str, path: str) -> str:
-    return subprocess.run(["git", "show", f"{base}:{path}"], check=True, capture_output=True, text=True).stdout
+    shown = subprocess.run(["git", "show", f"{base}:{path}"], capture_output=True, text=True)
+    return shown.stdout if shown.returncode == 0 else ""
+
+
+def read_new(path: str, cached: bool) -> str:
+    if cached:
+        return subprocess.run(["git", "show", f":{path}"], check=True, capture_output=True, text=True).stdout
+    return Path(path).read_text(encoding="utf-8")
 
 
 def survives_in(old: str, new: str) -> bool:
@@ -55,8 +76,8 @@ def added_lines(old_lines, new_lines):
 
 def unresolved_refs(line: str, headings):
     text = re.sub(r"`[^`]*`", "``", line)
-    text = re.sub(r"\]\([^)]*\) ?\d{1,2}\.\d{1,2}", "]", text)
-    text = re.sub(r"\b[A-Z][A-Za-z0-9]* \d{1,2}\.\d{1,2}", "", text)
+    text = OTHER_DOC_REF.sub("", text)
+    text = VERSION.sub("", text)
     text = re.sub(r"\]\([^)]*\)", "]", text)
     for match in SECTION_REF.finditer(text):
         ref = match.group(1) or match.group(2)
@@ -64,16 +85,18 @@ def unresolved_refs(line: str, headings):
             yield ref
 
 
-def check(base: str, path: str) -> int:
+def check(base: str, path: str, cached: bool, warn_changed: bool) -> int:
     old_lines = git_show(base, path).splitlines()
-    new_text = Path(path).read_text(encoding="utf-8")
+    new_text = read_new(path, cached)
     new_lines = new_text.splitlines()
     headings = set(HEADING.findall(new_text))
     problems = 0
 
     for number, old in changed_lines(old_lines, new_lines):
         print(f"{path}:{number} CHANGED (base line): {old[:160]}")
-        problems += 1
+        problems += 0 if warn_changed else 1
+    if not headings:
+        return problems
     for number, line in added_lines(old_lines, new_lines):
         for ref in unresolved_refs(line, headings):
             print(f"{path}:{number} UNRESOLVED {ref}: {line[:120]}")
@@ -82,11 +105,17 @@ def check(base: str, path: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 3:
-        print(__doc__, file=sys.stderr)
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--cached", action="store_true", help="read each FILE from the index, not the working tree")
+    parser.add_argument("--warn-changed", action="store_true", help="print CHANGED lines without failing")
+    parser.add_argument("base", metavar="BASE", help="the revision the edit is compared with")
+    parser.add_argument("paths", metavar="FILE", nargs="+", help="design docs or ADRs, as paths in the repo")
+    args = parser.parse_args()
+
+    if not is_commit(args.base):
+        print(f"not a commit: {args.base}", file=sys.stderr)
         return 2
-    base, paths = sys.argv[1], sys.argv[2:]
-    problems = sum(check(base, path) for path in paths)
+    problems = sum(check(args.base, path, args.cached, args.warn_changed) for path in args.paths)
     print(f"{problems} problem(s)" if problems else "ok")
     return 1 if problems else 0
 

@@ -1,10 +1,14 @@
 package com.loopers.support.test
 
+import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRevisionRepository
+import com.loopers.domain.order.Order
+import com.loopers.domain.payment.Payment
 import com.loopers.support.DatabaseCleanUp
+import com.loopers.support.TestPg
 import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.transaction.PlatformTransactionManager
@@ -68,6 +72,9 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     @Autowired
     private lateinit var productListCacheKeyGenerator: ProductListCacheKeyGenerator
 
+    @Autowired
+    private lateinit var paymentFinder: PaymentFinder
+
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
 
@@ -103,6 +110,16 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
         val findAll = ProductFinder::class.java.getMethod("findAll", ProductListRequest::class.java)
 
         return inNewTransaction { productListCacheKeyGenerator.generate(productFinder, findAll, request) }
+    }
+
+    /**
+     * Confirms [order] with a create that [testPg] accepts as a pending PG transaction, so the order is left payment pending,
+     * and returns its payment read in a new transaction. A scene reads the PG order ID and transaction key from that payment.
+     */
+    protected fun confirmPending(testPg: TestPg, order: Order = this.order): Payment {
+        confirmOrder(testPg, order, pgStatus = "PENDING")
+
+        return inNewTransaction { paymentFinder.findByOrder(order.id) }
     }
 
     /** [block]을 다른 스레드에서 부르고 곧바로 돌아온다. 그 스레드에는 트랜잭션이 없으므로 [block]이 부른 포트가 저마다 커밋한다. */

@@ -4,7 +4,7 @@
 
 표기: 속성은 코드 이름, 규칙은 어기면 거절되는 조건, 행위는 공개 메서드다. 거절은 상태를 바꾸지 않는다. 도메인 규칙의 거절은 `RuleViolationException`(`com.loopers.domain.shared`)의 하위 예외로 나타내고, 웹 어댑터의 `ApiControllerAdvice`가 400 `BAD_REQUEST`와 예외 메시지로 옮긴다. 도메인은 `ErrorType`이나 HTTP를 모른다. 저장소를 봐야 하는 거절(중복, 없음)은 application이 `CoreException(ErrorType)`로 나타낸다.
 
-이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockReserver`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). 트랜잭션 밖에서 단계의 차례를 쥐고 조율하는 구현은 `Orchestrator`로 끝나고, 그것이 부르는 트랜잭션 단계의 빈은 같은 접두어에 `Steps`를 붙인다(`OrderPaymentOrchestrator`, `OrderPaymentSteps`, [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
+이름 규칙: application 계층의 유스케이스는 각 개념의 provided 포트로 드러난다. 읽기는 개념마다 Finder 하나(`BrandFinder`, `ProductFinder`, `LikeFinder`)이고, 쓰기는 부르는 쪽에 따라 나눈다(관리자의 `BrandRegister`·`ProductRegister`, 고객의 `Liker`, 주문 확정이 부르는 `StockReserver`). 포트는 개념마다 `<개념>QueryService`와 `<개념>ModifyService`가 구현한다([ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)). 트랜잭션 밖에서 로컬 트랜잭션의 차례를 쥐고 조율하는 구현은 절차의 이름에 `Saga`를 붙이고, 그것이 부르는 로컬 트랜잭션의 빈은 같은 접두어에 `SagaSteps`를 붙인다(`OrderPaymentSaga`, `OrderPaymentSagaSteps`, [ADR 0028](../adr/0028-order-slice-orchestrates-the-payment.md)). 사가 구현들의 관례다(2026-10-26, 그전의 `Orchestrator`·`Steps`는 [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모). `Facade`는 쓰지 않는다. domain 계층에는 `Service`를 붙인 클래스를 두지 않는다.
 
 ## 브랜드 (Brand)
 

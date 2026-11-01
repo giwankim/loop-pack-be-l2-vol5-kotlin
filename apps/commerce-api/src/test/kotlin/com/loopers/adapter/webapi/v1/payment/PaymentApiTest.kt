@@ -46,7 +46,7 @@ import java.util.UUID
 class PaymentApiTest(
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
-    private val pgLookupClock: TestClock,
+    private val clock: TestClock,
 ) : BaseWebApiAdapterTest() {
     companion object {
         /** 확정이 싣는 카드. 카드 번호는 Luhn 검사를 지난다. 생성 스텁은 이 카드를 맞춘다. */
@@ -311,7 +311,7 @@ class PaymentApiTest(
         assertThat(entityManager.productStock(product.id)).isEqualTo(8)
 
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, PgStatus.SUCCESS))
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
 
         assertThat(requestCallback(json)).hasStatusOk()
 

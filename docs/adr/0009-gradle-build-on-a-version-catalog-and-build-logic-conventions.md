@@ -49,8 +49,10 @@ date: 2026-10-01
 
 - typesafe-conventions는 Gradle 내부 API(`LibrariesSourceGenerator`, `SettingsInternal` 등)로 접근자를 만든다. `plugins {}`의 `alias(…)`는 정규식으로 `id(…)`로 바꿔 쓴다. 이 플러그인의 CI는 Gradle 9.6.0까지만 검사한다.
   - 그래서 Gradle을 올릴 때마다 다시 확인해야 한다.
+    - 2026-10-29 Gradle 9.7.1에서 9.8.2로 올리면서 이 플러그인을 0.11.1에서 0.12.1로 올렸다. 접근자 생성과 전체 빌드(테스트 1,004개)가 그대로 통과했다. 플러그인의 CI는 여전히 9.6.0까지만 검사한다.
   - 깨지면 문자열 API로 돌아간다. 이때 모듈 스크립트의 `alias(conventions.…)`도 `id("loopers.…")`로 바꿔야 한다.
   - build-logic을 여러 프로젝트로 나누면 Isolated Projects에서 깨진다(플러그인 이슈 186).
+    - 2026-10-29 0.12.0이 이슈 186을 고쳐 Isolated Projects와 호환된다.
 - build-logic은 혼자 빌드되지 않는다(`-p build-logic`은 거절된다). 기본 컨벤션의 BOM 좌표를 카탈로그에서 읽는 것은, build-logic 안의 스크립트들이 컴파일 클래스패스를 함께 쓰기 때문이다. `SpringBootPlugin`을 직접 참조하면 다른 스크립트의 `alias`에 몰래 기대게 된다.
 - 업스트림 템플릿에는 루트 `build.gradle.kts`가 있지만 이 저장소에는 없다. 이후 주차에 템플릿이 빌드 스크립트를 바꾸면 손으로 옮겨 와야 한다.
 - 라이브러리 모듈의 jar 이름에서 Boot 플러그인이 붙이던 `-plain` 분류자가 빠진다.

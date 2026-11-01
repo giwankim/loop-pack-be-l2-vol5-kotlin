@@ -40,13 +40,13 @@ date: 2026-10-22
 
    결제는 TX A에서 새 행으로 들어가고, 그 뒤로는 잠그지 않고 읽는다.
 5. **주문 슬라이스는 결제의 값을 옮기되 읽지 않는다.** 카드, PG 거래, 생성 전 거절을 결제 슬라이스의 부름 사이에서 넘기고, 읽는 것은 결제 상태뿐이다. 거래 키, PG 상태, 카드 번호를 보지 않는다. 주문 조회는 주문, 결제수단, 결제 상태를 담은, 애그리거트를 건너는 Info를 돌려준다([ADR 0014](./0014-finders-load-whole-aggregates.md)).
-6. **3단계의 알림도 이 길을 쓴다.** 결제의 웹 어댑터가 PG 주문 번호로 결제를 찾아 그 주문의 대사 유스케이스를 부른다. 어댑터가 응용 계층을 부르므로 고리가 없다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 웹 어댑터는 `PaymentApi`의 `POST /api/v1/payments/callback`이다. 결제를 `PaymentFinder.findByPgOrderId`로 찾고, 부르는 대사 유스케이스는 고객의 `OrderConfirmer.reconcile`이 아니라 PG가 부르는 provided 포트 `OrderPaymentReconciler.reconcile(orderId)`다([ADR 0031](./0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 3). 그 포트도 `OrderPaymentOrchestrator`가 구현하며, 주문을 사용자 없이 읽고 고객의 대사와 같은 조회와 같은 TX B를 쓴다. 다른 것은 답하는 때에 다시 읽지 않는 것과, 조회할 수 없으면 `PG_UNAVAILABLE`(503)을 던지는 것이다. 규칙 3의 표에서 조회 불가 행의 "저장된 상태로 답한다"는 고객의 대사에만 맞다.)
+6. **3단계의 알림도 이 길을 쓴다.** 결제의 웹 어댑터가 PG 주문 번호로 결제를 찾아 그 주문의 대사 유스케이스를 부른다. 어댑터가 응용 계층을 부르므로 고리가 없다. (2026-10-23, [issue 161](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/161): 웹 어댑터는 `PaymentApi`의 `POST /api/v1/payments/callback`이다. 결제를 `PaymentFinder.findByPgOrderId`로 찾고, 부르는 대사 유스케이스는 고객의 `OrderConfirmer.reconcile`이 아니라 PG가 부르는 provided 포트 `OrderPaymentReconciler.reconcile(orderId)`다([ADR 0031](./0031-a-callback-is-reconciled-by-a-lookup-of-its-pg-order-id.md) 규칙 3). 그 포트도 `OrderPaymentSaga`가 구현하며, 주문을 사용자 없이 읽고 고객의 대사와 같은 조회와 같은 TX B를 쓴다. 다른 것은 답하는 때에 다시 읽지 않는 것과, 조회할 수 없으면 `PG_UNAVAILABLE`(503)을 던지는 것이다. 규칙 3의 표에서 조회 불가 행의 "저장된 상태로 답한다"는 고객의 대사에만 맞다.)
 
 ## 고르지 않은 것
 
 - **결제가 조율한다.** 결제가 주문과 재고를 바꾸게 되고, "주문을 먼저 잠근다"는 약속을 포트 너머의 주문 슬라이스에 맡겨야 한다. 일반 하위 도메인이 자기를 쓰는 절차에 기댄다.
 - **결제가 required 포트를 두고 주문이 구현한다(브랜드 삭제의 `ProductDeleter` 모양).** 코드의 의존은 주문에서 결제로 가지만, 결제가 주문의 생애를 움직인다. `ProductDeleter`는 호출 하나이고 이것은 절차다.
-- **도메인 이벤트.** 3주차에 이벤트를 들이지 않았고, TX B는 동기이며 원자여야 한다.
+- **도메인 이벤트.** 3주차에 이벤트를 들이지 않았고, TX B는 동기이며 원자여야 한다. (2026-10-27, [ADR 0032](./0032-order-confirmed-is-published-through-a-port-and-relayed-after-commit.md): 6주차는 TX B가 주문을 처음 확정한 커밋 뒤에 `OrderConfirmed`를 Kafka에 발행한다. 이벤트는 TX B의 단계가 아니라 커밋 뒤에 발행되고, 단계의 빈이 required 포트 `OrderEventPublisher`를 TX B 안에서 부르며 어댑터가 커밋 뒤 비동기로 중계한다. 이 항목의 결정은 그대로다.)
 - **PG의 답을 담는 sealed 타입(`PgAnswer`).** 규칙 3의 까닭이다. 부른 자리에서 바로 갈리는 결과는 예외가 단순하다.
 - **`TransactionTemplate`으로 한 서비스 안에서 TX A와 TX B를 연다.** main에 프로그램 방식의 트랜잭션이 없고, 다른 빈의 선언적 트랜잭션이 테스트에서 TX B만 실패시키기 쉽다.
 
@@ -59,7 +59,7 @@ date: 2026-10-22
 ## 다시 볼 조건
 
 - 결제가 주문 말고 다른 것도 치르게 되면 그 호출자도 결제 슬라이스의 provided 포트를 부른다. 두 호출자가 다른 모양을 원하면 포트를 다시 본다.
-- 주문과 결제가 다른 서비스로 나뉘면 이 조율이 사가가 된다. 조율자를 주문 쪽에 두는 것은 그대로다.
+- 주문과 결제가 다른 서비스로 나뉘면 이 조율이 사가가 된다. 조율자를 주문 쪽에 두는 것은 그대로다. (2026-10-26: 지금도 한 프로세스 안의 사가다. 사가는 로컬 트랜잭션의 차례이고 메시징은 흔한 전달 수단일 뿐이다. Richardson의 분류로 TX A는 보상 가능한 트랜잭션(실패하면 예약을 돌려준다), PG 생성은 피벗, TX B는 다시 할 수 있는 트랜잭션이다. 그래서 조율하는 빈을 `OrderPaymentSaga`, 로컬 트랜잭션의 빈을 `OrderPaymentSagaSteps`라 부른다([ADR 0013](./0013-commerce-api-follows-splearn-hexagonal-structure.md)의 메모). 서비스가 나뉘면 같은 사가가 분산 사가가 된다.)
 
 ## 바꾸는 결정
 

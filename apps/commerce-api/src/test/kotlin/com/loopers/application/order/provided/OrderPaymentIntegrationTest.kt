@@ -7,7 +7,7 @@ import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.CommerceApiApplication
 import com.loopers.adapter.integration.pg.LocalPgGateway
-import com.loopers.application.order.OrderPaymentSteps
+import com.loopers.application.order.OrderPaymentSagaSteps
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
 import com.loopers.application.payment.provided.PaymentFinder
@@ -25,7 +25,7 @@ import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.payment.createPgTransaction
+import com.loopers.domain.payment.createPgTransactionOf
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
@@ -33,11 +33,15 @@ import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
+import com.loopers.support.afterTheCreateIsAnswered
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.failTxBOnceAfterItsWrites
+import com.loopers.support.pauseTheFirstTxBHoldingTheOrder
 import com.loopers.support.productDeletedAt
 import com.loopers.support.productStock
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
+import com.loopers.testcontainers.KafkaTestContainersConfig
 import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
@@ -73,6 +77,7 @@ import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
+import java.time.Instant
 
 /**
  * 고객의 확정이 PG로 결제하는 장면과, 대사가 끝나지 않은 결제의 결과를 되찾는 장면을 실제 MySQL과 테스트 PG로 확인한다(ADR 0024, 0028).
@@ -101,7 +106,7 @@ class OrderPaymentIntegrationTest(
     private val paymentGateway: PaymentGateway,
     private val circuitBreakerRegistry: CircuitBreakerRegistry,
     private val retryRegistry: RetryRegistry,
-    private val pgLookupClock: TestClock,
+    private val clock: TestClock,
     private val healthEndpoint: HealthEndpoint,
     private val healthEndpointGroups: HealthEndpointGroups,
     private val meterRegistry: MeterRegistry,
@@ -128,7 +133,7 @@ class OrderPaymentIntegrationTest(
 
     /** 외부 성공 뒤 내부 저장이 실패하는 자리([failTxBOnceAfterItsWrites]). stub이 없으면 실제 TX B 그대로다. */
     @MockkSpyBean
-    private lateinit var orderPaymentSteps: OrderPaymentSteps
+    private lateinit var orderPaymentSagaSteps: OrderPaymentSagaSteps
 
     private val pause = Pause()
 
@@ -201,6 +206,25 @@ class OrderPaymentIntegrationTest(
             assertThat(payment.idempotencyKey).isEqualTo(IDEMPOTENCY_KEY)
             assertThat(productFinder.find(product.id).stock).isEqualTo(3)
             assertThat(pointAccountFinder.findByUser(user.id).balance.amount).isEqualTo(10_000L.toBigInteger())
+        }
+    }
+
+    /**
+     * TX B confirms the order at the instant of the context's clock, the [TestClock] the breaker scenes move (ADR 0032 rule 8).
+     * The scene pins the clock and moves it a day, so the stored confirmation time is an instant no other clock gives.
+     */
+    @Test
+    fun `confirming stores the instant of the context's clock as the confirmation time`() {
+        prepareOrder(products = listOf(prepareProduct(price = 1_000)), quantity = 2)
+        val request = createOrderConfirmRequest()
+        acceptNextCreate(testPg, amount = 2_000, card = request.toCreditCard())
+        clock.pin(Instant.parse("2026-10-27T01:02:03.123456789Z"))
+        clock.advance(Duration.ofDays(1))
+
+        orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
+
+        inNewTransaction {
+            assertThat(orderFinder.find(user.id, order.id).confirmedAt).isEqualTo(Instant.parse("2026-10-28T01:02:03.123456Z"))
         }
     }
 
@@ -290,7 +314,7 @@ class OrderPaymentIntegrationTest(
     @ValueSource(strings = ["503", "stall"])
     fun `a reconcile whose lookup is unavailable answers the stored state and changes nothing`(unavailable: String) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         if (unavailable == "503") {
             testPg.answersList(payment.pgOrderId, httpStatus = 503)
         } else {
@@ -324,7 +348,7 @@ class OrderPaymentIntegrationTest(
     @Test
     fun `one unavailable lookup is retried once and the retry's answer finishes the payment within the same reconcile`() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         testPg.losesFirstLookupResponses(times = 1)
         testPg.hasTransactions(payment.pgOrderId, succeeded(payment))
         val retries = mutableListOf<RetryOnRetryEvent>()
@@ -360,7 +384,7 @@ class OrderPaymentIntegrationTest(
     ) {
         val product = prepareProduct(price = 1_000, stock = 5)
         prepareOrder(products = listOf(product), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         if (dead == "503") {
             testPg.answersList(payment.pgOrderId, httpStatus = 503)
         } else {
@@ -392,17 +416,17 @@ class OrderPaymentIntegrationTest(
     fun `the open breaker sends no lookup within its 60 s wait and a probe against a still dead PG opens it again`() {
         val product = prepareProduct(price = 1_000, stock = 5)
         prepareOrder(products = listOf(product), quantity = 2)
-        confirmPending()
+        confirmPending(testPg)
         testPg.losesLookupResponse()
         openPgLookupBreaker()
 
-        pgLookupClock.advance(Duration.ofSeconds(59))
+        clock.advance(Duration.ofSeconds(59))
         val withinWait = orderConfirmer.reconcile(user.id, order.id)
 
         assertThat(testPg.lookupCount()).isEqualTo(4)
         assertThat(pgLookupBreaker().state).isEqualTo(CircuitBreaker.State.OPEN)
 
-        pgLookupClock.advance(Duration.ofSeconds(2))
+        clock.advance(Duration.ofSeconds(2))
         val probing = orderConfirmer.reconcile(user.id, order.id)
 
         listOf(withinWait, probing).forEach { answer ->
@@ -424,14 +448,14 @@ class OrderPaymentIntegrationTest(
     @Test
     fun `after the wait a probe finishes its payment once the PG is back and a second successful lookup closes the breaker`() {
         val first = prepareOrder()
-        val firstPayment = confirmPending(first)
+        val firstPayment = confirmPending(testPg, first)
         val second = prepareOrder()
-        val secondPayment = confirmPending(second)
+        val secondPayment = confirmPending(testPg, second)
         testPg.losesLookupResponse()
         openPgLookupBreaker(first)
         testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
         testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
 
         val probed = orderConfirmer.reconcile(first.userId, first.id)
 
@@ -457,7 +481,7 @@ class OrderPaymentIntegrationTest(
     fun `lookups that find no transaction or several are not retried and never open the breaker`(found: String) {
         val product = prepareProduct(price = 1_000, stock = 5)
         prepareOrder(products = listOf(product), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         if (found == "no transaction") {
             testPg.hasTransactions(payment.pgOrderId)
         } else {
@@ -489,9 +513,9 @@ class OrderPaymentIntegrationTest(
     @Test
     fun `every state change of the lookup breaker logs one warning and a reconcile that changes no state logs none`() {
         val first = prepareOrder()
-        val firstPayment = confirmPending(first)
+        val firstPayment = confirmPending(testPg, first)
         val second = prepareOrder()
-        val secondPayment = confirmPending(second)
+        val secondPayment = confirmPending(testPg, second)
         testPg.losesLookupResponse()
 
         orderConfirmer.reconcile(first.userId, first.id)
@@ -503,7 +527,7 @@ class OrderPaymentIntegrationTest(
         assertBreakerWarnings(CircuitBreaker.State.CLOSED to CircuitBreaker.State.OPEN)
 
         orderConfirmer.reconcile(first.userId, first.id)
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
         orderConfirmer.reconcile(first.userId, first.id)
 
         assertBreakerWarnings(
@@ -514,7 +538,7 @@ class OrderPaymentIntegrationTest(
 
         testPg.hasTransactions(firstPayment.pgOrderId, succeeded(firstPayment))
         testPg.hasTransactions(secondPayment.pgOrderId, succeeded(secondPayment))
-        pgLookupClock.advance(Duration.ofSeconds(61))
+        clock.advance(Duration.ofSeconds(61))
         orderConfirmer.reconcile(first.userId, first.id)
         orderConfirmer.reconcile(second.userId, second.id)
 
@@ -545,7 +569,7 @@ class OrderPaymentIntegrationTest(
     @Test
     fun `an open lookup breaker shows in the health endpoint and the state gauge while the overall health stays UP`() {
         prepareOrder()
-        confirmPending()
+        confirmPending(testPg)
         testPg.losesLookupResponse()
         openPgLookupBreaker()
 
@@ -633,9 +657,9 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
-        pauseTheFirstTxBHoldingTheOrder()
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, pgStatus))
+        paymentModifyService.pauseTheFirstTxBHoldingTheOrder(pause)
 
         val first = inAnotherThread { orderConfirmer.reconcile(user.id, order.id) }
         pause.awaitHeld()
@@ -683,7 +707,7 @@ class OrderPaymentIntegrationTest(
             pgStatus = pgStatus.name,
         )
         testPg.hasTransactions(pgOrderId, pgTransaction(pgOrderId, amount = 2_000, status = pgStatus))
-        pauseTheFirstTxBHoldingTheOrder()
+        paymentModifyService.pauseTheFirstTxBHoldingTheOrder(pause)
 
         val confirming = inAnotherThread { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
         pause.awaitHeld()
@@ -724,7 +748,7 @@ class OrderPaymentIntegrationTest(
             transactionKey = TRANSACTION_KEY,
             pgStatus = "SUCCESS",
         )
-        failTxBOnceAfterItsWrites()
+        orderPaymentSagaSteps.failTxBOnceAfterItsWrites(entityManager)
 
         assertThrows<DataAccessResourceFailureException> { orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request) }
 
@@ -1363,8 +1387,8 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, pgStatus))
 
         orderPaymentReconciler.reconcile(order.id)
 
@@ -1391,7 +1415,7 @@ class OrderPaymentIntegrationTest(
         unavailable: String,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         if (unavailable == "503") {
             testPg.answersList(payment.pgOrderId, httpStatus = 503)
         } else {
@@ -1424,7 +1448,7 @@ class OrderPaymentIntegrationTest(
     fun `the PG's reconcile throws PG_UNAVAILABLE on an open breaker without a lookup, the customer's answers stored state`() {
         val product = prepareProduct(price = 1_000, stock = 5)
         prepareOrder(products = listOf(product), quantity = 2)
-        confirmPending()
+        confirmPending(testPg)
         testPg.losesLookupResponse()
         openPgLookupBreaker()
 
@@ -1508,7 +1532,7 @@ class OrderPaymentIntegrationTest(
         var reservedStock: Int? = null
         var orderAfterCallback: Order? = null
         var stockAfterCallback: Int? = null
-        afterTheCreateIsAnswered {
+        pgTransactionService.afterTheCreateIsAnswered {
             reservedStock = inNewTransaction { productFinder.find(product.id).stock }
             orderPaymentReconciler.reconcile(order.id)
             orderAfterCallback = inNewTransaction { orderFinder.find(user.id, order.id) }
@@ -1551,8 +1575,8 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
+        val payment = confirmPending(testPg)
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, pgStatus))
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
         val reconciledOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
 
@@ -1595,10 +1619,10 @@ class OrderPaymentIntegrationTest(
         stock: Int,
     ) {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = 5)), quantity = 2)
-        val payment = confirmPending()
+        val payment = confirmPending(testPg)
         val reservedStock = inNewTransaction { productFinder.find(product.id).stock }
-        testPg.hasTransactions(payment.pgOrderId, transactionOf(payment, pgStatus))
-        pauseTheFirstTxBHoldingTheOrder()
+        testPg.hasTransactions(payment.pgOrderId, createPgTransactionOf(payment, pgStatus))
+        paymentModifyService.pauseTheFirstTxBHoldingTheOrder(pause)
         var reconciled: OrderInfo? = null
         val callingBack = { orderPaymentReconciler.reconcile(order.id) }
         val reconciling = { reconciled = orderConfirmer.reconcile(user.id, order.id) }
@@ -1718,46 +1742,6 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * Runs [action] right after confirm's create is answered, before the answer goes to TX B: the PG holds a transaction and TX B
-     * hasn't started. The PG call is outside any transaction, so whatever port [action] calls runs in its own, and a `NEVER` port
-     * is allowed. A stub on the TX B bean would run inside the transaction its proxy opened. [whilePaymentPending] runs before the
-     * create goes out, too early for this. The Service is a CGLIB proxy, so the stub goes on the spy it wraps.
-     */
-    private fun afterTheCreateIsAnswered(action: () -> Unit) {
-        val target = AopTestUtils.getUltimateTargetObject<PgTransactionService>(pgTransactionService)
-        every { target.create(any(), any()) } answers {
-            val transaction = callOriginal()
-            action()
-            transaction
-        }
-    }
-
-    /**
-     * 처음으로 결제에 PG 거래를 반영하는 TX B를 반영 바로 앞에서 멈춘다. 그 TX B는 주문을 잠근 채다. 뒤의 반영은 멈추지 않으므로, 같은 답을
-     * 반영하려는 다른 TX B는 주문 잠금에서 기다린다. 결제를 바꾸는 Service는 CGLIB 프록시이므로 프록시가 감싼 spy에 stub한다.
-     */
-    private fun pauseTheFirstTxBHoldingTheOrder() {
-        val target = AopTestUtils.getUltimateTargetObject<PaymentModifyService>(paymentModifyService)
-        every { target.reconcile(any(), any()) } answers {
-            pause.hold()
-            callOriginal()
-        } andThenAnswer { callOriginal() }
-    }
-
-    /**
-     * TX B의 PG 거래 입구가 결제와 주문을 바꿔 flush한 뒤 한 번 던진다. 커밋 앞에서 DB가 실패한 것과 같아 TX B가 통째로 되돌아간다. TX B의
-     * 트랜잭션은 프록시가 열었으므로 프록시가 감싼 spy에 stub한다. 그 뒤의 호출은 원래 호출 그대로다.
-     */
-    private fun failTxBOnceAfterItsWrites() {
-        val target = AopTestUtils.getUltimateTargetObject<OrderPaymentSteps>(orderPaymentSteps)
-        every { target.applyTransaction(any(), any(), any()) } answers {
-            callOriginal()
-            entityManager.flush()
-            throw DataAccessResourceFailureException("TX B가 커밋하기 전에 DB가 실패했다.")
-        } andThenAnswer { callOriginal() }
-    }
-
-    /**
      * 확정의 PG 호출이 생성을 보내기 전에 [ProcessStopped]를 한 번 던진다. TX A가 커밋한 뒤 POST 전에 프로세스가 멈춘 것과 같다. 그 뒤의
      * 호출은 원래 호출 그대로라, 재요청이나 대사가 생성을 보내면 PG가 받은 생성 수에 드러난다.
      */
@@ -1766,24 +1750,9 @@ class OrderPaymentIntegrationTest(
         every { target.create(any(), any()) } throws ProcessStopped() andThenAnswer { callOriginal() }
     }
 
-    /**
-     * [order]를 처리 중인 PG 거래로 받아들여진 생성으로 확정해 결제 중인 주문으로 두고, 새 트랜잭션에서 읽은 그 결제를 돌려준다. 거래 키와
-     * PG 주문 번호는 결제에서 읽는다.
-     */
-    private fun confirmPending(order: Order = this.order): Payment {
-        confirmOrder(testPg, order, pgStatus = "PENDING")
-
-        return inNewTransaction { paymentFinder.findByOrder(order.id) }
-    }
-
     /** 결제 [payment]의 PG 주문 번호, 금액, 거래 키를 가진 성공한 PG 거래. 거래 키가 다르면 결제가 충돌로 본다. */
     private fun succeeded(payment: Payment): PgTransaction {
-        return transactionOf(payment, PgStatus.SUCCESS)
-    }
-
-    /** The PG transaction that matches [payment]: its PG order ID, amount and transaction key, with PG status [status]. */
-    private fun transactionOf(payment: Payment, status: PgStatus): PgTransaction {
-        return createPgTransaction(payment, transactionKey = payment.transactionKey!!, status = status)
+        return createPgTransactionOf(payment, PgStatus.SUCCESS)
     }
 
     /** 죽은 PG에 [order]를 두 번 대사해 브레이커를 연다. 조회는 4다. */
@@ -1849,8 +1818,8 @@ class OrderPaymentIntegrationTest(
     }
 
     /**
-     * 같은 MySQL과 Redis, 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
-     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB와 Redis다. 그 설정이
+     * 같은 MySQL, Redis, Kafka와 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
+     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB, Redis, broker다. 그 설정이
      * `DynamicPropertyRegistrar` 빈으로 넣는 접속 정보는 테스트 프레임워크 밖에서도 `spring-boot-testcontainers`의 자동 설정이 들인다.
      * 덮는 값은 명령줄 인자로 넘긴다. builder의 `properties`는 기본 속성이라 프로필의 설정 파일에 진다. test 프로필의 `ddl-auto: create`는
      * 표를 다시 만들어 첫 컨텍스트가 남긴 결제를 지우므로 `none`으로 덮는다. 운영의 재시작도 스키마를 다시 만들지 않는다. `pg.base-url`은
@@ -1863,6 +1832,7 @@ class OrderPaymentIntegrationTest(
             CommerceApiApplication::class.java,
             MySqlTestContainersConfig::class.java,
             RedisTestContainersConfig::class.java,
+            KafkaTestContainersConfig::class.java,
         )
             .profiles("test")
             .build()

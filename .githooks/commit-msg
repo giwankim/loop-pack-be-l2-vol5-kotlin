@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# GitHub links a bare #13 to number 13 of whichever repo shows the commit, and upstream's 13 is someone
+# else's PR (docs/agents/issue-tracker.md). Skips git's own comment lines ("# ...") and the verbose diff
+# below the scissors; a qualified owner/repo#13 points where it says and passes.
+refs=$(awk '/^# -+ >8 -+$/ { exit } /^#([ \t]|$)/ { next } { print }' "$1" |
+  sed -E 's|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+||g' |
+  grep -E '#[0-9]')
+if [ -n "$refs" ]; then
+  echo "commit-msg: name a ticket as 'issue 13', not a bare #13:" >&2
+  echo "$refs" >&2
+  exit 1
+fi

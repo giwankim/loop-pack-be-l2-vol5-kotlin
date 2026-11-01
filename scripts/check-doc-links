@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Check that the relative links in Markdown files point at files and headings that exist.
+
+Usage: scripts/check-doc-links [--cached] [--base REV] FILE [FILE ...]
+
+For each FILE (a path from the repo root), reads every link outside code (`[text](target)`, `![alt](target)`,
+`[ref]: target`), skips URLs (`https:`, `mailto:`) and checks the rest:
+
+- the path, resolved from FILE's directory (or from the repo root when it starts with `/`), must exist;
+- an anchor into Markdown (`#5-주문`, `other.md#5-주문`) must be the GitHub slug of one of its headings,
+  or an `<a id>`/`<a name>` in it. Anchors into other files (`Foo.kt#L12`) are not checked.
+
+--cached reads FILE and its targets from the index instead of the working tree. A link it reports that the
+working tree resolves is marked `(unstaged: …)`: the target file or heading exists, but only in a file not yet
+staged, as when two new documents link to each other and must land in one commit.
+--base REV checks only the lines that REV's version of FILE doesn't have, so links that went stale with
+the code they point at (dated write-ups, comments recorded as posted) don't block the next edit.
+The pre-commit hook passes both, with HEAD.
+
+Exits 1 when anything is reported.
+"""
+
+import argparse
+import posixpath
+import re
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+from urllib.parse import unquote
+
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+CODE_SPAN = re.compile(r"(`+)(?!`).*?(?<!`)\1")
+INLINE_LINK = re.compile(r"\]\(\s*(<[^>\n]*>|[^\s)]+)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)")
+REFERENCE_DEFINITION = re.compile(r"^ {0,3}\[[^\]]+\]:\s*(<[^>\n]*>|\S+)")
+HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+HTML_ANCHOR = re.compile(r"<a\s[^>]*\b(?:id|name)=[\"']([^\"']+)[\"']")
+SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+class Repo:
+    def __init__(self, cached: bool):
+        self.cached = cached
+        self.paths = set()
+        if cached:
+            listing = subprocess.run(["git", "ls-files", "-z"], check=True, capture_output=True, text=True).stdout
+            for path in filter(None, listing.split("\0")):
+                while path:
+                    self.paths.add(path)
+                    path = posixpath.dirname(path)
+        self.anchor_cache = {}
+
+    def exists(self, path: str) -> bool:
+        return path in self.paths if self.cached else Path(path).exists()
+
+    def read(self, path: str) -> str:
+        if self.cached:
+            return subprocess.run(["git", "show", f":{path}"], check=True, capture_output=True, text=True).stdout
+        return Path(path).read_text(encoding="utf-8")
+
+    def anchors(self, path: str):
+        if path not in self.anchor_cache:
+            self.anchor_cache[path] = anchors_of(self.read(path))
+        return self.anchor_cache[path]
+
+
+def outside_code(text: str):
+    """Yields (line number, line) for each line outside fenced code, with code spans blanked."""
+    fence = None
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = FENCE.match(line)
+        if fence:
+            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence):
+                fence = None
+            continue
+        if match:
+            fence = match.group(1)
+            continue
+        yield number, CODE_SPAN.sub("", line)
+
+
+def slug(heading: str) -> str:
+    """GitHub's heading anchor: rendered text lowercased, keeping letters, marks, numbers, `_`, `-`, spaces as `-`."""
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", heading)
+    text = re.sub(r"<[^>]+>", "", text).strip().lower()
+    kept = "".join(ch for ch in text if ch in " -_" or unicodedata.category(ch)[0] in "LMN")
+    return kept.replace(" ", "-")
+
+
+def anchors_of(text: str):
+    found = set()
+    for _, line in outside_code(text):
+        heading = HEADING.match(line)
+        if heading:
+            base = slug(heading.group(1) or "")
+            candidate, suffix = base, 0
+            while candidate in found:
+                suffix += 1
+                candidate = f"{base}-{suffix}"
+            found.add(candidate)
+        found.update(HTML_ANCHOR.findall(line))
+    return found
+
+
+def targets(line: str):
+    for match in INLINE_LINK.finditer(line):
+        yield match.group(1)
+    definition = REFERENCE_DEFINITION.match(line)
+    if definition:
+        yield definition.group(1)
+
+
+def problem(repo: Repo, source: str, target: str):
+    target = target.strip("<>")
+    if not target or SCHEME.match(target):
+        return None
+    raw_path, _, raw_anchor = target.partition("#")
+    path, anchor = unquote(raw_path), unquote(raw_anchor)
+    if not path:
+        resolved = source
+    elif path.startswith("/"):
+        resolved = posixpath.normpath(path.lstrip("/"))
+    else:
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
+    if resolved.startswith("../") or not repo.exists(resolved):
+        return "MISSING"
+    if anchor and resolved.endswith(".md") and anchor not in repo.anchors(resolved):
+        return "ANCHOR"
+    return None
+
+
+def is_commit(rev: str) -> bool:
+    verify = ["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"]
+    return subprocess.run(verify, stdout=subprocess.DEVNULL).returncode == 0
+
+
+def base_lines(base: str, path: str):
+    shown = subprocess.run(["git", "show", f"{base}:{path}"], capture_output=True, text=True)
+    return {line for _, line in outside_code(shown.stdout)} if shown.returncode == 0 else set()
+
+
+def check(repo: Repo, path: str, base, tree) -> int:
+    """Reports each broken link of `path` in `repo`; `tree`, the working tree under --cached, marks the unstaged ones."""
+    old = base_lines(base, path) if base else set()
+    problems = 0
+    for number, line in outside_code(repo.read(path)):
+        if line in old:
+            continue
+        for target in targets(line):
+            kind = problem(repo, path, target)
+            if kind:
+                unstaged = " (unstaged: the working tree has it, so stage that file in this commit)"
+                note = unstaged if tree and problem(tree, path, target) is None else ""
+                print(f"{path}:{number} {kind} {target}{note}")
+                problems += 1
+    return problems
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--cached", action="store_true", help="read files from the index, not the working tree")
+    parser.add_argument("--base", metavar="REV", help="check only lines that REV's version of each file lacks")
+    parser.add_argument("files", nargs="+", help="Markdown files, as paths from the repo root")
+    args = parser.parse_args()
+
+    if args.base and not is_commit(args.base):
+        print(f"not a commit: {args.base}", file=sys.stderr)
+        return 2
+    repo = Repo(args.cached)
+    tree = Repo(cached=False) if args.cached else None
+    problems = sum(check(repo, path, args.base, tree) for path in args.files)
+    print(f"{problems} problem(s)" if problems else "ok")
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

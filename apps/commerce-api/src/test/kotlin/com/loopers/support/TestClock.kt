@@ -10,9 +10,16 @@ import java.time.ZoneId
  *
  * PG 조회의 서킷 브레이커가 OPEN의 기다림을 이 시계로 잰다([TestPgLookupBreakerConfig]). 그래서 테스트가 잠 없이 기다림을 넘는다(ADR 0030 규칙 8).
  * 다른 스레드의 호출도 같은 시계를 읽으므로 옮긴 양은 `@Volatile`이다.
+ *
+ * It is also the context's primary `Clock`, so an order is confirmed at its instant (ADR 0032 rule 8). It runs with the
+ * system clock unless a test [pin]s it: two confirmations in one scene still get different instants, so a scene that must
+ * not confirm twice can tell. A scene that asserts a confirmation time pins the clock and asserts the instant it chose.
  */
 class TestClock : Clock() {
     private val base: Clock = systemUTC()
+
+    @Volatile
+    private var pinned: Instant? = null
 
     @Volatile
     private var offset: Duration = Duration.ZERO
@@ -22,20 +29,27 @@ class TestClock : Clock() {
         offset = offset.plus(duration)
     }
 
-    /** 옮긴 것을 지워 시스템 시계로 되돌린다. */
+    /** Stops the clock at [instant]. [advance] still moves it from there. */
+    fun pin(instant: Instant) {
+        offset = Duration.ZERO
+        pinned = instant
+    }
+
+    /** Unpins the clock and drops what [advance] added, so it reads the system clock again. */
     fun reset() {
+        pinned = null
         offset = Duration.ZERO
     }
 
     override fun instant(): Instant {
-        return base.instant().plus(offset)
+        return (pinned ?: base.instant()).plus(offset)
     }
 
     override fun getZone(): ZoneId {
         return base.zone
     }
 
-    /** 브레이커는 순간만 읽는다. 시간대를 바꾼 시계는 옮긴 양을 나눠 가질 수 없으므로 만들지 않는다. */
+    /** The breaker and the order confirmation read only the instant. A zoned copy could not share the offset, so none is made. */
     override fun withZone(zone: ZoneId): Clock {
         throw UnsupportedOperationException("테스트 시계는 시간대를 바꾸지 않는다.")
     }
