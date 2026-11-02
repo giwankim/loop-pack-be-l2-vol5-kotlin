@@ -2,6 +2,7 @@ package com.loopers.support.test
 
 import com.loopers.application.brand.required.BrandRepository
 import com.loopers.application.like.required.LikeRepository
+import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.payment.required.PaymentRepository
 import com.loopers.application.point.required.PointAccountRepository
@@ -12,7 +13,9 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
 import com.loopers.domain.like.Like
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.createOrder
+import com.loopers.domain.order.createOrderEventOutbox
 import com.loopers.domain.order.createOrderProduct
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PgTransaction
@@ -28,6 +31,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.context.annotation.Import
+import java.time.Instant
 
 /**
  * 저장소(required 포트) 테스트의 기반. JPA 슬라이스를 실제 MySQL 위에 띄우고, 테스트마다 트랜잭션이 롤백되어 정리가 필요 없다.
@@ -70,6 +74,9 @@ abstract class BaseRepositoryTest {
     @Autowired
     private lateinit var paymentRepository: PaymentRepository
 
+    @Autowired
+    private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -90,6 +97,9 @@ abstract class BaseRepositoryTest {
 
     /** 마지막으로 준비한 결제. */
     protected lateinit var payment: Payment
+
+    /** The last prepared outbox row. */
+    protected lateinit var orderEventOutbox: OrderEventOutbox
 
     protected fun prepareBrand(name: String? = null): Brand {
         return brandRepository.save(createBrand(name = name)).also { brand = it }
@@ -140,6 +150,21 @@ abstract class BaseRepositoryTest {
         return paymentRepository.save(createPayment(order.id, idempotencyKey, order.totalAmount)).also { payment = it }
     }
 
+    /**
+     * An outbox row of an order. It takes the order's ID because the row refers to its order by ID only, with no foreign key, so a
+     * test that commits can name an order without leaving one behind.
+     */
+    protected fun prepareOrderEventOutbox(
+        orderId: Long = prepareOrder().id,
+        eventId: String? = null,
+        payload: String? = null,
+        nextAttemptAt: Instant? = null,
+    ): OrderEventOutbox {
+        val row = createOrderEventOutbox(orderId, eventId, payload, nextAttemptAt)
+
+        return orderEventOutboxRepository.save(row).also { orderEventOutbox = it }
+    }
+
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRepository.save(brand.apply { delete() })
@@ -180,6 +205,11 @@ abstract class BaseRepositoryTest {
     /** [deleteUser]와 같다. */
     protected fun deletePayment(payment: Payment = this.payment) {
         paymentRepository.save(payment.apply { delete() })
+    }
+
+    /** The same as [deleteUser]. Nothing deletes outbox rows either. */
+    protected fun deleteOrderEventOutbox(row: OrderEventOutbox = this.orderEventOutbox) {
+        orderEventOutboxRepository.save(row.apply { delete() })
     }
 
     /** 결제를 PG 거래와 대사하고 명시적으로 저장한다. 변경 감지에 기대지 않는다. */

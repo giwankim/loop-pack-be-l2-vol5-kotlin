@@ -10,8 +10,7 @@ import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgStatus
-import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.shared.Money
+import com.loopers.domain.payment.createPgTransaction
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
 import com.loopers.support.captureSql
@@ -73,7 +72,7 @@ class OrderEventOutboxAtomicityTest(
 
     @Test
     fun `a save that throws before the insert rolls the confirmation back, and a reconcile confirms once and leaves one row`() {
-        val pgOrderId = prepareOrderTheCreateAnswersWithSuccess()
+        prepareOrderTheCreateAnswersWithSuccess()
         val failure = DataAccessResourceFailureException("The database failed before the row's insert.")
         every { orderEventOutboxRepository.save(any()) } throws failure andThenAnswer { callOriginal() }
 
@@ -83,7 +82,7 @@ class OrderEventOutboxAtomicityTest(
         assertConfirmationRolledBack()
         val afterTheFailure = committedState()
 
-        reconcileConfirmingOnce(pgOrderId)
+        reconcileConfirmingOnce()
 
         logScene("before the insert", outboxInserts, afterTheFailure)
     }
@@ -94,7 +93,7 @@ class OrderEventOutboxAtomicityTest(
      */
     @Test
     fun `a TX B that fails after the insert takes the row back with the confirmation, and a reconcile confirms once`() {
-        val pgOrderId = prepareOrderTheCreateAnswersWithSuccess()
+        prepareOrderTheCreateAnswersWithSuccess()
         orderPaymentSagaSteps.failTxBOnceAfterItsWrites(entityManager)
 
         val outboxInserts = confirmFailing()
@@ -103,24 +102,21 @@ class OrderEventOutboxAtomicityTest(
         assertConfirmationRolledBack()
         val afterTheFailure = committedState()
 
-        reconcileConfirmingOnce(pgOrderId)
+        reconcileConfirmingOnce()
 
         logScene("after the insert", outboxInserts, afterTheFailure)
     }
 
-    /** An order of [QUANTITY] from a stock of [INITIAL_STOCK], whose create the test PG accepts as a success. Returns its PG order ID. */
-    private fun prepareOrderTheCreateAnswersWithSuccess(): String {
+    /** An order of [QUANTITY] from a stock of [INITIAL_STOCK], whose create the test PG accepts as a success. */
+    private fun prepareOrderTheCreateAnswersWithSuccess() {
         prepareOrder(products = listOf(prepareProduct(price = 1_000, stock = INITIAL_STOCK)), quantity = QUANTITY)
-        val pgOrderId = nextPgOrderId()
         testPg.acceptsCreate(
-            pgOrderId = pgOrderId,
+            pgOrderId = nextPgOrderId(),
             amount = AMOUNT,
             card = request.toCreditCard(),
             transactionKey = TRANSACTION_KEY,
             pgStatus = "SUCCESS",
         )
-
-        return pgOrderId
     }
 
     /** Confirms the order, expecting the injected failure, and returns the outbox inserts the call sent. */
@@ -151,16 +147,10 @@ class OrderEventOutboxAtomicityTest(
      * The lookup finds the PG transaction of the first create, so no second create goes out. The stock stays where the reservation
      * put it: neither released to [INITIAL_STOCK] nor reduced a second time.
      */
-    private fun reconcileConfirmingOnce(pgOrderId: String) {
-        testPg.hasTransactions(
-            pgOrderId,
-            PgTransaction(
-                transactionKey = TRANSACTION_KEY,
-                pgOrderId = pgOrderId,
-                amount = Money(AMOUNT),
-                status = PgStatus.SUCCESS,
-            ),
-        )
+    private fun reconcileConfirmingOnce() {
+        val unknown = inNewTransaction { paymentFinder.findByOrder(order.id) }
+        val transaction = createPgTransaction(unknown, transactionKey = TRANSACTION_KEY, status = PgStatus.SUCCESS)
+        testPg.hasTransactions(unknown.pgOrderId, transaction)
 
         val reconciled = orderConfirmer.reconcile(user.id, order.id)
 

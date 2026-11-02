@@ -7,6 +7,7 @@ import com.loopers.support.test.BaseRepositoryTest
 import jakarta.validation.Validation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 /**
  * `OrderFixtures.kt`가 약속하는 기본값의 범위를 확인한다. 기본값이 범위를 벗어나면 그것을 쓰는 테스트가 가끔만 깨지므로,
@@ -99,6 +100,43 @@ class OrderFixturesTest : BaseRepositoryTest() {
             assertThat(item.unitPrice).isEqualTo(Money(39_000))
             assertThat(item.quantity).isEqualTo(2)
         })
+    }
+
+    /** The real constructor builds it, so being built is the check of its values. The drawn next attempt time is in the past. */
+    @Test
+    fun `createOrderEventOutbox builds unsaved pending rows of the given order's event`() {
+        val rows = List(SAMPLES) { createOrderEventOutbox(orderId = 7) }
+
+        assertThat(rows).allSatisfy { row ->
+            assertThat(row.id).isZero()
+            assertThat(row.deletedAt).isNull()
+            assertThat(row.eventId).isEqualTo("order-confirmed:v1:7")
+            assertThat(row.orderId).isEqualTo(7)
+            assertThat(row.eventType).isEqualTo("OrderConfirmed")
+            assertThat(row.schemaVersion).isEqualTo(1)
+            assertThat(row.messageKey).isEqualTo("7")
+            assertThat(row.payload).startsWith("""{"orderId":7,""")
+            assertThat(row.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+            assertThat(row.attemptCount).isZero()
+            assertThat(row.nextAttemptAt).isBeforeOrEqualTo(Instant.now())
+            assertThat(row.publishedAt).isNull()
+            assertThat(row.lastError).isNull()
+        }
+    }
+
+    @Test
+    fun `createOrderEventOutbox uses every argument it is given`() {
+        val row = createOrderEventOutbox(
+            orderId = 7,
+            eventId = "order-confirmed:v1:8",
+            payload = """{"orderId":8}""",
+            nextAttemptAt = Instant.parse("2026-10-27T01:02:03Z"),
+        )
+
+        assertThat(row.orderId).isEqualTo(7)
+        assertThat(row.eventId).isEqualTo("order-confirmed:v1:8")
+        assertThat(row.payload).isEqualTo("""{"orderId":8}""")
+        assertThat(row.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:02:03Z"))
     }
 
     @Test

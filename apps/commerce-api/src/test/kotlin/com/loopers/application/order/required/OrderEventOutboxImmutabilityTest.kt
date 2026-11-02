@@ -1,7 +1,6 @@
 package com.loopers.application.order.required
 
 import com.loopers.domain.order.OrderEventOutbox
-import com.loopers.domain.order.createOrderEventOutbox
 import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -40,9 +39,7 @@ class OrderEventOutboxImmutabilityTest(
 
     @Test
     fun `changing a managed row's event columns and flushing leaves the values read in a new transaction unchanged`() {
-        inNewTransaction {
-            orderEventOutboxRepository.save(createOrderEventOutbox(orderId = ORDER_ID, payload = PAYLOAD))
-        }
+        inNewTransaction { prepareOrderEventOutbox(orderId = ORDER_ID, payload = PAYLOAD) }
 
         inNewTransaction {
             val managed = orderEventOutboxRepository.findByEventId(EVENT_ID)!!

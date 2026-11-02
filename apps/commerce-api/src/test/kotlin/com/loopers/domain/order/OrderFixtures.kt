@@ -77,25 +77,24 @@ fun createOrderIn(status: OrderStatus, products: List<OrderProduct>? = null, con
 }
 
 /**
- * An unsaved outbox row of [orderId]'s event, or of a drawn order. It has no foreign key to the order, so no order has to exist.
- * The event columns are what the serializer writes for that order, unless a scene passes the [eventId] or [payload] it is about.
+ * An unsaved outbox row of [orderId]'s event, through the real constructor. The order is another aggregate, so the test passes its
+ * ID. The row has no foreign key to it, so no order has to exist. The event columns are what the serializer writes for that order,
+ * unless a scene passes the [eventId] or [payload] it is about. Only [nextAttemptAt] is drawn, a past instant.
  */
 fun createOrderEventOutbox(
-    orderId: Long? = null,
+    orderId: Long,
     eventId: String? = null,
     payload: String? = null,
     nextAttemptAt: Instant? = null,
 ): OrderEventOutbox {
-    val id = orderId ?: gen().longs().range(1, Long.MAX_VALUE).get()
-
     return OrderEventOutbox(
-        eventId = eventId ?: "order-confirmed:v1:$id",
-        orderId = id,
+        eventId = eventId ?: "order-confirmed:v1:$orderId",
+        orderId = orderId,
         eventType = "OrderConfirmed",
         schemaVersion = 1,
-        messageKey = id.toString(),
+        messageKey = orderId.toString(),
         payload = payload
-            ?: """{"orderId":$id,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1,"quantity":1}]}""",
+            ?: """{"orderId":$orderId,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1,"quantity":1}]}""",
         nextAttemptAt = nextAttemptAt ?: gen().temporal().instant().past().get(),
     )
 }

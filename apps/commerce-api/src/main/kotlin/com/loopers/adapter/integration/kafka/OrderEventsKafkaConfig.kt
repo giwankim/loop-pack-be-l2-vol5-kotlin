@@ -9,7 +9,7 @@ import org.springframework.kafka.config.TopicBuilder
 /**
  * The Kafka side of the order events adapter (ADR 0032). The application declares its own topic, so a fresh broker needs no
  * manual setup: the starter's `KafkaAdmin` creates every `NewTopic` bean while the context starts. A topic that already exists
- * is not recreated; the admin only adds partitions when it has fewer than declared. Nothing sends to the topic until step 2's
+ * is not recreated; the admin only adds partitions when it has fewer than declared. Nothing publishes to the topic until step 2's
  * relay (ADR 0034 rule 10).
  */
 @Configuration(proxyBeanMethods = false)

@@ -30,8 +30,8 @@ class TopicReader(
 
         /**
          * How long a scene reads on after the records it expects, so that a record it should not have published has time to
-         * arrive. It was sized for week 6's relay, which sent right after the commit. No test opens a reader until step 2's relay,
-         * whose polling needs this looked at again.
+         * arrive. It was sized for week 6's relay, which published right after the commit. No test opens a reader until step 2's
+         * relay, whose polling needs this looked at again.
          */
         private val QUIET_WAIT: Duration = Duration.ofSeconds(1)
     }
