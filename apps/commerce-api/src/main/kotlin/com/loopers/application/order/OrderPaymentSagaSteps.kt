@@ -3,13 +3,16 @@ package com.loopers.application.order
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.required.OrderConfirmedEvent
+import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.order.required.OrderEventPublisher
+import com.loopers.application.order.required.OrderEventSerializer
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.product.provided.StockReserver
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgRejection
@@ -33,6 +36,8 @@ import java.time.Clock
 class OrderPaymentSagaSteps(
     private val orderRepository: OrderRepository,
     private val orderEventPublisher: OrderEventPublisher,
+    private val orderEventOutboxRepository: OrderEventOutboxRepository,
+    private val orderEventSerializer: OrderEventSerializer,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
     private val stockReserver: StockReserver,
@@ -128,6 +133,10 @@ class OrderPaymentSagaSteps(
      * waited on the order lock while another applied the same answer) repeats an answer that an earlier change applied and,
      * if that change confirmed the order, published.
      *
+     * The same change also leaves the event in an outbox row in this transaction ([leaveInOutbox], ADR 0034 rule 1), so the
+     * confirmation and the row commit together, and the results that publish nothing leave no row. Week 6's publish stays beside
+     * it until the relay's path replaces it.
+     *
      * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockReserver.release]가,
      * revision은 커밋 앞의 훅이 잠근다. 결제는 주문 잠금 뒤의 일반 읽기로 가장 최근에 커밋된 것을 본다.
      */
@@ -148,10 +157,29 @@ class OrderPaymentSagaSteps(
         val savedOrder = orderRepository.save(order)
 
         if (result is ReconcileResult.Changed && result.to == PaymentStatus.SUCCESS) {
-            orderEventPublisher.publish(OrderConfirmedEvent.from(savedOrder))
+            val event = OrderConfirmedEvent.from(savedOrder)
+            leaveInOutbox(event)
+            orderEventPublisher.publish(event)
         }
 
         return orderInfoAssembler.toInfo(savedOrder)
+    }
+
+    /** Saves the row of [event] in this transaction, so that a failure to serialize or save rolls the confirmation back (ADR 0034 rules 1 and 2). */
+    private fun leaveInOutbox(event: OrderConfirmedEvent) {
+        val serialized = orderEventSerializer.serialize(event)
+
+        orderEventOutboxRepository.save(
+            OrderEventOutbox(
+                eventId = event.eventId,
+                orderId = event.orderId,
+                eventType = serialized.eventType,
+                schemaVersion = serialized.schemaVersion,
+                messageKey = serialized.messageKey,
+                payload = serialized.payload,
+                nextAttemptAt = clock.instant(),
+            ),
+        )
     }
 
     /**

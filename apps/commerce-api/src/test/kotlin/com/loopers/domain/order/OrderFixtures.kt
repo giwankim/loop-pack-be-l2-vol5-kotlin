@@ -77,6 +77,30 @@ fun createOrderIn(status: OrderStatus, products: List<OrderProduct>? = null, con
 }
 
 /**
+ * An unsaved outbox row of [orderId]'s event, or of a drawn order. It has no foreign key to the order, so no order has to exist.
+ * The event columns are what the serializer writes for that order, unless a scene passes the [eventId] or [payload] it is about.
+ */
+fun createOrderEventOutbox(
+    orderId: Long? = null,
+    eventId: String? = null,
+    payload: String? = null,
+    nextAttemptAt: Instant? = null,
+): OrderEventOutbox {
+    val id = orderId ?: gen().longs().range(1, Long.MAX_VALUE).get()
+
+    return OrderEventOutbox(
+        eventId = eventId ?: "order-confirmed:v1:$id",
+        orderId = id,
+        eventType = "OrderConfirmed",
+        schemaVersion = 1,
+        messageKey = id.toString(),
+        payload = payload
+            ?: """{"orderId":$id,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1,"quantity":1}]}""",
+        nextAttemptAt = nextAttemptAt ?: gen().temporal().instant().past().get(),
+    )
+}
+
+/**
  * 주문 생성 요청. 넘긴 상품마다 품목 하나를 그 차례대로 두고 수량을 1..10개로 뽑는다. 상품 ID는 다른 애그리거트라
  * 테스트가 넘긴다. `@Positive` 수량에는 상한이 없어 기본 재고(100..1,000개)를 넘지 않게 범위를 정한다.
  */
