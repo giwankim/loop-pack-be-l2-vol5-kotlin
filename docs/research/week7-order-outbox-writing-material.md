@@ -80,3 +80,75 @@ No review ran on this change: the ticket lists none. The reasoning above is the 
 - **Issue 194 (atomicity).** The identifier is `IDENTITY`, so the row's `INSERT` goes to MySQL at `save`, not at a flush. The design's "저장 뒤" scene with `failTxBOnceAfterItsWrites` still fails after the insert, but the insert was sent before that flush rather than inside it. `count()` reads the rows after the rollback. `OrderEventOutboxRepository` is the bean to spy for the "저장 전" scene.
 - **Issue 195 (removing week 6's path).** `orderEventPublisher` and its call in `applyResult` go, and so does the paragraph of `applyResult`'s KDoc that says the publish stays beside the row.
 - **Step 2.** The immutability scene is where to read the event columns again after a state change. `OrderEventOutboxStatus` is open for `BLOCKED`, with no schema change.
+
+## Issue 194: a failed outbox write rolls the confirmation back, and a reconcile recovers it
+
+Recorded 2026-11-02 from the closing comment of [issue 194](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/194). The comment carries full blob URLs where this section links files relatively.
+
+Implemented on `worktree-agent-a6b28654a11f7f137`, cut from the integration tip `09392b4`, as `f753ac8`; the commit after it appends this comment to the writing material. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check`: **83 classes, 955 tests, 0 failures, 0 errors, 0 skipped**, up from 82 and 953 on `09392b4`. This commit adds 1 class and 2 tests. No main code changed: the write from issue 192 needed no fix.
+
+The decisions are [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md) rule 2 and sections 5 and 8 of the [order outbox design](../design/order-outbox.md). The code is [`OrderEventOutboxAtomicityTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventOutboxAtomicityTest.kt), on `BaseCommittingApplicationServiceTest` with the test PG. Its name matches the assignment's `*OutboxAtomicityTest` filter.
+
+The failures are controlled injections, not OS kills, and no test overwrites a status to PENDING.
+
+### Correction to the spec and the design
+
+Spec 191 and design section 8 say the flush in `failTxBOnceAfterItsWrites` contains the insert. It does not. The row's ID is `IDENTITY`, so its `INSERT` goes to MySQL at `save`, before that flush. The scene still fails after the insert, which is how it is worded here. Each scene captures the statements its confirm sent, so the side of the insert it failed on is asserted: 0 `insert into order_event_outbox` before, 1 after. The design doc is not edited here. Its dated note belongs to issue 196.
+
+### Acceptance criteria
+
+- [x] **After each failure, read in a new transaction: order 결제 중, payment 결과 미확인, stock as reserved, 0 rows, 1 PG create.** Both scenes, below. The payment's transaction key is also still null.
+- [x] **Each scene then reconciles: order CONFIRMED, payment SUCCESS, the reservation consumed once (stock unchanged, nothing released), 1 row, still 1 PG create.** Both scenes. The stock stays 3, neither released to 5 nor reduced to 1. The row is found by its event ID and is `PENDING`. The reconcile made 1 lookup, and `unmatchedRequests()` is empty.
+- [x] **Red check, a local edit never committed: running the write in `REQUIRES_NEW` turns the scenes red.** One of the two, not both. See the deviation below.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** Run from `cleanTest`, read by `scripts/test-counts`: 83 classes, 955 tests, 0 failures, 0 errors, 0 skipped. `OrderEventOutboxAtomicityTest` 2, `OrderEventOutboxTest` 5, `OrderPaymentIntegrationTest` 63, `HexagonalArchitectureTest` 7.
+- [x] **The closing comment, with one run's values, is appended to `docs/research/week7-order-outbox-writing-material.md`.**
+
+### One run's values
+
+Read with `scripts/scene-lines OrderEventOutboxAtomicityTest` from that run. The order ID is 1 in both because the base truncates the tables between scenes.
+
+```
+Atomicity, after the insert: outbox inserts sent 1; after the failure: order 1 PAYMENT_PENDING, payment UNKNOWN key null, stock 3, rows 0, creates 1, lookups 0; after the reconcile: order 1 CONFIRMED, payment SUCCESS key 20261102:TR:194a7c, stock 3, rows 1, creates 1, lookups 1
+Atomicity, before the insert: outbox inserts sent 0; after the failure: order 1 PAYMENT_PENDING, payment UNKNOWN key null, stock 3, rows 0, creates 1, lookups 0; after the reconcile: order 1 CONFIRMED, payment SUCCESS key 20261102:TR:194a7c, stock 3, rows 1, creates 1, lookups 1
+```
+
+Stock 5, quantity 2, amount 2,000.
+
+### Red checks
+
+Local edits to `leaveInOutbox`, run with `--tests '*OutboxAtomicityTest'` and reverted; none is committed. They ran before the scenes' last rename and line wrapping, which changed no assertion.
+
+- **The write in a `TransactionTemplate` with `PROPAGATION_REQUIRES_NEW`: the ticket's red check. 1 of 2 scenes red.**
+  - After the insert: red at the row count of the rolled-back state. The row committed on its own while the confirmation rolled back:
+    ```
+    org.opentest4j.AssertionFailedError:
+    expected: 0L
+     but was: 1L
+    ```
+  - Before the insert: **stayed green.** The stub throws inside the new transaction, nothing is written, and the exception still leaves through TX B and rolls it back, so everything this scene can see is the same.
+- **The same `REQUIRES_NEW`, with the write's failure also swallowed by `runCatching`: 2 of 2 red.** This is the usual reason to reach for `REQUIRES_NEW`, that a failed event must not fail the confirmation.
+  - Before the insert: `Expected org.springframework.dao.DataAccessResourceFailureException to be thrown, but nothing was thrown.`
+  - After the insert: `expected: 0L but was: 1L`, as above.
+
+So the scene before the insert catches a swallowed failure, and the scene after it catches a row that commits on its own.
+
+### Deviation from the ticket
+
+The criterion says `REQUIRES_NEW` turns "the scenes" red. Plain `REQUIRES_NEW` turns only the scene after the insert red. No assertion can change that, because that mutant behaves correctly when the save throws before writing anything. I kept the scene as the ticket specifies and added the second mutant to show what it does catch.
+
+### Decisions made while implementing
+
+- **Each scene asserts the outbox inserts it sent, with `captureSql`.** Beyond the criteria. Without it, nothing shows that "before" and "after" are what the names say, given the correction above.
+- **One INFO line per scene**, after its assertions, as the earlier handoff scenes do, for `scripts/scene-lines`.
+- **`failTxBOnceAfterItsWrites` is unchanged.** Its KDoc says it flushes the writes, which stays true of the order and the payment.
+- **The class has its own context**, because of its two `@MockkSpyBean` fields, the repository and `OrderPaymentSagaSteps`.
+- **No `CODING_STANDARDS.md` change.** Spying a repository, spying TX B's bean and `captureSql` are already there.
+
+### Review
+
+No review ran on this change: the ticket lists none. The reasoning above is the implementer's own.
+
+### Left for later
+
+- **Issue 195.** The scenes never mention week 6's publisher, so removing it needs no edit here. Until then, each scene's reconcile also publishes to the test broker through week 6's relay, which these scenes don't read.
+- **Issue 196.** Design section 8's "flush에 insert가 들어 있다" needs a dated note with the correction above.
