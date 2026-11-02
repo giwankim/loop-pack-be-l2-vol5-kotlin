@@ -30,8 +30,8 @@ class TopicReader(
 
         /**
          * How long a scene reads on after the records it expects, so that a record it should not have published has time to
-         * arrive. Such a record would follow a commit the call has already returned from, after one hand-off to a virtual
-         * thread and one round trip to the broker in the same machine.
+         * arrive. It was sized for week 6's relay, which published right after the commit. No test opens a reader until step 2's
+         * relay, whose polling needs this looked at again.
          */
         private val QUIET_WAIT: Duration = Duration.ofSeconds(1)
     }
@@ -49,7 +49,7 @@ class TopicReader(
 
     /**
      * Every record published on the topic since it was opened, which a scene that is right has exactly [expected] of. Waits up
-     * to [RECORD_WAIT] for that many, since the relay publishes after the call returned, then reads on for [QUIET_WAIT] so that
+     * to [RECORD_WAIT] for that many, since a record can arrive after the call returned, then reads on for [QUIET_WAIT] so that
      * a record the scene should not publish has time to arrive. A scene that expects none waits only for the quiet period.
      */
     fun publishedRecords(expected: Int): List<ConsumerRecord<String, String>> {
