@@ -1,6 +1,34 @@
 # Week 7 order outbox: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket of [spec 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)'s closing comments.
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket of [spec 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)'s closing comments, except the preface below, added by [issue 196](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/196), the step's documents ticket. The rule it rests on is [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md), and the step's design is the [order outbox design](../design/order-outbox.md).
+
+## Preface: what this branch is and where its comments sit
+
+Added 2026-11-02 by [issue 196](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/196).
+
+### The branch
+
+`feat/order-outbox` is step 1 of week 7's three: the outbox row. It was cut from `week7` at `845966c`, and goes back into `week7` by its own PR. Steps 2 (`feat/outbox-relay`) and 3 (`feat/outbox-recovery`) get their own interviews.
+
+- **What it adds.** TX B now leaves the order confirmed event in a row of `order_event_outbox`, in the transaction that confirms the order. A failure to serialize or save rolls the confirmation back, and a later reconcile finds the same PG transaction, confirms once and leaves one row.
+- **What it removes.** Week 6's path to the broker: the port, its implementation, the relay, the executor, and the two test classes that observed them. They remain at the `week6` revision.
+- **What it does not change.** The wire contract in order events design section 2, and the confirm, reconcile and callback answers: `OrderPaymentIntegrationTest` (63) passes unedited. The only change in commerce-streamer is one test's KDoc.
+- **What it costs.** Between this step and step 2, `week7` publishes nothing. If the outbox table stays broken, a charged order stays payment pending until a reconcile succeeds. Both are accepted in ADR 0034.
+- **Before the tickets.** `3c5c638`: ADR 0034, the design, the payload column measurements, the glossary's terms, and the dated notes on ADR 0032 and the order events design.
+- **How the tickets landed.** Each ticket ran on a worktree branch and was integrated before the branch was pushed. 192 and 194 went in as fast-forwards. 193, cut from the same commit as 194, merged as `c2ba8b4`. 195 and 196 followed on top.
+- **The design** has the per-ticket table in section 1.2, the deviations as dated notes, and the commands and counts in section 12.
+
+### Where each closing comment sits
+
+| Issue | What it built | Section |
+| --- | --- | --- |
+| [192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192) | the entity, the ports, the adapter, the write, the first confirmation's scenes and the database's refusals | [Issue 192](#issue-192-a-first-confirmation-leaves-one-outbox-row) |
+| [194](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/194) | the two atomicity scenes, with a reconcile after each | [Issue 194](#issue-194-a-failed-outbox-write-rolls-the-confirmation-back-and-a-reconcile-recovers-it) |
+| [193](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/193) | the other paths to confirmation, and the results that leave no row | [Issue 193](#issue-193-every-other-path-to-confirmation-leaves-the-right-number-of-rows) |
+| [195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195) | the removal of week 6's path | [Issue 195](#issue-195-week-6s-path-to-the-broker-is-gone-and-the-outbox-row-is-all-tx-b-does-for-the-event) |
+| [196](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/196) | the documents: this preface, the design's notes and sections, the order events notes | [Issue 196](#issue-196-step-1s-records-match-what-was-built) |
+
+The sections keep the order the tickets landed in. Each starts with a "Recorded …" line naming its issue. The comments themselves carry full blob URLs where these sections link files relatively.
 
 ## Issue 192: a first confirmation leaves one outbox row
 
@@ -294,3 +322,53 @@ No review ran on this change: the ticket lists none. The reasoning above is the 
 - **Issue 196.** Three things to record: the stale KDoc in `OrderEventConsumedCaseTest`, to fix or note; design section 7 or 8's note on the envelope gap above; and the `Executor` result above, since the order events design's 2026-10-27 note says Boot backs off, which is no longer so.
 - **Step 2.** Restore the envelope and no-headers check through the bytes test of design section 10. The shared template and `TopicReader` are there, with no caller.
 - **Step 3.** The publish gap is reproduced from the `week6` revision, where `OrderEventPublishGapTest` remains.
+
+## Issue 196: step 1's records match what was built
+
+Recorded 2026-11-02 from the closing comment of [issue 196](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/196). The comment carries full blob URLs where this section links files relatively.
+
+Implemented on `worktree-agent-a36cfbfa747590270`, cut from the integration tip `a6e1159`, as `dc9a3ef` and `d854010`; the commit after them adds the writing material's preface and this comment. `scripts/final-check` on `dc9a3ef`, a clean tree, started 2026-11-02T05:04:20Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-streamer 18 classes, 67 tests (53 s), commerce-api 81 classes, 949 tests (3 min 37 s), 0 failures, 0 errors, 0 skipped in both**. Only documents changed after `dc9a3ef`. This is the last of [spec 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)'s tickets, and the spec stays open for its closing review.
+
+The documents are:
+
+- the [order outbox design](../../docs/design/order-outbox.md): step 1's status in 1.1, the new sections 1.2 and 12, and dated notes on sections 2, 3, 7 and 8
+- the [order events design](../../docs/design/order-events.md): dated notes on the status line, 1.2, 2, 3, 4, 6, 8 and 12
+- the [week 7 writing material](week7-order-outbox-writing-material.md): the preface and this comment
+- [`OrderEventConsumedCaseTest`](../../apps/commerce-streamer/src/test/kotlin/com/loopers/adapter/consumer/OrderEventConsumedCaseTest.kt): its KDoc, below
+
+### Acceptance criteria
+
+- [x] **The order outbox design records implementation changes as dated notes, gains a section listing what each ticket built, and gains a section with step 1's commands.** Sections 1.2 and 12. The notes correct the `IDENTITY` insert, the two red checks and the sequential duplicates, and record the `status` column, the envelope gap, the `Executor` result, the two repository test classes and the wider final check.
+- [x] **Its 1.1 table marks step 1 as implemented.**
+- [x] **Test counts come from a `scripts/final-check` run, stated with its commit.** Section 12 states them with `dc9a3ef`, and accounts for the change from week 6: 4 classes and 23 tests added, 2 classes and 17 tests removed. Each filtered command in the section was also run from that tree and gave the section's count.
+- [x] **Every name the spec treated as a placeholder is confirmed or corrected in a dated note on the design doc or spec 191.** Section 1.2. All the names the spec gave became final. The ones it left open are `OrderEventOutboxStatus`, `JacksonOrderEventSerializer`, `leaveInOutbox`, `OrderEventOutboxRepositoryTest`, `OrderEventOutboxImmutabilityTest` and `createOrderEventOutbox`. Spec 191's body is not edited. The design's notes cover what it got wrong.
+- [x] **`docs/design/order-events.md` gets dated notes where it would now mislead, such as its commands naming deleted tests.** Section 12's note says the first two commands now pass while running only `HexagonalArchitectureTest`. I ran `*OrderEventPublishingTest` to confirm that: exit 0, 7 tests. Section 4's 2026-10-27 note that Boot backs off from its executor is marked as no longer true.
+- [x] **The writing material holds every ticket's closing comment and gains a preface saying what the branch is. It stays out of `docs/blog`.**
+- [x] **`CONTEXT.md` still matches the code. Report any term the implementation showed to be wrong.** One term reads wrong, below. `CONTEXT.md` is not edited.
+- [x] **`scripts/check-doc-notes`, `scripts/check-doc-links` and the final check pass.** `check-doc-notes` against `a6e1159` reports no changed line, and the 1.1 cell passes because the new words are inserted.
+
+### `CONTEXT.md`
+
+**아웃박스** says the record holds what will be sent "그대로". The code stores the body in `payload` and the other facts in columns, and ADR 0034 rule 9 has the relay rebuild the envelope from them. So the row holds the same facts, not the record's content as is. This is the same word ADR 0034 records as a deviation from the assignment. It could say instead that the record holds the facts the message is built from. I left the wording undecided: step 2 may be the better place, since it builds that message.
+
+The other terms match. 발행하다, 중계 and 누락 구간 describe the relay that step 2 brings back, and between the steps nothing publishes, as ADR 0034 accepts.
+
+### Edit outside the spec's lines
+
+`OrderEventConsumedCaseTest`'s KDoc named `OrderEventPublishGapTest` and `OrderEventPublishingTest` in the present tense. It now says they remain at the `week6` revision, and that commerce-api has no test pinning that value's form until step 2's bytes test. Spec 191 puts changes to the streamer out of scope, but that exclusion is about the contract. This is comment-only, and the final check ran after it, on `dc9a3ef`.
+
+### Decisions made while implementing
+
+- **The notes sit where a reader would go wrong.** The sequential duplicates are noted on section 3's `Unchanged` row, which names them, as well as on section 8's scene. The red checks are on section 8, since the design states no red check of its own and the writing material already states both correctly.
+- **The writing material's existing sections are unchanged.** They record what each ticket said at the time, and none claims what the red checks disproved.
+- **The preface has no comment column.** Week 6's links each closing comment, but none of these comments is posted yet.
+
+### Review
+
+No review ran on this change: the ticket lists none. The reasoning above is the implementer's own.
+
+### Left for later
+
+- **Post the closing comments**, then link them from the preface's table if wanted. Spec 191's closing review, and the PR into `week7`. This comment's blob links resolve once the branch is on the remote.
+- **Two stale mentions outside the ticket.** ADR 0028 line 49 still says the step calls `OrderEventPublisher`, and ADR 0034's list of changed decisions doesn't name it. Other streamer KDocs say "commerce-api's relay", which is true again after step 2, so they stay.
+- **Step 2.** Design section 10, including the bytes test that closes the envelope gap in section 7.
