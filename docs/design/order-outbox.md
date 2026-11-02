@@ -22,7 +22,7 @@
 
 ### 1.2 1단계가 만든 것
 
-2026-11-02 [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 티켓이다. 명세가 이름 지은 것(`OrderEventOutbox`, `order_event_outbox`, `OrderEventOutboxRepository`, `OrderEventSerializer`, `SerializedOrderEvent`, `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID`, `CK_ORDER_EVENT_OUTBOX_PAYLOAD`, `OrderEventOutboxTest`, `OrderEventOutboxAtomicityTest`)은 모두 그대로 최종 이름이 됐다. 명세가 이름 짓지 않은 것은 이렇게 정해졌다. 상태 enum은 `OrderEventOutboxStatus`(`PENDING`, `PUBLISHED`), 직렬화 구현은 `JacksonOrderEventSerializer`, 쓰는 코드는 `applyResult`가 부르는 private `leaveInOutbox`, 저장소 테스트는 `OrderEventOutboxRepositoryTest`와 `OrderEventOutboxImmutabilityTest`, fixture는 `createOrderEventOutbox`다. 저장소 포트의 메서드는 `save`, `findByEventId`(없으면 null), `count`다. `BLOCKED`를 둘지는 여전히 2단계가 정한다.
+2026-11-02 [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 티켓이다. 명세가 이름 지은 것(`OrderEventOutbox`, `order_event_outbox`, `OrderEventOutboxRepository`, `OrderEventSerializer`, `SerializedOrderEvent`, `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID`, `CK_ORDER_EVENT_OUTBOX_PAYLOAD`, `OrderEventOutboxTest`, `OrderEventOutboxAtomicityTest`)은 모두 그대로 최종 이름이 됐다. (2026-11-02, [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 닫는 검토: `CK_ORDER_EVENT_OUTBOX_PAYLOAD`만은 그렇지 않다. 닫는 검토에서 `CK_ORDER_EVENT_OUTBOX_ON_PAYLOAD_JSON_VALID`로 고쳤다. 2절의 메모.) 명세가 이름 짓지 않은 것은 이렇게 정해졌다. 상태 enum은 `OrderEventOutboxStatus`(`PENDING`, `PUBLISHED`), 직렬화 구현은 `JacksonOrderEventSerializer`, 쓰는 코드는 `applyResult`가 부르는 private `leaveInOutbox`, 저장소 테스트는 `OrderEventOutboxRepositoryTest`와 `OrderEventOutboxImmutabilityTest`, fixture는 `createOrderEventOutbox`다. 저장소 포트의 메서드는 `save`, `findByEventId`(없으면 null), `count`다. `BLOCKED`를 둘지는 여전히 2단계가 정한다.
 
 | 티켓 | 만든 것 |
 | --- | --- |
@@ -56,7 +56,8 @@ commerce-streamer의 코드와 계약은 바뀌지 않았다. 바뀐 것은 지�
 
 - `created_at`, `updated_at`, `deleted_at`은 `BaseEntity`의 것이다. `created_at`은 시스템 시계라 시험이 고정한 시계를 따르지 않는다. 그래서 다음 시도의 기준은 `next_attempt_at`이다.
 - "바뀌는가"가 아니오인 열은 `val`에 `@Column(updatable = false)`다.
-- 제약은 `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID`와 `CK_ORDER_EVENT_OUTBOX_PAYLOAD` 둘이다. `(status, next_attempt_at, id)` 인덱스는 그것을 읽는 2단계가 더한다.
+- 제약은 `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID`와 `CK_ORDER_EVENT_OUTBOX_PAYLOAD` 둘이다. `(status, next_attempt_at, id)` 인덱스는 그것을 읽는 2단계가 더한다. (2026-11-02, [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 닫는 검토: 검사의 이름은 `CK_ORDER_EVENT_OUTBOX_ON_PAYLOAD_JSON_VALID`다. `CODING_STANDARDS.md`의 제약 이름이 한 컬럼의 규칙을 `<컬럼>_<조건>`으로 부른다.)
+- (2026-11-02, [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 닫는 검토: 엔티티가 받은 값을 스스로 검사한다. `Order`, `Payment`, `Product`, `Brand`처럼 `init`에서 공백인 `event_id`, `event_type`, `message_key`, `payload`와 0 이하인 `order_id`, `schema_version`을 거절한다. payload가 올바른 JSON인지는 여전히 CHECK가 본다. 예외 `InvalidOrderEventOutboxException`은 이웃과 달리 `RuleViolationException`이 아니다. 웹 어댑터가 그것을 400으로 옮기는데, 이 값들은 요청에서 오지 않으므로 고객의 잘못이 아니고, 5절대로 부르는 쪽의 답은 TX B가 실패했을 때와 같아야 한다. 실패는 직렬화의 실패처럼 TX B를 되돌리는 같은 길이라 원자성 장면을 더하지 않았다. 테스트는 `domain.order.OrderEventOutboxValidationTest`다. 이웃처럼 `OrderEventOutboxTest`로 지으면 12절의 필터에 응용 계층의 장면과 함께 걸린다.)
 - (2026-11-02, [issue 192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192): `status`는 표대로 varchar이고 `columnDefinition = "varchar(16)"`로 선언했다. 저장소의 다른 상태 열이 모두 MySQL `enum`인 것과 일부러 다르다. `@Enumerated(STRING)`만 두면 Hibernate가 `enum ('PENDING','PUBLISHED')`을 만들어, 2단계가 값을 더할 때 스키마를 바꿔야 한다. `@JdbcTypeCode(SqlTypes.VARCHAR)`는 varchar를 주지만 이름 없는 `check (status in (...))`를 더해 위의 둘에 없는 셋째 제약이 된다. `columnDefinition`은 표의 타입과 제약 둘을 그대로 준다. 필드의 KDoc에도 적었다.)
 
 ### 저장되는 값과 선 위의 값
@@ -127,7 +128,7 @@ payload는 잠근 주문의 저장된 품목, 수량, 시각에서 TX B 안에�
   - 저장 뒤: `failTxBOnceAfterItsWrites`. flush에 insert가 들어 있다. (2026-11-02, [issue 194](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/194): 틀렸다. ID가 `IDENTITY`라 행의 `INSERT`는 그 flush가 아니라 `save`에서 나간다. [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 같은 말도 그렇다. 장면이 insert 뒤에 실패한다는 것은 그대로이고, 장면마다 `captureSql`로 보낸 insert를 세어 저장 전 0, 저장 뒤 1을 단언한다.)
   - 둘 다 새 트랜잭션에서 주문이 결제 중, 결제가 결과 미확인, 재고가 예약된 그대로, 행 0개, PG 생성 1회임을 본다. 이어서 대사하면 CONFIRMED, 예약 소비 한 번, 행 1개, PG 생성은 여전히 1회다.
   - 직렬화의 실패는 저장 전 장면과 같은 길이라 따로 두지 않는다.
-- **저장소 테스트.** `BaseRepositoryTest`에서 DB 제약을 본다. 같은 `event_id`와 올바르지 않은 JSON은 거절되고, 관리되는 엔티티의 사건 열을 리플렉션으로 바꿔 flush해도 다시 읽은 값은 그대로다. (2026-11-02, [issue 192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192): 두 클래스다. `OrderEventOutboxRepositoryTest`는 두 거절을 제약의 이름까지 보고, 시각의 마이크로초 절단과 지운 행이 없는 행임을 더 본다. 불변은 새 트랜잭션에서 읽으려면 커밋해야 해서 `OrderEventOutboxImmutabilityTest`로 나눴다. 기반은 같고, 클래스 수준에서 테스트 트랜잭션을 벗어나며, 커밋한 것을 스스로 지운다.)
+- **저장소 테스트.** `BaseRepositoryTest`에서 DB 제약을 본다. 같은 `event_id`와 올바르지 않은 JSON은 거절되고, 관리되는 엔티티의 사건 열을 리플렉션으로 바꿔 flush해도 다시 읽은 값은 그대로다. (2026-11-02, [issue 192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192): 두 클래스다. `OrderEventOutboxRepositoryTest`는 두 거절을 제약의 이름까지 보고, 시각의 마이크로초 절단과 지운 행이 없는 행임을 더 본다. 불변은 새 트랜잭션에서 읽으려면 커밋해야 해서 `OrderEventOutboxImmutabilityTest`로 나눴다. 기반은 같고, 클래스 수준에서 테스트 트랜잭션을 벗어나며, 커밋한 것을 스스로 지운다.) (2026-11-02, [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)의 닫는 검토: 두 클래스 모두 행을 `BaseRepositoryTest`의 `prepareOrderEventOutbox`로 준비하고, `save`는 거절을 보는 두 장면에만 드러난다. 그 도우미는 주문 ID를 받는다. 행이 외래 키 없이 ID로만 주문을 가리키므로, 커밋하는 불변 장면이 주문을 남기지 않고 ID를 적는다.)
 - 끝의 확인은 commerce-api의 `ktlintCheck`와 `check`다. (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): commerce-streamer의 것도 함께 돌린다. `scripts/final-check`이고 12절에 있다.)
 
 ## 9. 받아들인 한계
@@ -167,6 +168,9 @@ payload는 잠근 주문의 저장된 품목, 수량, 시각에서 TX B 안에�
 
 # DB가 지키는 것: OrderEventOutboxRepositoryTest(4), OrderEventOutboxImmutabilityTest(1)
 ./gradlew :apps:commerce-api:test --tests '*OrderEventOutboxRepositoryTest' --tests '*OrderEventOutboxImmutabilityTest'
+
+# 엔티티가 받은 값의 검사: OrderEventOutboxValidationTest(18)
+./gradlew :apps:commerce-api:test --tests '*OrderEventOutboxValidationTest'
 
 # 남은 토픽과 producer 설정: OrderEventsTopicTest(1), OverriddenOrderEventsTopicTest(1), OrderEventsProducerTest(1). 첫 필터가 앞의 둘을 찾는다.
 ./gradlew :apps:commerce-api:test --tests '*OrderEventsTopicTest' --tests '*OrderEventsProducerTest'
