@@ -372,3 +372,79 @@ No review ran on this change: the ticket lists none. The reasoning above is the 
 - **Post the closing comments**, then link them from the preface's table if wanted. Spec 191's closing review, and the PR into `week7`. This comment's blob links resolve once the branch is on the remote.
 - **Two stale mentions outside the ticket.** ADR 0028 line 49 still says the step calls `OrderEventPublisher`, and ADR 0034's list of changed decisions doesn't name it. Other streamer KDocs say "commerce-api's relay", which is true again after step 2, so they stay.
 - **Step 2.** Design section 10, including the bytes test that closes the envelope gap in section 7.
+
+## Spec 191: step 1's closing review and what it changed
+
+Recorded 2026-11-02 from the closing comment of [spec 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191). The text is the comment's, with its blob URLs.
+
+Step 1 of week 7 is built and its closing review's findings are fixed. `scripts/final-check` on `8ceda35`, a clean tree, started 2026-11-02T05:24:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-streamer 18 classes, 67 tests (52 s), commerce-api 82 classes, 969 tests (3 min 16 s), 0 failures, 0 errors, 0 skipped in both**. Only documents changed after `8ceda35`.
+
+### The branch
+
+`feat/order-outbox` is the first of week 7's three branches, cut from `week7` at `845966c`, and goes back into `week7` by its own PR. TX B now leaves the order confirmed event in a row of `order_event_outbox`, in the transaction that confirms the order. A failure to serialize or save rolls the confirmation back, and a later reconcile finds the same PG transaction, confirms once and leaves one row. Week 6's path to the broker is gone, so `week7` publishes nothing until step 2's relay. The wire contract is unchanged, and `OrderPaymentIntegrationTest` (63) passes unedited.
+
+The rule is [ADR 0034](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-outbox/docs/adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md), the design is the [order outbox design](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-outbox/docs/design/order-outbox.md), and each ticket's closing comment is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/order-outbox/docs/research/week7-order-outbox-writing-material.md).
+
+### The tickets
+
+| Ticket | What it built |
+| --- | --- |
+| [192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192) | the entity, the ports, the adapter, the write, the first confirmation's scenes and the database's refusals |
+| [193](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/193) | the other paths to confirmation, and the results that leave no row |
+| [194](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/194) | the two atomicity scenes, with a reconcile after each |
+| [195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195) | the removal of week 6's path |
+| [196](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/196) | the documents: the design's notes and sections, the order events notes, the writing material's preface |
+
+### Final counts
+
+From week 6's end (79 classes, 943 tests) to 82 classes, 969 tests in commerce-api:
+
+- The tickets added 4 classes and 23 tests and removed 2 classes and 17 tests, which gave 81 classes, 949 tests.
+- The review's fixes added `OrderEventOutboxValidationTest` (18) and 2 tests in `OrderFixturesTest`.
+
+commerce-streamer's counts did not change. Design section 12 has the commands and these counts.
+
+### The closing review
+
+The review ran on two axes, Standards (the repo's documented rules) and Spec (what this issue asked for).
+
+**Fixed:**
+
+- **The check's name.** Now `CK_ORDER_EVENT_OUTBOX_ON_PAYLOAD_JSON_VALID`, per the standards' `<column>_<condition>`.
+- **The fixture.** `createOrderEventOutbox` takes its order ID with no default, and has its two tests in `OrderFixturesTest`: 1,000 draws through the real constructor, and each argument used as given.
+- **The entity's checks.** `OrderEventOutbox` now refuses blank strings and non-positive IDs and version in `init`, as `Order`, `Payment`, `Product` and `Brand` do. It was written test-first, and 16 of the 18 new tests were red before the checks went in. The other two pin what the checks let through. JSON validity stays the database's.
+- **The repository tests' preparation.** Both classes prepare through `prepareOrderEventOutbox` and `deleteOrderEventOutbox` on `BaseRepositoryTest`. `save` stays visible only in the two refusal scenes.
+- **The repository test's KDoc.** It now covers the truncation and soft-delete scenes too.
+- **The standards' self-conflict.** The line that says a class leaving the test transaction cleans up with `DatabaseCleanUp` now names `OrderEventOutboxImmutabilityTest` as the exception. That bean isn't in the JPA slice's context, so following the rule would mean another import and another context.
+- **The glossary's avoid list.** `OrderEventsKafkaConfig` and `TopicReader` now say publish.
+- **ADR 0028.** A dated note says TX B no longer calls `OrderEventPublisher`.
+- **The duplicated `PgTransaction`.** `OrderEventOutboxAtomicityTest` now builds it with `createPgTransaction` from the stored payment. `OrderEventOutboxTest.succeededTransaction` stays, because its one scene sets the stub before the payment exists, so the fixture has nothing to take.
+
+**Decided differently from the neighbours:**
+
+- **The exception.** `InvalidOrderEventOutboxException` is not a `RuleViolationException`. The web adapter maps those to 400, but no request carries these values, and design section 5 says the caller gets the answer of a failed TX B. A refusal fails TX B the way a failed serialization does, so it has no atomicity scene of its own.
+- **The test's name.** The entity's test is `OrderEventOutboxValidationTest` rather than the neighbours' pattern, because `OrderEventOutboxTest` would also match design section 12's `*OrderEventOutboxTest` filter.
+
+**Kept, already decided:**
+
+- `count` and `findByEventId` on the repository (design 1.2)
+- `TopicReader` and `linesAt` without callers (design 7)
+- the CSV `when` in `OrderEventOutboxTest`, and its import of `OrderConfirmedMessage` (design 8 asks for the read-back)
+- the private `inNewTransaction` in the immutability test
+- the varchar status (design 2)
+- the streamer KDoc fix
+
+**Open for the user:** `CONTEXT.md`'s 아웃박스 says the record holds what will be published "그대로", while the row holds the facts the message is rebuilt from.
+
+### Deviations from this issue
+
+- **`REQUIRES_NEW` red check, 1 of 2.** Moving the write to `REQUIRES_NEW` reddens only the scene after the insert: its row commits separately, so there is 1 row rather than 0. The scene before the insert stays green, because the stub writes nothing and its exception still rolls TX B back. That scene goes red only with a second mutant that swallows the failure with `runCatching`. So one scene catches a swallowed failure and the other catches a separately committed row.
+- **`Unchanged` red check, 2 of 4.** A mutant that also writes on `Unchanged` reddens the racing duplicate callback and the late create answer. The sequential duplicates return in `OrderPaymentSaga.checkLookupNeeded` before TX B, so they stay green, and all four go red only with a mutant that also lets finished orders into TX B. The failure is the unique constraint's `DataIntegrityViolationException` in the second TX B, not 2 rows.
+- **The `IDENTITY` insert at `save`.** This issue and the design said the insert goes out in `failTxBOnceAfterItsWrites`'s flush. The row's ID is `IDENTITY`, so it goes out at `save`. The scene still fails after the insert, and each scene now captures its statements and asserts 0 inserts before and 1 after.
+- **The envelope is unpinned until step 2.** The deleted `OrderEventPublishingTest` also read the whole envelope and the record's lack of headers, which a row can't show. No test pins them until step 2's bytes test. The row's event columns and body are pinned, and nothing in this step publishes that envelope.
+- **The renamed check.** This issue named `CK_ORDER_EVENT_OUTBOX_PAYLOAD`. The review renamed it, and ADR 0034 rule 6 and design sections 1.2 and 2 carry dated notes. The ticket comments in the writing material keep the old name as history.
+
+### Left for later
+
+- The PR into `week7`. These blob links resolve once the branch is on the remote.
+- Step 2: design section 10, including the bytes test that closes the envelope gap.
