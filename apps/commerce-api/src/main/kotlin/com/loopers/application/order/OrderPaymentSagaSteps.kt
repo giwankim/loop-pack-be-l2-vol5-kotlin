@@ -150,25 +150,29 @@ class OrderPaymentSagaSteps(
 
         val savedOrder = orderRepository.save(order)
 
-        if (result is ReconcileResult.Changed && result.to == PaymentStatus.SUCCESS) {
+        if (isChangedToSuccess(result)) {
             leaveInOutbox(OrderConfirmedEvent.from(savedOrder))
         }
 
         return orderInfoAssembler.toInfo(savedOrder)
     }
 
-    /** Saves the row of [event] in this transaction, so that a failure to serialize or save rolls the confirmation back (ADR 0034 rules 1 and 2). */
-    private fun leaveInOutbox(event: OrderConfirmedEvent) {
-        val serialized = orderEventSerializer.serialize(event)
+    private fun isChangedToSuccess(result: ReconcileResult): Boolean {
+        return result is ReconcileResult.Changed && result.to == PaymentStatus.SUCCESS
+    }
+
+    /** Saves the row of [orderConfirmedEvent] in this transaction, so that a failure to serialize or save rolls the confirmation back (ADR 0034 rules 1 and 2). */
+    private fun leaveInOutbox(orderConfirmedEvent: OrderConfirmedEvent) {
+        val serializedOrderEvent = orderEventSerializer.serialize(orderConfirmedEvent)
 
         orderEventOutboxRepository.save(
             OrderEventOutbox(
-                eventId = event.eventId,
-                orderId = event.orderId,
-                eventType = serialized.eventType,
-                schemaVersion = serialized.schemaVersion,
-                messageKey = serialized.messageKey,
-                payload = serialized.payload,
+                eventId = orderConfirmedEvent.eventId,
+                orderId = orderConfirmedEvent.orderId,
+                eventType = serializedOrderEvent.eventType,
+                schemaVersion = serializedOrderEvent.schemaVersion,
+                messageKey = serializedOrderEvent.messageKey,
+                payload = serializedOrderEvent.payload,
                 nextAttemptAt = clock.instant(),
             ),
         )

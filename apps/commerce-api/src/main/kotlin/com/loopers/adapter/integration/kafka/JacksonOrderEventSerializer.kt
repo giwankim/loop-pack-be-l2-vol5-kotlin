@@ -14,14 +14,14 @@ import tools.jackson.databind.json.JsonMapper
 class JacksonOrderEventSerializer(
     private val jsonMapper: JsonMapper,
 ) : OrderEventSerializer {
-    override fun serialize(event: OrderConfirmedEvent): SerializedOrderEvent {
-        val message = OrderConfirmedMessage.from(event)
+    override fun serialize(orderConfirmedEvent: OrderConfirmedEvent): SerializedOrderEvent {
+        val orderConfirmedMessage = OrderConfirmedMessage.from(orderConfirmedEvent)
 
         return SerializedOrderEvent(
             eventType = OrderConfirmedMessage.EVENT_TYPE,
             schemaVersion = OrderConfirmedMessage.SCHEMA_VERSION,
-            messageKey = event.orderId.toString(),
-            payload = jsonMapper.writeValueAsString(message.payload),
+            messageKey = orderConfirmedEvent.orderId.toString(),
+            payload = jsonMapper.writeValueAsString(orderConfirmedMessage.payload),
         )
     }
 }

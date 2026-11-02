@@ -6,7 +6,7 @@ package com.loopers.application.order.required
  * `adapter.integration.kafka`, and a failure to serialize is TX B's failure, which rolls the confirmation back (rule 2).
  */
 interface OrderEventSerializer {
-    fun serialize(event: OrderConfirmedEvent): SerializedOrderEvent
+    fun serialize(orderConfirmedEvent: OrderConfirmedEvent): SerializedOrderEvent
 }
 
 /**
