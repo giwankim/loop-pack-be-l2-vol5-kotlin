@@ -4,8 +4,8 @@ import com.loopers.domain.order.Order
 import java.time.Instant
 
 /**
- * The first confirmation of an order paid through the PG, as the order slice publishes it through [OrderEventPublisher]
- * (ADR 0032 rule 2). TX B builds it from the order it holds locked, so nothing reads the entity again after the commit.
+ * The first confirmation of an order paid through the PG, as the order slice leaves it in an outbox row (ADR 0034 rule 1).
+ * TX B builds it from the order it holds locked, so nothing reads the entity again after the commit.
  *
  * [items] hold one entry per product, in ascending product ID order. An order already has one line item per product
  * (`Order`'s init check), so building the event only sorts them.

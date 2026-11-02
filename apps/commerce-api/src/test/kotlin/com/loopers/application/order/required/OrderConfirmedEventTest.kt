@@ -17,7 +17,7 @@ class OrderConfirmedEventTest {
     }
 
     /**
-     * An unsaved order's ID is 0, so this test cannot tell the order's ID from a constant. `OrderEventPublishingTest` pins the
+     * An unsaved order's ID is 0, so this test cannot tell the order's ID from a constant. `OrderEventOutboxTest` pins the
      * ID and event ID of a saved order.
      */
     @Test
