@@ -1,0 +1,82 @@
+# Week 7 order outbox: writing material
+
+Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket of [spec 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191)'s closing comments.
+
+## Issue 192: a first confirmation leaves one outbox row
+
+Recorded 2026-11-02 from the closing comment of [issue 192](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/192). The comment carries full blob URLs where this section links files relatively.
+
+Implemented on `worktree-agent-a8eefc4d14c229e75`, cut from the integration tip `3c5c638`, as `b47c84b`; the commit after it starts the writing material with this comment. `./gradlew :apps:commerce-api:cleanTest :apps:commerce-api:ktlintCheck :apps:commerce-api:check`: **82 classes, 953 tests, 0 failures, 0 errors, 0 skipped**, up from the 79 classes and 943 tests week 6's writing material records. This commit adds 3 classes and 10 tests.
+
+The decisions are [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md) rules 1 and 3–8 and sections 2–4 of the [order outbox design](../design/order-outbox.md). The code is:
+
+- [`OrderEventOutbox`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/order/OrderEventOutbox.kt) and [`OrderEventOutboxStatus`](../../apps/commerce-api/src/main/kotlin/com/loopers/domain/order/OrderEventOutboxStatus.kt): the entity and its status, in the order domain
+- [`OrderEventOutboxRepository`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderEventOutboxRepository.kt): `save`, `findByEventId` (nullable) and `count`
+- [`OrderEventSerializer`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/required/OrderEventSerializer.kt): the port and `SerializedOrderEvent`
+- [`JacksonOrderEventSerializer`](../../apps/commerce-api/src/main/kotlin/com/loopers/adapter/integration/kafka/JacksonOrderEventSerializer.kt): the implementation, beside `OrderConfirmedMessage`
+- [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt): the write, in `applyResult` through a private `leaveInOutbox`
+- [`OrderEventOutboxTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventOutboxTest.kt), [`OrderEventOutboxRepositoryTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/required/OrderEventOutboxRepositoryTest.kt) and [`OrderEventOutboxImmutabilityTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/required/OrderEventOutboxImmutabilityTest.kt): the scenes
+- [`OrderFixtures`](../../apps/commerce-api/src/test/kotlin/com/loopers/domain/order/OrderFixtures.kt): `createOrderEventOutbox`
+- [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md): a clause on the repository test that commits
+
+### Landed
+
+Two commits on top of `3c5c638`:
+
+- [`b47c84b`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/commit/b47c84b) is the entity, the ports, the adapter, the write, the tests and the standards clause.
+- The commit after it creates the writing material with this comment as its first section.
+
+### Acceptance criteria
+
+- [x] **A confirmation whose create answers success leaves one row, read in a new transaction, with every event column right.** `OrderEventOutboxTest`, on `BaseCommittingApplicationServiceTest` with the test PG. `count()` is 1 in the new transaction. `event_id` is `order-confirmed:v1:{orderId}`, `order_id` the order's, `event_type` `OrderConfirmed`, `schema_version` 1, `message_key` the order ID's string.
+- [x] **Its status is `PENDING`, `attempt_count` 0, `next_attempt_at` the pinned clock's instant, and `published_at` and `last_error` empty.** Compared with the literal `2026-10-27T01:02:03.123456Z`.
+- [x] **The payload equals the expected string exactly, field order included.** The order lists the pricier product first, and the items come out in ascending product ID order:
+  ```
+  {"orderId":<id>,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":<cheaper>,"quantity":2},{"productId":<pricier>,"quantity":1}]}
+  ```
+- [x] **The stored string reads back as `OrderConfirmedMessage.Payload` equal to the original, for `…123456Z`, `…100Z` and `…03Z`.** A parameterized scene with the `JsonMapper` bean. Each case also compares the whole stored string, so the instant's written form is pinned too.
+- [x] **Repository tests on `BaseRepositoryTest`.**
+  - A duplicate `event_id` is refused: `DataIntegrityViolationException`, root cause naming `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID`.
+  - Invalid JSON is refused: the same exception, root cause naming `CK_ORDER_EVENT_OUTBOX_PAYLOAD`.
+  - Changing a managed entity's event columns by reflection and flushing leaves the values re-read in a new transaction unchanged. The scene changes all six event columns, and asserts that the managed field really did change before it flushes. That run logged no `update order_event_outbox` statement.
+- [x] **`HexagonalArchitectureTest` passes with its rules unchanged.** 7 tests; the file is not in the diff.
+- [x] **Red check, a local edit never committed: removing `updatable = false` from the payload turns the immutability test red.** Below.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** Run from `cleanTest`, with `BOOTSTRAP_SERVERS` unset, read by `scripts/test-counts`: 82 classes, 953 tests, 0 failures, 0 errors, 0 skipped. `OrderEventOutboxTest` 5, `OrderEventOutboxRepositoryTest` 4, `OrderEventOutboxImmutabilityTest` 1. `OrderEventPublishingTest` (15) and `OrderPaymentIntegrationTest` (63) still pass with week 6's publish beside the write. The pre-commit hook's tree-wide `ktlintCheck` passed.
+- [x] **The closing comment starts `docs/research/week7-order-outbox-writing-material.md`, in the shape of week 6's writing material.** It is that file's first section.
+
+### Red checks
+
+The mutant was a local edit, run and reverted; it is not committed.
+
+- **`updatable = false` removed from the payload: the ticket's red check.** `OrderEventOutboxImmutabilityTest` failed at its payload assertion, the only one of the six columns the edit released:
+  ```
+  org.opentest4j.AssertionFailedError:
+  expected: "{"orderId":12345,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[]}"
+   but was: "{"orderId":99999}"
+  ```
+  The flush sent `update order_event_outbox set attempt_count=?,deleted_at=?,last_error=?,next_attempt_at=?,payload=?,published_at=?,status=?,updated_at=? where id=?`, with `payload` as the only event column in it. The other payload is valid JSON on purpose, so the check constraint can't refuse the `UPDATE` and turn the test red for another reason.
+- **The TDD reds.** `OrderEventOutboxTest` first failed to compile. With the entity and repository but no write, all five of its cases failed. They passed once the serializer and the write were in.
+
+### Decisions made while implementing
+
+- **`status` is a real `varchar(16)`.** The design's table says varchar, but `@Enumerated(STRING)` on MySQL gives the `enum ('PENDING','PUBLISHED')` that every other status column in the repository has. `@JdbcTypeCode(SqlTypes.VARCHAR)` gave a varchar with Hibernate's own unnamed `check (status in (...))`, a third constraint the design doesn't have. `columnDefinition = "varchar(16)"` gives what the table says, with exactly two constraints, so a value step 2 adds needs no schema change. This differs from the other entities on purpose, and the field's KDoc says so.
+- **The port has `save`, `findByEventId` and `count`.** No production code reads yet. The two reads are what the scenes need: `count` sees every row, so "one row" and "no row" don't depend on knowing an event ID. Step 2 adds its own query with its index.
+- **The write is a private function in `OrderPaymentSagaSteps`.** ADR 0034 rule 1 rules out a wrapper bean, and this is not one. `applyResult` stays readable, and the transaction is the step's.
+- **The event is built once and goes to both the row and week 6's publisher.** The row is saved first. Either failure rolls TX B back, and the publisher's relay only runs after a commit.
+- **The immutability scene has its own class.** "Re-read in a new transaction" needs a commit, which the base's rolled-back test transaction can't give. A method-level exit doesn't help either: an `@AfterEach` that deletes committed rows would wait on the uncommitted inserts of the class's other scenes, whose test transaction is still open. So `OrderEventOutboxImmutabilityTest` leaves the transaction at class level, as `BaseCommittingApplicationServiceTest` does, and deletes what it committed.
+- **All six event columns are changed, not only the payload.** The ticket's red check names the payload, and the scene covers the rest of rule 7.
+- **Each refusal names its constraint**, so a duplicate can't pass for an invalid payload or the other way round.
+- **Two scenes beyond the criteria.** The next attempt time is cut to micros (`…123456789Z` is held and re-read as `…123456Z`; MySQL would round it up), and a deleted row is a missing row, which the `BaseEntity` convention asks of every root.
+- **No foreign key to `orders`.** Design section 2 names two constraints and no key, so `scalar-foreign-keys.sql` is untouched. It is why `createOrderEventOutbox` needs no saved order.
+- **The implementation is named `JacksonOrderEventSerializer`**, technology first, like `SpringEventOrderEventPublisher`.
+
+### Review
+
+No review ran on this change: the ticket lists none. The reasoning above is the implementer's own.
+
+### Left for later
+
+- **Issue 193 (the row rules).** `OrderEventOutboxTest` holds the first confirmation only. Its helper `confirmLeavingARow` asserts one row, so the other paths and the scenes with no row need their own setup. `OrderEventPublishingTest` has them to move.
+- **Issue 194 (atomicity).** The identifier is `IDENTITY`, so the row's `INSERT` goes to MySQL at `save`, not at a flush. The design's "저장 뒤" scene with `failTxBOnceAfterItsWrites` still fails after the insert, but the insert was sent before that flush rather than inside it. `count()` reads the rows after the rollback. `OrderEventOutboxRepository` is the bean to spy for the "저장 전" scene.
+- **Issue 195 (removing week 6's path).** `orderEventPublisher` and its call in `applyResult` go, and so does the paragraph of `applyResult`'s KDoc that says the publish stays beside the row.
+- **Step 2.** The immutability scene is where to read the event columns again after a state change. `OrderEventOutboxStatus` is open for `BLOCKED`, with no schema change.
