@@ -152,3 +152,61 @@ No review ran on this change: the ticket lists none. The reasoning above is the 
 
 - **Issue 195.** The scenes never mention week 6's publisher, so removing it needs no edit here. Until then, each scene's reconcile also publishes to the test broker through week 6's relay, which these scenes don't read.
 - **Issue 196.** Design section 8's "flush에 insert가 들어 있다" needs a dated note with the correction above.
+
+## Issue 193: every other path to confirmation leaves the right number of rows
+
+Recorded 2026-11-02 from the closing comment of [issue 193](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/193). The comment carries full blob URLs where this section links files relatively.
+
+Implemented on `worktree-agent-a1a643b4b2d3ff3b8`, cut from the integration tip `09392b4`, as `1ff26d9`, then merged with issue 194's `d6067a9` as `c2ba8b4`; the commit after that appends this comment to the writing material. `scripts/final-check --app commerce-api` on `c2ba8b4`, with `BOOTSTRAP_SERVERS` unset: **83 classes, 966 tests, 0 failures, 0 errors, 0 skipped**, up from 83 and 955 on `d6067a9`. This commit adds 11 tests. No main code changed: the write from issue 192 needed no fix.
+
+The decisions are section 3 of the [order outbox design](../design/order-outbox.md) and [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md) rule 7. The code is [`OrderEventOutboxTest`](../../apps/commerce-api/src/test/kotlin/com/loopers/application/order/provided/OrderEventOutboxTest.kt). `OrderEventPublishingTest` stays in place for issue 195 to delete.
+
+### Acceptance criteria
+
+- [x] **A customer reconcile that first confirms the order leaves one row, and reconciling again leaves no other.** The scene asserts no row after the pending confirm, one row after the first reconcile and one after the second. One lookup.
+- [x] **The PG's callback that first confirms the order leaves one row, and a duplicate callback leaves no other.** Same shape, one lookup.
+- [x] **A duplicate callback racing the first one leaves one row.** The first callback pauses holding the order, and the duplicate doesn't finish within `LOCK_WAIT_PROBE`. Two lookups: both reached a TX B.
+- [x] **A create answer arriving after a callback confirmed the order leaves one row.** One row right after the callback, read from inside the PG-call spy, and one after confirm's TX B.
+- [x] **Each create answer that leaves the order unconfirmed leaves no row, with the publishing test's parameter set.** `pending`, `lost`, `failed`, `rejected` and `conflicting`, with the same order and payment statuses.
+- [x] **A conflict and a rejection before creation leave no row.** `conflicting` and `rejected` in that set, and a scene of its own for a conflict that says success (below).
+- [x] **Two confirmed orders leave two rows with different event IDs and message keys.** Each row is found by its own order's event ID.
+- [x] **Scenes assert rows only, and need no quiet wait on a broker.** No `TopicReader` and no wait: TX B has committed or rolled back by the time the port returns.
+- [x] **Red check, a local edit never committed: writing the row on `Unchanged` as well turns the duplicate scenes red.** Two of the four, not all. See the deviation below.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** Read by `scripts/test-counts`: 83 classes, 966 tests, 0 failures, 0 errors, 0 skipped. `OrderEventOutboxTest` 16, up from 5. `OrderEventOutboxAtomicityTest` 2, `OrderEventPublishingTest` 15, `OrderPaymentIntegrationTest` 63, `HexagonalArchitectureTest` 7.
+- [x] **The closing comment is appended to `docs/research/week7-order-outbox-writing-material.md`.**
+
+### Deviation from the ticket
+
+The ticket's red check says writing on `Unchanged` turns "the duplicate scenes" red. It turns the racing callback and the late create answer red. The two sequential duplicates stay green, because a repeated reconcile or callback finds the order finished and returns before any lookup or TX B (`checkLookupNeeded`). They never reach `Unchanged`. Mutant 2 below confirms that this is the reason.
+
+### Red checks
+
+Local edits, run with `--tests '*OrderEventOutboxTest'` and reverted; none is committed. All 11 new scenes passed on their first run against issue 192's write, so these mutants are their only reds. Counts are out of the class's 16 tests.
+
+1. **The row on `Unchanged` as well: the ticket's red check. 2 red.** The racing callback and the late create answer. Neither fails on a count of 2: the unique constraint refuses the insert first, so the failure is the exception from the second TX B.
+   ```
+   org.springframework.dao.DataIntegrityViolationException: could not execute statement [Duplicate entry 'order-confirmed:v1:1' for key 'order_event_outbox.UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID']
+   ```
+2. **Mutant 1, and a finished order also goes to the lookup and TX B. 4 red.** The same two, plus the sequential reconcile and callback scenes, with the same exception.
+3. **The row on every `Changed`. 7 red.** `pending`, `failed` and `rejected`, the conflict that says success, and the three scenes that set up through a pending confirm. They fail before any row assertion, at `OrderConfirmedEvent.from`'s guard: `IllegalArgumentException: Order 1 is not confirmed.`
+4. **The row on `Conflicted` as well. 2 red.** `conflicting` and the conflict that says success, at the same guard.
+5. **A row built past that guard on every `Conflicted` and non-success `Changed`. 8 red.** Mutants 3 and 4 never reach `assertNoRow`, so this one shows it can fail. `pending`, `failed`, `rejected`, `conflicting` and the customer reconcile's first step fail there with `expected: 0L but was: 1L`. The other three fail on the unique constraint when the scene's next write repeats the event ID.
+
+`lost` passed under all five, since it reaches no TX B. No mutant here tells the two-orders scene apart from a correct write, since all of them leave its successful confirmations alone.
+
+### Decisions made while implementing
+
+- **All the scenes went into `OrderEventOutboxTest`,** as the ticket says. Its two `@MockkSpyBean` fields, `PgTransactionService` and `PaymentModifyService`, give the class a context of its own.
+- **One scene beyond the criteria: a reconcile that finds a successful PG transaction for another amount.** The parameter set's conflict is a rejection, which never says success. This one is the conflict where a write keyed on the PG's word instead of `Changed` would leave a row for an unconfirmed order. The order stays payment pending, and the payment stays `PENDING`.
+- **`assertOnlyTheConfirmation` compares the whole payload,** as well as the count and the message key. A count alone doesn't show that the row is this confirmation's.
+- **The sequential scenes assert after both calls.** A count only at the end wouldn't show that the first call left the row.
+- **No `CODING_STANDARDS.md` change.** These spies and their stubs are already there.
+
+### Review
+
+No review ran on this change: the ticket lists none. The reasoning above is the implementer's own.
+
+### Left for later
+
+- **Issue 195.** Nothing here reads week 6's path, so removing it needs no edit to this class. Each of `OrderEventPublishingTest`'s scenes now has a home or a planned end: the rows here and in issue 192's scenes, the rolled-back TX B in `OrderEventOutboxAtomicityTest`, and the INFO line, virtual thread and outside-a-transaction scenes are on design section 7's list to delete. Until then, these scenes also publish to the test broker on the default topic, and nothing reads it.
+- **Step 2.** A duplicate that reaches TX B is kept to one row by `ReconcileResult.Changed`, with the unique constraint behind it. Mutant 1 shows that the constraint turns a wrong write into a failed TX B, not a second row.
