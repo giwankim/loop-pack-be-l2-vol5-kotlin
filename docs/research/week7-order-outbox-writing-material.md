@@ -210,3 +210,87 @@ No review ran on this change: the ticket lists none. The reasoning above is the 
 
 - **Issue 195.** Nothing here reads week 6's path, so removing it needs no edit to this class. Each of `OrderEventPublishingTest`'s scenes now has a home or a planned end: the rows here and in issue 192's scenes, the rolled-back TX B in `OrderEventOutboxAtomicityTest`, and the INFO line, virtual thread and outside-a-transaction scenes are on design section 7's list to delete. Until then, these scenes also publish to the test broker on the default topic, and nothing reads it.
 - **Step 2.** A duplicate that reaches TX B is kept to one row by `ReconcileResult.Changed`, with the unique constraint behind it. Mutant 1 shows that the constraint turns a wrong write into a failed TX B, not a second row.
+
+## Issue 195: week 6's path to the broker is gone, and the outbox row is all TX B does for the event
+
+Recorded 2026-11-02 from the closing comment of [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195). The comment carries full blob URLs where this section links files relatively.
+
+Implemented on `worktree-agent-af52a4b163f9381cc`, cut from the integration tip `e77f80d`, as `435d145`; the commit after it appends this comment to the writing material. `scripts/final-check` on `435d145`, with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 81 classes, 949 tests, commerce-streamer 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped in both**. commerce-api was 83 and 966 on `c2ba8b4`, and the difference is the two deleted classes, 15 and 2 tests. No test was added.
+
+The decisions are [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md) rule 10 and section 7 of the [order outbox design](../design/order-outbox.md). The outbox row is now the only thing TX B does for the event, and nothing in commerce-api's main code sends to Kafka until step 2.
+
+- Deleted: `OrderEventPublisher`, `SpringEventOrderEventPublisher`, `OrderConfirmedKafkaRelay`, `orderEventsExecutor`, `@EnableAsync`, `OrderEventPublishGapTest`, `OrderEventPublishingTest`, and the call and dependency in [`OrderPaymentSagaSteps`](../../apps/commerce-api/src/main/kotlin/com/loopers/application/order/OrderPaymentSagaSteps.kt).
+- Words fixed: the KDoc of `OrderPaymentSagaSteps`, `OrderConfirmedEvent`, `OrderEventsKafkaConfig`, `BaseApplicationServiceTest`, `TopicReader` and `OrderConfirmedEventTest`. `OrderConfirmedMessage`'s KDoc names nothing that went, so it is unchanged.
+- Dated notes: six in [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md). The ticket asked for the techniques attributed to the deleted tests; the other four are clauses that name the relay or those classes in passing.
+
+### Acceptance criteria
+
+- [x] **None of the deleted names appears in commerce-api's main or test sources.** A grep of `apps/commerce-api/src` finds nothing.
+- [x] **Nothing in commerce-api's main code calls `KafkaTemplate`.** The same grep: the name appears nowhere in commerce-api's main or test sources. The bean stays in `modules:kafka`.
+- [x] **The named tests pass.** `OrderEventsTopicTest` 1, `OverriddenOrderEventsTopicTest` 1, `OrderEventsProducerTest` 1, `OrderConfirmedEventTest` 5, `OrderPaymentIntegrationTest` 63, `HexagonalArchitectureTest` 7. One edit beyond a dated comment, reported below.
+- [x] **The outbox scenes still pass.** `OrderEventOutboxTest` 16, `OrderEventOutboxAtomicityTest` 2, `OrderEventOutboxRepositoryTest` 4, `OrderEventOutboxImmutabilityTest` 1. None of the four was edited.
+- [x] **Removing the `Executor` bean breaks nothing that used Boot's default executor.** Below.
+- [x] **`ktlintCheck` and `check` on commerce-api and commerce-streamer pass.** The counts above.
+- [x] **The closing comment is appended to `docs/research/week7-order-outbox-writing-material.md`.**
+
+### Edit to a test the spec lists as untouched
+
+`OrderConfirmedEventTest`'s KDoc said `OrderEventPublishingTest` pins a saved order's ID and event ID. It now says `OrderEventOutboxTest`, which does. One word of a comment, no assertion. The first criterion requires it.
+
+### Deletion safety
+
+This is a removal, so the red step is evidence that what stays is still checked.
+
+**Each scene of `OrderEventPublishingTest` was checked before deleting it.** Eight are moved and three are on the design's delete list, as issue 193 said.
+
+| Scene | Where it went |
+| --- | --- |
+| Create answers success | `OrderEventOutboxTest`, but see the gap below |
+| Customer reconcile, and again | `OrderEventOutboxTest` |
+| PG's callback, and a duplicate | `OrderEventOutboxTest` |
+| Duplicate callback racing the first | `OrderEventOutboxTest` |
+| Late create answer | `OrderEventOutboxTest` |
+| Create answers that leave the order unconfirmed (5) | `OrderEventOutboxTest` |
+| Rolled-back TX B, then a reconcile | `OrderEventOutboxAtomicityTest` |
+| Two confirmed orders | `OrderEventOutboxTest` |
+| INFO line per publish | dropped, design section 7 |
+| Virtual thread | dropped, design section 7 |
+| Refused outside a transaction | dropped, design section 7 |
+
+**The gap: the first scene's record-level assertions have no home until step 2.** It also checked what a row cannot show: the whole envelope (`eventId`, `eventType`, `schemaVersion`, and `payload` nested under them), and a record with no headers. Until step 2, no test pins the envelope's shape: the serializer calls `OrderConfirmedMessage.from` and keeps only its payload, so the scenes never read the rest. The row's event columns and body are pinned, and nothing sends that envelope, so nothing can break on the wire in this step. Design section 10 already gives step 2 the test that pins the record's bytes. That test is what closes this.
+
+**The net goes red when the write goes.** A local edit, run and reverted: with `leaveInOutbox`'s call removed from `applyResult`, 12 of 18 scenes fail. That is 10 of `OrderEventOutboxTest`'s 16 and both of `OrderEventOutboxAtomicityTest`'s. The 6 that stay green assert that no row exists, so a missing write can't fail them; issue 193's mutants, which write too much, are what exercise those.
+
+### The `Executor` bean
+
+A temporary test on the full context, run before and after the removal and not committed, read the context directly. A grep covered `apps/commerce-api/src`, `modules` and `supports` for `Executor` injection, `@Async`, `@Scheduled`, async MVC types and `spring.task`.
+
+| | Before | After |
+| --- | --- | --- |
+| `Executor` beans | `orderEventsExecutor` | `applicationTaskExecutor` (`ThreadPoolTaskExecutor`) |
+| Beans that depend on it | none | none |
+| Async annotation processor | present | absent |
+| `@Async` or `@Scheduled` methods on `com.loopers` beans | `OrderConfirmedKafkaRelay.relay` | none |
+| MVC's `taskExecutor` | `MvcSimpleAsyncTaskExecutor` | `ThreadPoolTaskExecutor` |
+| Handler return types | `byte[]`, `ApiResponse`, `Map`, `ResponseEntity`, `ModelAndView` | the same |
+
+So the removal gives Boot's default back rather than taking anything away. Since week 6's bean made Boot back off, commerce-api has run without the default, and nothing needed it. Now it is present again and nothing injects it. The one thing that changes is MVC's async executor, and no handler returns an async type, so MVC never uses it. The grep found no other consumer: the only `CompletableFuture` uses left are in tests' own threads, and the only `@EventListener` is the test PG's warm-up.
+
+The check reads the context's beans, MVC's adapter and the sources. It would not see a library that looks up the executor on a path these tests don't run. The suite passing on the new context is the evidence for those.
+
+### Decisions made while implementing
+
+- **`TopicReader`'s wait keeps its value, with its reason reworded.** The KDoc gave one hand-off to a virtual thread and one broker round trip as the reason for 1 s. That path is gone, so it now says what the wait was sized for and that step 2's polling needs it looked at again.
+- **`linesAt` and `awaitLinesAt` stay, with no caller.** The two deleted classes were their only users. The ticket doesn't list them. Step 2's logging scenes need them, and the `CODING_STANDARDS.md` note says so.
+- **`OrderEventsProperties`'s "are published to" stays.** It describes what the topic is for, which step 2 restores.
+- **commerce-streamer is not edited, though a KDoc there goes stale.** `OrderEventConsumedCaseTest` names `OrderEventPublishGapTest` and `OrderEventPublishingTest` as confirming and pinning its value, in the present tense. Spec 191 puts changes to the streamer out of scope, so I left it. Both classes are at the `week6` revision.
+
+### Review
+
+No review ran on this change: the ticket lists none. The reasoning above is the implementer's own.
+
+### Left for later
+
+- **Issue 196.** Three things to record: the stale KDoc in `OrderEventConsumedCaseTest`, to fix or note; design section 7 or 8's note on the envelope gap above; and the `Executor` result above, since the order events design's 2026-10-27 note says Boot backs off, which is no longer so.
+- **Step 2.** Restore the envelope and no-headers check through the bytes test of design section 10. The shared template and `TopicReader` are there, with no caller.
+- **Step 3.** The publish gap is reproduced from the `week6` revision, where `OrderEventPublishGapTest` remains.
