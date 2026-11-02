@@ -434,7 +434,7 @@ The review ran on two axes, Standards (the repo's documented rules) and Spec (wh
 - the varchar status (design 2)
 - the streamer KDoc fix
 
-**Open for the user:** `CONTEXT.md`'s 아웃박스 says the record holds what will be published "그대로", while the row holds the facts the message is rebuilt from.
+**Open for the user:** `CONTEXT.md`'s 아웃박스 says the record holds what will be published "그대로", while the row holds the facts the message is rebuilt from. (2026-11-02: settled after this comment was posted. The user chose the row's reading, and the entry now says "보낼 메시지를 다시 만들 사실을 담으며".)
 
 ### Deviations from this issue
 
