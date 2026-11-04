@@ -64,3 +64,49 @@ Calling `OrderEventRelayer.publishDueEvents()` by hand now takes a row left by a
 | `next_attempt_at <= now` → `<` | the clock scene, and two scenes whose row is due at exactly the pinned instant |
 
 **Final check:** `ktlintCheck` and `check` on commerce-api passed: 84 classes, 983 tests, 0 failures, 0 errors, 0 skipped. `HexagonalArchitectureTest` is unchanged. commerce-streamer wasn't run, since nothing it reads changed here. `kafka.yml` is issue 205's.
+
+### Issue 205: the relay runs by itself when enabled
+
+`OrderEventRelayScheduler`, in the new `adapter.scheduling` layer, calls only `OrderEventRelayer`. It's off by default, on under `local` and off under `test`. `kafka.yml` gains `delivery.timeout.ms: 21000` and `max.block.ms: 1000` under the producer's `properties`, and nothing overrides them in Kotlin.
+
+**Manual run, under `local` against the compose broker (`bitnamilegacy/kafka:3.5`).** With no PG running, the row was committed by hand with an `INSERT`, not by a confirmation. Nothing else touched the app. The row became `PUBLISHED` with `attempt_count` 1 on the `scheduling-1` thread, and the console consumer read its record at **partition 0, offset 0**. The producer's logged values were `delivery.timeout.ms = 21000`, `max.block.ms = 1000`, `linger.ms = 5`, `request.timeout.ms = 20000` and `retries = 3`.
+
+**What an in-flight round does when the app stops.** One run each, with SIGTERM to the jar. The broker was held with `docker pause` so that a round was certainly in flight, and SIGTERM came 1 s after the row was claimed.
+
+| Case | Time to exit | Row at exit | Records |
+| --- | --- | --- | --- |
+| Broker stays paused | 39.9 s | `PENDING`, attempt 1, lease untouched, no `last_error` | 2 after the restart below |
+| Broker returns 3 s after SIGTERM | 3.2 s | `PUBLISHED`, attempt 1 | 1 |
+
+- **Shutdown waited for the round in both.** In the second case the log runs `Published` (03.276), producer closing (03.315), JPA closing (03.333), so the ack was still saved. I read that order from the logs, and didn't trace which Spring lifecycle step does the waiting.
+- **The 39.9 s is two waits.** The record expired at its 21 s delivery timeout, about 20 s after SIGTERM, and the round left as an exception. Closing the producer then took 20 s more on a metadata request that a paused broker couldn't answer.
+- **The first case recovered by itself.** After a restart with `ddl-auto=none`, the row went to `PUBLISHED` with attempt 2 once its lease ended. It has two records with the same event ID, at offsets 0 and 1 of partition 1. The client had given up on the first, but its request was already in the socket, and the paused broker processed it on resume. So a delivery timeout doesn't mean the record is absent.
+
+Nothing worse than a republish after the lease appeared, so there's nothing to raise. Three limits on that answer:
+
+- **Measured before issue 201.** Failures still leave the round as an exception here. After 201 the first case should save a failure and a backoff if the database is still up, so it needs measuring again. Nobody owns this yet, and issue 206 is the natural place.
+- **`kill -9` wasn't run.** A supervisor with a grace period under 40 s would reach it during a broker outage. A republish after the lease is what the design predicts, and it's unobserved at the process level.
+- **Boot's shutdown phase timeout wasn't exercised.** Neither run reached the point where a long round outlasts it. Issue 204's draining makes rounds longer, so a stop during a backlog is worth a look there.
+
+**A trap in the enabled scene.** Spring caches a context after its class ends, so an enabled context's scheduler would go on claiming from the shared MySQL during later classes, and publish rows they expect to find `PENDING`. `OrderEventRelaySchedulerTest` closes its context with `@DirtiesContext`, which is the first use in this repo. `CODING_STANDARDS.md` lists the annotations a subclass may add as a closed list, so it changed too, along with the new test shapes.
+
+**Choices and additions:**
+
+- "One thread" is Boot's default scheduler pool of one, set nowhere in this repo. `OrderEventRelaySchedulerTicksTest` observes it on the real scheduler with a relayer that takes 1.5 s: one round at a time, the same thread, and at least 1 s from one round's end to the next round's start.
+- The layer rule can't express "only the ports", because `OrderEventRelay` and a required port are "the application layer" to it. A second rule allows only `application..provided..`, which is stricter than the ticket's wording on required ports.
+- Not in the criteria: `a round that throws doesn't stop the next tick`, because the design relies on it, and `OrderEventRelayEnabledPropertyTest`, which reads each profile's value from the real `application.yml`. The default profile falling to `local` is an accepted limit (design 13.10), and no test pins it, so that a later fix fails nothing.
+- 20,005 ms is the real floor: the client starts at that value and refuses 20,004 ms with a `ConfigException`.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What went red |
+| --- | --- |
+| No trigger class | the enabled scene, after its 10 s wait |
+| No `kafka.yml` lines | the test reading the two values |
+| No `local` value | the property test |
+| The trigger depends on `OrderEventRelay` | `schedulingReachesOnlyProvidedPorts` |
+| `fixedDelay` → `fixedRate` | the ticks scene: 0.0009 s between rounds against 1 s |
+
+My first `fixedRate` run was invalid. I made it together with the dependency edit, and the ticks scene timed out only because that edit left the context with no bean to inject. Run alone, it failed on the gap.
+
+**Final check** (`scripts/final-check`, on the code as committed, before this comment was added): ktlint passed. commerce-api: 88 classes, 993 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped.

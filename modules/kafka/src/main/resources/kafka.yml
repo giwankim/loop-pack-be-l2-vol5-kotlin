@@ -17,6 +17,12 @@ spring:
       retries: 3
       # Wait for every in-sync replica. On a single broker that is the leader alone, so this is no stronger than acks=1.
       acks: all
+      # The relay's limits (ADR 0035 rule 6). Both apps read this file, but only commerce-api's relay publishes in main code.
+      properties:
+        # Outlasts a broker restart (about 16 s measured). Kafka refuses less than linger.ms + request.timeout.ms (20,005 ms).
+        delivery.timeout.ms: 21000
+        # A send blocked here was never accepted, so failing early creates no duplicate. A healthy first send blocked 16-22 ms.
+        max.block.ms: 1000
     consumer:
       group-id: loopers-default-consumer
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer

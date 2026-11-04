@@ -2,6 +2,8 @@ package com.loopers
 
 import com.tngtech.archunit.core.domain.AccessTarget.MethodCallTarget
 import com.tngtech.archunit.core.domain.JavaClass
+import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage
+import com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage
 import com.tngtech.archunit.core.domain.JavaMethodCall
 import com.tngtech.archunit.core.importer.ImportOption
 import com.tngtech.archunit.junit.AnalyzeClasses
@@ -10,6 +12,7 @@ import com.tngtech.archunit.lang.ArchCondition
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.ConditionEvents
 import com.tngtech.archunit.lang.SimpleConditionEvent
+import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
 import com.tngtech.archunit.library.Architectures.layeredArchitecture
 import com.tngtech.archunit.library.dependencies.Slice
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices
@@ -29,9 +32,9 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
     ],
 )
 class HexagonalArchitectureTest {
-    // splearn's three layers, with its single adapter layer split in three so that the web, persistence and
-    // integration (outbound HTTP, ADR 0021) adapters cannot reach each other. ApiControllerAdvice sits at the adapter
-    // root as in splearn, but it only answers web requests, so that one package belongs to the web adapter.
+    // splearn's three layers, with its single adapter layer split in four so that the web, persistence, integration
+    // (outbound HTTP, ADR 0021) and scheduling (ADR 0035) adapters cannot reach each other. ApiControllerAdvice sits at the
+    // adapter root as in splearn, but it only answers web requests, so that one package belongs to the web adapter.
     @ArchTest
     val dependenciesPointInward: ArchRule = layeredArchitecture()
         .consideringAllDependencies()
@@ -40,15 +43,28 @@ class HexagonalArchitectureTest {
         .layer("adapter.webapi").definedBy("$ROOT.adapter", "$ROOT.adapter.webapi..")
         .layer("adapter.persistence").definedBy("$ROOT.adapter.persistence..")
         .layer("adapter.integration").definedBy("$ROOT.adapter.integration..")
+        .layer("adapter.scheduling").definedBy("$ROOT.adapter.scheduling..")
         .layer("support").definedBy("$ROOT.support..")
         .whereLayer("domain")
         .mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence", "adapter.integration")
         .whereLayer("application")
-        .mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence", "adapter.integration")
+        .mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence", "adapter.integration", "adapter.scheduling")
         .whereLayer("adapter.webapi").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.integration").mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter.scheduling").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
+
+    // A trigger starts what the application offers and decides nothing, so of this code base it sees only the provided ports. The layer
+    // rule above can't say this: to it, OrderEventRelay itself and a required port are "the application layer" too.
+    @ArchTest
+    val schedulingReachesOnlyProvidedPorts: ArchRule = classes()
+        .that().resideInAPackage("$ROOT.adapter.scheduling..")
+        .should().onlyDependOnClassesThat(
+            resideOutsideOfPackage("$ROOT..")
+                .or(resideInAnyPackage("$ROOT.adapter.scheduling..", "$ROOT.application..provided..")),
+        )
+        .because("a trigger calls a provided port and nothing else (ADR 0035)")
 
     // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
     // likes while application.like calls application.product is two layers each looking one way, not a loop

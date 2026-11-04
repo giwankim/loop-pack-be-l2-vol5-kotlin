@@ -271,6 +271,8 @@ scripts/final-check
 
 `order-events.relay.enabled`는 기본 꺼짐, `local`에서 켜짐, `test`에서 꺼짐이다. 한 인스턴스에서만 켠다. 이것은 설정이지 소유권이 아니다. 둘째 인스턴스가 켜져도 리스가 살아 있는 동안 같은 행을 두 번 보내지 않지만 지원하는 구성이 아니다.
 
+(2026-11-04, [issue 205](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/205): 앱을 멈출 때의 회차를 compose의 broker로 쟀다. SIGTERM은 진행 중인 회차가 끝나기를 기다린다. broker가 멈춘 채면 행은 `PENDING`, 시도 1, 리스 그대로 남고 39.9 s 뒤에 끝난다(만료 21 s, producer를 닫는 데 20 s). 다음 실행은 리스 뒤에 다시 발행하고, 그 record는 먼저 소켓에 있던 것과 함께 offset 0과 1에 둘 있었다. 종료 중에 broker가 돌아오면 행은 `PUBLISHED`, 시도 1, record 1개다. 이것은 실패가 아직 회차 밖으로 나가는 [issue 201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201) 전의 측정이다. 201 뒤에는 broker가 멈춘 경우의 행이 실패의 간격을 가질 것으로 보이고, 다시 재 봐야 한다. `kill -9`는 재지 않았고 리스 뒤의 재발행은 설계의 예상이다. [글감](../research/week7-outbox-relay-writing-material.md)에 수와 조건이 있다.)
+
 ### 13.7 적체와 재개의 SQL
 
 ```sql
