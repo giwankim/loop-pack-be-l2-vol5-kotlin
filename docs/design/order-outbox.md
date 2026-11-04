@@ -312,7 +312,7 @@ WHERE event_id = ? AND status = 'BLOCKED';
 - **저장소(`BaseRepositoryTest`).** 열린 가져가기 둘이 겹치지 않음, 내보낸 SQL의 `for update skip locked`, 차례가 아닌 행들, 상태 변화 뒤에도 그대로인 사건의 열. 앞의 것이 인덱스를 지킨다.
 - **도메인.** 13.3절의 표의 모든 칸, 간격의 수열, 20번째의 `BLOCKED`.
 - **어댑터.** record의 토픽, key, 값을 문자열 전체로 못 박고 header가 없음을 본다. 7절의 봉투의 빈틈이 여기서 닫힌다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): 이 장면은 어댑터만의 클래스가 아니라 `OrderEventRelayerTest`에 있다. 실제 확정이 남긴 행에서 시작하므로 컨텍스트가 하나 덜 뜬다. 7절의 빈틈은 여기서 닫혔다.)
-- **멈춤.** `stopRelayAfterBrokerAckBeforeMarkingPublished`는 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이다. 첫 `markPublished`만 던진다. JVM은 살아 있고 프로세스 강제 종료가 아니다. 재시작은 같은 DB와 토픽의 새 `OrderEventRelay`이고 시간은 `TestClock`이 옮긴다. 테스트가 `status`를 쓰지 않는다.
+- **멈춤.** `stopRelayAfterBrokerAckBeforeMarkingPublished`는 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이다. 첫 `markPublished`만 던진다. JVM은 살아 있고 프로세스 강제 종료가 아니다. 재시작은 같은 DB와 토픽의 새 `OrderEventRelay`이고 시간은 `TestClock`이 옮긴다. 테스트가 `status`를 쓰지 않는다. (2026-11-04, [issue 203](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/203): 13.1절의 세 장면은 `OrderEventRelayerTest`에 있고, 실행 값을 장면마다 INFO 한 줄로 남긴다(`scripts/scene-lines`). `PUBLISHED`를 send보다 먼저 저장하도록 고치면 멈춤 장면이 빨개지고, 그 사이에서 멈춘 이벤트는 사라진다. 실행 값은 [글감](../research/week7-outbox-relay-writing-material.md)에 있다.)
 
 ### 13.10 받아들인 한계
 

@@ -144,3 +144,46 @@ The last one survives because the row is loaded inside the transaction, so JPA f
 **Rebased onto issue 205.** That ticket landed while this one was in progress. Its table of an in-flight round at shutdown was measured before this failure path existed, so its "no `last_error`" row describes the code as it was then. A round that now reaches its delivery timeout would record a failure, and I didn't measure that again.
 
 **Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code: 89 classes, 1012 tests, 0 failures, 0 errors, 0 skipped. Only this section's wording changed after that run. commerce-streamer wasn't run, since nothing it reads changed here.
+
+### Issue 203: a stopped relay's rows are published again by a new relay
+
+`OrderEventRelayerTest` gains the assignment's last three stop scenes. They add no main code: the tracer's order of send, then save, already behaves this way, so the scenes passed once they compiled, and their red evidence is the check below. These are controlled stops. The JVM stays up, no process is killed, a restart is a new `OrderEventRelay` on the same database and topic, and no scene writes `status`. Purchase activity is step 3's.
+
+**One run's lines, from `scripts/scene-lines` on the final check's reports:**
+
+```text
+Relay stop, after the commit before the relay: order 1 CONFIRMED; row order-confirmed:v1:1 PENDING attempts 0 published_at null next_attempt_at 2026-10-27T01:02:03.123456Z; records 0
+Relay stop, a new relay: row order-confirmed:v1:1 PUBLISHED attempts 1 published_at 2026-10-27T01:02:08.123456Z next_attempt_at 2026-10-27T01:03:08.123456Z; record key 1 partition 0 offset 0
+Relay stop, after the ack before PUBLISHED: after the stop: row order-confirmed:v1:1 PENDING attempts 1 published_at null next_attempt_at 2026-10-27T01:03:08.123456Z, record key 1 partition 0 offset 5; inside the lease: row order-confirmed:v1:1 PENDING attempts 1 published_at null next_attempt_at 2026-10-27T01:03:08.123456Z, new records 0; past the lease: row order-confirmed:v1:1 PUBLISHED attempts 2 published_at 2026-10-27T01:03:09.123456Z next_attempt_at 2026-10-27T01:04:09.123456Z, record key 1 partition 0 offset 6
+```
+
+The two records of one event sit at offsets 5 and 6. The scene asserts that their key, partition and value are equal. It compares the value as a UTF-8 string, which is how `TopicReader` reads it. The lease is tested on both sides: one microsecond before it ends nothing is published, and one second after it ends the row goes out again.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What happened |
+| --- | --- |
+| `markPublished` before the send | The stop scene went red with no record on the broker, because the stub threw before the send. The other seven scenes had no objection in the clean run: a round that isn't stopped can't tell the two orders apart |
+| The same, plus a stop after `PUBLISHED` committed and before the send, with a temporary scene | The row was `PUBLISHED` at attempt 1 with 0 records. A new relay's round an hour later left the row as it was and still published 0 records |
+
+The first edit alone doesn't show a loss: its stop lands before the commit, so the row stays `PENDING` and would come due again. The second is the counterexample to "PUBLISHED first reduces duplicates". It does remove this stop's duplicate, but what it loses is the event: the row says published, nothing is on the broker, the claim never takes the row again, and no error remains. Sending first turns the same stop into a duplicate, which the consumer's idempotency handles.
+
+**Choices:**
+
+- The stub is a private function in the test class rather than in `com.loopers.support`, because `CODING_STANDARDS.md` keeps a stub one class uses in that class. A first draft had its own file, and the review moved it. It throws `DataAccessResourceFailureException`, because the same path is the assignment's "state transaction fails after the broker's success".
+- The spy goes in the existing class, which already has a context of its own for its topic, so a separate class would start one more.
+- `TopicReader`'s KDoc said it returned everything since it was opened. Successive calls return what arrived since the last read, and the stop scene relies on that, so the KDoc now says so.
+
+**Failures on the way, not caused by this change:** three runs failed on a machine with several sessions at work (load average 128 right after the first, 22 after the third). Each was in a class's or JVM's cold start:
+
+| Run | Failure |
+| --- | --- |
+| The relay class | The JVM's first scene: its PG create hit `SocketTimeoutException`, so the payment stayed unknown, no row was written, and `committedOutbox()`'s `!!` threw an NPE. Cleaning up Redis also failed to connect |
+| The first red check | The JVM's first scene again: Redis failed to connect in its cleanup. That's not the red edit's doing, since the second red check's run passed that scene with the same edit |
+| A full check | `OrderAdminApiTest`, a class this change doesn't touch: a PG create hit the same timeout, so the payment was `UNKNOWN` rather than `PENDING` |
+
+The next two full checks passed with no code change that could affect those scenes. Load as the cause is an inference from the timeouts and the load average, and I didn't reproduce it on purpose. The scene's helper doesn't check that the confirmation left a row, so the first failure reads as an NPE. Nothing was changed for this, and it's worth knowing when a scene fails on a busy machine.
+
+**Rebased onto issues 205 and 201.** Both landed while this one was in progress. The scenes now read rows through the base class's `committedOrderEventOutbox`, and they sit beside issue 201's failure scenes in the class. The red checks ran before the rebase and weren't repeated, so they say nothing about issue 201's failure path. The relay's order of send, then save, is the same after it, and a save's exception still leaves the round. The lines above were the same in the rebased run.
+
+**Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code: 89 classes, 1015 tests, 0 failures, 0 errors, 0 skipped. Only this section's wording changed after that run. commerce-streamer wasn't run, since nothing it reads changed here.

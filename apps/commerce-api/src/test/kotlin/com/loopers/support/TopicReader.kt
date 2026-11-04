@@ -48,9 +48,10 @@ class TopicReader(
     }
 
     /**
-     * Every record published on the topic since it was opened, which a scene that is right has exactly [expected] of. Waits up
-     * to [RECORD_WAIT] for that many, since a record can arrive after the call returned, then reads on for [QUIET_WAIT] so that
-     * a record the scene should not publish has time to arrive. A scene that expects none waits only for the quiet period.
+     * Every record published on the topic since the last read, or since it was opened, which a scene that is right has exactly
+     * [expected] of. Waits up to [RECORD_WAIT] for that many, since a record can arrive after the call returned, then reads on for
+     * [QUIET_WAIT] so that a record the scene should not publish has time to arrive. A scene that expects none waits only for the
+     * quiet period.
      */
     fun publishedRecords(expected: Int): List<ConsumerRecord<String, String>> {
         val awaited = if (expected == 0) emptyList() else KafkaTestUtils.getRecords(consumer, RECORD_WAIT, expected).toList()

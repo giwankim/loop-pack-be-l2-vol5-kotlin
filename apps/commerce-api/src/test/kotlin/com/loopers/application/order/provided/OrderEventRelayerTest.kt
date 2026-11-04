@@ -6,13 +6,22 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
+import com.loopers.application.order.OrderEventOutboxModifyService
+import com.loopers.application.order.OrderEventRelay
+import com.loopers.application.order.required.OrderEventPublisher
+import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
+import com.loopers.domain.order.OrderStatus
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
 import com.loopers.support.linesAt
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
+import com.ninjasquad.springmockk.MockkSpyBean
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.mockk.every
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -22,11 +31,15 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.context.TestPropertySource
+import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
 import java.time.Instant
+
+private val log = KotlinLogging.logger {}
 
 /**
  * One round of the relay takes a row left by a real confirmation to the broker and then to `PUBLISHED` (ADR 0035 rule 1). The scenes
@@ -41,6 +54,8 @@ import java.time.Instant
 @TestPropertySource(properties = ["order-events.topic=order-events-relay"])
 class OrderEventRelayerTest(
     private val orderEventRelayer: OrderEventRelayer,
+    private val orderEventPublisher: OrderEventPublisher,
+    private val orderFinder: OrderFinder,
     private val clock: TestClock,
     private val kafkaProperties: KafkaProperties,
     private val orderEventsProperties: OrderEventsProperties,
@@ -56,6 +71,10 @@ class OrderEventRelayerTest(
             "tools.jackson.databind.exc.MismatchedInputException: " +
                 "at com.loopers.adapter.integration.kafka.OrderConfirmedMessage\$Payload[\"orderId\"]"
     }
+
+    /** Where the stop scene stops the relay ([stopRelayAfterBrokerAckBeforeMarkingPublished]). Unstubbed, it is the real service. */
+    @MockkSpyBean
+    private lateinit var orderEventOutboxModifyService: OrderEventOutboxModifyService
 
     /** The test PG's server. Like [OrderPaymentIntegrationTest], WireMock's listener injects it into a field. */
     @InjectWireMock(TestPg.NAME)
@@ -261,6 +280,123 @@ class OrderEventRelayerTest(
         val warnLine = kafkaAdapterLogs.linesAt(Level.WARN).single()
         assertThat(warnLine.formattedMessage).doesNotContain("secret-value")
         assertThat(warnLine.throwableProxy).isNull()
+    }
+
+    /** A controlled stop after the commit, before any relay ran: the JVM stays up, no process is killed, and no round is called. */
+    @Test
+    fun `a confirmed order that no relay has reached has a pending row and no record`() {
+        confirmAnOrderLeavingARow()
+
+        val committedOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
+        val waitingOutbox = committedOrderEventOutbox()
+        val publishedRecords = orderEvents.publishedRecords(expected = 0)
+        assertThat(committedOrder.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(waitingOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(waitingOutbox.attemptCount).isZero()
+        assertThat(publishedRecords).isEmpty()
+
+        log.info {
+            "Relay stop, after the commit before the relay: order ${order.id} ${committedOrder.status}; " +
+                "row ${describe(waitingOutbox)}; records ${publishedRecords.size}"
+        }
+    }
+
+    /** A controlled stop: the JVM stays up, no process is killed, and the restart is a new [OrderEventRelay] on the same database and topic. */
+    @Test
+    fun `a new relay finds the row a confirmation stored and publishes it`() {
+        confirmAnOrderLeavingARow()
+        clock.pin(ROUND_STARTED_AT)
+
+        newRelay().publishDueEvents()
+
+        val publishedOutbox = committedOrderEventOutbox()
+        val publishedRecord = orderEvents.publishedRecords(expected = 1).single()
+        assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(publishedOutbox.attemptCount).isOne()
+        assertThat(publishedRecord.key()).isEqualTo(order.id.toString())
+        assertThat(publishedRecord.value()).contains(""""eventId":"order-confirmed:v1:${order.id}"""")
+
+        log.info {
+            "Relay stop, a new relay: row ${describe(publishedOutbox)}; record ${describe(publishedRecord)}"
+        }
+    }
+
+    /**
+     * A controlled stop: the JVM stays up, no process is killed, and the one-shot stub is what stops the first relay. The restart is a
+     * new [OrderEventRelay] on the same database and topic, time moves through [TestClock], and no scene writes `status`. The lease
+     * alone holds the row back and then lets it go, so the republish is the at-least-once the design accepts, and the consumer's
+     * idempotency is what meets it, which step 3 shows. The two records are read from the broker, not counted from `send` calls.
+     */
+    @Test
+    fun `a relay stopped after the broker's ack leaves the row pending, and a new relay republishes it past the lease`() {
+        confirmAnOrderLeavingARow()
+        clock.pin(ROUND_STARTED_AT)
+        stopRelayAfterBrokerAckBeforeMarkingPublished()
+
+        assertThrows<DataAccessResourceFailureException> { orderEventRelayer.publishDueEvents() }
+
+        val firstRecord = orderEvents.publishedRecords(expected = 1).single()
+        val stoppedOutbox = committedOrderEventOutbox()
+        assertThat(stoppedOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(stoppedOutbox.attemptCount).isOne()
+        assertThat(stoppedOutbox.publishedAt).isNull()
+        assertThat(stoppedOutbox.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:03:08.123456Z"))
+
+        val restartedRelay = newRelay()
+        clock.pin(Instant.parse("2026-10-27T01:03:08.123455Z"))
+        restartedRelay.publishDueEvents()
+
+        val recordsInsideTheLease = orderEvents.publishedRecords(expected = 0)
+        val leasedOutbox = committedOrderEventOutbox()
+        assertThat(recordsInsideTheLease).isEmpty()
+        assertThat(leasedOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(leasedOutbox.attemptCount).isOne()
+
+        clock.pin(Instant.parse("2026-10-27T01:03:09.123456Z"))
+        restartedRelay.publishDueEvents()
+
+        val secondRecord = orderEvents.publishedRecords(expected = 1).single()
+        val publishedOutbox = committedOrderEventOutbox()
+        assertThat(firstRecord.value()).contains(""""eventId":"order-confirmed:v1:${order.id}"""")
+        assertThat(secondRecord.value()).isEqualTo(firstRecord.value())
+        assertThat(secondRecord.key()).isEqualTo(firstRecord.key())
+        assertThat(secondRecord.partition()).isEqualTo(firstRecord.partition())
+        assertThat(secondRecord.offset()).isGreaterThan(firstRecord.offset())
+        assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(publishedOutbox.attemptCount).isEqualTo(2)
+        assertThat(publishedOutbox.publishedAt).isEqualTo(Instant.parse("2026-10-27T01:03:09.123456Z"))
+
+        log.info {
+            "Relay stop, after the ack before PUBLISHED: after the stop: row ${describe(stoppedOutbox)}, " +
+                "record ${describe(firstRecord)}; inside the lease: row ${describe(leasedOutbox)}, " +
+                "new records ${recordsInsideTheLease.size}; past the lease: row ${describe(publishedOutbox)}, " +
+                "record ${describe(secondRecord)}"
+        }
+    }
+
+    /**
+     * Stops a round between the broker's ack and saving `PUBLISHED`: the first `markPublished` throws and later calls are the real ones.
+     * The relay doesn't catch the failure, so it leaves the round the way a database failure in that transaction would (order-outbox
+     * design 13.5). The field is a CGLIB proxy, so the stub goes on the spy it wraps.
+     */
+    private fun stopRelayAfterBrokerAckBeforeMarkingPublished() {
+        val target = AopTestUtils.getUltimateTargetObject<OrderEventOutboxModifyService>(orderEventOutboxModifyService)
+        val failure = DataAccessResourceFailureException("The relay stopped after the broker's ack, before saving PUBLISHED.")
+        every { target.markPublished(any()) } throws failure andThenAnswer { callOriginal() }
+    }
+
+    /** What a restart makes: a new instance on the context's beans. Called directly, it has no proxy, which a scene's round doesn't need. */
+    private fun newRelay(): OrderEventRelayer {
+        return OrderEventRelay(orderEventOutboxModifyService, orderEventPublisher)
+    }
+
+    private fun describe(outbox: OrderEventOutbox): String {
+        return "${outbox.eventId} ${outbox.status} attempts ${outbox.attemptCount} " +
+            "published_at ${outbox.publishedAt} next_attempt_at ${outbox.nextAttemptAt}"
+    }
+
+    private fun describe(record: ConsumerRecord<String, String>): String {
+        return "key ${record.key()} partition ${record.partition()} offset ${record.offset()}"
     }
 
     /** Confirms an order of one product at [CONFIRMED_AT] through the real TX B. A scene's clock stays pinned there until it moves it. */
