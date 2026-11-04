@@ -194,6 +194,35 @@ class OrderEventOutboxStateTest {
         assertThat(outbox.attemptCount).isEqualTo(20)
     }
 
+    /** The claim's query filters on the status, so reaching this is a bug, as on a published row. */
+    @Test
+    fun `starting a publish attempt on a blocked row is refused and changes nothing`() {
+        val outbox = createOrderEventOutbox(orderId = 7)
+        failAttempts(outbox, times = 20)
+        val nextAttemptAtWhenBlocked = outbox.nextAttemptAt
+
+        val exception = assertThrows<InvalidOrderEventOutboxException> { outbox.startPublishAttempt(ATTEMPT_STARTED_AT) }
+
+        assertThat(exception.message).isEqualTo("발행 대기 중인 아웃박스만 발행을 시도할 수 있습니다.")
+        assertThat(outbox.status).isEqualTo(OrderEventOutboxStatus.BLOCKED)
+        assertThat(outbox.attemptCount).isEqualTo(20)
+        assertThat(outbox.nextAttemptAt).isEqualTo(nextAttemptAtWhenBlocked)
+    }
+
+    /** A relay past its lease can report the broker's confirmation after the row blocked. A record is on the broker, so that is a fact. */
+    @Test
+    fun `marking a blocked row published publishes it and keeps its attempts and last error`() {
+        val outbox = createOrderEventOutbox(orderId = 7)
+        failAttempts(outbox, times = 20)
+
+        outbox.markPublished(PUBLISHED_AT)
+
+        assertThat(outbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(outbox.publishedAt).isEqualTo(Instant.parse("2026-10-27T01:02:04.123456Z"))
+        assertThat(outbox.attemptCount).isEqualTo(20)
+        assertThat(outbox.lastError).isEqualTo(FAILURE_MESSAGE)
+    }
+
     /** They are the evidence of the retries that came before the publish (ADR 0035 rule 3). */
     @Test
     fun `a row that later publishes keeps its attempts and its last error`() {

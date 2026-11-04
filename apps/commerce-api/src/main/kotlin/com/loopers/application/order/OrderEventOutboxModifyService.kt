@@ -2,9 +2,13 @@ package com.loopers.application.order
 
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.OrderEventOutbox
+import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.stereotype.ApplicationService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.data.domain.PageRequest
 import java.time.Clock
+
+private val log = KotlinLogging.logger {}
 
 /**
  * The relay's short transactions (ADR 0035 rule 11). It implements no provided port and only [OrderEventRelay] calls it. Its methods
@@ -36,13 +40,25 @@ class OrderEventOutboxModifyService(
         orderEventOutboxRepository.save(outbox)
     }
 
-    /** The backoff runs from now, after the wait for the broker, rather than from the claim. */
+    /**
+     * The backoff runs from now, after the wait for the broker, rather than from the claim. The WARN is here because only this method
+     * sees the row on both sides of the failure: the publisher doesn't know the row's state, and the entity doesn't log. The failure
+     * text is the adapter's, which is safe to log (ADR 0035 rule 4).
+     */
     fun markFailed(orderEventOutboxId: Long, failureMessage: String) {
         val outbox = findForUpdate(orderEventOutboxId)
+        val statusBeforeTheFailure = outbox.status
 
         outbox.markFailed(failureMessage, clock.instant())
 
         orderEventOutboxRepository.save(outbox)
+
+        if (outbox.status == OrderEventOutboxStatus.BLOCKED && statusBeforeTheFailure != OrderEventOutboxStatus.BLOCKED) {
+            log.warn {
+                "Stopped retrying the order confirmed event: it stays BLOCKED until someone resumes it by hand. " +
+                    "eventId=${outbox.eventId}, attempts=${outbox.attemptCount}, cause=$failureMessage"
+            }
+        }
     }
 
     /**

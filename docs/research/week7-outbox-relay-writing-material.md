@@ -220,3 +220,50 @@ A round now claims until a batch comes back short, so 45 rows are all `PUBLISHED
 **The flake issue 203 recorded, seen here once too:** the JVM's first PG create hit `SocketTimeoutException` while several sessions were running, so the order stayed payment-unknown and left no row, and the scene that ran first failed on a null row. It didn't recur in the later full runs.
 
 **Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code, before this comment's last edits: 90 classes, 1022 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer wasn't run, since nothing it reads changed here.
+
+### Issue 202: a row that keeps failing becomes BLOCKED, and someone can resume it
+
+A row failing 20 times is `BLOCKED` with its `last_error`, isn't claimed again, and doesn't hold up other rows. The transition logs its own WARN once, alongside the 20 ordinary ones. The one way back is the SQL statement in design 13.7, and the scenes read that statement from the document rather than copying it. Issue 201 had already brought in the enum value and the transition, so the only new main code here is the WARN in `OrderEventOutboxModifyService.markFailed`, the one place that sees the row on both sides of a failure.
+
+**Running the documented statement found a bug in it.** The design had `next_attempt_at = NOW(6)`. The columns hold UTC (`hibernate.jdbc.time_zone`), and `NOW(6)` follows the session's time zone. The test container's session is UTC, so the first resume scene passed and couldn't have shown this. I suspected it from reading the config, and wrote a scene that runs the statement in a `+09:00` session:
+
+```text
+Expecting actual:
+  2026-11-04T14:30:36.208006Z
+to be close to:
+  2026-11-04T05:30:36.213697Z
+within 1 Minutes but difference was 539 Minutes
+```
+
+So on a server set to Seoul, a resumed row would have sat for 9 hours with nothing explaining why, on an app whose JVM is set to Seoul. The statement now says `UTC_TIMESTAMP(6)`. No server here was observed in that zone: the compose file sets no time zone, and the `+09:00` comes from the scene. Design 13.7 has a dated note, and a new line says the same trap applies when working out a wait from `oldest_created_at`.
+
+**One scene writes `status`, on purpose.** The rule against it is about the stop scenes, where it would fake a recovery. This scene is running the documented manual procedure, and its KDoc says so.
+
+**A reading of the criteria.** "Oldest wait" is `MIN(created_at)`, a time and not a duration, because that's what the design's statement returns. The scene checks it against literal `created_at` values it sets itself, since that column follows the system clock.
+
+**Other choices:**
+
+- The scenes are in `OrderEventRelayFailedSendTest`, because a blocked row needs its sends to fail and later succeed, and its `payload` never changes. The same spy does both, and a new class would start another context.
+- `apps/commerce-api/build.gradle.kts` declares the document as an input of the test task. Without that, a doc-only edit would leave `check` UP-TO-DATE and the scenes wouldn't run, which defeats reading from the document. The cost is that any edit to that file, dated notes included, runs the app's tests again.
+- The statement is found by its SQL comment, so those comment lines now have a job. A renamed comment fails the scene with a message naming it.
+- `startPublishAttempt` and `markPublished` on `BLOCKED` are in no ticket's criteria, and go in here as issue 200's section asked. They passed on arrival: the code already answered correctly.
+- `CODING_STANDARDS.md` has two dated notes: the helper that calls the relay's port as preparation, because only real failures may reach `BLOCKED`, and the class's two new dependencies. The late-failure scene calls `OrderEventOutboxModifyService` directly, because a round can't stage a relay past its lease.
+- Nothing deletes a row: the outbox's port and services have no delete, and the backlog scene still counts all four rows at the end.
+
+**Accepted, and worth knowing:** the WARN is logged inside the transaction, before the commit. If that commit fails, the line says `BLOCKED` while the row is still `PENDING`. The row then fails again and logs again. An after-commit hook costs more than that risk, so I left it.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What went red |
+| --- | --- |
+| The WARN drops its check of the status before the failure | the late-failure scene |
+| Doc only: the resume statement also sets `attempt_count = 0`, and the backlog statement says `MAX(created_at)` | both resume scenes and the backlog scene |
+| Doc only: `NOW(6)`, as first written | the `+09:00` scene: 539 minutes |
+
+The second row also shows the Gradle input working: nothing but the document changed, and the test task ran instead of staying UP-TO-DATE. The first two ran before the review's fixes, which moved the document-reading helper into the test class and changed the WARN's wording. The third ran with that helper in its first home.
+
+**Not exercised:** a real broker outage reaching `BLOCKED`. The failures are injected at the template, and the 77 minutes is arithmetic from design 13.4. `TestClock` moves through the rounds in seconds.
+
+**Rebased onto issue 204.** It landed while this one was in progress, and a round now claims until a batch comes back short. That doesn't change these scenes' rows, since each batch here is short, and `CODING_STANDARDS.md` and this file needed only their additions merged. The red checks ran before the rebase and weren't repeated.
+
+**Final check** (`scripts/final-check --app commerce-api`, on the rebased code, before this paragraph and the one above were added): ktlint passed. commerce-api: 90 classes, 1032 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer wasn't run, since nothing it reads changed here.

@@ -269,6 +269,8 @@ scripts/final-check
 
 중계는 저장의 예외를 잡지 않는다. DB가 실패하면 예외가 회차 밖으로 나가고, 남기지 못한 행은 리스가 끝난 뒤 다시 발행된다. 과제의 "broker 성공 뒤 상태 TX 실패"가 이 길이다.
 
+(2026-11-04, [issue 202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202): 행이 `BLOCKED`로 넘어갈 때의 WARN은 `OrderEventOutboxModifyService.markFailed`에 있다. 실패의 앞뒤로 행의 상태를 보는 곳이 거기뿐이다. 어댑터의 WARN은 20번 모두 그대로 나오고, 이 줄은 넘어갈 때 한 번 나온다.)
+
 ### 13.6 켜기
 
 `order-events.relay.enabled`는 기본 꺼짐, `local`에서 켜짐, `test`에서 꺼짐이다. 한 인스턴스에서만 켠다. 이것은 설정이지 소유권이 아니다. 둘째 인스턴스가 켜져도 리스가 살아 있는 동안 같은 행을 두 번 보내지 않지만 지원하는 구성이 아니다.
@@ -292,10 +294,13 @@ ORDER BY id;
 
 -- 한 행의 재개
 UPDATE order_event_outbox
-SET status = 'PENDING', next_attempt_at = NOW(6)
+SET status = 'PENDING', next_attempt_at = UTC_TIMESTAMP(6)
 WHERE event_id = ? AND status = 'BLOCKED';
 ```
 
+(2026-11-04, [issue 202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202): 재개의 시각이 `NOW(6)`에서 `UTC_TIMESTAMP(6)`로 바뀌었다. 열은 UTC를 담는데(`hibernate.jdbc.time_zone`) `NOW(6)`은 세션의 시간대를 따른다. `+09:00` 세션에서 돌린 장면에서 행의 다음 시도가 539분 뒤로 저장됐다. 위의 문장들은 `OrderEventRelayFailedSendTest`가 이 문서에서 그대로 읽어 돌리므로, 문장을 고치면 장면이 함께 확인한다. 주석 줄은 장면이 문장을 찾는 이름이다. 장면의 값은 [글감](../research/week7-outbox-relay-writing-material.md)에 있다.)
+
+- `oldest_created_at`은 기다림이 시작된 UTC 시각이다. 기다린 시간은 `NOW()`가 아니라 `UTC_TIMESTAMP(6)`와 견주어 잰다.
 - 재개는 `attempt_count`를 두므로 다시 실패하면 곧바로 `BLOCKED`로 돌아간다.
 - 전면 장애가 약 77분을 넘겨 `BLOCKED`가 됐다면 행의 잘못이 아니다. broker가 돌아온 뒤 재개한다.
 - 과제의 "상태를 직접 `PENDING`으로 덮어쓰지 말라"는 중단 장면의 복구 조건을 두고 하는 말이다. 재개의 장면은 운영의 절차를 그대로 돌리는 것이다.
