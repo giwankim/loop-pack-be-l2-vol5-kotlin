@@ -4,7 +4,7 @@ The measurements behind [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-l
 
 ## How it ran
 
-Four throwaway runs, none of them in the suite. The test sources are at the end of this file.
+Four throwaway runs, none of them in the suite. The test sources are at the end of this file. Issue 204 added a fifth on its own commit, described with its results in [the plan by table size](#plan-by-table-size).
 
 | Run | Stack | What it answers |
 | --- | --- | --- |
@@ -39,6 +39,7 @@ Four throwaway runs, none of them in the suite. The test sources are at the end 
 | Are results per record? | With one oversized record among 20, 19 acked and 1 failed with a non-retriable `RecordTooLargeException` | Row-by-row results |
 | Do `SKIP LOCKED` claims overlap? | Two open claims saw 1..20 and 21..40, overlap 0 | `SKIP LOCKED` |
 | What does the index do for it? | Without it the first claim locks everything it scans, and the second gets 0 rows | The index is required for correct behaviour |
+| Does the index alone give the split? | No. Added 2026-11-04 by [issue 204](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/204): MySQL scanned the table up to 150 rows and used the index from 200, and at 45 rows a filesort left the second claim empty with the index in place. See [the plan by table size](#plan-by-table-size) | Necessary, not sufficient. Scenes about the split use 500 rows |
 | Do two relays share the work? | 1,106 rows/s against 538 for one, each of 3,000 rows attempted once | The coordination works, and scales where `@Version` would collide |
 
 ## The failed run
@@ -153,6 +154,34 @@ one relay, linger=0: 3000 rows in 5.58 s = 538 rows/s
 one relay, linger=5: 3000 rows in 6.25 s = 480 rows/s
 two relays: 1500 + 1500 rows in 2.71 s = 1106 rows/s; rows=3000 attempted once=3000 published=3000
 ```
+
+### Plan by table size
+
+Added by issue 204, after its first two-claims scene, at 45 rows, got an empty second claim with the index in place. This run differs from the ones above: a throwaway `BaseRepositoryTest` on `mysql:8.4`, on the real repository's `findDueForUpdate`, one run per line, all rows due at one instant. Its source wasn't saved. `EXPLAIN` ran on a hand-written copy of Hibernate's statement, with `deleted_at is null` and a literal time. `first` and `second` are row counts from the real query with the first claim held open.
+
+```text
+-- run 1, 45 rows first
+rows=45  analyze=false first=20 second=0   key=null type=ALL   extra=Using where; Using filesort
+rows=45  analyze=false first=20 second=20  key=null type=ALL   extra=Using where                   (each row due at its own instant, in reverse ID order)
+rows=45  analyze=true  first=20 second=0   key=null type=ALL   extra=Using where; Using filesort
+-- run 2, 500 rows first
+rows=45  analyze=false first=20 second=20  key=null type=ALL   extra=Using where
+rows=45  analyze=true  first=20 second=0   key=null type=ALL   extra=Using where; Using filesort
+rows=60  both          first=20 second=20  key=null type=ALL   extra=Using where
+rows=80  both          first=20 second=20  key=null type=ALL   extra=Using where
+rows=100 both          first=20 second=20  key=null type=ALL   extra=Using where
+rows=120 both          first=20 second=20  key=null type=ALL   extra=Using where
+rows=150 both          first=20 second=20  key=null type=ALL   extra=Using where
+rows=200 both          first=20 second=20  key=IDX  type=range extra=Using index condition; Using where
+rows=300 both          first=20 second=20  key=IDX  type=range extra=Using index condition; Using where
+rows=500 both          first=20 second=20  key=IDX  type=range extra=Using index condition; Using where
+rows=2000 analyze=false first=20 second=20 key=IDX  type=range extra=Using index condition; Using where
+rows=2000 analyze=true  first=20 second=20 key=IDX  type=index rows=20 extra=Using where
+```
+
+Below the flip, the second claim's rows owe nothing to the index. A table scan without a filesort walks the primary key, which here happens to be the sort order, and stops at the limit, so it leaves later rows unlocked. With a filesort it reads and locks them all. Which of the two the optimizer picks at 45 rows changed with the statistics, so the result there isn't something to rely on. The statement without `deleted_at is null` flipped elsewhere (a table scan at 200 rows, and at 2,000 until `ANALYZE`), so these numbers belong to this statement and this table.
+
+By the mechanism, this failure is safe, though this run counted rows rather than checking for overlap: a claim that gets nothing takes nothing. The second relay's round ends early, and the rows wait for the first relay or the next trigger. The single relay never has a second claim to starve.
 
 ### First send
 

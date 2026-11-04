@@ -212,6 +212,27 @@ abstract class BaseRepositoryTest {
         orderEventOutboxRepository.save(row.apply { delete() })
     }
 
+    /** Starts an attempt on the row and saves it explicitly, without relying on dirty checking. */
+    protected fun startPublishAttempt(attemptStartedAt: Instant, row: OrderEventOutbox = this.orderEventOutbox) {
+        row.startPublishAttempt(attemptStartedAt)
+        orderEventOutboxRepository.save(row)
+    }
+
+    /** Fails the row's attempts until it is `BLOCKED`, the way a real row gets there, and saves it explicitly. No test writes the status itself. */
+    protected fun failUntilBlocked(failedAt: Instant, row: OrderEventOutbox = this.orderEventOutbox) {
+        repeat(20) {
+            row.startPublishAttempt(failedAt)
+            row.markFailed("broker unavailable", failedAt)
+        }
+        orderEventOutboxRepository.save(row)
+    }
+
+    /** Marks the row published and saves it explicitly, without relying on dirty checking. */
+    protected fun markPublished(publishedAt: Instant, row: OrderEventOutbox = this.orderEventOutbox) {
+        row.markPublished(publishedAt)
+        orderEventOutboxRepository.save(row)
+    }
+
     /** 결제를 PG 거래와 대사하고 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun reconcile(transaction: PgTransaction, payment: Payment = this.payment) {
         payment.reconcile(transaction)

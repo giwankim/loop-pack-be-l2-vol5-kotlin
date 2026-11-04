@@ -187,3 +187,36 @@ The next two full checks passed with no code change that could affect those scen
 **Rebased onto issues 205 and 201.** Both landed while this one was in progress. The scenes now read rows through the base class's `committedOrderEventOutbox`, and they sit beside issue 201's failure scenes in the class. The red checks ran before the rebase and weren't repeated, so they say nothing about issue 201's failure path. The relay's order of send, then save, is the same after it, and a save's exception still leaves the round. The lines above were the same in the rebased run.
 
 **Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code: 89 classes, 1015 tests, 0 failures, 0 errors, 0 skipped. Only this section's wording changed after that run. commerce-streamer wasn't run, since nothing it reads changed here.
+
+### Issue 204: rounds drain a backlog, and concurrent claims never take the same row
+
+A round now claims until a batch comes back short, so 45 rows are all `PUBLISHED` after one call. Two open claims took rows 1–20 and 21–40 of 500.
+
+**The first scene overturned part of ADR 0035.** The two-claims scene started at 45 rows, and the second claim came back empty with the index in place. The ADR's "with the index they split" had been measured at 2,000 rows. A throwaway run on the real query found this statement table-scanned at 150 rows and used the index from 200. At 45 rows the optimizer's plan changed with the statistics: a filesort locked everything and the second claim got 0, while a primary-key scan stopped at the limit and it got 20. So the index is necessary, not sufficient. Nothing changed in the code, since a second claim that gets nothing only stops early and the single relay has none. The scenes use 500 rows, and the ADR, the design, the entity's KDoc and the probe note say so. The choice remains the optimizer's, so a much smaller table or a changed statement could make the scene false-red.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What went red |
+| --- | --- |
+| The index removed from the entity | the two-claims scene, whose second claim was `[]`, and the `information_schema` test |
+| The lease removed from `startPublishAttempt` | the leased-row scene, the two-relay scene and the published scene's `next_attempt_at` |
+| `order by o.nextAttemptAt, o.id desc` | the order scene |
+| `o.id` dropped from the order | **nothing.** MySQL still returned tied rows in ID order, so the scene refuses a reversed tie break but not a missing one. Its KDoc says so |
+| `markFailed`'s guard removed | the late-result scene: the row stays `PUBLISHED`, since `markFailed` never writes that, but it gains a `last_error` and a new `next_attempt_at` |
+| The claim's query takes `status <> PUBLISHED` | the not-due scene, on the `BLOCKED` row |
+
+**The late result.** The first relay's claim stands for one still waiting on the broker when its lease ends, the second relay's round publishes the row, and then the late failure arrives through `OrderEventOutboxModifyService`. It's called directly because holding a real send past the lease would need a stubbed publisher. So this shows the state rule, and no relay was actually stalled.
+
+**Two relays.** The scene asserts one record per row and `attempt_count` 1, and its KDoc says this is not a supported setup. It doesn't assert how the rows were divided, since that depends on timing. In the final run the relays published 260 and 240 of 500.
+
+**The event columns.** The new scene overwrites them by reflection in the same transactions as a real `startPublishAttempt`, `markFailed` and `markPublished`. Without the overwriting, Hibernate would rewrite the values they already hold and the test couldn't fail.
+
+**What the review changed.** The spec review caught a false sentence of mine in the round's KDoc, "no row is claimed twice within a round". It doesn't hold in an outage, and my first correction overstated the other way, before issue 201's backoff was in view. A batch there takes a 21 s delivery timeout, so failed rows can come due again before a short batch, and the round goes on. The doubling backoff ends that for a modest backlog: once a row waits longer than the rest of the backlog takes to go round, a batch comes back short. At the 5 minute cap that span is about 15 batches of 20, so roughly 300 rows or more keep the round going until the broker returns or rows reach `BLOCKED`. This is reasoned from the numbers, not measured. The timeout paces it, so it doesn't spin, but "1 s rest between rounds" doesn't describe a large backlog in an outage. The standards review caught `tally` missing from the start-gate scene and `CODING_STANDARDS.md` naming `OrderEventOutboxImmutabilityTest` as the only class that commits in the JPA slice.
+
+**Rebased onto issues 205, 201 and 203.** The late-result scene waited for 201's `markFailed` rather than writing a competing copy. 201 also added `BLOCKED` and its transition, so the not-due scene covers it without waiting for 202, reaching it through 20 real failures rather than writing the status.
+
+**Not looked at:** issue 205's closing comment asked what a stop during a backlog does, since draining makes rounds longer and neither of its runs reached Boot's shutdown phase timeout. The round's loop doesn't check for shutdown, and no run here stopped the app during a drain. Issue 206 is the natural place, alongside 205's other re-measurement.
+
+**The flake issue 203 recorded, seen here once too:** the JVM's first PG create hit `SocketTimeoutException` while several sessions were running, so the order stayed payment-unknown and left no row, and the scene that ran first failed on a null row. It didn't recur in the later full runs.
+
+**Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code, before this comment's last edits: 90 classes, 1022 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer wasn't run, since nothing it reads changed here.

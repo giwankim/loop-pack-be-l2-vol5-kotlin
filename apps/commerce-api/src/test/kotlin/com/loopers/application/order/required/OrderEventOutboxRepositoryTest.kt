@@ -66,7 +66,50 @@ class OrderEventOutboxRepositoryTest(
         assertThat(orderEventOutboxRepository.count()).isZero()
     }
 
-    /** The columns and their order are what lets a second claim get the next rows (ADR 0035 rule 10). Its behaviour is issue 204's scene. */
+    /**
+     * The published and blocked rows' next attempt times have passed, so only their statuses keep them out. The leases are 60 s, so the row
+     * started 59 s ago is still protected, and the one started 60 s ago has just come due again.
+     */
+    @Test
+    fun `a row under a live lease, a published row and a blocked row are not due, and a row whose lease has ended is`() {
+        val now = Instant.parse("2026-10-27T01:02:03Z")
+        val pastDueAt = now.minusSeconds(120)
+        prepareOrderEventOutbox(orderId = 1, nextAttemptAt = pastDueAt)
+        prepareOrderEventOutbox(orderId = 2, nextAttemptAt = pastDueAt)
+        startPublishAttempt(now.minusSeconds(59))
+        prepareOrderEventOutbox(orderId = 3, nextAttemptAt = pastDueAt)
+        markPublished(pastDueAt)
+        prepareOrderEventOutbox(orderId = 4, nextAttemptAt = pastDueAt)
+        startPublishAttempt(now.minusSeconds(60))
+        prepareOrderEventOutbox(orderId = 5, nextAttemptAt = pastDueAt)
+        failUntilBlocked(pastDueAt)
+        assertThat(orderEventOutbox.nextAttemptAt).isBefore(now)
+        entityManager.flushAndClear()
+
+        val dueOutboxes = orderEventOutboxRepository.findDueForUpdate(now, PageRequest.of(0, 20))
+
+        assertThat(dueOutboxes.map { it.orderId }).containsExactly(1L, 4L)
+    }
+
+    /**
+     * The IDs are generated in saving order, so the two rows due at the same instant show the tie break against the saving order of the
+     * rest. It refuses a reversed tie break, but not a missing one: without `o.id` in the query, MySQL still returned tied rows in ID order.
+     */
+    @Test
+    fun `the oldest next attempt time comes first, and the ID breaks a tie`() {
+        val firstDueAt = Instant.parse("2026-10-27T01:02:03Z")
+        prepareOrderEventOutbox(orderId = 1, nextAttemptAt = firstDueAt.plusSeconds(2))
+        prepareOrderEventOutbox(orderId = 2, nextAttemptAt = firstDueAt.plusSeconds(1))
+        prepareOrderEventOutbox(orderId = 3, nextAttemptAt = firstDueAt.plusSeconds(1))
+        prepareOrderEventOutbox(orderId = 4, nextAttemptAt = firstDueAt)
+        entityManager.flushAndClear()
+
+        val dueOutboxes = orderEventOutboxRepository.findDueForUpdate(firstDueAt.plusSeconds(2), PageRequest.of(0, 20))
+
+        assertThat(dueOutboxes.map { it.orderId }).containsExactly(4L, 2L, 3L, 1L)
+    }
+
+    /** The columns and their order are what lets a second claim get the next rows (ADR 0035 rule 10). `OrderEventOutboxClaimTest` has its behaviour. */
     @Test
     fun `the index the claim depends on covers the status, the next attempt time and the ID in that order`() {
         val indexedColumns = entityManager.createNativeQuery(

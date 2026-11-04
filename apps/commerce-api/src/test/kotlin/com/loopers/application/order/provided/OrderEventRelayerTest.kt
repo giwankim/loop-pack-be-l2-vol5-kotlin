@@ -399,6 +399,87 @@ class OrderEventRelayerTest(
         return "key ${record.key()} partition ${record.partition()} offset ${record.offset()}"
     }
 
+    /** Two full batches and a short one, so only a round that claims again gets past the first 20 (ADR 0035 rule 1). */
+    @Test
+    fun `one round publishes a backlog larger than one batch`() {
+        val backlogOrderIds = prepareOutboxBacklogWithoutOrders(rowCount = 45)
+        clock.pin(ROUND_STARTED_AT)
+
+        orderEventRelayer.publishDueEvents()
+
+        assertEachRowPublishedOnce(backlogOrderIds)
+    }
+
+    /**
+     * Two relays are not a supported setup (ADR 0035 rule 13). One relay is, and turning on a second by mistake is a setting rather than
+     * something the code stops. The scene shows only what the database's coordination does then: each attempt is counted once and each
+     * row has one record. It says nothing about who owns a row past its lease, and it doesn't assert how the rows were divided. The backlog
+     * is above the size at which MySQL was measured using the index (the relay probe note's plan by table size), and in the recorded run
+     * the relays published 240 and 260.
+     */
+    @Test
+    fun `two relays over one backlog publish each row once`() {
+        val backlogOrderIds = prepareOutboxBacklogWithoutOrders(rowCount = 500)
+        clock.pin(ROUND_STARTED_AT)
+
+        val roundResults = runConcurrently(List(2) { { orderEventRelayer.publishDueEvents() } })
+
+        val outcomes = tally(roundResults)
+        assertThat(outcomes).isEqualTo(Outcomes(successes = 2, rejections = 0, technicalErrors = 0))
+        assertThat(outcomes.total).isEqualTo(2)
+        assertEachRowPublishedOnce(backlogOrderIds)
+    }
+
+    /**
+     * A relay past its lease (ADR 0035 rule 9). The first relay's claim stands for one still waiting on the broker when its lease ends, and
+     * the second relay's round publishes the row. The late result comes through the service, since holding a real send past the lease
+     * would take a stubbed publisher. Everything the second relay wrote has to survive it.
+     */
+    @Test
+    fun `a failure reported after another relay published leaves the row published`() {
+        prepareOrderEventOutbox(orderId = 101, nextAttemptAt = CONFIRMED_AT)
+        clock.pin(ROUND_STARTED_AT)
+        val lateOutbox = orderEventOutboxModifyService.claimDueOutboxes(20).single()
+        clock.advance(Duration.ofSeconds(60))
+        orderEventRelayer.publishDueEvents()
+        clock.advance(Duration.ofSeconds(1))
+
+        orderEventOutboxModifyService.markFailed(lateOutbox.id, "late failure")
+
+        val publishedOutbox = committedOrderEventOutbox(orderId = 101)
+        assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(publishedOutbox.publishedAt).isEqualTo(Instant.parse("2026-10-27T01:03:08.123456Z"))
+        assertThat(publishedOutbox.attemptCount).isEqualTo(2)
+        assertThat(publishedOutbox.lastError).isNull()
+        assertThat(publishedOutbox.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:04:08.123456Z"))
+        assertThat(orderEvents.publishedRecords(expected = 1)).hasSize(1)
+    }
+
+    /**
+     * Rows saved directly, with order IDs that name no order, because the row refers to its order by ID only. Confirming this many orders
+     * through the test PG would add nothing to what a round does with them.
+     */
+    private fun prepareOutboxBacklogWithoutOrders(rowCount: Int): List<Long> {
+        val backlogOrderIds = (1L..rowCount).toList()
+        backlogOrderIds.forEach { orderId ->
+            prepareOrderEventOutbox(orderId = orderId, nextAttemptAt = CONFIRMED_AT)
+        }
+
+        return backlogOrderIds
+    }
+
+    /** One record per row by the record's key, which is the order's ID, and one attempt per row as committed. */
+    private fun assertEachRowPublishedOnce(orderIds: List<Long>) {
+        val publishedRecords = orderEvents.publishedRecords(expected = orderIds.size)
+        assertThat(publishedRecords.map { it.key() }).containsExactlyInAnyOrderElementsOf(orderIds.map { it.toString() })
+
+        orderIds.forEach { orderId ->
+            val outbox = committedOrderEventOutbox(orderId)
+            assertThat(outbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+            assertThat(outbox.attemptCount).isOne()
+        }
+    }
+
     /** Confirms an order of one product at [CONFIRMED_AT] through the real TX B. A scene's clock stays pinned there until it moves it. */
     private fun confirmAnOrderLeavingARow(quantity: Int? = null) {
         prepareOrder(quantity = quantity)

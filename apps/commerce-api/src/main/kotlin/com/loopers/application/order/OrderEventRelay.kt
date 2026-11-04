@@ -19,7 +19,20 @@ class OrderEventRelay(
     private val orderEventOutboxModifyService: OrderEventOutboxModifyService,
     private val orderEventPublisher: OrderEventPublisher,
 ) : OrderEventRelayer {
+    /**
+     * Claims until a batch comes back short, so the batch size doesn't cap throughput at one batch per trigger (ADR 0035 rule 1). A healthy
+     * batch takes milliseconds, so such a round ends once the backlog is gone. In an outage a batch takes a delivery timeout, so failed rows
+     * can come due again before the round reaches a short batch. The growing backoff ends that for a modest backlog, and past what a 5 minute
+     * backoff spans the round goes on until the broker returns or the rows are `BLOCKED`. That wait paces it, so it doesn't spin.
+     */
     override fun publishDueEvents() {
+        do {
+            val claimedCount = publishNextBatch()
+        } while (claimedCount == OrderEventOutbox.CLAIM_BATCH_SIZE)
+    }
+
+    /** Returns how many rows it claimed. */
+    private fun publishNextBatch(): Int {
         val claimedOutboxes = orderEventOutboxModifyService.claimDueOutboxes(OrderEventOutbox.CLAIM_BATCH_SIZE)
 
         val publishResults = orderEventPublisher.publish(claimedOutboxes)
@@ -33,5 +46,7 @@ class OrderEventRelay(
                 orderEventOutboxModifyService.markFailed(publishResult.orderEventOutboxId, failureMessage)
             }
         }
+
+        return claimedOutboxes.size
     }
 }

@@ -1,6 +1,7 @@
 package com.loopers.application.order.required
 
 import com.loopers.domain.order.OrderEventOutbox
+import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.test.BaseRepositoryTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -9,11 +10,13 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
+import java.time.Instant
 
 /**
- * The event columns of a stored row never change, because they are excluded from Hibernate's `UPDATE` (ADR 0034 rule 7). This
- * step has no state change that could carry them along, so the scene changes the fields of a managed entity by reflection and
- * flushes.
+ * The event columns of a stored row never change, because they are excluded from Hibernate's `UPDATE` (ADR 0034 rule 7). Nothing in the
+ * entity can change them, so the scenes change the fields of a managed entity by reflection and flush, on their own and together with
+ * the relay's state changes (order-outbox design 10). The state change is what sends a real `UPDATE`, and without the tampering the
+ * columns would be rewritten with the values they already hold, which would show nothing.
  *
  * A second transaction has to read the result, so the class leaves the base's rolled-back test transaction, as
  * `BaseCommittingApplicationServiceTest` does. Rollback can't clean up then, so each test deletes what it committed.
@@ -43,24 +46,64 @@ class OrderEventOutboxImmutabilityTest(
 
         inNewTransaction {
             val managed = orderEventOutboxRepository.findByEventId(EVENT_ID)!!
-            managed.setByReflection("eventId", "order-confirmed:v1:99999")
-            managed.setByReflection("orderId", 99999L)
-            managed.setByReflection("eventType", "OtherEvent")
-            managed.setByReflection("schemaVersion", 2)
-            managed.setByReflection("messageKey", "99999")
-            managed.setByReflection("payload", OTHER_PAYLOAD)
+            managed.overwriteEventColumns()
             assertThat(managed.payload).isEqualTo(OTHER_PAYLOAD)
             entityManager.flush()
         }
 
         val reread = inNewTransaction { orderEventOutboxRepository.findByEventId(EVENT_ID)!! }
 
+        assertEventColumnsUnchanged(reread)
+    }
+
+    @Test
+    fun `the event columns read in a new transaction are unchanged after the row's state changes`() {
+        inNewTransaction { prepareOrderEventOutbox(orderId = ORDER_ID, payload = PAYLOAD) }
+
+        inNewTransaction {
+            val managed = orderEventOutboxRepository.findByEventId(EVENT_ID)!!
+            managed.overwriteEventColumns()
+            managed.startPublishAttempt(Instant.parse("2026-10-27T01:02:03.123456Z"))
+            orderEventOutboxRepository.save(managed)
+        }
+        inNewTransaction {
+            val managed = orderEventOutboxRepository.findByEventId(EVENT_ID)!!
+            managed.overwriteEventColumns()
+            managed.markFailed("broker unavailable", Instant.parse("2026-10-27T01:02:03.623456Z"))
+            orderEventOutboxRepository.save(managed)
+        }
+        inNewTransaction {
+            val managed = orderEventOutboxRepository.findByEventId(EVENT_ID)!!
+            managed.overwriteEventColumns()
+            managed.markPublished(Instant.parse("2026-10-27T01:02:04.123456Z"))
+            orderEventOutboxRepository.save(managed)
+        }
+
+        val reread = inNewTransaction { orderEventOutboxRepository.findByEventId(EVENT_ID)!! }
+
+        assertThat(reread.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(reread.attemptCount).isOne()
+        assertThat(reread.lastError).isEqualTo("broker unavailable")
+        assertThat(reread.publishedAt).isEqualTo(Instant.parse("2026-10-27T01:02:04.123456Z"))
+        assertEventColumnsUnchanged(reread)
+    }
+
+    private fun assertEventColumnsUnchanged(reread: OrderEventOutbox) {
         assertThat(reread.eventId).isEqualTo(EVENT_ID)
         assertThat(reread.orderId).isEqualTo(ORDER_ID)
         assertThat(reread.eventType).isEqualTo("OrderConfirmed")
         assertThat(reread.schemaVersion).isEqualTo(1)
         assertThat(reread.messageKey).isEqualTo("12345")
         assertThat(reread.payload).isEqualTo(PAYLOAD)
+    }
+
+    private fun OrderEventOutbox.overwriteEventColumns() {
+        setByReflection("eventId", "order-confirmed:v1:99999")
+        setByReflection("orderId", 99999L)
+        setByReflection("eventType", "OtherEvent")
+        setByReflection("schemaVersion", 2)
+        setByReflection("messageKey", "99999")
+        setByReflection("payload", OTHER_PAYLOAD)
     }
 
     private fun OrderEventOutbox.setByReflection(field: String, value: Any) {

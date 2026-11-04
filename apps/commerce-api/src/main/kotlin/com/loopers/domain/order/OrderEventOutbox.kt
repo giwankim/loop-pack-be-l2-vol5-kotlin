@@ -35,6 +35,8 @@ import java.time.temporal.ChronoUnit
  *
  * `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID` exists for correct behaviour rather than speed (ADR 0035 rule 10).
  * InnoDB locks the rows it scans, so without it a first `SKIP LOCKED` claim locks every row it passes and a second claim gets none.
+ * It isn't enough on a small table: MySQL scanned the table at 150 rows and used the index from 200, and at 45 rows a scan with a filesort
+ * left a second claim with none. That second claim only stops early, and the single relay doesn't have one.
  *
  * Nothing deletes rows (rows are kept for inspection), but as a root it supports soft deletion, and a deleted row is a missing
  * row (ADR 0016).

@@ -216,7 +216,7 @@ scripts/final-check
 
 차례가 된 행은 `status = 'PENDING'`이고 `next_attempt_at`이 `Clock` 빈의 지금 이전인 행이다. 차례는 `next_attempt_at`, `id` 순이다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): Hibernate가 내보내는 잠금은 `for update of <별칭> skip locked`다. 표가 하나라 `for update skip locked`와 같은 행을 잠근다.)
 
-인덱스 `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID`는 빠른 조회가 아니라 **올바른 동작**을 위한 것이다. 없으면 첫 가져가기가 훑은 행을 모두 잠가 둘째가 0행을 받는다.
+인덱스 `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID`는 빠른 조회가 아니라 **올바른 동작**을 위한 것이다. 없으면 첫 가져가기가 훑은 행을 모두 잠가 둘째가 0행을 받는다. (2026-11-04, [issue 204](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/204): 작은 표에서는 인덱스가 있어도 그럴 수 있다. 이 쿼리에서 MySQL은 150행까지 표를 훑었고, 45행에서 filesort를 고르면 둘째가 0행을 받았다. 둘째의 가져가기가 일찍 끝날 뿐이다. [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md) 규칙 10에 적었다.)
 
 잠금은 가져가는 트랜잭션과 함께 끝나므로 보내는 동안 행을 지키는 것은 리스다. 시도를 시작하면 `next_attempt_at`이 60 s 뒤로 밀려 차례가 아니다.
 
