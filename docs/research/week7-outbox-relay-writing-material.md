@@ -39,3 +39,28 @@ Written in the interview's session rather than a fresh one, because the reasonin
 - The probe note holds the raw results and the three probe sources. The corrected batch run's source isn't saved: the note describes how it differs from the first version.
 - One deviation from the ticket: `CONTEXT.md` changed, though the ticket said nothing outside `docs/` would. The glossary gains 막힌 이벤트 (BLOCKED), because the domain language now has that state. 중계 and 발행하다 still hold, and the last ticket checks them against the code.
 - Still unverified, and the next ticket's first job: that Hibernate emits `for update skip locked` from the lock hint.
+
+### Issue 200: a confirmed order's event reaches the broker
+
+Calling `OrderEventRelayer.publishDueEvents()` by hand now takes a row left by a real confirmation to the broker and then to `PUBLISHED`. Nothing schedules it yet.
+
+**The unverified assumption holds.** Hibernate 7.4 turns the lock timeout hint of -2 into `… order by oeo1_0.next_attempt_at,oeo1_0.id limit ? for update of oeo1_0 skip locked`.
+
+**One difference from the criteria:** the statement ends in `for update of oeo1_0 skip locked`, not the literal `for update skip locked`. On one table the two lock the same rows, so the test pins the real form with a regex. ADR 0035 and design 13.2 have dated notes. Issue 204's two-claims scene is what will exercise this form with two open claims, since the probe's no-overlap result came from bare SQL.
+
+**Other choices:**
+
+- `BLOCKED` isn't in the enum yet, because issue 202 adds it. So the "other statuses" and "each status" tests reach `PUBLISHED` only. The code already answers correctly for `BLOCKED`, but no ticket's criteria cover `startPublishAttempt` and `markPublished` on it. They should go in with issue 202.
+- A round claims one batch, and draining is issue 204's. A failed rebuild, send or future leaves the round as an exception, and the rows it took come due when their leases end, until issue 201 makes each one that row's result. The adapter's KDoc says so.
+- The whole-record scene is in `OrderEventRelayerTest` rather than an adapter-only class, so it starts from a real confirmation and costs one context less. That closes design 7's envelope gap.
+- The index test reads `information_schema` for the columns and their order. Its behaviour is issue 204's scene.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What went red |
+| --- | --- |
+| `NEVER` → `REQUIRED` on the relay | the refusal scene |
+| Lock timeout hint removed | the `skip locked` statement scene |
+| `next_attempt_at <= now` → `<` | the clock scene, and two scenes whose row is due at exactly the pinned instant |
+
+**Final check:** `ktlintCheck` and `check` on commerce-api passed: 84 classes, 983 tests, 0 failures, 0 errors, 0 skipped. `HexagonalArchitectureTest` is unchanged. commerce-streamer wasn't run, since nothing it reads changed here. `kafka.yml` is issue 205's.

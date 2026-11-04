@@ -6,13 +6,17 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.SQLRestriction
+import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
+ * One row is one event, and the table as a whole is the outbox. The name is the short one all the same (ADR 0035 rule 14).
+ *
  * An order confirmed event left in the transaction that confirmed the order, waiting for the relay (ADR 0034). It is its own
  * root that refers to its order by ID only, and it takes plain values, because `domain` can't see the application's event.
  * The table serves the `order-events` topic alone, so it has no topic column.
@@ -25,9 +29,12 @@ import java.time.temporal.ChronoUnit
  * The constructor checks the plain values itself, as its neighbours do. Whether [payload] is valid JSON is the check constraint's
  * to refuse. A rejected value fails TX B the way a failed serialization does (ADR 0034 rule 2).
  *
- * The state columns exist from the start and hold only their first values here: step 2's relay adds what changes them (rule 8).
+ * The state columns change only through the relay's writes, and the rules for them live here (ADR 0035 rules 3 and 9).
  * [nextAttemptAt] comes from the `Clock` bean and is the basis for the next attempt. `createdAt` follows the system clock, which
  * tests can't control, so it isn't used for that.
+ *
+ * `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID` exists for correct behaviour rather than speed (ADR 0035 rule 10).
+ * InnoDB locks the rows it scans, so without it a first `SKIP LOCKED` claim locks every row it passes and a second claim gets none.
  *
  * Nothing deletes rows (rows are kept for inspection), but as a root it supports soft deletion, and a deleted row is a missing
  * row (ADR 0016).
@@ -37,6 +44,9 @@ import java.time.temporal.ChronoUnit
     name = "order_event_outbox",
     uniqueConstraints = [
         UniqueConstraint(name = "UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID", columnNames = ["event_id"]),
+    ],
+    indexes = [
+        Index(name = "IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID", columnList = "status, next_attempt_at, id"),
     ],
     check = [
         CheckConstraint(name = "CK_ORDER_EVENT_OUTBOX_ON_PAYLOAD_JSON_VALID", constraint = "json_valid(payload)"),
@@ -106,9 +116,47 @@ class OrderEventOutbox(
         checkNotBlank(payload, "아웃박스의 payload는 공백일 수 없습니다.")
     }
 
+    /**
+     * Counts the attempt and leases the row: until the lease ends the row isn't due, which is what protects it during the send, after
+     * the claim's lock has gone (ADR 0035 rule 2).
+     */
+    fun startPublishAttempt(attemptStartedAt: Instant) {
+        ensurePending()
+
+        attemptCount += 1
+        nextAttemptAt = attemptStartedAt.plus(PUBLISH_ATTEMPT_LEASE).truncatedTo(ChronoUnit.MICROS)
+    }
+
+    /**
+     * The broker confirmed a record of this event. That is a fact whatever the row's state, so it is never refused, and a row already
+     * published keeps its first time (ADR 0035 rule 9).
+     */
+    fun markPublished(publishedAt: Instant) {
+        if (status == OrderEventOutboxStatus.PUBLISHED) {
+            return
+        }
+
+        status = OrderEventOutboxStatus.PUBLISHED
+        this.publishedAt = publishedAt.truncatedTo(ChronoUnit.MICROS)
+    }
+
+    private fun ensurePending() {
+        if (status != OrderEventOutboxStatus.PENDING) {
+            throw InvalidOrderEventOutboxException("발행 대기 중인 아웃박스만 발행을 시도할 수 있습니다.")
+        }
+    }
+
     private fun checkNotBlank(value: String, message: String) {
         if (value.isBlank()) {
             throw InvalidOrderEventOutboxException(message)
         }
+    }
+
+    companion object {
+        /** How many rows one claim takes. A batch is done in about 40 ms (ADR 0035 rule 1). */
+        const val CLAIM_BATCH_SIZE = 20
+
+        /** Longer than the 41 s a batch can hold a row: 20 sends blocked for 1 s each, then a 21 s delivery timeout (design 13.4). */
+        private val PUBLISH_ATTEMPT_LEASE: Duration = Duration.ofSeconds(60)
     }
 }

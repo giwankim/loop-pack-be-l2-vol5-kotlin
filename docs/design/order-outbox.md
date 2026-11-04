@@ -214,7 +214,7 @@ scripts/final-check
 4. **결과를 남긴다.** 행마다 자기 트랜잭션에서 행을 잠그고 다시 읽어 바꾼다.
 5. **되풀이한다.** 가져온 행이 20개보다 적으면 끝내고 1 s 쉰다.
 
-차례가 된 행은 `status = 'PENDING'`이고 `next_attempt_at`이 `Clock` 빈의 지금 이전인 행이다. 차례는 `next_attempt_at`, `id` 순이다.
+차례가 된 행은 `status = 'PENDING'`이고 `next_attempt_at`이 `Clock` 빈의 지금 이전인 행이다. 차례는 `next_attempt_at`, `id` 순이다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): Hibernate가 내보내는 잠금은 `for update of <별칭> skip locked`다. 표가 하나라 `for update skip locked`와 같은 행을 잠근다.)
 
 인덱스 `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID`는 빠른 조회가 아니라 **올바른 동작**을 위한 것이다. 없으면 첫 가져가기가 훑은 행을 모두 잠가 둘째가 0행을 받는다.
 
@@ -307,7 +307,7 @@ WHERE event_id = ? AND status = 'BLOCKED';
 - **provided 포트(`BaseCommittingApplicationServiceTest`, 실제 MySQL과 Kafka).** 13.1절의 장면, 행마다의 결과, `BLOCKED`까지의 걸음, 재개, 다 비우기, 트랜잭션 안의 호출 거절, 13.7절의 SQL. send 호출 수가 아니라 broker의 record를 센다.
 - **저장소(`BaseRepositoryTest`).** 열린 가져가기 둘이 겹치지 않음, 내보낸 SQL의 `for update skip locked`, 차례가 아닌 행들, 상태 변화 뒤에도 그대로인 사건의 열. 앞의 것이 인덱스를 지킨다.
 - **도메인.** 13.3절의 표의 모든 칸, 간격의 수열, 20번째의 `BLOCKED`.
-- **어댑터.** record의 토픽, key, 값을 문자열 전체로 못 박고 header가 없음을 본다. 7절의 봉투의 빈틈이 여기서 닫힌다.
+- **어댑터.** record의 토픽, key, 값을 문자열 전체로 못 박고 header가 없음을 본다. 7절의 봉투의 빈틈이 여기서 닫힌다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): 이 장면은 어댑터만의 클래스가 아니라 `OrderEventRelayerTest`에 있다. 실제 확정이 남긴 행에서 시작하므로 컨텍스트가 하나 덜 뜬다. 7절의 빈틈은 여기서 닫혔다.)
 - **멈춤.** `stopRelayAfterBrokerAckBeforeMarkingPublished`는 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이다. 첫 `markPublished`만 던진다. JVM은 살아 있고 프로세스 강제 종료가 아니다. 재시작은 같은 DB와 토픽의 새 `OrderEventRelay`이고 시간은 `TestClock`이 옮긴다. 테스트가 `status`를 쓰지 않는다.
 
 ### 13.10 받아들인 한계
