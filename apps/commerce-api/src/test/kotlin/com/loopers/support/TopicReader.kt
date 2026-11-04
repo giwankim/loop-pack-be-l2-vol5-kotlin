@@ -30,8 +30,11 @@ class TopicReader(
 
         /**
          * How long a scene reads on after the records it expects, so that a record it should not have published has time to
-         * arrive. It was sized for week 6's relay, which published right after the commit. Step 2's scenes run a round by hand, so a
-         * record is already on the broker when they read. Issue 206 looks at this again against the relay's polling.
+         * arrive. The relay's 1 s polling doesn't bear on it: scenes run a round by hand, and the round has awaited its sends when it
+         * returns. In the one scene with the scheduler on, the row is already `PUBLISHED`, so no later tick can send it. So this is
+         * a margin over a fetch, which took 2 ms at the median and 20 ms at most, and over a send a bug left unawaited. It stays at
+         * 1 s because too short a wait fails silently on a busy machine: a scene expecting no record would pass. It costs about
+         * 22 s across the relay's scenes (order-outbox design 13.11).
          */
         private val QUIET_WAIT: Duration = Duration.ofSeconds(1)
     }
