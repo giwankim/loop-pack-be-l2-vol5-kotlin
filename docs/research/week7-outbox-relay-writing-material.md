@@ -4,7 +4,30 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Preface: what this branch is
 
-`feat/outbox-relay` is step 2 of week 7's three: the single relay. It was cut from `week7` at `e6a11ac`, and goes back into `week7` by its own PR. Step 3 (`feat/outbox-recovery`) gets its own interview. The last ticket fills in the rest of this preface.
+`feat/outbox-relay` is step 2 of week 7's three: the single relay. It was cut from `week7` at `e6a11ac`, and goes back into `week7` by its own PR. Step 3 (`feat/outbox-recovery`) gets its own interview.
+
+- **What it adds.** A relay that claims due outbox rows in batches of 20 with `FOR UPDATE SKIP LOCKED` and a 60 s lease, sends them outside any transaction, and saves each row's own result. A row that fails waits with a growing backoff, and after 20 attempts it is `BLOCKED` until someone runs the documented SQL. A scheduler in a new `adapter.scheduling` layer runs it where `order-events.relay.enabled` is on.
+- **What it shows.** One event ID's path from a confirmed order to its row to the broker, and the same event at a second offset after a stop between the broker's ack and `PUBLISHED`. The scenes stop at the broker. The consumer's half of that path, purchase activity, is step 3's.
+- **What it does not change.** The wire contract, commerce-streamer's code, and the confirm, reconcile and callback answers. `OrderPaymentIntegrationTest` (63) passes unedited.
+- **What it costs.** Publishing is at least once. One relay is a setting, not ownership, and the default profile being `local` means a deployment that forgets its profile turns it on. An outage beyond about 77 minutes leaves rows for a person.
+- **The numbers.** About 336 rows/s through the real jar, against 480 for bare SQL. `scripts/final-check` on `8ee98a2`: commerce-api 90 classes and 1032 tests, commerce-streamer 18 and 67, no failures.
+- **Records.** [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md), [design section 13](../design/order-outbox.md#13-중계), where 13.11 is what was measured last, 13.12 the tickets and 13.13 the commands, and the [probe note](./week7-outbox-relay-probe.md).
+
+### Where each closing comment sits
+
+| Issue | What it built | Section |
+| --- | --- | --- |
+| [199](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/199) | the decisions, before the code | [Issue 199](#issue-199-record-the-relays-decisions) |
+| [200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200) | the tracer: row to broker to `PUBLISHED` | [Issue 200](#issue-200-a-confirmed-orders-event-reaches-the-broker) |
+| [205](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/205) | the trigger and `kafka.yml` | [Issue 205](#issue-205-the-relay-runs-by-itself-when-enabled) |
+| [201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201) | a failure stays with its row | [Issue 201](#issue-201-a-failed-publish-stays-with-its-own-row) |
+| [203](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/203) | the stop scenes | [Issue 203](#issue-203-a-stopped-relays-rows-are-published-again-by-a-new-relay) |
+| [204](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/204) | draining, and concurrent claims | [Issue 204](#issue-204-rounds-drain-a-backlog-and-concurrent-claims-never-take-the-same-row) |
+| [202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202) | `BLOCKED` and the resume | [Issue 202](#issue-202-a-row-that-keeps-failing-becomes-blocked-and-someone-can-resume-it) |
+| [206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206) | these records | [Issue 206](#issue-206-step-2s-records-match-what-was-built) |
+| [198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) | the spec's differences | [Spec 198](#spec-198-where-the-implementation-differs) |
+
+The sections keep the order the tickets landed in. A draft of the PR body is at the [end](#draft-pr-body).
 
 ## What the interview overturned
 
@@ -267,3 +290,164 @@ The second row also shows the Gradle input working: nothing but the document cha
 **Rebased onto issue 204.** It landed while this one was in progress, and a round now claims until a batch comes back short. That doesn't change these scenes' rows, since each batch here is short, and `CODING_STANDARDS.md` and this file needed only their additions merged. The red checks ran before the rebase and weren't repeated.
 
 **Final check** (`scripts/final-check --app commerce-api`, on the rebased code, before this paragraph and the one above were added): ktlint passed. commerce-api: 90 classes, 1032 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer wasn't run, since nothing it reads changed here.
+
+### Issue 206: step 2's records match what was built
+
+The last ticket. Its only commit outside documents is `TopicReader`'s KDoc, `8ee98a2`. Everything after that is documents.
+
+**Stopping the app, measured again, and further.** Issue 205 asked for this once issue 201 landed, and issue 204 added a stop during a drain. All on the real jar under `local` with the compose broker, one run each:
+
+| Case | Time to exit | Row at exit | After a restart |
+| --- | --- | --- | --- |
+| Broker paused, SIGTERM 1 s after the claim | 40.1 s | `PENDING`, attempt 1, `last_error` a `TimeoutException`, next attempt at failure + 5 s | `PUBLISHED`, attempt 2 at once, with no lease to wait for. 3 records for 2 rows |
+| The same, broker back after 3 s | 3.1 s | `PUBLISHED`, attempt 1 | Unchanged. 2 records for 2 rows |
+| 60,000 row backlog, SIGTERM at 1,034 published | 30.1 s | 11,052 `PUBLISHED`, 8 `PENDING` with attempt 1, 11,060 records | 60,000 `PUBLISHED`, 60,008 records, those 8 at attempt 2 |
+| 3,000 row backlog, SIGKILL at 1,020 published | at once | 1,020 `PUBLISHED`, 20 `PENDING` with attempt 1, 1,020 records | 3,000 `PUBLISHED` after about 52 s, 3,000 records, those 20 at attempt 2 |
+
+- The first row confirms issue 205's guess about issue 201: the failure is saved, so the row has a backoff rather than a lease.
+- **The third row is the finding.** The round's loop doesn't look at shutdown, so a SIGTERM drains on for Boot's 30 s phase limit, publishing 10,018 more rows. Then the context closes around the running scheduler thread, the next save throws, and rows acked in that last batch go out again after their lease. From the code that's at most one batch. It measured 8 rows.
+- The fourth row is the first `kill -9` at the process level. Its republish after the lease happened, but the kill fell before the batch reached the broker, so it shows no duplicate. That's luck of timing.
+
+Nothing was worse than a republish, which the consumer's idempotency handles, so nothing changed. A shutdown check in the loop would save the 30 s and a few duplicates, and nothing needs that now. Not measured: a stop during an outage with more than one batch due.
+
+**Throughput.** About 336 rows/s sustained, over 48,948 rows, against 480 for the bare SQL on the same images. A batch takes about 60 ms rather than 40. From a JVM that had just started, 271 with `show-sql` off and 293 with it on. That ordering is noise from single runs. The gap also includes an INFO line per row, so it isn't Hibernate's cost alone.
+
+**`TopicReader`'s 1 s stays.** The ticket asked to look at it against polling, and polling turned out not to bear on it: scenes run rounds by hand, a round has awaited its sends when it returns, and the one scheduler scene reads a row already `PUBLISHED`. A temporary line over the relay's three classes counted 22 reads, 2 ms median and 20 ms at most to read what was there, 0 extra records and 22 s of waiting in total. Too short a wait fails silently, as a scene expecting nothing passes on a busy machine. Reading only up to the end offsets would drop the wait, but it misses a send a bug left unawaited. The KDoc now says this.
+
+**`CONTEXT.md`, against the code:**
+
+- **중계** changed. "한 번에 하나만 돈다" claimed more than the code provides: rounds don't overlap within an instance, but nothing stops a second instance, and `OrderEventRelayerTest` runs two on purpose. It now says the relay is on one instance, and that this is a setting rather than ownership.
+- **발행하다** gained a sentence: the broker's confirmation is what makes it published, and published doesn't mean recorded as purchase activity. It avoids the word 소비, because the streamer's glossary keeps that for reading a record. The rest holds.
+- **막힌 이벤트** holds. Its "정해진 횟수" is `MAX_PUBLISH_ATTEMPTS`, and the resume is the one way back.
+- **누락 구간** and **아웃박스** hold.
+
+**Retention.** Design 13.8's condition is met today, because the streamer's processed order confirmation has no retention. Writing it down turned up two things nobody had said. A `BLOCKED` row can wait indefinitely, so the republish window has no upper end until it's resolved, and a redelivery doesn't depend on the row at all, so a limit on those records has to outlast the topic's retention too. And step 3's recovery adds rows that are missing from stored facts, so a cleanup that deletes `PUBLISHED` rows has to be thought through with that recovery. Both come from reading the code and the assignment, and no scene runs them.
+
+**What the review changed.** The spec review checked the numbers against the raw lines. It found the long drain's row count wrong, at 48,956 where the log has 48,948: I had added the 8 republished rows, which were already among them. The rate didn't move. It also found a row of the differences table citing the spec for what was issue 201's criterion, and throughput listed as a difference when the spec had said it was bare SQL. So there are seven differences rather than eight. The PR draft had joined two scenes as one run without saying so, and the retention note left out redelivery. The standards review caught `소비` and `보내다`, which the glossaries avoid, in new Korean text. All of these are fixed. Its duplication smell stays: the counts repeat across the design, this file and the PR draft, as they did in step 1.
+
+**Final check:** `scripts/final-check` on `8ee98a2`, a clean tree, started 2026-11-04T06:05:08Z, `BOOTSTRAP_SERVERS` unset: ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (50 s). commerce-api: 90 classes, 1032 tests, 0 failures, 0 errors, 0 skipped (3 min 45 s). Each filtered command in design 13.13 ran from that tree and gave its count.
+
+**Red checks:** none. This ticket changes no behaviour, and the KDoc edit can't fail a test.
+
+### Spec 198: where the implementation differs
+
+Step 2 is built. These are the differences from the spec and its tickets. Six have a dated note where a reader would go wrong, the seventh is in `OrderEventRelay`'s KDoc, and design 13.12 lists them.
+
+| The spec or ticket said | What is there | How it was found |
+| --- | --- | --- |
+| The claim emits `for update skip locked` | `for update of <alias> skip locked`, which locks the same rows on one table | The statement scene, issue 200 |
+| With the index, a second open claim gets the next rows | The index is necessary, not sufficient. The statement table-scanned up to 150 rows, and at 45 rows a filesort emptied the second claim with the index present. A second claim that gets nothing only stops early, so no code changed, and scenes about the split use 500 rows | The first two-claims scene, issue 204 |
+| Issue 201: the failure text names the exception's type and message | With Jackson in the chain it's the type and JSON path, because Jackson's message and its cause's quote the payload | A bad date's scene, issue 201 |
+| The adapter holds the INFO and WARN lines | The transition's WARN is in `OrderEventOutboxModifyService.markFailed`, the one place that sees the row on both sides of a failure | Issue 202 |
+| Resume sets the next attempt to now, written as `NOW(6)` in the design | `UTC_TIMESTAMP(6)`. In a `+09:00` session `NOW(6)` delayed the row by 539 minutes | A scene running the design's own statement, issue 202 |
+| The whole-record check is an adapter test | It's in `OrderEventRelayerTest`, starting from a real confirmation, which costs one context less | Issue 200 |
+| A round ends and rests 1 s | True unless a large backlog meets an outage. Past about 300 rows, failed rows come due before a short batch, and the delivery timeout paces the round instead. Reasoned, not measured | The spec review of issue 204 |
+
+**Order of work.** `BLOCKED` and the 20th failure's transition came in with issue 201 instead of 202, because 201's criteria needed the no-op on `BLOCKED` and no test may write `status`.
+
+**Settled from "to check in implementation":**
+
+- Hibernate emits the lock from the hint: yes.
+- Throughput through Hibernate, which the spec's bare SQL left open: about 336 rows/s against 480.
+- An in-flight round at shutdown: a republish after the lease at worst, in every case measured. A drain runs on for up to 30 s after SIGTERM. Design 13.11 has the table.
+- The graceful restart that once failed with `Topic not present in metadata`: not investigated further, and it didn't recur.
+
+**Additions the spec didn't ask for:** `@DirtiesContext` on the enabled scheduler scene, since a cached context would keep claiming rows during later classes; a second architecture rule, that scheduling reaches only provided ports; and the design document as a Gradle input of the test task, so a doc-only edit runs the scenes that read its SQL.
+
+**Not exercised:** a real broker outage reaching `BLOCKED`, since the failures there are injected at the template and the 77 minutes is arithmetic; a stop during an outage with more than one batch due; and anything past the broker, which is step 3's.
+
+The spec stays open for its closing review.
+
+## Draft PR body
+
+A draft for the PR from `feat/outbox-relay` into `week7`, in the shape of the step 1 PR, with the Loopers guide's review points and the assignment's submission items. It's written before the spec's closing review, so its numbers may move. The checklist waits for step 3's upstream PR. The PR's copy should link these documents with blob URLs, as step 1's did.
+
+Title: `feat(commerce-api): publish the outbox's order confirmed events through a single relay, and resume what it can't`
+
+```markdown
+## Summary
+
+Week 7 step 2. A single relay now takes due rows from `order_event_outbox` to the broker, and marks each `PUBLISHED` only after its future succeeded.
+
+- **Spec:** issue 198, with tickets 199–206
+- **Decision:** ADR 0035
+- **Design:** `docs/design/order-outbox.md` §13. 13.2 is a round, 13.3 the states, 13.7 the SQL, 13.11 the measurements, 13.13 the commands
+- **Measurements:** `docs/research/week7-outbox-relay-probe.md`
+- **Writing material:** `docs/research/week7-outbox-relay-writing-material.md`
+
+    OrderEventRelayScheduler                     # 1 s fixedDelay, one thread, only where enabled
+      OrderEventRelay.publishDueEvents           # NEVER: refuses to run inside a transaction
+        repeat until a batch comes back short
+          claimDueOutboxes(20)                   # TX: FOR UPDATE SKIP LOCKED, attempt + 1, 60 s lease
+          OrderEventPublisher.publish            # no TX: send all, then await all
+          for each row: markPublished | markFailed   # own TX, re-read under its lock
+
+### One event's path
+
+Order to row to broker for event ID `order-confirmed:v1:1`, from one run of `OrderEventRelayerTest` (`scripts/scene-lines`). The first line is its own scene, whose order only happens to have the same ID. The other three are one scene, which asserts that the two records' key, partition and value are equal, and the value carries the event ID. The consumer's half, purchase activity, is step 3's.
+
+    after the commit, before a relay: order 1 CONFIRMED; row order-confirmed:v1:1 PENDING attempts 0; records 0
+
+    after the stop:   row order-confirmed:v1:1 PENDING attempts 1 published_at null, record key 1 partition 0 offset 220
+    inside the lease: row order-confirmed:v1:1 PENDING attempts 1, new records 0
+    past the lease:   row order-confirmed:v1:1 PUBLISHED attempts 2, record key 1 partition 0 offset 221
+
+Those are controlled stops: the JVM stays up, and a restart is a new `OrderEventRelay`. Real signals are in design 13.11.
+
+### The single-relay limit
+
+`order-events.relay.enabled` is a setting, not ownership. A second instance switched on by mistake doesn't publish a row twice while its lease lives (`two relays over one backlog publish each row once`), but it isn't a supported setup. The default profile is `local`, so a deployment that forgets its profile turns the relay on.
+
+### An unresolved error
+
+A row failing 20 times is `BLOCKED`, logs a distinct WARN, and doesn't hold up other rows. There is no endpoint. Design 13.7 lists these rows and resumes one with an `UPDATE`, and `OrderEventRelayFailedSendTest` runs the document's statements as written. `attempt_count` stays, so a resumed row that fails again is `BLOCKED` at once.
+
+`PUBLISHED` means the broker confirmed. It doesn't mean the streamer recorded it: check consumer lag and purchase activity for that.
+
+## Review Points
+
+#### 1. Is a lease worth having with one relay?
+
+The lock ends when the claim commits, so the lease is what protects a row during the send. With one relay it only matters for a second instance started by mistake and for how soon a stopped relay's rows come back. It also makes the index matter for behaviour rather than speed: without it, a second claim gets nothing.
+
+**In practice, would you keep this for a setup you only ever run once, or trust the setting?**
+
+#### 2. Should every failure share one retry limit?
+
+Nothing is classified. A bad row and a stopped broker both use up 20 attempts, about 77 minutes of full outage. A classifier could block a bad row at once, but with a limit it only saves time, and a wrong classification could stop every row.
+
+**In practice, do you separate retriable errors here, or does the limit do enough?**
+
+#### 3. Should a round stop when the app does?
+
+The loop doesn't check for shutdown. With a 60,000 row backlog, SIGTERM drained on for Boot's 30 s phase limit, then the context closed around the round, and 8 rows the broker had confirmed were republished after their lease. Every case measured ended no worse than a republish, so I left it.
+
+**In practice, do you make the loop stop, or accept republishes that the consumer already handles?**
+
+## Evidence
+
+**Before:** on `week7`, rows pile up as `PENDING` and nothing publishes.
+
+**After:** the path above, and `scripts/final-check` on `8ee98a2`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 90 (82 before) | 1032 (969 before) | 0 |
+| commerce-streamer | 18 | 67 | 0 |
+
+Red checks are in the writing material, ticket by ticket. About 336 rows/s through the real jar, against 480 for bare SQL.
+
+## Merge Danger
+
+**Door:** two-way
+
+Rows already `PUBLISHED` stay so after a revert, and the rest wait.
+
+**Blast Radius:** configuration
+
+- **`kafka.yml` is shared.** `delivery.timeout.ms: 21000` and `max.block.ms: 1000` apply to both apps' producers. Only the relay publishes in main code.
+- **Backlog on first start.** Rows left since step 1 are published when the relay first runs.
+- **Schema.** There's no migration tool, so production needs the new index before this runs. It decides behaviour, so it isn't optional.
+- **Republishes.** Publishing is at least once. A stop can put a batch's rows on the broker twice, at different offsets.
+- **Out of scope:** the cross-app run, recovery of week 6's cases, and the E2E are step 3's.
+```

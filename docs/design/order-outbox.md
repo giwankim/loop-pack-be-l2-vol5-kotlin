@@ -2,7 +2,7 @@
 
 7주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 아웃박스, 중계, 누락 구간, 발행하다를 따른다. 결정은 [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md)에 있다. 6주차의 계약은 [주문 이벤트 설계](./order-events.md) 2절이고 바뀌지 않는다.
 
-상태: 2026-11-02 1단계(`feat/order-outbox`)를 인터뷰하고 썼다. 중계(2단계, `feat/outbox-relay`)와 복구와 E2E(3단계, `feat/outbox-recovery`)는 저마다의 인터뷰 뒤에 절을 더한다. 같은 날 1단계([명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191))를 마치고, 구현이 바꾼 것을 날짜 메모로 달고 1.2절과 12절을 더했다. (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 2단계를 인터뷰해 13절을 더했다. 결정은 [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md)에 있다.)
+상태: 2026-11-02 1단계(`feat/order-outbox`)를 인터뷰하고 썼다. 중계(2단계, `feat/outbox-relay`)와 복구와 E2E(3단계, `feat/outbox-recovery`)는 저마다의 인터뷰 뒤에 절을 더한다. 같은 날 1단계([명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191))를 마치고, 구현이 바꾼 것을 날짜 메모로 달고 1.2절과 12절을 더했다. (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 2단계를 인터뷰해 13절을 더했다. 결정은 [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md)에 있다.) (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 2단계를 마치고 13.11절부터 13.13절까지를 더했다.)
 
 ## 1. 근거와 범위
 
@@ -15,7 +15,7 @@
 | 단계 | 하는 것 | 브랜치 | 상태 |
 | --- | --- | --- | --- |
 | 1 | TX B에서 아웃박스 행을 남긴다. 6주차의 전송 경로를 지운다. insert 전후의 실패와 다시 반영. | `feat/order-outbox` | 인터뷰 끝남(2026-11-02). 구현 끝남(2026-11-02, 1.2절). [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191) |
-| 2 | 단일 중계. 시도의 기록, 재시도, 영구 실패, 적체, 로컬 재개. 커밋 뒤, 중계 재생성, broker 확인 뒤 PUBLISHED 전의 중단 장면. | `feat/outbox-relay` | 인터뷰 끝남(2026-11-04, 13절). [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) |
+| 2 | 단일 중계. 시도의 기록, 재시도, 영구 실패, 적체, 로컬 재개. 커밋 뒤, 중계 재생성, broker 확인 뒤 PUBLISHED 전의 중단 장면. | `feat/outbox-relay` | 인터뷰 끝남(2026-11-04, 13절). 구현 끝남(2026-11-04, 13.12절). [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) |
 | 3 | 앱을 건너는 실행. 6주차의 두 사례 재현과 복구, 실제 소비자까지의 E2E, 끝의 검사. | `feat/outbox-recovery` | 인터뷰 전 |
 
 셋은 모두 `week7`로 PR한다.
@@ -115,7 +115,7 @@ payload는 잠근 주문의 저장된 품목, 수량, 시각에서 TX B 안에�
 ## 7. 지우는 것과 남는 것
 
 - 지운다: `OrderEventPublisher`, `SpringEventOrderEventPublisher`, `OrderConfirmedKafkaRelay`, `orderEventsExecutor`, `@EnableAsync`, `OrderEventPublishGapTest`, 발행의 INFO 로그 장면과 가상 스레드 장면, 트랜잭션 밖 거절 장면. (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): 그 세 장면이 든 `OrderEventPublishingTest`도 지웠다. 나머지 장면은 8절의 두 클래스로 옮겼다. 지운 두 테스트는 `week6` 판에 남고, 3단계의 재현은 그 판에서 시작한다.)
-- 남는다: `OrderConfirmedEvent`, `OrderConfirmedMessage`, `OrderEventsProperties`, 토픽 선언, `OrderEventsTopicTest`, `OverriddenOrderEventsTopicTest`, `OrderEventsProducerTest`, `TopicReader`(2단계가 쓴다). (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): `TopicReader`와 로그를 읽는 도우미 `linesAt`, `awaitLinesAt`은 지금 부르는 곳이 없다. 2단계의 장면이 쓴다. `TopicReader`가 조용히 기다리는 1 s는 2단계의 폴링에 맞춰 다시 본다.) (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 그 값은 2단계의 마지막 티켓이 본다.)
+- 남는다: `OrderConfirmedEvent`, `OrderConfirmedMessage`, `OrderEventsProperties`, 토픽 선언, `OrderEventsTopicTest`, `OverriddenOrderEventsTopicTest`, `OrderEventsProducerTest`, `TopicReader`(2단계가 쓴다). (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): `TopicReader`와 로그를 읽는 도우미 `linesAt`, `awaitLinesAt`은 지금 부르는 곳이 없다. 2단계의 장면이 쓴다. `TopicReader`가 조용히 기다리는 1 s는 2단계의 폴링에 맞춰 다시 본다.) (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 그 값은 2단계의 마지막 티켓이 본다.) (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 1 s로 둔다. 까닭은 13.11절이다.)
 - 1단계와 2단계 사이의 `week7`은 아무것도 발행하지 않는다.
 - (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): **봉투의 빈틈.** 지운 `OrderEventPublishingTest`의 첫 장면은 봉투 전체(`eventId`, `eventType`, `schemaVersion`과 그 아래의 `payload`)와 header가 없는 record도 보았다. 행으로는 볼 수 없는 것이라 옮기지 못했고, 2단계의 bytes 테스트(10절)까지 이것을 못 박는 테스트가 없다. 직렬화 구현이 `OrderConfirmedMessage.from`을 불러 본문만 남기므로 장면들은 나머지를 읽지 않는다. 행의 사건 열과 본문은 못 박혀 있고, 이 단계에는 그 봉투를 보내는 곳이 없어 선 위에서 깨질 것도 없다.) (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 이 빈틈은 2단계의 첫 코드 티켓이 record 전체를 문자열로 못 박아 닫는다. 13.9절이다.)
 - (2026-11-02, [issue 195](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/195): **`Executor` 빈.** `orderEventsExecutor`를 지우자 Boot의 `applicationTaskExecutor`(`ThreadPoolTaskExecutor`)가 돌아왔다. 그 빈에 기대는 빈은 없다. 바뀌는 것은 MVC의 비동기 실행기뿐이고 비동기 타입을 돌려주는 처리기가 없어 쓰이지 않는다. 임시 테스트로 컨텍스트를 전후로 읽어 확인했다. 그 임시 테스트가 지나지 않는 길에서 실행기를 찾는 라이브러리는 전체 테스트의 통과가 증거다.)
@@ -254,6 +254,8 @@ scripts/final-check
 
 리스 뒤의 값은 코드의 상수이고 `@ConfigurationProperties`가 아니다. `TestClock`이 시간을 옮기므로 테스트가 바꿀 일이 없다. 이름은 `CLAIM_BATCH_SIZE`, `PUBLISH_ATTEMPT_LEASE`, `MAX_PUBLISH_ATTEMPTS`, `retryBackoffAfter`다.
 
+(2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 묶음의 "약 40 ms"는 맨 SQL의 값이다. 실제 jar에서는 약 60 ms다. 13.11절이다.)
+
 ### 13.5 어디에 무엇이 있는가
 
 | 조각 | 자리 | 하는 일 |
@@ -275,7 +277,7 @@ scripts/final-check
 
 `order-events.relay.enabled`는 기본 꺼짐, `local`에서 켜짐, `test`에서 꺼짐이다. 한 인스턴스에서만 켠다. 이것은 설정이지 소유권이 아니다. 둘째 인스턴스가 켜져도 리스가 살아 있는 동안 같은 행을 두 번 보내지 않지만 지원하는 구성이 아니다.
 
-(2026-11-04, [issue 205](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/205): 앱을 멈출 때의 회차를 compose의 broker로 쟀다. SIGTERM은 진행 중인 회차가 끝나기를 기다린다. broker가 멈춘 채면 행은 `PENDING`, 시도 1, 리스 그대로 남고 39.9 s 뒤에 끝난다(만료 21 s, producer를 닫는 데 20 s). 다음 실행은 리스 뒤에 다시 발행하고, 그 record는 먼저 소켓에 있던 것과 함께 offset 0과 1에 둘 있었다. 종료 중에 broker가 돌아오면 행은 `PUBLISHED`, 시도 1, record 1개다. 이것은 실패가 아직 회차 밖으로 나가는 [issue 201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201) 전의 측정이다. 201 뒤에는 broker가 멈춘 경우의 행이 실패의 간격을 가질 것으로 보이고, 다시 재 봐야 한다. `kill -9`는 재지 않았고 리스 뒤의 재발행은 설계의 예상이다. [글감](../research/week7-outbox-relay-writing-material.md)에 수와 조건이 있다.)
+(2026-11-04, [issue 205](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/205): 앱을 멈출 때의 회차를 compose의 broker로 쟀다. SIGTERM은 진행 중인 회차가 끝나기를 기다린다. broker가 멈춘 채면 행은 `PENDING`, 시도 1, 리스 그대로 남고 39.9 s 뒤에 끝난다(만료 21 s, producer를 닫는 데 20 s). 다음 실행은 리스 뒤에 다시 발행하고, 그 record는 먼저 소켓에 있던 것과 함께 offset 0과 1에 둘 있었다. 종료 중에 broker가 돌아오면 행은 `PUBLISHED`, 시도 1, record 1개다. 이것은 실패가 아직 회차 밖으로 나가는 [issue 201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201) 전의 측정이다. 201 뒤에는 broker가 멈춘 경우의 행이 실패의 간격을 가질 것으로 보이고, 다시 재 봐야 한다. `kill -9`는 재지 않았고 리스 뒤의 재발행은 설계의 예상이다. [글감](../research/week7-outbox-relay-writing-material.md)에 수와 조건이 있다.) (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 201 뒤에 다시 쟀다. 행은 예상대로 실패의 간격과 `last_error`를 갖는다. `kill -9`와 적체 중의 멈춤도 쟀다. 13.11절이다.)
 
 ### 13.7 적체와 재개의 SQL
 
@@ -311,6 +313,14 @@ WHERE event_id = ? AND status = 'BLOCKED';
 
 행은 지우지 않는다. 나중에 정리한다면 `PUBLISHED`만 대상이고, 재발행될 수 있는 동안의 행을 지우면 안 된다. 받는 쪽의 멱등 기록은 같은 이벤트가 다시 올 수 있는 동안 남아 있어야 하므로, 그 보존 기간은 재발행의 창보다 길어야 한다. 미발행과 `BLOCKED` 행은 정리의 대상이 아니다.
 
+(2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 셋을 이렇게 가른다. 구현과 맞는다. 받는 쪽의 멱등 기록은 streamer의 처리한 주문 확정이고 [보관 기한이 없으므로](../../apps/commerce-streamer/CONTEXT.md) 위의 조건은 지금 지켜진다. 중계는 `PUBLISHED` 행을 가져가지 않으므로 다시 발행하는 창은 행이 `PENDING`이나 `BLOCKED`인 동안과 리스를 넘긴 중계의 send가 끝날 때까지이고, `BLOCKED`는 사람이 돌릴 때까지 끝이 없다. 다시 전달은 행의 상태와 상관없이 토픽에 record가 있는 동안 생긴다. 그 기록에 기한을 두게 되면 가장 오래된 미해결 행과 토픽의 보관 기간 모두보다 길어야 한다. 3단계의 복구가 없는 행을 저장된 사실로 더하므로, `PUBLISHED` 행을 지우는 정리는 3단계 뒤에 그 복구와 함께 다시 본다. 이 관계는 코드에서 읽은 것이고 장면으로 돌리지 않았다.)
+
+| 말 | 뜻 | 그때 broker에는 | 어디서 보는가 |
+| --- | --- | --- | --- |
+| `PENDING` | 확인을 저장하지 못했다. 차례가 되면 다시 발행한다 | 없거나, 이미 있다(확인 뒤 저장 전의 멈춤, 소켓에 있던 시간 초과) | 13.7절의 SQL |
+| `PUBLISHED` | broker가 확인했고 저장했다 | 있다. 둘 이상일 수 있다 | 13.7절의 SQL, 발행의 INFO |
+| 구매 활동으로 기록됨 | streamer가 기록했고 읽었다고 표시했다. 행의 상태로는 알 수 없다 | 있다 | consumer lag, 구매 활동, 처리한 주문 확정 |
+
 ### 13.9 테스트
 
 - **provided 포트(`BaseCommittingApplicationServiceTest`, 실제 MySQL과 Kafka).** 13.1절의 장면, 행마다의 결과, `BLOCKED`까지의 걸음, 재개, 다 비우기, 트랜잭션 안의 호출 거절, 13.7절의 SQL. send 호출 수가 아니라 broker의 record를 센다.
@@ -325,4 +335,86 @@ WHERE event_id = ? AND status = 'BLOCKED';
 - 발행은 최소 한 번이다. broker 확인 뒤 저장 전에 멈추거나 리스를 넘기면 같은 이벤트가 다른 offset에 다시 있다.
 - 단일 broker에서 `acks=all`은 복제를 증명하지 않는다(6주차의 한계 그대로다).
 - 약 77분을 넘는 장애의 행은 사람의 SQL을 기다린다.
-- 수치는 노트북의 Docker에서 거의 빈 로그로 쟀다. Hibernate의 `SKIP LOCKED`는 이 절을 쓰는 때에 확인하지 못했다.
+- 수치는 노트북의 Docker에서 거의 빈 로그로 쟀다. Hibernate의 `SKIP LOCKED`는 이 절을 쓰는 때에 확인하지 못했다. (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 확인했고(13.2절) 실제 jar의 처리량도 쟀다(13.11절).)
+- (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 앱을 멈춰도 회차는 스스로 서지 않는다. 적체 중의 SIGTERM은 30 s 동안 계속 발행하고 끊기며, 확인을 저장하지 못한 행은 리스 뒤에 다시 발행된다. 13.11절이다.)
+
+### 13.11 구현이 재 본 것
+
+2026-11-04 [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206). 명세와 앞의 티켓들이 구현으로 넘긴 측정이다. 조건과 원시 값, 도구의 소스는 [측정 기록](../research/week7-outbox-relay-probe.md#through-the-real-jar)에 있다. `dc6b59e`의 jar를 `local` 프로필로 compose의 `bitnamilegacy/kafka:3.5`, `mysql:8.4`에 붙여 노트북의 Docker에서 조건마다 한 번 돌렸다. 행은 `INSERT`로 넣었고 확정을 거치지 않았다. 멈춤은 실제 프로세스에 보낸 신호다.
+
+**처리량.** 약 336 rows/s다. 맨 SQL의 480 rows/s보다 약 30% 낮고, 묶음 하나가 약 60 ms다. 이 차이가 Hibernate만의 값은 아니다. 행마다의 INFO 로그와 프레임워크가 함께 들어 있고 따로 재지 않았다.
+
+| 실행 | 행 | rows/s |
+| --- | --- | --- |
+| 맨 SQL, 한 중계, `linger.ms` 5 | 3,000 | 480 |
+| jar, 막 뜬 JVM, `show-sql` 끔 | 3,000 | 271 |
+| jar, 막 뜬 JVM, `local` 그대로(`show-sql` 켬) | 3,000 | 293 |
+| jar, 긴 적체, `show-sql` 끔 | 48,948 (145.8 s) | 336 |
+
+`show-sql`을 켠 쪽이 빠른 것은 한 번씩 돌린 값의 차이이고 뜻이 없다. 묶음의 크기나 저장 방식을 바꿀 까닭은 아니다. [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md)의 "지속해서 수백 rows/s"는 그대로 맞다.
+
+**앱을 멈출 때.**
+
+| 경우 | 끝날 때까지 | 끝난 때의 행 | 다시 띄운 뒤 |
+| --- | --- | --- | --- |
+| 가져간 뒤 broker가 멈춘 채 SIGTERM | 40.1 s | `PENDING`, 시도 1, `last_error`에 `TimeoutException`, 다음 시도는 실패 + 5 s | 곧바로 `PUBLISHED`, 시도 2. 행 2개에 record 3개 |
+| 같은 경우에 3 s 뒤 broker가 돌아옴 | 3.1 s | `PUBLISHED`, 시도 1 | 그대로. 행 2개에 record 2개 |
+| 적체 60,000행을 비우는 중에 SIGTERM | 30.1 s | 1,034행에서 11,052행까지 `PUBLISHED`. 8행이 `PENDING`, 시도 1. record 11,060개 | 리스 뒤에 8행이 시도 2로 `PUBLISHED`. 60,000행에 record 60,008개 |
+| 적체 3,000행을 비우는 중에 SIGKILL | 즉시 | 20행이 `PENDING`, 시도 1. record 1,020개로 `PUBLISHED` 수와 같음 | 약 52 s 뒤 모두 `PUBLISHED`. 20행이 시도 2. 3,000행에 record 3,000개 |
+
+- **첫 줄은 13.6절의 예상대로다.** 실패가 저장되므로 행은 리스가 아니라 실패의 간격을 갖고, 다시 띄운 앱은 리스를 기다리지 않았다. 40 s는 만료까지 약 20 s와 producer를 닫는 20 s다. 클라이언트가 포기한 record가 소켓에 남아 있다 풀려 record가 하나 더 있는 것도 전과 같다.
+- **회차의 되풀이는 종료를 보지 않는다.** SIGTERM 뒤에도 Boot의 종료 단계 한도인 30 s 동안 계속 가져가 10,018행을 더 발행했다. 한도가 지나면 로그에 `Shutdown phase … ends with 1 bean still running after timeout of 30000ms: [taskScheduler]`가 남고, producer와 JPA가 닫히며, 그다음 저장이 던진 예외가 회차를 끝낸다. 그 사이의 8행이 확인을 받고도 저장되지 못해 다시 발행됐다. 끊기는 자리가 결과 저장이므로 코드로 보면 한 번에 묶음 하나, 20행까지다. 측정한 것은 8행이다.
+- **`kill -9` 뒤의 재발행을 프로세스 수준에서 봤다.** 가져간 20행은 리스 뒤에 돌아왔다. 이 실행에서는 묶음이 broker에 닿기 전에 멈춰 record가 늘지 않았다. 다른 때에 멈추면 첫 줄이나 셋째 줄처럼 늘 수 있다.
+- **바꾸지 않는다.** 어느 경우든 다시 발행보다 나쁜 일은 없었고, 받는 쪽의 멱등성이 받는다. 종료를 보는 검사를 넣으면 30 s와 다시 발행되는 몇 행이 줄지만 지금 그 값이 필요하지 않다.
+- **재지 않았다.** 적체가 20행을 넘는 채 broker가 멈춘 때의 멈춤이다. 코드로 보면 묶음마다 21 s라 둘째 묶음에서 30 s 한도에 끊긴다. 한도보다 긴 유예를 주지 않는 감독자는 `kill -9`의 길로 간다.
+
+**`TopicReader`의 1 s.** 7절이 넘긴 값이다. 그대로 둔다. 중계의 폴링은 이 값과 상관이 없다. 장면은 회차를 손으로 돌리고, 회차는 send를 모두 기다린 뒤 돌아온다. 스케줄러를 켠 장면 하나는 행이 `PUBLISHED`인 것을 본 뒤에 읽으므로 다음 tick이 그 행을 발행할 수 없다. 그래서 이 값은 이미 있는 record를 읽는 시간에 대한 여유다. 중계의 세 클래스에서 재 보니 22번 읽었고, 기대한 record를 읽는 데 중앙값 2 ms, 최대 20 ms가 걸렸고, 조용히 기다리는 동안 더 온 record는 0개였으며, 합쳐서 22 s를 썼다. 줄이면 빨라지지만, 너무 짧을 때의 실패는 record가 없다고 기대한 장면이 바쁜 기계에서 조용히 통과하는 것이다. 22 s보다 그쪽이 비싸다. broker의 끝 offset까지만 읽는 방식은 대기를 없애지만, 버그로 기다리지 않은 send를 놓친다.
+
+### 13.12 2단계가 만든 것
+
+2026-11-04 [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 티켓이다. 명세가 이름 지은 것(`OrderEventOutbox`, `OrderEventOutboxStatus.BLOCKED`, `OrderEventRelayer`, `publishDueEvents`, `OrderEventRelay`, `OrderEventOutboxModifyService`, `claimDueOutboxes`, `markPublished`, `markFailed`, `OrderEventPublisher`, `OrderEventPublishResult`, `KafkaOrderEventPublisher`, `OrderEventRelayScheduler`, `adapter.scheduling`, `findDueForUpdate`, `CLAIM_BATCH_SIZE`, `PUBLISH_ATTEMPT_LEASE`, `MAX_PUBLISH_ATTEMPTS`, `retryBackoffAfter`, `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID`, `order-events.relay.enabled`, `stopRelayAfterBrokerAckBeforeMarkingPublished`)은 모두 그대로 최종 이름이 됐다. 명세가 이름 짓지 않은 것은 이렇게 정해졌다. 잠그고 읽는 메서드는 `findForUpdateById`, 테스트 클래스는 표의 이름이다.
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [199](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/199) | [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md), 13절, [측정 기록](../research/week7-outbox-relay-probe.md), 글감의 머리말, `CONTEXT.md`의 막힌 이벤트. |
+| [200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200) | 포트와 중계, 수정 서비스, 어댑터, 인덱스, 한 묶음의 회차. `OrderEventRelayerTest`, `OrderEventOutboxStateTest`. 저장소와 불변 테스트에 장면을 더했다. record 전체를 문자열로 못 박아 7절의 빈틈을 닫았다. |
+| [205](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/205) | `OrderEventRelayScheduler`, `adapter.scheduling`과 그 아키텍처 규칙, `kafka.yml`의 두 줄. `OrderEventRelaySchedulerTest`, `OrderEventRelaySchedulerDisabledTest`, `OrderEventRelaySchedulerTicksTest`, `OrderEventRelayEnabledPropertyTest`. |
+| [201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201) | 재구성, `send()`, future의 실패를 그 행의 결과로 옮겼다. 간격과 `last_error`, payload가 없는 실패의 문구. `OrderEventRelayFailedSendTest`. 기준이 요구해 `BLOCKED`와 20번째의 넘어감도 여기서 들어왔다. |
+| [203](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/203) | 13.1절의 세 멈춤 장면. 운영 코드는 바뀌지 않았다. |
+| [204](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/204) | 짧은 묶음까지 되풀이하는 회차. `OrderEventOutboxClaimTest`의 열린 가져가기 둘, `OrderEventRelayerTest`의 두 중계와 늦은 실패, 저장소 테스트의 차례의 장면. |
+| [202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202) | `BLOCKED`로 넘어갈 때의 WARN, 13.7절의 SQL을 문서에서 읽어 돌리는 장면, 그것을 위한 Gradle의 입력 선언. |
+| [206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206) | 13.11절의 측정, 이 표와 13.13절, `CONTEXT.md`의 중계와 발행하다, 글감의 머리말과 PR 본문 초안, 명세의 닫는 글. |
+
+명세와 티켓에서 달라진 것은 일곱이다. 여섯은 각 절의 날짜 메모에, 일곱째는 `OrderEventRelay`의 KDoc에 있다. 잠금의 문장은 `for update of <별칭> skip locked`다(13.2절). 인덱스는 필요하지만 충분하지 않다(13.2절). 실패의 문구는 Jackson이 사슬에 있으면 타입과 JSON 경로다(13.3절). `BLOCKED`의 WARN은 어댑터가 아니라 수정 서비스에 있다(13.5절). 재개의 시각은 `UTC_TIMESTAMP(6)`다(13.7절). record를 못 박는 장면은 어댑터만의 클래스가 아니다(13.9절). 큰 적체가 있는 장애에서는 회차가 1 s를 쉬지 못한다. 명세가 맨 SQL로 재고 넘긴 처리량은 13.11절이 답했다.
+
+3단계로 넘긴다. 구매 활동까지의 경로, 앱을 건너는 실행, 6주차 사례의 복구다. 이 단계의 장면은 broker까지만 본다(13.1절).
+
+### 13.13 2단계의 명령
+
+```bash
+# 회차, record, 로그, 재구성의 실패, 멈춤, 다 비우기, 두 중계: OrderEventRelayerTest(18). 멈춤의 실행 값은 scripts/scene-lines
+./gradlew :apps:commerce-api:test --tests '*OrderEventRelayerTest'
+
+# 실패한 send, BLOCKED, 재개와 적체의 SQL: OrderEventRelayFailedSendTest(12)
+./gradlew :apps:commerce-api:test --tests '*OrderEventRelayFailedSendTest'
+
+# DB가 지키는 것: OrderEventOutboxClaimTest(1), OrderEventOutboxRepositoryTest(8), OrderEventOutboxImmutabilityTest(2)
+./gradlew :apps:commerce-api:test --tests '*OrderEventOutboxClaimTest' --tests '*OrderEventOutboxRepositoryTest' --tests '*OrderEventOutboxImmutabilityTest'
+
+# 상태 표, 간격, 한도: OrderEventOutboxStateTest(17)
+./gradlew :apps:commerce-api:test --tests '*OrderEventOutboxStateTest'
+
+# 트리거: OrderEventRelaySchedulerTest(1), OrderEventRelaySchedulerDisabledTest(2), OrderEventRelaySchedulerTicksTest(2), OrderEventRelayEnabledPropertyTest(1)
+./gradlew :apps:commerce-api:test --tests '*OrderEventRelayScheduler*' --tests '*OrderEventRelayEnabledPropertyTest'
+
+# producer의 설정: OrderEventsProducerTest(4)
+./gradlew :apps:commerce-api:test --tests '*OrderEventsProducerTest'
+
+# 끝의 확인. 트리 전체의 ktlint, 두 앱의 cleanTest와 check, 수까지 돌리고 commit과 시각을 함께 적는다.
+scripts/final-check
+```
+
+- 끝의 확인은 2026-11-04 `8ee98a2`의 깨끗한 트리에서 `scripts/final-check`으로 돌렸다(06:05:08Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(50 s). commerce-api는 90개 클래스, 1032개 테스트, 실패 0, 오류 0, 건너뜀 0이다(3 min 45 s). `8ee98a2` 뒤로는 문서만 바뀌었다. 위 블록의 거른 명령도 같은 날 그 트리에서 하나씩 돌려 괄호의 수를 읽었다.
+- 2단계의 수는 1단계의 끝(82개 클래스, 969개 테스트)에서 이렇게 왔다. 새 클래스 8개가 54개다(`OrderEventRelayerTest` 18, `OrderEventOutboxStateTest` 17, `OrderEventRelayFailedSendTest` 12, 트리거의 넷 6, `OrderEventOutboxClaimTest` 1). 있던 클래스에 9개가 늘었다(`OrderEventOutboxRepositoryTest` 4 → 8, `OrderEventsProducerTest` 1 → 4, `OrderEventOutboxImmutabilityTest` 1 → 2, `HexagonalArchitectureTest` 7 → 8). streamer의 수는 그대로다.
+- `--tests`로 거른 실행은 여전히 `HexagonalArchitectureTest`도 함께 돌고, 이제 그 수는 8개다. 12절의 메모 그대로 위의 수는 그것을 뺀 것이다.
+- 13.7절의 문장은 `OrderEventRelayFailedSendTest`가 이 문서에서 읽는다. 그래서 이 문서를 고치면 commerce-api의 `test`가 다시 돈다.

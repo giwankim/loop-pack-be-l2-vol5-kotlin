@@ -46,7 +46,7 @@ date: 2026-11-04
 - 리스를 넘긴 중계는 같은 이벤트를 또 보낼 수 있다. 발행은 최소 한 번이고, 받는 쪽의 멱등성이 받는다. `PUBLISHED`는 broker의 확인이지 소비 완료가 아니다.
 - 약 77분을 넘는 장애의 행은 `BLOCKED`로 남아 사람이 SQL을 돌릴 때까지 기다린다. 전면 장애에서 `BLOCKED`는 행의 잘못을 뜻하지 않는다.
 - 메타데이터를 잃으면 `send()`가 막힌다. 측정의 한 실행이 `Topic not present in metadata`로 실패했는데, 그 까닭은 밝히지 못했다. `docker start`가 `send()` 뒤에 돌도록 짠 탓으로 보이고, 고친 6번은 모두 확인됐다.
-- 시간의 수치는 노트북의 Docker에서 거의 빈 로그로 잰 것이다. 재시작은 실제 로그에서 더 걸릴 수 있다. 처리량은 맨 SQL의 값이라 Hibernate의 비용이 들어 있지 않다.
+- 시간의 수치는 노트북의 Docker에서 거의 빈 로그로 잰 것이다. 재시작은 실제 로그에서 더 걸릴 수 있다. 처리량은 맨 SQL의 값이라 Hibernate의 비용이 들어 있지 않다. (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 실제 jar에서 약 336 rows/s였다. [주문 아웃박스 설계](../design/order-outbox.md) 13.11절에 앱을 멈출 때의 측정과 함께 있다.)
 - Hibernate가 lock timeout 힌트로 `SKIP LOCKED`를 내보내는지는 이 ADR을 쓰는 때에 확인하지 못했다. 설계가 기대는 가정이고, 첫 코드 티켓이 확인한다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): 확인했다. Hibernate 7.4는 힌트 값 -2로 `… limit ? for update of oeo1_0 skip locked`를 내보낸다. 맨 SQL과 달리 별칭을 적지만 표가 하나라 잠그는 행은 같다. `OrderEventOutboxRepositoryTest`가 이 문장을 본다.)
 
 ## 다시 볼 조건

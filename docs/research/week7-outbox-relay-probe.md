@@ -4,7 +4,7 @@ The measurements behind [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-l
 
 ## How it ran
 
-Four throwaway runs, none of them in the suite. The test sources are at the end of this file. Issue 204 added a fifth on its own commit, described with its results in [the plan by table size](#plan-by-table-size).
+Four throwaway runs, none of them in the suite. The test sources are at the end of this file. Issue 204 added a fifth on its own commit, described with its results in [the plan by table size](#plan-by-table-size). Issue 206 added a sixth, on the real jar, described in [through the real jar](#through-the-real-jar).
 
 | Run | Stack | What it answers |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ Four throwaway runs, none of them in the suite. The test sources are at the end 
 **Limits.**
 
 - One run per configuration on a laptop through Docker, so differences of a few percent mean nothing.
-- `kafka-clients` 4.2.2 directly, not `KafkaTemplate`, and bare JDBC, not Hibernate. Throughput through the real stack will be lower, and that Hibernate emits `SKIP LOCKED` from the lock hint isn't shown here.
+- `kafka-clients` 4.2.2 directly, not `KafkaTemplate`, and bare JDBC, not Hibernate. Throughput through the real stack will be lower, and that Hibernate emits `SKIP LOCKED` from the lock hint isn't shown here. (Both answered later: issue 200 pinned the statement, and [through the real jar](#through-the-real-jar) has the throughput.)
 - A paused container stands in for a hung broker. The restart logs were nearly empty, so a real log may take longer to recover.
 - The restart timings include about 1 s of CLI overhead.
 
@@ -209,9 +209,44 @@ delivery=20005 request=20000 linger=default: accepted
 delivery=21000 request=20000 linger=default: accepted
 ```
 
+## Through the real jar
+
+Added 2026-11-04 by issue 206, which owed what the spec left to implementation and what issues 205 and 204 left open. `apps/commerce-api` as a bootJar at `dc6b59e` under `local`, with `bitnamilegacy/kafka:3.5`, `mysql:8.4` and both Redis containers from `docker/infra-compose.yml`, in a compose project of its own so that no local volume was touched. One run per line, on a laptop through Docker, load average about 4. The stack matches the batch run's section G, which gave 480 rows/s with `linger.ms` 5. Rows were committed with `INSERT`, not by confirmations. Each scene uses its own topic. Logs went to a file. What these numbers decided is in [design 13.11](../design/order-outbox.md#1311-구현이-재-본-것).
+
+```text
+tput-quiet: 3000 rows, first to last published_at 11.0842 s = 271 rows/s; records 3000; PUBLISHED 3000 3000 0 0
+tput-local: 3000 rows, first to last published_at 10.2428 s = 293 rows/s; records 3000; PUBLISHED 3000 3000 0 0
+hung: exit 143 after 40.1 s; row at exit: PENDING	1	NULL	2026-11-04 05:57:30.270178	2026-11-04 05:57:45.439353	org.apache.kafka.common.errors.TimeoutException: Expiring 1 record(s) for probe-hung-2:21002 ms has passed since batch creation
+hung: after restart (0.04933087504468858 s): PUBLISHED	2	2026-11-04 05:57:52.694046; records for 2 rows: 3
+hung-resume: exit 143 after 3.1 s; row at exit: PUBLISHED	1	2026-11-04 05:58:07.476012	2026-11-04 05:59:03.310513	2026-11-04 05:58:07.584259	NULL
+hung-resume: after restart (0.05326420802157372 s): PUBLISHED	1	2026-11-04 05:58:07.476012; records for 2 rows: 2
+drain-term: 60000 rows; SIGTERM with 1034 published; exit 143 after 30.1 s; PENDING 48948 8 0 0 | PUBLISHED 11052 11052 0 0; pending with an attempt 8; records 11060
+drain-term: restart drained in 145.5921835419722 s; PUBLISHED 60000 60008 8 0; records 60008 for 60000 rows
+drain-kill: 3000 rows; SIGKILL with 1020 published; exit -9 after 0.0 s; PENDING 1980 20 0 0 | PUBLISHED 1020 1020 0 0; pending with an attempt 20; records 1020
+drain-kill: restart drained in 51.96740100008901 s; PUBLISHED 3000 3020 20 0; records 3000 for 3000 rows
+```
+
+Reading the lines:
+
+- `tput-*` measures first to last `published_at`, from a JVM that just started. The sustained figure comes from `drain-term`'s restart: its log runs 14:59:07.771 to 15:01:33.527 for 48,948 rows, 336 rows/s. Before the cut, the first process did about 334 rows/s (1,034 to 11,052 in 30 s).
+- A status summary reads `status, rows, sum(attempt_count), rows with more than one attempt, rows with last_error`.
+- `hung`'s three records for two rows are the warm row, the one that expired while still in the socket, and the republish. Its log has the failure at 14:57:25.253, SIGTERM 20 s before that, and producer close from 14:57:25.307 to 14:57:45.327.
+- `drain-term`'s log at the 30 s limit: `Shutdown phase 1073741823 ends with 1 bean still running after timeout of 30000ms: [taskScheduler]`, then producer, JPA and pool closing, then `Unexpected error occurred in scheduled task` on `scheduling-1` from a transaction that could no longer begin.
+- `drain-kill`'s kill fell after the claim and before the batch reached the broker, so its records don't grow. Its restart waited for the lease. That timing is luck: nothing here makes it the usual case.
+
+`TopicReader`, from a temporary line in `publishedRecords`, reverted, over `OrderEventRelayerTest`, `OrderEventRelayFailedSendTest` and `OrderEventRelaySchedulerTest`:
+
+```text
+reads 22 quiet total s 22.042 further records 0
+awaited n 17 median 2 max 20
+quiet min/max 1000 1004
+```
+
+The awaited figures are milliseconds to read records already on the broker.
+
 ## The probes
 
-Each ran under `apps/commerce-api/src/test`, and was removed afterwards. The timing run also needed `testImplementation` lines for `testcontainers-kafka` and `testcontainers-mysql`, reverted the same way.
+Each ran under `apps/commerce-api/src/test`, and was removed afterwards, except the real jar's, which drives the app from outside. The timing run also needed `testImplementation` lines for `testcontainers-kafka` and `testcontainers-mysql`, reverted the same way.
 
 ### Timing
 
@@ -926,4 +961,194 @@ class FirstSendProbeTest {
         }
     }
 }
+```
+
+### Real jar
+
+Driven from outside the app. Run as `probe.py JAR SCENE …`, with `schema` first to create the tables. Its first runs had a wrong jar path, which failed at once and measured nothing. The source is as it ran, so its docstring's usage line omits `JAR`.
+
+```python
+#!/usr/bin/env python3
+"""Throwaway for issue 206: throughput through the real jar, and what stopping the app does to a round.
+
+Runs commerce-api's bootJar under `local` against the `relay206` compose project.
+Usage: probe.py SCENE [SCENE ...]
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+JAR = sys.argv[1]
+MYSQL = "relay206-mysql-1"
+OUT = HERE / "results.txt"
+BODY = '{"orderId":%d,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1001,"quantity":1},{"productId":1002,"quantity":2}]}'
+
+
+def say(line):
+    print(line, flush=True)
+    with OUT.open("a") as out:
+        out.write(line + "\n")
+
+
+def sql(statement):
+    done = subprocess.run(
+        ["docker", "exec", "-i", MYSQL, "mysql", "-uapplication", "-papplication", "-N", "-B", "loopers"],
+        input=statement, capture_output=True, text=True,
+    )
+    if done.returncode:
+        raise RuntimeError(done.stderr)
+    return done.stdout.strip()
+
+
+def seed(start, count):
+    rows = []
+    for i in range(start, start + count):
+        rows.append(
+            f"('order-confirmed:v1:{i}',{i},'OrderConfirmed',1,'{i}','{BODY % i}','PENDING',0,"
+            "UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))"
+        )
+    for offset in range(0, len(rows), 2000):
+        sql(
+            "INSERT INTO order_event_outbox (event_id,order_id,event_type,schema_version,message_key,payload,status,"
+            "attempt_count,next_attempt_at,created_at,updated_at) VALUES " + ",".join(rows[offset:offset + 2000])
+        )
+
+
+def counts():
+    return sql(
+        "SELECT status, COUNT(*), SUM(attempt_count), SUM(attempt_count>1), SUM(last_error IS NOT NULL) "
+        "FROM order_event_outbox GROUP BY status"
+    ).replace("\n", " | ").replace("\t", " ")
+
+
+def start(log, topic, ddl="none", extra=()):
+    command = [
+        "java", "-jar", JAR, f"--spring.jpa.hibernate.ddl-auto={ddl}", f"--order-events.topic={topic}",
+        "--spring.kafka.admin.properties.bootstrap.servers=localhost:19092", "--server.port=18080",
+        "--management.server.port=18081", *extra,
+    ]
+    out = (HERE / log).open("w")
+    process = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
+    for _ in range(240):
+        try:
+            with urllib.request.urlopen("http://localhost:18081/actuator/health", timeout=1) as answer:
+                if answer.status == 200:
+                    return process
+        except Exception:
+            pass
+        if process.poll() is not None:
+            raise RuntimeError(f"app exited {process.returncode}, see {log}")
+        time.sleep(0.25)
+    raise RuntimeError("app not ready")
+
+
+def stop_and_time(process, sig=signal.SIGTERM):
+    began = time.monotonic()
+    process.send_signal(sig)
+    code = process.wait(timeout=300)
+    return time.monotonic() - began, code
+
+
+def records(topic):
+    """The topic's total record count, from its end offsets."""
+    done = subprocess.run(
+        ["docker", "exec", "kafka", "kafka-run-class.sh", "kafka.tools.GetOffsetShell", "--bootstrap-server",
+         "localhost:9092", "--topic", topic], capture_output=True, text=True,
+    )
+    return sum(int(line.rsplit(":", 1)[1]) for line in done.stdout.split() if ":" in line)
+
+
+def wait_for(condition, limit):
+    began = time.monotonic()
+    while time.monotonic() - began < limit:
+        if condition():
+            return time.monotonic() - began
+        time.sleep(0.05)
+    return None
+
+
+def reset():
+    subprocess.run(["docker", "unpause", "kafka"], capture_output=True)
+    sql("TRUNCATE TABLE order_event_outbox")
+
+
+def throughput(name, rows, extra):
+    reset()
+    topic = f"probe-{name}"
+    seed(1, rows)
+    process = start(f"{name}.log", topic, extra=extra)
+    took = wait_for(lambda: sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PENDING'") == "0", 300)
+    span = sql(
+        "SELECT TIMESTAMPDIFF(MICROSECOND, MIN(published_at), MAX(published_at))/1000000 FROM order_event_outbox"
+    )
+    stop_and_time(process)
+    say(f"{name}: {rows} rows, first to last published_at {span} s = {rows / float(span):.0f} rows/s; "
+        f"records {records(topic)}; {counts()}")
+
+
+def hung_stop(name, resume_after):
+    """Broker paused with a row in flight, SIGTERM 1 s after the claim. As issue 205's table, after issue 201."""
+    reset()
+    topic = f"probe-{name}"
+    process = start(f"{name}.log", topic)
+    seed(1, 1)
+    wait_for(lambda: sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PUBLISHED'") == "1", 30)
+    subprocess.run(["docker", "pause", "kafka"], check=True)
+    seed(2, 1)
+    wait_for(lambda: sql("SELECT attempt_count FROM order_event_outbox WHERE order_id=2") == "1", 30)
+    time.sleep(1)
+    began = time.monotonic()
+    process.send_signal(signal.SIGTERM)
+    if resume_after is not None:
+        time.sleep(resume_after)
+        subprocess.run(["docker", "unpause", "kafka"], check=True)
+    code = process.wait(timeout=300)
+    took = time.monotonic() - began
+    row = sql("SELECT status,attempt_count,published_at,next_attempt_at,UTC_TIMESTAMP(6),last_error FROM order_event_outbox WHERE order_id=2")
+    say(f"{name}: exit {code} after {took:.1f} s; row at exit: {row}")
+    subprocess.run(["docker", "unpause", "kafka"], capture_output=True)
+    process = start(f"{name}-restart.log", topic)
+    waited = wait_for(lambda: sql("SELECT status FROM order_event_outbox WHERE order_id=2") == "PUBLISHED", 120)
+    row = sql("SELECT status,attempt_count,published_at FROM order_event_outbox WHERE order_id=2")
+    stop_and_time(process)
+    say(f"{name}: after restart ({waited} s): {row}; records for 2 rows: {records(topic)}")
+
+
+def drain_stop(name, rows, sig, extra=()):
+    """A stop in the middle of a backlog, then a restart that finishes it."""
+    reset()
+    topic = f"probe-{name}"
+    seed(1, rows)
+    process = start(f"{name}.log", topic, extra=extra)
+    wait_for(lambda: int(sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PUBLISHED'")) >= 1000, 60)
+    before = sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PUBLISHED'")
+    took, code = stop_and_time(process, sig)
+    open_rows = sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PENDING' AND attempt_count>0")
+    say(f"{name}: {rows} rows; {sig.name} with {before} published; exit {code} after {took:.1f} s; {counts()}; "
+        f"pending with an attempt {open_rows}; records {records(topic)}")
+    process = start(f"{name}-restart.log", topic, extra=extra)
+    waited = wait_for(lambda: sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PENDING'") == "0", 400)
+    stop_and_time(process)
+    say(f"{name}: restart drained in {waited} s; {counts()}; records {records(topic)} for {rows} rows")
+
+
+SCENES = {
+    "schema": lambda: stop_and_time(start("schema.log", "probe-schema", ddl="create", extra=["--order-events.relay.enabled=false"])),
+    "tput-quiet": lambda: throughput("tput-quiet", 3000, ["--spring.jpa.show-sql=false"]),
+    "tput-local": lambda: throughput("tput-local", 3000, []),
+    "hung": lambda: hung_stop("hung", None),
+    "hung-resume": lambda: hung_stop("hung-resume", 3),
+    "drain-term": lambda: drain_stop("drain-term", 60000, signal.SIGTERM, ["--spring.jpa.show-sql=false"]),
+    "drain-kill": lambda: drain_stop("drain-kill", 3000, signal.SIGKILL, ["--spring.jpa.show-sql=false"]),
+}
+
+for scene in sys.argv[2:]:
+    say(f"== {scene} {time.strftime('%H:%M:%S')}")
+    SCENES[scene]()
 ```
