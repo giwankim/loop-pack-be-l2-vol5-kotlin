@@ -140,6 +140,26 @@ class OrderEventOutbox(
         this.publishedAt = publishedAt.truncatedTo(ChronoUnit.MICROS)
     }
 
+    /**
+     * The attempt failed, for whatever reason (ADR 0035 rule 7). The row waits out a backoff, or stops at the last attempt. Only a relay
+     * past its lease reaches this on a row that isn't pending, and that late result changes nothing, since throwing would end its round.
+     */
+    fun markFailed(failureMessage: String, failedAt: Instant) {
+        if (status != OrderEventOutboxStatus.PENDING) {
+            return
+        }
+
+        lastError = failureMessage
+
+        if (attemptCount >= MAX_PUBLISH_ATTEMPTS) {
+            status = OrderEventOutboxStatus.BLOCKED
+
+            return
+        }
+
+        nextAttemptAt = failedAt.plus(retryBackoffAfter(attemptCount)).truncatedTo(ChronoUnit.MICROS)
+    }
+
     private fun ensurePending() {
         if (status != OrderEventOutboxStatus.PENDING) {
             throw InvalidOrderEventOutboxException("발행 대기 중인 아웃박스만 발행을 시도할 수 있습니다.")
@@ -158,5 +178,22 @@ class OrderEventOutbox(
 
         /** Longer than the 41 s a batch can hold a row: 20 sends blocked for 1 s each, then a 21 s delivery timeout (design 13.4). */
         private val PUBLISH_ATTEMPT_LEASE: Duration = Duration.ofSeconds(60)
+
+        /** A judgement: a full outage takes a row about 77 minutes to use these up (design 13.4). */
+        private const val MAX_PUBLISH_ATTEMPTS = 20
+
+        private val FIRST_RETRY_BACKOFF: Duration = Duration.ofSeconds(5)
+
+        /** A judgement: it bounds a stuck row's WARN lines to about 288 a day (design 13.4). */
+        private val MAX_RETRY_BACKOFF: Duration = Duration.ofMinutes(5)
+
+        /**
+         * The wait after the given attempt, the first being 1. A claim counts the attempt first, so 0 means a bug, and it waits like the
+         * first rather than throwing, because a throw here would end the round.
+         */
+        private fun retryBackoffAfter(attemptCount: Int): Duration {
+            return generateSequence(FIRST_RETRY_BACKOFF) { minOf(it.multipliedBy(2), MAX_RETRY_BACKOFF) }
+                .elementAt((attemptCount - 1).coerceAtLeast(0))
+        }
     }
 }

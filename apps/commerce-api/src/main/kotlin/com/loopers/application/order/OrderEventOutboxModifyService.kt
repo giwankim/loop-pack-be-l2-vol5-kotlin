@@ -28,17 +28,30 @@ class OrderEventOutboxModifyService(
         }
     }
 
-    /**
-     * Reads the row again under its lock rather than saving the copy the claim returned, so that a relay past its lease can't overwrite
-     * a newer state (ADR 0035 rule 9). Nothing deletes rows, so a missing one is a bug.
-     */
     fun markPublished(orderEventOutboxId: Long) {
-        val outbox = checkNotNull(orderEventOutboxRepository.findForUpdateById(orderEventOutboxId)) {
-            "The claimed outbox row $orderEventOutboxId is gone."
-        }
+        val outbox = findForUpdate(orderEventOutboxId)
 
         outbox.markPublished(clock.instant())
 
         orderEventOutboxRepository.save(outbox)
+    }
+
+    /** The backoff runs from now, after the wait for the broker, rather than from the claim. */
+    fun markFailed(orderEventOutboxId: Long, failureMessage: String) {
+        val outbox = findForUpdate(orderEventOutboxId)
+
+        outbox.markFailed(failureMessage, clock.instant())
+
+        orderEventOutboxRepository.save(outbox)
+    }
+
+    /**
+     * Reads the row again under its lock rather than saving the copy the claim returned, so that a relay past its lease can't overwrite
+     * a newer state (ADR 0035 rule 9). Nothing deletes rows, so a missing one is a bug.
+     */
+    private fun findForUpdate(orderEventOutboxId: Long): OrderEventOutbox {
+        return checkNotNull(orderEventOutboxRepository.findForUpdateById(orderEventOutboxId)) {
+            "The claimed outbox row $orderEventOutboxId is gone."
+        }
     }
 }

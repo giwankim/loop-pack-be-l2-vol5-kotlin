@@ -110,3 +110,37 @@ Nothing worse than a republish after the lease appeared, so there's nothing to r
 My first `fixedRate` run was invalid. I made it together with the dependency edit, and the ticks scene timed out only because that edit left the context with no bean to inject. Run alone, it failed on the gap.
 
 **Final check** (`scripts/final-check`, on the code as committed, before this comment was added): ktlint passed. commerce-api: 88 classes, 993 tests, 0 failures, 0 errors, 0 skipped. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped.
+
+### Issue 201: a failed publish stays with its own row
+
+A rebuild failure, a `send()` that throws and a failed future now all become that row's result. The row stays `PENDING` with `last_error` and a backoff of 5 s doubling to a 5 minute cap, and the rest of its batch publishes. The relay still doesn't catch database exceptions.
+
+**The criteria's wording conflicted, and a test found it.** The ticket says the failure text names "the exception's type and message and never the payload". Jackson's message quotes the value it refused, so both can't hold. The first fix checked the root cause for a Jackson type, and a scene with a bad date still went red: unwrapping went past Jackson to `DateTimeParseException: Text 'secret-value' could not be parsed`. Now any failure with Jackson in its chain names Jackson's type and the JSON path, such as `tools.jackson.databind.exc.MismatchedInputException: at …OrderConfirmedMessage$Payload["orderId"]`. Every other failure names its root cause's type and message. ADR 0035 rule 4 and design 13.3 have dated notes.
+
+**One overlap with issue 202.** The criteria ask for `markFailed`'s no-op on `BLOCKED`, and the ticket says no test overwrites `status`, so the only honest way to reach `BLOCKED` is 20 failures. So this ticket adds the enum value, `MAX_PUBLISH_ATTEMPTS` and the 20th failure's transition, with entity tests for the 19th and 20th. Issue 202 still owns the distinct WARN, the scenes and the SQL. Until then a row that becomes `BLOCKED` logs only the ordinary WARN. The publisher can't see that transition, so 202 has to put its WARN somewhere that can.
+
+**Other choices:**
+
+- The failing sends are in `OrderEventRelayFailedSendTest`, because a spy on `KafkaTemplate` makes a context of its own. Everything past the template is real, so a healthy row still reaches the broker. `CODING_STANDARDS.md` has dated notes for the spy and the class's dependencies.
+- `prepareOrderEventOutbox` and `committedOrderEventOutbox` are on `BaseCommittingApplicationServiceTest`, since two classes use them. The two classes still repeat their log capture and `TopicReader` setup.
+- The later-success scene can't use the unrebuildable row, since `payload` never changes and no test writes `status`. It fails the send once and then lets it through.
+- A row with no attempt waits like the first attempt rather than throwing. Only a bug gets there, and a throw would end the round.
+
+**Red checks, local edits run and reverted, none committed:**
+
+| Edit | What went red |
+| --- | --- |
+| `send`'s catch rethrows | 9 scenes, including the throwing send and the rebuild scenes |
+| The await's catch rethrows | 11 scenes, including the failed future |
+| Names the outermost wrapper, not the root cause | 3 scenes |
+| Keeps Jackson's message | 6 scenes, including all 4 payload cases |
+| `markFailed` writes on any status | the `PUBLISHED` and `BLOCKED` no-ops |
+| Backoff cap removed | the backoff sequence and the 19th failure |
+| Blocks at the 21st failure | the 19th/20th test and the `BLOCKED` no-op |
+| `save` removed from `markFailed` | nothing |
+
+The last one survives because the row is loaded inside the transaction, so JPA flushes it anyway. The explicit `save` follows the repo's convention, and `markPublished` is the same. These runs came before the review's fixes, which changed names, helpers and the no-attempt case.
+
+**Rebased onto issue 205.** That ticket landed while this one was in progress. Its table of an in-flight round at shutdown was measured before this failure path existed, so its "no `last_error`" row describes the code as it was then. A round that now reaches its delivery timeout would record a failure, and I didn't measure that again.
+
+**Final check:** `ktlintCheck` and `check` on commerce-api passed on the rebased code: 89 classes, 1012 tests, 0 failures, 0 errors, 0 skipped. Only this section's wording changed after that run. commerce-streamer wasn't run, since nothing it reads changed here.

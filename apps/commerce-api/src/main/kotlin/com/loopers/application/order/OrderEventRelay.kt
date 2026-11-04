@@ -19,14 +19,19 @@ class OrderEventRelay(
     private val orderEventOutboxModifyService: OrderEventOutboxModifyService,
     private val orderEventPublisher: OrderEventPublisher,
 ) : OrderEventRelayer {
-    /** A row whose result carries a failure stays as the claim left it, so it comes due when its lease ends. */
     override fun publishDueEvents() {
         val claimedOutboxes = orderEventOutboxModifyService.claimDueOutboxes(OrderEventOutbox.CLAIM_BATCH_SIZE)
 
         val publishResults = orderEventPublisher.publish(claimedOutboxes)
 
-        publishResults
-            .filter { it.failureMessage == null }
-            .forEach { orderEventOutboxModifyService.markPublished(it.orderEventOutboxId) }
+        publishResults.forEach { publishResult ->
+            val failureMessage = publishResult.failureMessage
+
+            if (failureMessage == null) {
+                orderEventOutboxModifyService.markPublished(publishResult.orderEventOutboxId)
+            } else {
+                orderEventOutboxModifyService.markFailed(publishResult.orderEventOutboxId, failureMessage)
+            }
+        }
     }
 }

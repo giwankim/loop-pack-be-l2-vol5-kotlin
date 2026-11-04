@@ -6,8 +6,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
-import com.loopers.application.order.required.OrderEventOutboxRepository
-import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
@@ -20,6 +18,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.test.context.TestPropertySource
@@ -41,7 +41,6 @@ import java.time.Instant
 @TestPropertySource(properties = ["order-events.topic=order-events-relay"])
 class OrderEventRelayerTest(
     private val orderEventRelayer: OrderEventRelayer,
-    private val orderEventOutboxRepository: OrderEventOutboxRepository,
     private val clock: TestClock,
     private val kafkaProperties: KafkaProperties,
     private val orderEventsProperties: OrderEventsProperties,
@@ -50,6 +49,12 @@ class OrderEventRelayerTest(
         /** Already in microseconds, so the order and the row keep it as it is. */
         private val CONFIRMED_AT: Instant = Instant.parse("2026-10-27T01:02:03.123456Z")
         private val ROUND_STARTED_AT: Instant = Instant.parse("2026-10-27T01:02:08.123456Z")
+
+        /** Valid JSON, so the check constraint lets it in, but not a message body, so it can't be rebuilt. */
+        private const val PAYLOAD_NOT_A_MESSAGE_BODY = """{"unexpected":"not a message body"}"""
+        private const val REBUILD_FAILURE_MESSAGE =
+            "tools.jackson.databind.exc.MismatchedInputException: " +
+                "at com.loopers.adapter.integration.kafka.OrderConfirmedMessage\$Payload[\"orderId\"]"
     }
 
     /** The test PG's server. Like [OrderPaymentIntegrationTest], WireMock's listener injects it into a field. */
@@ -94,7 +99,7 @@ class OrderEventRelayerTest(
 
         orderEventRelayer.publishDueEvents()
 
-        val publishedOutbox = committedOutbox()
+        val publishedOutbox = committedOrderEventOutbox()
         assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
         assertThat(publishedOutbox.publishedAt).isEqualTo(Instant.parse("2026-10-27T01:02:08.123456Z"))
         assertThat(publishedOutbox.attemptCount).isOne()
@@ -149,7 +154,7 @@ class OrderEventRelayerTest(
 
         orderEventRelayer.publishDueEvents()
 
-        val waitingOutbox = committedOutbox()
+        val waitingOutbox = committedOrderEventOutbox()
         assertThat(waitingOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
         assertThat(waitingOutbox.attemptCount).isZero()
         assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
@@ -157,7 +162,7 @@ class OrderEventRelayerTest(
         clock.advance(Duration.ofSeconds(1))
         orderEventRelayer.publishDueEvents()
 
-        assertThat(committedOutbox().status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(committedOrderEventOutbox().status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
         assertThat(orderEvents.publishedRecords(expected = 1)).hasSize(1)
     }
 
@@ -170,10 +175,92 @@ class OrderEventRelayerTest(
             inNewTransaction { orderEventRelayer.publishDueEvents() }
         }
 
-        val untouchedOutbox = committedOutbox()
+        val untouchedOutbox = committedOrderEventOutbox()
         assertThat(untouchedOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
         assertThat(untouchedOutbox.attemptCount).isZero()
         assertThat(orderEvents.publishedRecords(expected = 0)).isEmpty()
+    }
+
+    /**
+     * The shared broker can't be paused without affecting other classes, so the failing row is one whose stored payload can't be rebuilt.
+     * It sits between the healthy ones in the claim's order, so a failure that ended the batch would strand the last.
+     */
+    @Test
+    fun `a row that can't be rebuilt fails alone, and the healthy rows of its batch are published`() {
+        prepareOrderEventOutbox(orderId = 101, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutbox(orderId = 103, nextAttemptAt = CONFIRMED_AT)
+        clock.pin(ROUND_STARTED_AT)
+
+        orderEventRelayer.publishDueEvents()
+
+        val failedOutbox = committedOrderEventOutbox(orderId = 102)
+        assertThat(failedOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(failedOutbox.attemptCount).isOne()
+        assertThat(failedOutbox.lastError).isEqualTo(REBUILD_FAILURE_MESSAGE)
+        assertThat(failedOutbox.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:02:13.123456Z"))
+        assertThat(failedOutbox.publishedAt).isNull()
+        assertThat(committedOrderEventOutbox(orderId = 101).status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(committedOrderEventOutbox(orderId = 103).status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(orderEvents.publishedRecords(expected = 2).map { it.key() }).containsExactlyInAnyOrder("101", "103")
+    }
+
+    @Test
+    fun `a failure logs one warn line naming the event and the cause`() {
+        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        clock.pin(ROUND_STARTED_AT)
+
+        orderEventRelayer.publishDueEvents()
+
+        assertThat(kafkaAdapterLogs.linesAt(Level.WARN).map { it.formattedMessage }).containsExactly(
+            "Failed to publish the order confirmed event. eventId=order-confirmed:v1:102, " +
+                "cause=$REBUILD_FAILURE_MESSAGE",
+        )
+    }
+
+    /** One microsecond before the backoff ends nothing is claimed. On its last instant the second attempt fails and waits twice as long. */
+    @Test
+    fun `a failed row isn't claimed until its backoff has passed, and moving the clock makes it due again`() {
+        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        clock.pin(ROUND_STARTED_AT)
+        orderEventRelayer.publishDueEvents()
+
+        clock.pin(Instant.parse("2026-10-27T01:02:13.123455Z"))
+        orderEventRelayer.publishDueEvents()
+
+        assertThat(committedOrderEventOutbox(orderId = 102).attemptCount).isOne()
+
+        clock.pin(Instant.parse("2026-10-27T01:02:13.123456Z"))
+        orderEventRelayer.publishDueEvents()
+
+        val retriedOutbox = committedOrderEventOutbox(orderId = 102)
+        assertThat(retriedOutbox.attemptCount).isEqualTo(2)
+        assertThat(retriedOutbox.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:02:23.123456Z"))
+    }
+
+    /**
+     * Jackson's messages quote the value they refused, so a rebuild failure can't name them whole. Each payload here is valid JSON whose
+     * refused value is the marker, at a field, at the root and in a date.
+     */
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            """{"orderId":"secret-value","confirmedAt":"2026-10-27T01:02:03Z","items":[]}""",
+            """"secret-value"""",
+            """{"orderId":1,"confirmedAt":"secret-value","items":[]}""",
+            """{"orderId":1,"confirmedAt":"2026-10-27T01:02:03Z","items":[{"productId":"secret-value","quantity":1}]}""",
+        ],
+    )
+    fun `the failure text and the warn line never carry the payload`(payload: String) {
+        prepareOrderEventOutbox(orderId = 102, payload = payload, nextAttemptAt = CONFIRMED_AT)
+
+        orderEventRelayer.publishDueEvents()
+
+        val failedOutbox = committedOrderEventOutbox(orderId = 102)
+        assertThat(failedOutbox.lastError).startsWith("tools.jackson.").doesNotContain("secret-value")
+        val warnLine = kafkaAdapterLogs.linesAt(Level.WARN).single()
+        assertThat(warnLine.formattedMessage).doesNotContain("secret-value")
+        assertThat(warnLine.throwableProxy).isNull()
     }
 
     /** Confirms an order of one product at [CONFIRMED_AT] through the real TX B. A scene's clock stays pinned there until it moves it. */
@@ -181,9 +268,5 @@ class OrderEventRelayerTest(
         prepareOrder(quantity = quantity)
         clock.pin(CONFIRMED_AT)
         confirmOrder(testPg)
-    }
-
-    private fun committedOutbox(): OrderEventOutbox {
-        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:${order.id}")!! }
     }
 }

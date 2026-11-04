@@ -231,6 +231,8 @@ scripts/final-check
 
 `attempt_count`와 `last_error`는 성공 뒤에도 남는다. `status`의 값이 하나 늘지만 varchar라 스키마는 그대로다(2절).
 
+(2026-11-04, [issue 201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201): `last_error`와 WARN의 문구는 근본 원인의 타입과 메시지다. 다만 예외 사슬에 Jackson의 예외가 있으면 그 타입과 JSON 경로만 적는다. Jackson의 메시지와 그 원인의 메시지(`DateTimeParseException`)가 거절한 값을 그대로 인용해, 그대로 적으면 payload의 조각이 남기 때문이다. 원인을 따라 내려가기만 해도 이 값이 드러나는 것을 장면이 잡았다.)
+
 | 메서드 | `PENDING` | `PUBLISHED` | `BLOCKED` | 까닭 |
 | --- | --- | --- | --- | --- |
 | `startPublishAttempt` | 실행 | 예외 | 예외 | 쿼리가 거른 값이므로 닿으면 코드의 잘못이다. `ensurePending`, `InvalidOrderEventOutboxException` |

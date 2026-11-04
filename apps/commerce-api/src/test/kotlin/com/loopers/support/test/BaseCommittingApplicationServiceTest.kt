@@ -1,11 +1,14 @@
 package com.loopers.support.test
 
+import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRevisionRepository
 import com.loopers.domain.order.Order
+import com.loopers.domain.order.OrderEventOutbox
+import com.loopers.domain.order.createOrderEventOutbox
 import com.loopers.domain.payment.Payment
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.TestPg
@@ -17,6 +20,7 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
@@ -75,6 +79,9 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     @Autowired
     private lateinit var paymentFinder: PaymentFinder
 
+    @Autowired
+    private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
+
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
 
@@ -120,6 +127,20 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
         confirmOrder(testPg, order, pgStatus = "PENDING")
 
         return inNewTransaction { paymentFinder.findByOrder(order.id) }
+    }
+
+    /** An outbox row saved through the repository, with no order behind it, for a scene whose row a real confirmation can't leave. */
+    protected fun prepareOrderEventOutbox(
+        orderId: Long,
+        payload: String? = null,
+        nextAttemptAt: Instant? = null,
+    ): OrderEventOutbox {
+        return orderEventOutboxRepository.save(createOrderEventOutbox(orderId, payload = payload, nextAttemptAt = nextAttemptAt))
+    }
+
+    /** The outbox row of [orderId]'s event, read in a new transaction, so only what committed answers. */
+    protected fun committedOrderEventOutbox(orderId: Long = order.id): OrderEventOutbox {
+        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId")!! }
     }
 
     /** [block]을 다른 스레드에서 부르고 곧바로 돌아온다. 그 스레드에는 트랜잭션이 없으므로 [block]이 부른 포트가 저마다 커밋한다. */
