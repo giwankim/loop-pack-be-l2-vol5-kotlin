@@ -122,8 +122,8 @@ class OrderEventRelayFailedSendTest(
 
     @Test
     fun `a failed future is that row's failure, named by its cause, and the rest of the batch is published`() {
-        prepareOrderEventOutbox(orderId = 201, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 202, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 201, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 202, nextAttemptAt = CONFIRMED_AT)
         every { kafkaTemplate.send(any<String>(), "201", any<Any>()) } returns failedSend()
         clock.pin(ROUND_STARTED_AT)
 
@@ -144,8 +144,8 @@ class OrderEventRelayFailedSendTest(
 
     @Test
     fun `a send that throws is that row's failure, and the rest of the batch is published`() {
-        prepareOrderEventOutbox(orderId = 201, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 202, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 201, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 202, nextAttemptAt = CONFIRMED_AT)
         val refusal = SerializationException("The producer refused the record.")
         every { kafkaTemplate.send(any<String>(), "201", any<Any>()) } throws refusal
         clock.pin(ROUND_STARTED_AT)
@@ -163,7 +163,7 @@ class OrderEventRelayFailedSendTest(
     /** They stay as the evidence of the retry that came before the publish (ADR 0035 rule 3). */
     @Test
     fun `a row that later succeeds keeps its attempt count and its last error`() {
-        prepareOrderEventOutbox(orderId = 201, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 201, nextAttemptAt = CONFIRMED_AT)
         every { kafkaTemplate.send(any<String>(), "201", any<Any>()) } returns failedSend() andThenAnswer { callOriginal() }
         clock.pin(ROUND_STARTED_AT)
         orderEventRelayer.publishDueEvents()
@@ -247,7 +247,7 @@ class OrderEventRelayFailedSendTest(
     @Test
     fun `other rows keep publishing while one is blocked`() {
         blockOutboxThroughFailedRounds(orderId = 201)
-        prepareOrderEventOutbox(orderId = 202, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 202, nextAttemptAt = CONFIRMED_AT)
 
         orderEventRelayer.publishDueEvents()
 
@@ -324,9 +324,9 @@ class OrderEventRelayFailedSendTest(
     @Test
     fun `the documented backlog statements return the attempts, the pending count, the oldest wait and the blocked rows`() {
         blockOutboxThroughFailedRounds(orderId = 201)
-        prepareOrderEventOutbox(orderId = 202, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 203, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 204, nextAttemptAt = clock.instant().plus(Duration.ofHours(1)))
+        prepareOrderEventOutboxWithoutOrder(orderId = 202, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 203, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 204, nextAttemptAt = clock.instant().plus(Duration.ofHours(1)))
         every { kafkaTemplate.send(any<String>(), "202", any<Any>()) } returns failedSend()
         orderEventRelayer.publishDueEvents()
         setCreatedAt(orderId = 201, createdAt = "2026-10-27T00:00:01")
@@ -394,7 +394,7 @@ class OrderEventRelayFailedSendTest(
 
     /** Fails every send of the row's key for as many rounds as the limit. The clock moves by the longest backoff after each, so each finds the row due. */
     private fun blockOutboxThroughFailedRounds(orderId: Long) {
-        prepareOrderEventOutbox(orderId = orderId, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = orderId, nextAttemptAt = CONFIRMED_AT)
         every { kafkaTemplate.send(any<String>(), orderId.toString(), any<Any>()) } returns failedSend()
         clock.pin(ROUND_STARTED_AT)
 

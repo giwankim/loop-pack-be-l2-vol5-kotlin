@@ -169,16 +169,6 @@ class OrderEventOutboxStateTest {
         assertThat(outbox.nextAttemptAt).isEqualTo(nextAttemptAtOfTheLastAttempt)
     }
 
-    /** A claim always counts the attempt first, so only a bug gets here. It still mustn't throw, since that would end the round. */
-    @Test
-    fun `a failure on a row with no attempt yet waits like the first attempt`() {
-        val outbox = createOrderEventOutbox(orderId = 7)
-
-        outbox.markFailed(FAILURE_MESSAGE, FAILED_AT)
-
-        assertThat(outbox.nextAttemptAt).isEqualTo(Instant.parse("2026-10-27T01:02:10.123456Z"))
-    }
-
     /** It reaches `BLOCKED` the way a real row does, through 20 failures, so the test doesn't write the status itself. */
     @Test
     fun `a failure on a blocked row leaves it as it was`() {

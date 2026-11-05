@@ -206,9 +206,9 @@ class OrderEventRelayerTest(
      */
     @Test
     fun `a row that can't be rebuilt fails alone, and the healthy rows of its batch are published`() {
-        prepareOrderEventOutbox(orderId = 101, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
-        prepareOrderEventOutbox(orderId = 103, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 101, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 103, nextAttemptAt = CONFIRMED_AT)
         clock.pin(ROUND_STARTED_AT)
 
         orderEventRelayer.publishDueEvents()
@@ -226,7 +226,7 @@ class OrderEventRelayerTest(
 
     @Test
     fun `a failure logs one warn line naming the event and the cause`() {
-        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
         clock.pin(ROUND_STARTED_AT)
 
         orderEventRelayer.publishDueEvents()
@@ -240,7 +240,7 @@ class OrderEventRelayerTest(
     /** One microsecond before the backoff ends nothing is claimed. On its last instant the second attempt fails and waits twice as long. */
     @Test
     fun `a failed row isn't claimed until its backoff has passed, and moving the clock makes it due again`() {
-        prepareOrderEventOutbox(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 102, payload = PAYLOAD_NOT_A_MESSAGE_BODY, nextAttemptAt = CONFIRMED_AT)
         clock.pin(ROUND_STARTED_AT)
         orderEventRelayer.publishDueEvents()
 
@@ -271,7 +271,7 @@ class OrderEventRelayerTest(
         ],
     )
     fun `the failure text and the warn line never carry the payload`(payload: String) {
-        prepareOrderEventOutbox(orderId = 102, payload = payload, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 102, payload = payload, nextAttemptAt = CONFIRMED_AT)
 
         orderEventRelayer.publishDueEvents()
 
@@ -437,7 +437,7 @@ class OrderEventRelayerTest(
      */
     @Test
     fun `a failure reported after another relay published leaves the row published`() {
-        prepareOrderEventOutbox(orderId = 101, nextAttemptAt = CONFIRMED_AT)
+        prepareOrderEventOutboxWithoutOrder(orderId = 101, nextAttemptAt = CONFIRMED_AT)
         clock.pin(ROUND_STARTED_AT)
         val lateOutbox = orderEventOutboxModifyService.claimDueOutboxes(20).single()
         clock.advance(Duration.ofSeconds(60))
@@ -462,7 +462,7 @@ class OrderEventRelayerTest(
     private fun prepareOutboxBacklogWithoutOrders(rowCount: Int): List<Long> {
         val backlogOrderIds = (1L..rowCount).toList()
         backlogOrderIds.forEach { orderId ->
-            prepareOrderEventOutbox(orderId = orderId, nextAttemptAt = CONFIRMED_AT)
+            prepareOrderEventOutboxWithoutOrder(orderId = orderId, nextAttemptAt = CONFIRMED_AT)
         }
 
         return backlogOrderIds

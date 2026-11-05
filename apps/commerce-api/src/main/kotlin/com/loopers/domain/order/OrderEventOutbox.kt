@@ -189,13 +189,10 @@ class OrderEventOutbox(
         /** A judgement: it bounds a stuck row's WARN lines to about 288 a day (design 13.4). */
         private val MAX_RETRY_BACKOFF: Duration = Duration.ofMinutes(5)
 
-        /**
-         * The wait after the given attempt, the first being 1. A claim counts the attempt first, so 0 means a bug, and it waits like the
-         * first rather than throwing, because a throw here would end the round.
-         */
+        /** The wait after the given attempt, the first being 1. */
         private fun retryBackoffAfter(attemptCount: Int): Duration {
             return generateSequence(FIRST_RETRY_BACKOFF) { minOf(it.multipliedBy(2), MAX_RETRY_BACKOFF) }
-                .elementAt((attemptCount - 1).coerceAtLeast(0))
+                .elementAt(attemptCount - 1)
         }
     }
 }

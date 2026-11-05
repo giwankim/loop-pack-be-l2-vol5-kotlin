@@ -82,6 +82,12 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     @Autowired
     private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
 
+    /**
+     * The last row [prepareOrderEventOutboxWithoutOrder] saved. Rounds commit in other transactions, so read its state through
+     * [committedOrderEventOutbox].
+     */
+    protected lateinit var orderEventOutbox: OrderEventOutbox
+
     /** 이 테스트가 다른 스레드에서 부른 호출. 정리는 이것들이 끝나기를 기다린다. */
     private val started = mutableListOf<Running<*>>()
 
@@ -130,12 +136,14 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     }
 
     /** An outbox row saved through the repository, with no order behind it, for a scene whose row a real confirmation can't leave. */
-    protected fun prepareOrderEventOutbox(
+    protected fun prepareOrderEventOutboxWithoutOrder(
         orderId: Long,
         payload: String? = null,
         nextAttemptAt: Instant? = null,
     ): OrderEventOutbox {
-        return orderEventOutboxRepository.save(createOrderEventOutbox(orderId, payload = payload, nextAttemptAt = nextAttemptAt))
+        val row = createOrderEventOutbox(orderId, payload = payload, nextAttemptAt = nextAttemptAt)
+
+        return orderEventOutboxRepository.save(row).also { orderEventOutbox = it }
     }
 
     /** The outbox row of [orderId]'s event, read in a new transaction, so only what committed answers. */

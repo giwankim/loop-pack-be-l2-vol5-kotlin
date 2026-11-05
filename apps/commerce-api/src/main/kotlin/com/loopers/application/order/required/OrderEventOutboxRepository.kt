@@ -14,6 +14,9 @@ import java.time.Instant
 interface OrderEventOutboxRepository : Repository<OrderEventOutbox, Long> {
     fun save(orderEventOutbox: OrderEventOutbox): OrderEventOutbox
 
+    /** Named like `CrudRepository.saveAll`, so it reaches `SimpleJpaRepository`, which calls [save] per item (catalog design 5.37). */
+    fun saveAll(orderEventOutboxes: Iterable<OrderEventOutbox>): List<OrderEventOutbox>
+
     /** The row of one event. `UK_ORDER_EVENT_OUTBOX_ON_EVENT_ID` allows at most one. */
     fun findByEventId(eventId: String): OrderEventOutbox?
 
@@ -23,6 +26,9 @@ interface OrderEventOutboxRepository : Repository<OrderEventOutbox, Long> {
      * The rows whose turn has come at [now], oldest due first, locked with `FOR UPDATE SKIP LOCKED` so that another claim takes the
      * next rows rather than waiting (ADR 0035 rule 2). A lock timeout of -2 is how JPA's hint asks Hibernate for `SKIP LOCKED`. [now]
      * comes from the `Clock` bean, not the database's `now()`.
+     *
+     * It returns a `List`, not the ports' usual `Slice`: a `Slice` reads one row more to answer `hasNext`, and here that would lock a row
+     * the claim doesn't start. With a `Slice`, a second open claim began at row 22 rather than 21 (the relay probe note).
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))

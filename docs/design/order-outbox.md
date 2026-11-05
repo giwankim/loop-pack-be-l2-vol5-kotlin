@@ -256,6 +256,8 @@ scripts/final-check
 
 (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 묶음의 "약 40 ms"는 맨 SQL의 값이다. 실제 jar에서는 약 60 ms다. 13.11절이다.)
 
+(2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: `max.block.ms`의 1 s는 건강한 첫 send로 정한 값이다. broker가 재시작하는 동안에는 실패를 낼 수 있고, 그것을 받아들였다. 13.10절이다.)
+
 ### 13.5 어디에 무엇이 있는가
 
 | 조각 | 자리 | 하는 일 |
@@ -337,6 +339,10 @@ WHERE event_id = ? AND status = 'BLOCKED';
 - 약 77분을 넘는 장애의 행은 사람의 SQL을 기다린다.
 - 수치는 노트북의 Docker에서 거의 빈 로그로 쟀다. Hibernate의 `SKIP LOCKED`는 이 절을 쓰는 때에 확인하지 못했다. (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 확인했고(13.2절) 실제 jar의 처리량도 쟀다(13.11절).)
 - (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 앱을 멈춰도 회차는 스스로 서지 않는다. 적체 중의 SIGTERM은 30 s 동안 계속 발행하고 끊기며, 확인을 저장하지 못한 행은 리스 뒤에 다시 발행된다. 13.11절이다.)
+- (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 명세의 이야기 31, 짧은 재시작에 실패한 시도가 없다는 약속은 지금 값에서 지켜지지 않는다. 이미 받아들여진 record는 재시작을 넘긴다. 그러나 하나뿐인 broker가 내려가면 Kafka 클라이언트가 rebootstrap하며 토픽의 메타데이터를 버리고, 그사이에 온 `send()`는 `max.block.ms`인 1 s 뒤에 실패한다. 실제 jar로 재 보니 graceful 18번 중 5번(14행), `kill -9` 6번 중 2번(28행)에서 실패했다. 그 행들은 둘째 시도로 발행됐고 잃거나 겹친 record는 없다. 실패한 행은 WARN과 아래의 ERROR, 5 s의 간격, 한도 20번 중 한 번을 쓴다. `metadata.recovery.strategy: none`이면 15번 모두 실패가 없었지만 넣지 않는다. broker가 하나인 구성에만 필요한 설정이기 때문이다. broker가 여럿이면 하나의 재시작으로 아는 broker가 모두 사라지지 않으므로 닿지 않는다고 Kafka의 문서에서 읽었고, 재지는 않았다. 조건과 원시 값은 [측정 기록](../research/week7-outbox-relay-probe.md#a-broker-restart-at-the-shipped-limits)에 있다.)
+- (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 재시작 측정에서 send가 실패할 때마다 Spring Kafka의 `LoggingProducerListener`도 ERROR를 한 줄 남겼다. 어댑터의 WARN과 같은 실패이고 둘 다 39번 나왔다. 이 줄에는 key와 메시지의 앞 100자가 들어가지만 본문은 그 뒤에 있어 나오지 않는다. 로그 수준에 경보를 건다면 이 ERROR는 다시 시도되는 실패로 읽어야 한다.)
+- (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: `markFailed`는 상태만 본다. 리스를 넘긴 중계의 실패가 다른 중계가 다시 가져간 `PENDING` 행에 닿으면 `last_error`를 덮어쓰고 `next_attempt_at`을 앞당겨 그 중계의 리스를 줄인다. 20번째 시도라면 `BLOCKED`로 만들지만, 그 중계가 성공하면 `markPublished`가 받는다. 최악은 같은 이벤트의 재발행이고 받는 쪽의 멱등성이 받는다. 중계 둘이 함께 돌 때만 닿으므로 고치지 않는다. 코드에서 읽은 것이고 장면으로 돌리지 않았다.)
+- (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: `BLOCKED`로 넘어갈 때의 WARN은 커밋 전에 나온다. 그 커밋이 실패하면 로그는 `BLOCKED`라고 하는데 행은 `PENDING`이고, 리스 뒤에 다시 시도된다. 그때도 실패하면 WARN이 한 번 더 나온다. DB가 그 순간에 실패할 때만 닿으므로 그대로 둔다.)
 
 ### 13.11 구현이 재 본 것
 
@@ -386,6 +392,8 @@ WHERE event_id = ? AND status = 'BLOCKED';
 | [206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206) | 13.11절의 측정, 이 표와 13.13절, `CONTEXT.md`의 중계와 발행하다, 글감의 머리말과 PR 본문 초안, 명세의 닫는 글. |
 
 명세와 티켓에서 달라진 것은 일곱이다. 여섯은 각 절의 날짜 메모에, 일곱째는 `OrderEventRelay`의 KDoc에 있다. 잠금의 문장은 `for update of <별칭> skip locked`다(13.2절). 인덱스는 필요하지만 충분하지 않다(13.2절). 실패의 문구는 Jackson이 사슬에 있으면 타입과 JSON 경로다(13.3절). `BLOCKED`의 WARN은 어댑터가 아니라 수정 서비스에 있다(13.5절). 재개의 시각은 `UTC_TIMESTAMP(6)`다(13.7절). record를 못 박는 장면은 어댑터만의 클래스가 아니다(13.9절). 큰 적체가 있는 장애에서는 회차가 1 s를 쉬지 못한다. 명세가 맨 SQL로 재고 넘긴 처리량은 13.11절이 답했다.
+
+(2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토가 바꾼 것: 동작은 바뀌지 않았다. `claimDueOutboxes`가 `saveAll`로 저장하고 포트에 그 메서드가 생겼다. `markFailed`가 `save`가 돌려준 값을 읽는다. `retryBackoffAfter`의 `coerceAtLeast(0)`과 그것만 못 박던 장면을 지웠다. 시도가 0인 행은 운영의 길로 `markFailed`에 닿지 않고, 닿는다면 `ensurePending`처럼 던진다. `BaseCommittingApplicationServiceTest`의 도우미는 `prepareOrderEventOutboxWithoutOrder`가 됐고 `orderEventOutbox` 필드를 채운다. `OrderEventRelaySchedulerTest`는 기반의 `committedOrderEventOutbox`를 쓴다. `findDueForUpdate`가 `Slice`가 아니라 `List`인 까닭은 KDoc과 [측정 기록](../research/week7-outbox-relay-probe.md#list-and-slice-on-the-claim)에 있다. 달라진 것에 이야기 31과 이야기 16이 더해진다(13.10절).)
 
 3단계로 넘긴다. 구매 활동까지의 경로, 앱을 건너는 실행, 6주차 사례의 복구다. 이 단계의 장면은 broker까지만 본다(13.1절).
 

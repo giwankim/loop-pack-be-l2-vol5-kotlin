@@ -2,7 +2,6 @@ package com.loopers.adapter.scheduling
 
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
-import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
@@ -30,7 +29,6 @@ import java.time.Duration
 @TestPropertySource(properties = ["order-events.relay.enabled=true", "order-events.topic=order-events-relay-scheduled"])
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class OrderEventRelaySchedulerTest(
-    private val orderEventOutboxRepository: OrderEventOutboxRepository,
     private val kafkaProperties: KafkaProperties,
     private val orderEventsProperties: OrderEventsProperties,
 ) : BaseCommittingApplicationServiceTest() {
@@ -63,12 +61,8 @@ class OrderEventRelaySchedulerTest(
 
         confirmOrder(testPg)
 
-        await().atMost(PUBLISH_WAIT).until { committedOutboxStatus() == OrderEventOutboxStatus.PUBLISHED }
+        await().atMost(PUBLISH_WAIT).until { committedOrderEventOutbox().status == OrderEventOutboxStatus.PUBLISHED }
         val publishedRecord = orderEvents.publishedRecords(expected = 1).single()
         assertThat(publishedRecord.key()).isEqualTo(order.id.toString())
-    }
-
-    private fun committedOutboxStatus(): OrderEventOutboxStatus {
-        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:${order.id}")!!.status }
     }
 }

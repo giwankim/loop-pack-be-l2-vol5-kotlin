@@ -44,7 +44,7 @@ Four throwaway runs, none of them in the suite. The test sources are at the end 
 
 ## The failed run
 
-In the batch run's section B, one graceful restart with the default retries failed at 20.3 s with `Topic probe not present in metadata after 20000 ms`. In that version `docker start` ran only after `send()` returned, so the broker stayed down for the whole wait, and the send's metadata wait was what timed out. Starting the broker in another thread gave 6 of 6 acked at 2.2–2.9 s. Why the warm producer had lost the topic's metadata wasn't established: a metadata response during shutdown is a guess.
+In the batch run's section B, one graceful restart with the default retries failed at 20.3 s with `Topic probe not present in metadata after 20000 ms`. In that version `docker start` ran only after `send()` returned, so the broker stayed down for the whole wait, and the send's metadata wait was what timed out. Starting the broker in another thread gave 6 of 6 acked at 2.2–2.9 s. Why the warm producer had lost the topic's metadata wasn't established: a metadata response during shutdown is a guess. (2026-11-05: almost certainly rebootstrapping, which [a later run](#a-broker-restart-at-the-shipped-limits) saw in every restart. That run didn't repeat this one.)
 
 ## Outside sources
 
@@ -243,6 +243,122 @@ quiet min/max 1000 1004
 ```
 
 The awaited figures are milliseconds to read records already on the broker.
+
+## A broker restart at the shipped limits
+
+Added 2026-11-05 by spec 198's closing review, for story 31, "a short restart to pass without failed attempts". The restart runs above used `blockMs = 20000`, and the jar runs above paused the broker, so nothing had met a real restart at `max.block.ms: 1000`. The bootJar is the one from `dc6b59e`, whose main code is the same as `b322b62`'s, under `local` with `show-sql` off, against the compose `bitnamilegacy/kafka:3.5` and `mysql:8.4`. One app process stayed up across each run's restarts, and rows kept coming due at about ten a second, inserted directly. A restart is `docker stop -t 30` or `docker kill`, then `docker start`. Each condition ran as listed, on a laptop's Docker, with a nearly empty broker log.
+
+| | Shipped, `rebootstrap` | `metadata.recovery.strategy=none` |
+| --- | --- | --- |
+| Graceful restarts with failed rows | 5 of 18 (14 rows) | 0 of 12 |
+| `kill -9` restarts with failed rows | 2 of 6 (28 rows) | 0 of 3 |
+| Longest wait, graceful | 10.0 s | 5.8 s |
+| Longest wait, `kill -9` | 21.4 s | 16.8 s |
+| Rows lost or duplicated | 0 | 0 |
+
+**What it found.** The producer logged `Rebootstrapping with [localhost/127.0.0.1:19092]` in every restart on the default. `Metadata.rebootstrap` resets the cached cluster to the bootstrap address, which drops the topic's partitions. A `send()` that comes before the metadata returns blocks for `max.block.ms` and fails with `Topic … not present in metadata`. Each failure takes the next send another second, so one restart costs about a row per second of the gap. Kafka's docs say a client rebootstraps "when all last-known brokers appear unavailable simultaneously", which every restart of a single broker is.
+
+From the first run's log, in the restart that failed:
+
+```text
+21:32:34.723 Node 1 disconnected.
+21:32:34.724 Rebootstrapping with [localhost/127.0.0.1:19092]
+21:32:35.968 ERROR LoggingProducerListener, key='503': Topic probe-restart not present in metadata after 1000 ms.
+21:32:36.972 the same, key='504'
+21:32:37.975 the same, key='505'
+21:32:38.326 Cluster ID: L-zNWoqpRvOPrNhwJPJhTg
+21:32:38.329 WARN Failed to publish, 503, 504 and 505 (a round awaits its sends before it reports)
+21:32:38.351 Published the order confirmed event, 506 onward
+```
+
+Why only some restarts fail wasn't tested. It fits a round that is already awaiting its sends when the metadata goes: it sends nothing more until the broker is back, so a failure needs a round to start sending during the gap.
+
+**Not taken.** `metadata.recovery.strategy: none` passed all 15 restarts, but it's only needed because there is one broker, so the user chose not to add it and to record the limit. Kafka's docs describe `none` as "the client fails". What was measured is narrower: the producer reconnected each time the broker came back at the same address. Several brokers weren't measured.
+
+**A second line per failure.** Each failed send also logged an ERROR from Spring Kafka's `LoggingProducerListener`, 39 in the shipped comparison against 39 WARN lines. Its text has the key and the message's first 100 characters, for example `key='503' and payload='OrderConfirmedMessage(eventId=order-confirmed:v1:503, eventType=OrderConfirmed, schemaVersion=1, pay...'`, so the body isn't in it.
+
+Raw lines. The first run's settings lines are left out, because its regex read the admin client's block; the two later runs read the producer's. `records` is the topic's end offsets before and after a restart. `longest wait` is `created_at` to `published_at`.
+
+```text
+graceful #1: stopped 0.8 s, ready 3.7 s; rows 153, published 153, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 153 (0 more than rows); longest wait 4.3 s; drained in 0.7 s; produce errors 0; metadata errors []
+graceful #2: stopped 0.9 s, ready 3.7 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.4 s; drained in 0.8 s; produce errors 0; metadata errors []
+graceful #3: stopped 0.7 s, ready 3.6 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.2 s; drained in 0.7 s; produce errors 0; metadata errors []
+graceful #4: stopped 0.9 s, ready 3.8 s; rows 150, published 150, pending 0, blocked 0; with last_error 3, attempts>1 3, max attempts 2; WARN failed 3 (metadata 3, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 10.0 s; drained in 0.6 s; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart not present in metadata after 1000 ms.
+graceful #5: stopped 0.9 s, ready 3.7 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.5 s; drained in 0.6 s; produce errors 0; metadata errors []
+graceful #6: stopped 0.9 s, ready 4.0 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.6 s; drained in 0.6 s; produce errors 0; metadata errors []
+kill -9 #1: stopped 0.5 s, ready 16.9 s; rows 282, published 282, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 282 (0 more than rows); longest wait 17.1 s; drained in 1.0 s; produce errors 0; metadata errors []
+kill -9 #2: stopped 0.2 s, ready 16.2 s; rows 276, published 276, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 276 (0 more than rows); longest wait 16.5 s; drained in 0.3 s; produce errors 0; metadata errors []
+kill -9 #3: stopped 0.2 s, ready 16.3 s; rows 276, published 276, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 276 (0 more than rows); longest wait 16.2 s; drained in 0.3 s; produce errors 0; metadata errors []
+-- whole table: PUBLISHED 1738 1741 3 3
+
+== shipped 21:37:14 []
+producer acks = -1
+producer delivery.timeout.ms = 21000
+producer max.block.ms = 1000
+producer request.timeout.ms = 20000
+producer retries = 3
+producer linger.ms = 5
+producer metadata.recovery.strategy = rebootstrap
+graceful #1: stopped 0.8 s, ready 3.5 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.3 s; drained in 0.6 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #2: stopped 0.9 s, ready 4.0 s; rows 144, published 144, pending 0, blocked 0; with last_error 3, attempts>1 3, max attempts 2; WARN failed 3 (metadata 3, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 9.9 s; drained in 0.5 s; rebootstraps 1; listener ERROR 3; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+graceful #3: stopped 0.8 s, ready 3.8 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.3 s; drained in 0.3 s; rebootstraps 3; listener ERROR 0; produce errors 3; metadata errors []
+graceful #4: stopped 0.9 s, ready 3.8 s; rows 147, published 147, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 147 (0 more than rows); longest wait 4.2 s; drained in 0.7 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #5: stopped 0.8 s, ready 3.8 s; rows 144, published 144, pending 0, blocked 0; with last_error 2, attempts>1 2, max attempts 2; WARN failed 2 (metadata 2, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 9.2 s; drained in 0.6 s; rebootstraps 1; listener ERROR 2; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+graceful #6: stopped 0.9 s, ready 4.0 s; rows 147, published 147, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 147 (0 more than rows); longest wait 4.4 s; drained in 0.3 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #7: stopped 0.7 s, ready 3.7 s; rows 156, published 156, pending 0, blocked 0; with last_error 3, attempts>1 3, max attempts 2; WARN failed 3 (metadata 3, expiring 0), blocked WARN 0; records 156 (0 more than rows); longest wait 10.0 s; drained in 0.4 s; rebootstraps 1; listener ERROR 3; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+graceful #8: stopped 0.8 s, ready 3.7 s; rows 144, published 144, pending 0, blocked 0; with last_error 3, attempts>1 3, max attempts 2; WARN failed 3 (metadata 3, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 10.0 s; drained in 0.8 s; rebootstraps 1; listener ERROR 3; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+graceful #9: stopped 0.8 s, ready 3.7 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.6 s; drained in 0.6 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #10: stopped 0.9 s, ready 4.0 s; rows 147, published 147, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 147 (0 more than rows); longest wait 4.4 s; drained in 0.5 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #11: stopped 0.8 s, ready 3.7 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.5 s; drained in 0.6 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+graceful #12: stopped 0.8 s, ready 4.1 s; rows 147, published 147, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 147 (0 more than rows); longest wait 4.5 s; drained in 0.3 s; rebootstraps 3; listener ERROR 0; produce errors 0; metadata errors []
+kill -9 #1: stopped 0.2 s, ready 15.4 s; rows 264, published 264, pending 0, blocked 0; with last_error 14, attempts>1 14, max attempts 2; WARN failed 14 (metadata 14, expiring 0), blocked WARN 0; records 264 (0 more than rows); longest wait 21.0 s; drained in 1.1 s; rebootstraps 3; listener ERROR 14; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+kill -9 #2: stopped 0.2 s, ready 16.1 s; rows 270, published 270, pending 0, blocked 0; with last_error 14, attempts>1 14, max attempts 2; WARN failed 14 (metadata 14, expiring 0), blocked WARN 0; records 270 (0 more than rows); longest wait 21.4 s; drained in 1.1 s; rebootstraps 6; listener ERROR 14; produce errors 0; metadata errors []
+  cause: org.apache.kafka.common.errors.TimeoutException: Topic probe-restart-shipped not present in metadata after 1000 ms.
+kill -9 #3: stopped 0.2 s, ready 16.2 s; rows 276, published 276, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 276 (0 more than rows); longest wait 16.3 s; drained in 0.4 s; rebootstraps 1; listener ERROR 0; produce errors 0; metadata errors []
+-- whole table: PUBLISHED 2563 2602 39 39
+
+== none 21:42:24 ['--spring.kafka.producer.properties.metadata.recovery.strategy=none']
+producer acks = -1
+producer delivery.timeout.ms = 21000
+producer max.block.ms = 1000
+producer request.timeout.ms = 20000
+producer retries = 3
+producer linger.ms = 5
+producer metadata.recovery.strategy = none
+graceful #1: stopped 0.9 s, ready 3.7 s; rows 153, published 153, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 153 (0 more than rows); longest wait 3.8 s; drained in 0.2 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #2: stopped 2.8 s, ready 5.6 s; rows 171, published 171, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 171 (0 more than rows); longest wait 5.8 s; drained in 0.2 s; rebootstraps 0; listener ERROR 0; produce errors 3; metadata errors []
+graceful #3: stopped 0.8 s, ready 3.6 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.2 s; drained in 0.4 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #4: stopped 0.7 s, ready 3.5 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 3.9 s; drained in 0.4 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #5: stopped 0.8 s, ready 3.7 s; rows 147, published 147, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 147 (0 more than rows); longest wait 4.0 s; drained in 0.3 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #6: stopped 0.8 s, ready 3.8 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.5 s; drained in 0.7 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #7: stopped 0.8 s, ready 3.9 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.5 s; drained in 0.5 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #8: stopped 0.8 s, ready 3.8 s; rows 141, published 141, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 141 (0 more than rows); longest wait 4.5 s; drained in 0.7 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #9: stopped 0.9 s, ready 3.9 s; rows 150, published 150, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 150 (0 more than rows); longest wait 4.4 s; drained in 0.3 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #10: stopped 0.7 s, ready 3.5 s; rows 144, published 144, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 144 (0 more than rows); longest wait 4.4 s; drained in 0.5 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #11: stopped 1.1 s, ready 5.6 s; rows 162, published 162, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 162 (0 more than rows); longest wait 5.4 s; drained in 0.8 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+graceful #12: stopped 0.7 s, ready 4.1 s; rows 153, published 153, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 153 (0 more than rows); longest wait 4.4 s; drained in 0.2 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+kill -9 #1: stopped 0.2 s, ready 16.3 s; rows 270, published 270, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 270 (0 more than rows); longest wait 16.3 s; drained in 0.3 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+kill -9 #2: stopped 0.3 s, ready 16.3 s; rows 279, published 279, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 279 (0 more than rows); longest wait 16.8 s; drained in 0.8 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+kill -9 #3: stopped 0.2 s, ready 15.8 s; rows 273, published 273, pending 0, blocked 0; with last_error 0, attempts>1 0, max attempts 1; WARN failed 0 (metadata 0, expiring 0), blocked WARN 0; records 273 (0 more than rows); longest wait 16.4 s; drained in 0.7 s; rebootstraps 0; listener ERROR 0; produce errors 0; metadata errors []
+-- whole table: PUBLISHED 2632 2632 0 0
+```
+
+## List and slice on the claim
+
+Added 2026-11-05 by spec 198's closing review, for why `findDueForUpdate` returns a `List` when every other `Pageable` port returns a `Slice`. Spring Data's `SlicedExecution` asks for the page size plus one. On `mysql:8.4` through Testcontainers, 500 due rows, with a first claim held open in another thread and a second claim taking rows beside it. One run each, in a scratch copy of the tree at `8ee98a2` with a `Slice` form of the query added.
+
+```text
+PROBE list first=1..20 size=20 second=21..40 size=20
+PROBE slice first=1..20 size=20 hasNext=true second=22..41 size=20
+```
+
+With a `Slice` the extra row is locked until the claim commits, and the claim starts no attempt on it. The round doesn't use `hasNext`, since it stops when a claim comes back under 20 rows.
 
 ## The probes
 
@@ -1152,3 +1268,240 @@ for scene in sys.argv[2:]:
     say(f"== {scene} {time.strftime('%H:%M:%S')}")
     SCENES[scene]()
 ```
+
+### Broker restart
+
+Driven from outside the app, against the `relay198` compose project, with the tables already created by the real jar's `schema` scene. Run as `probe.py JAR shipped 12 3`, then `probe.py JAR none 12 3 --spring.kafka.producer.properties.metadata.recovery.strategy=none`. The first run was this script before it took a label and counts, with 6 and 3.
+
+```python
+#!/usr/bin/env python3
+"""Throwaway for spec 198's closing review: story 31, a short broker restart at the shipped kafka.yml.
+
+Runs commerce-api's bootJar under `local` against the `relay198` compose project. One app process stays up across every
+restart, so the producer is warm, as it would be in a real restart. New rows keep coming due throughout.
+
+Usage: probe.py JAR LABEL GRACEFUL_RUNS KILL_RUNS [APP_ARG ...]
+"""
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+JAR = sys.argv[1]
+MYSQL = "relay198-mysql-1"
+LABEL = sys.argv[2]
+TOPIC = f"probe-restart-{LABEL}"
+OUT = HERE / f"results-{LABEL}.txt"
+LOG = HERE / f"app-{LABEL}.log"
+EXTRA = sys.argv[5:]
+BODY = '{"orderId":%d,"confirmedAt":"2026-10-27T01:02:03.123456Z","items":[{"productId":1001,"quantity":1},{"productId":1002,"quantity":2}]}'
+GRACEFUL_RUNS = int(sys.argv[3])
+KILL_RUNS = int(sys.argv[4])
+WARM_SECONDS = 5
+AFTER_READY_SECONDS = 5
+DRAIN_LIMIT_SECONDS = 180
+
+
+def say(line):
+    print(line, flush=True)
+    with OUT.open("a") as out:
+        out.write(line + "\n")
+
+
+def sql(statement):
+    done = subprocess.run(
+        ["docker", "exec", "-i", MYSQL, "mysql", "-uapplication", "-papplication", "-N", "-B", "loopers"],
+        input=statement, capture_output=True, text=True,
+    )
+    if done.returncode:
+        raise RuntimeError(done.stderr)
+    return done.stdout.strip()
+
+
+def seed(start, count):
+    rows = [
+        f"('order-confirmed:v1:{i}',{i},'OrderConfirmed',1,'{i}','{BODY % i}','PENDING',0,"
+        "UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))"
+        for i in range(start, start + count)
+    ]
+    sql(
+        "INSERT INTO order_event_outbox (event_id,order_id,event_type,schema_version,message_key,payload,status,"
+        "attempt_count,next_attempt_at,created_at,updated_at) VALUES " + ",".join(rows)
+    )
+
+
+def start(log, ddl="none", extra=()):
+    command = [
+        "java", "-jar", JAR, f"--spring.jpa.hibernate.ddl-auto={ddl}", f"--order-events.topic={TOPIC}",
+        "--spring.kafka.admin.properties.bootstrap.servers=localhost:19092", "--server.port=18080",
+        "--management.server.port=18081", "--spring.jpa.show-sql=false", *extra,
+    ]
+    out = log.open("w")
+    process = subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
+    for _ in range(240):
+        try:
+            with urllib.request.urlopen("http://localhost:18081/actuator/health", timeout=1) as answer:
+                if answer.status == 200:
+                    return process
+        except Exception:
+            pass
+        if process.poll() is not None:
+            raise RuntimeError(f"app exited {process.returncode}, see {log}")
+        time.sleep(0.25)
+    raise RuntimeError("app not ready")
+
+
+def stop(process):
+    process.send_signal(signal.SIGTERM)
+    process.wait(timeout=120)
+
+
+def records():
+    """The topic's total record count, from its end offsets."""
+    done = subprocess.run(
+        ["docker", "exec", "kafka", "kafka-run-class.sh", "kafka.tools.GetOffsetShell", "--bootstrap-server",
+         "localhost:9092", "--topic", TOPIC], capture_output=True, text=True,
+    )
+    return sum(int(line.rsplit(":", 1)[1]) for line in done.stdout.split() if ":" in line)
+
+
+def broker_ready():
+    done = subprocess.run(
+        ["docker", "exec", "kafka", "kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"],
+        capture_output=True, text=True,
+    )
+    return done.returncode == 0 and TOPIC in done.stdout
+
+
+def wait_for(condition, limit):
+    began = time.monotonic()
+    while time.monotonic() - began < limit:
+        if condition():
+            return time.monotonic() - began
+        time.sleep(0.1)
+    return None
+
+
+class Load:
+    """Keeps rows coming due, about ten a second."""
+
+    def __init__(self, next_id):
+        self.next_id = next_id
+        self.running = False
+        self.thread = None
+
+    def on(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._run)
+        self.thread.start()
+
+    def off(self):
+        self.running = False
+        self.thread.join()
+
+    def _run(self):
+        while self.running:
+            seed(self.next_id, 3)
+            self.next_id += 3
+            time.sleep(0.2)
+
+
+def scan_log(began_at):
+    with LOG.open("r", errors="replace") as log:
+        log.seek(began_at)
+        text = log.read()
+    fetched = re.findall(r"Error while fetching metadata with correlation id \d+ : \{([^}]+)\}", text)
+    return {
+        "failed": len(re.findall(r"Failed to publish the order confirmed event", text)),
+        "metadata": len(re.findall(r"Failed to publish.*not present in metadata", text)),
+        "expiring": len(re.findall(r"Failed to publish.*Expiring", text)),
+        "blocked": len(re.findall(r"Stopped retrying", text)),
+        "produce_errors": len(re.findall(r"Got error produce response", text)),
+        "rebootstraps": len(re.findall(r"Producer clientId=[^\]]+\] Rebootstrapping", text)),
+        "listener_errors": len(re.findall(r"LoggingProducerListener", text)),
+        "metadata_errors": sorted(set(fetched)),
+        "causes": sorted(set(re.findall(r"Failed to publish the order confirmed event\. eventId=\S+ cause=(.{0,120})", text))),
+    }
+
+
+def one_restart(name, kill, load):
+    first_id = load.next_id
+    log_from = LOG.stat().st_size
+    records_before = records()
+    load.on()
+    time.sleep(WARM_SECONDS)
+
+    began = time.monotonic()
+    if kill:
+        subprocess.run(["docker", "kill", "kafka"], check=True, capture_output=True)
+    else:
+        subprocess.run(["docker", "stop", "-t", "30", "kafka"], check=True, capture_output=True)
+    stopped_after = time.monotonic() - began
+    subprocess.run(["docker", "start", "kafka"], check=True, capture_output=True)
+    ready = wait_for(broker_ready, 120)
+    ready_after = time.monotonic() - began
+
+    time.sleep(AFTER_READY_SECONDS)
+    load.off()
+    last_id = load.next_id - 1
+
+    window = f"order_id BETWEEN {first_id} AND {last_id}"
+    drained = wait_for(lambda: sql(f"SELECT COUNT(*) FROM order_event_outbox WHERE {window} AND status='PENDING'") == "0", DRAIN_LIMIT_SECONDS)
+    summary = sql(
+        "SELECT COUNT(*), SUM(status='PUBLISHED'), SUM(status='PENDING'), SUM(status='BLOCKED'), SUM(last_error IS NOT NULL), "
+        "SUM(attempt_count>1), MAX(attempt_count), "
+        "ROUND(MAX(TIMESTAMPDIFF(MICROSECOND, created_at, published_at))/1000000, 1) "
+        f"FROM order_event_outbox WHERE {window}"
+    ).split("\t")
+    rows, published, pending, blocked, with_error, retried, max_attempts, longest = summary
+    time.sleep(1)
+    delta = records() - records_before
+    scan = scan_log(log_from)
+    say(
+        f"{name}: stopped {stopped_after:.1f} s, ready {ready_after:.1f} s; rows {rows}, published {published}, pending {pending}, "
+        f"blocked {blocked}; with last_error {with_error}, attempts>1 {retried}, max attempts {max_attempts}; "
+        f"WARN failed {scan['failed']} (metadata {scan['metadata']}, expiring {scan['expiring']}), blocked WARN {scan['blocked']}; "
+        f"records {delta} ({delta - int(rows)} more than rows); longest wait {longest} s; drained in {drained if drained is None else round(drained, 1)} s; "
+        f"rebootstraps {scan['rebootstraps']}; listener ERROR {scan['listener_errors']}; produce errors {scan['produce_errors']}; metadata errors {scan['metadata_errors']}"
+    )
+    for cause in scan["causes"]:
+        say(f"  cause: {cause}")
+
+
+def main():
+    say(f"== {LABEL} {time.strftime('%H:%M:%S')} {EXTRA}")
+    sql("TRUNCATE TABLE order_event_outbox")
+    process = start(LOG, extra=EXTRA)
+    load = Load(1)
+    try:
+        seed(load.next_id, 1)
+        load.next_id += 1
+        wait_for(lambda: sql("SELECT COUNT(*) FROM order_event_outbox WHERE status='PUBLISHED'") == "1", 60)
+        with LOG.open("r", errors="replace") as log:
+            text = log.read()
+        block = text[text.index("ProducerConfig values"):]
+        for setting in ("acks", "delivery.timeout.ms", "max.block.ms", "request.timeout.ms", "retries", "linger.ms", "metadata.recovery.strategy"):
+            found = re.search(rf"^\s*{re.escape(setting)} = (.*)$", block, re.MULTILINE)
+            say(f"producer {setting} = {found.group(1) if found else 'not logged'}")
+        for i in range(1, GRACEFUL_RUNS + 1):
+            one_restart(f"graceful #{i}", False, load)
+        for i in range(1, KILL_RUNS + 1):
+            one_restart(f"kill -9 #{i}", True, load)
+        say("-- whole table: " + sql(
+            "SELECT status, COUNT(*), SUM(attempt_count), SUM(attempt_count>1), SUM(last_error IS NOT NULL) FROM order_event_outbox GROUP BY status"
+        ).replace("\n", " | ").replace("\t", " "))
+    finally:
+        stop(process)
+
+
+main()
+```
+
+### Slice claim
+
+In a scratch copy only. The query is `findDueForUpdate`'s with `Slice<OrderEventOutbox>` as its return type. The scene is `OrderEventOutboxClaimTest`'s two open claims, run once with each form as the first claim, printing the first and last order IDs of each.

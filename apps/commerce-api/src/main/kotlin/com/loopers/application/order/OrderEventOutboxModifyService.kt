@@ -25,11 +25,9 @@ class OrderEventOutboxModifyService(
         val claimedAt = clock.instant()
         val dueOutboxes = orderEventOutboxRepository.findDueForUpdate(claimedAt, PageRequest.of(0, batchSize))
 
-        return dueOutboxes.map { dueOutbox ->
-            dueOutbox.startPublishAttempt(claimedAt)
+        dueOutboxes.forEach { dueOutbox -> dueOutbox.startPublishAttempt(claimedAt) }
 
-            orderEventOutboxRepository.save(dueOutbox)
-        }
+        return orderEventOutboxRepository.saveAll(dueOutboxes)
     }
 
     fun markPublished(orderEventOutboxId: Long) {
@@ -51,12 +49,12 @@ class OrderEventOutboxModifyService(
 
         outbox.markFailed(failureMessage, clock.instant())
 
-        orderEventOutboxRepository.save(outbox)
+        val savedOutbox = orderEventOutboxRepository.save(outbox)
 
-        if (outbox.status == OrderEventOutboxStatus.BLOCKED && statusBeforeTheFailure != OrderEventOutboxStatus.BLOCKED) {
+        if (savedOutbox.status == OrderEventOutboxStatus.BLOCKED && statusBeforeTheFailure != OrderEventOutboxStatus.BLOCKED) {
             log.warn {
                 "Stopped retrying the order confirmed event: it stays BLOCKED until someone resumes it by hand. " +
-                    "eventId=${outbox.eventId}, attempts=${outbox.attemptCount}, cause=$failureMessage"
+                    "eventId=${savedOutbox.eventId}, attempts=${savedOutbox.attemptCount}, cause=$failureMessage"
             }
         }
     }
