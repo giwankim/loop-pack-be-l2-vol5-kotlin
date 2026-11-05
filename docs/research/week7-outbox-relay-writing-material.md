@@ -26,6 +26,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202) | `BLOCKED` and the resume | [Issue 202](#issue-202-a-row-that-keeps-failing-becomes-blocked-and-someone-can-resume-it) |
 | [206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206) | these records | [Issue 206](#issue-206-step-2s-records-match-what-was-built) |
 | [198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) | the spec's differences | [Spec 198](#spec-198-where-the-implementation-differs) |
+| [198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) | the closing review | [Spec 198's closing review](#spec-198-the-closing-review) |
 
 The sections keep the order the tickets landed in. A draft of the PR body is at the [end](#draft-pr-body).
 
@@ -358,9 +359,64 @@ Step 2 is built. These are the differences from the spec and its tickets. Six ha
 
 The spec stays open for its closing review.
 
+### Spec 198: the closing review
+
+Recorded 2026-11-05 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198#issuecomment-6650986545) of [spec 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198). The text is the comment's, with its blob URLs and its headings one level down.
+
+Step 2 of week 7 is built, and its closing review is done. `scripts/final-check` on `7ec8227`, a clean tree, started 2026-11-05T05:49:08Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-streamer 18 classes, 67 tests (48 s), commerce-api 90 classes, 1031 tests (3 min 45 s), 0 failures, 0 errors, 0 skipped in both**. Only documents changed after `7ec8227`.
+
+The spec's differences are in the [earlier comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198#issuecomment-6624177023). This one adds what the review found, and corrects that comment on one point.
+
+#### What the review covered
+
+A two-axis review of `e6a11ac...8ee98a2`, with one reviewer on the standards and one on this spec. `b322b62` added only documents and had issue 206's own review. The standards axis reported 12 findings, 5 of them hard violations, and the spec axis 6. The hard violations and the spec findings were checked against the code, and each finding was then decided one by one.
+
+#### A correction: a broker restart can fail rows
+
+The earlier comment says the graceful restart that failed with `Topic not present in metadata` "didn't recur". It does. Nothing had met a real restart at `max.block.ms: 1000`, so this review measured it through the real jar, with new rows coming due throughout:
+
+| | Shipped, `rebootstrap` | `metadata.recovery.strategy=none` |
+| --- | --- | --- |
+| Graceful restarts with failed rows | 5 of 18 (14 rows) | 0 of 12 |
+| `kill -9` restarts with failed rows | 2 of 6 (28 rows) | 0 of 3 |
+| Longest wait, graceful | 10.0 s | 5.8 s |
+| Longest wait, `kill -9` | 21.4 s | 16.8 s |
+| Rows lost or duplicated | 0 | 0 |
+
+On one broker, every restart makes the client rebootstrap, which drops the topic's metadata. A `send()` that comes before it returns blocks for 1 s and fails. The rows went out on their second attempt, so the cost is a WARN and an ERROR per row, a 5 s backoff and 1 of 20 attempts.
+
+**Story 31, "a short restart to pass without failed attempts", isn't met, and that's accepted.** `none` passed all 15 restarts, but it's only needed because there is one broker, so it wasn't added. Several brokers weren't measured. The limit is in [design 13.10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/outbox-relay/docs/design/order-outbox.md#1310-받아들인-한계), and the raw lines are in the [probe note](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/outbox-relay/docs/research/week7-outbox-relay-probe.md#a-broker-restart-at-the-shipped-limits).
+
+#### Also accepted, not fixed
+
+These are in design 13.10 too.
+
+- **Story 16, "a late result never to overwrite a row's newer state".** `markFailed` checks the status only. A failure from a relay past its lease, on a row another relay has re-claimed, overwrites `last_error` and cuts that relay's lease. The worst case is a republish, which the consumer handles, and it needs two relays at once. The spec's state table allows it. This was read from the code and not run as a scene.
+- **Story 26's WARN comes before the commit.** If that commit fails, the line says `BLOCKED` on a row that is still `PENDING`. It takes a database failure at that moment, on a row's last attempt.
+- **A second line per failure.** Spring Kafka's `LoggingProducerListener` logged an ERROR for each failed send in the restart runs. Its text holds the key and the message's first 100 characters, which stop before the body, so story 27 holds. Anyone alerting on `ERROR` would need to read it as a failure that gets retried.
+
+#### What changed
+
+No behaviour changed.
+
+- `claimDueOutboxes` saves through `saveAll`, and `markFailed` reads what `save` returned (catalog design 5.37).
+- `retryBackoffAfter` lost `coerceAtLeast(0)` and the one scene that pinned it, which is the one test fewer. Production can't reach attempt 0, and a bug there now throws, as `ensurePending` does.
+- The committing base's helper is now `prepareOrderEventOutboxWithoutOrder`, and it sets its field (`CODING_STANDARDS.md`).
+- `OrderEventRelaySchedulerTest` uses the base's `committedOrderEventOutbox`.
+- `findDueForUpdate`'s KDoc says why it returns a `List`, after measuring it: with a `Slice`, a second open claim began at row 22 rather than 21.
+- `CODING_STANDARDS.md` names two more exceptions: `OrderEventOutboxRepositoryTest`'s `@Import(SqlCaptureConfig)`, and two scenes that arrange through the relay.
+
+#### Left as they were
+
+- **Three one-class change helpers in `BaseRepositoryTest`.** Six others are already there, so moving these would create the inconsistency.
+- **English log messages in `OrderEventOutboxModifyService`.** The application layer's other messages are Korean, but the relay's lines share their wording, so a search for one event's lines finds them all.
+- **`inNewTransaction` in two repository tests.** A shared one would have to be `REQUIRES_NEW`, for three duplicated lines.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/outbox-relay/docs/research/week7-outbox-relay-writing-material.md#spec-198-the-closing-review).
+
 ## Draft PR body
 
-A draft for the PR from `feat/outbox-relay` into `week7`, in the shape of the step 1 PR, with the Loopers guide's review points and the assignment's submission items. It's written before the spec's closing review, so its numbers may move. The checklist waits for step 3's upstream PR. The PR's copy should link these documents with blob URLs, as step 1's did.
+A draft for the PR from `feat/outbox-relay` into `week7`, in the shape of the step 1 PR, with the Loopers guide's review points and the assignment's submission items. Updated after the spec's closing review. The checklist waits for step 3's upstream PR. The PR's copy should link these documents with blob URLs, as step 1's did.
 
 Title: `feat(commerce-api): publish the outbox's order confirmed events through a single relay, and resume what it can't`
 
@@ -371,7 +427,7 @@ Week 7 step 2. A single relay now takes due rows from `order_event_outbox` to th
 
 - **Spec:** issue 198, with tickets 199–206
 - **Decision:** ADR 0035
-- **Design:** `docs/design/order-outbox.md` §13. 13.2 is a round, 13.3 the states, 13.7 the SQL, 13.11 the measurements, 13.13 the commands
+- **Design:** `docs/design/order-outbox.md` §13. 13.2 is a round, 13.3 the states, 13.7 the SQL, 13.10 the limits, 13.11 the measurements, 13.13 the commands
 - **Measurements:** `docs/research/week7-outbox-relay-probe.md`
 - **Writing material:** `docs/research/week7-outbox-relay-writing-material.md`
 
@@ -428,11 +484,11 @@ The loop doesn't check for shutdown. With a 60,000 row backlog, SIGTERM drained 
 
 **Before:** on `week7`, rows pile up as `PENDING` and nothing publishes.
 
-**After:** the path above, and `scripts/final-check` on `8ee98a2`, a clean tree, with ktlint passing and only documents changed since:
+**After:** the path above, and `scripts/final-check` on `7ec8227`, a clean tree, with ktlint passing and only documents changed since:
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
-| commerce-api | 90 (82 before) | 1032 (969 before) | 0 |
+| commerce-api | 90 (82 before) | 1031 (969 before) | 0 |
 | commerce-streamer | 18 | 67 | 0 |
 
 Red checks are in the writing material, ticket by ticket. About 336 rows/s through the real jar, against 480 for bare SQL.
@@ -449,5 +505,6 @@ Rows already `PUBLISHED` stay so after a revert, and the rest wait.
 - **Backlog on first start.** Rows left since step 1 are published when the relay first runs.
 - **Schema.** There's no migration tool, so production needs the new index before this runs. It decides behaviour, so it isn't optional.
 - **Republishes.** Publishing is at least once. A stop can put a batch's rows on the broker twice, at different offsets.
+- **A broker restart can fail rows.** On one broker, a `send()` during a restart can fail with `Topic … not present in metadata`: 5 of 18 graceful restarts and 2 of 6 `kill -9` in the runs measured. Those rows went out on their second attempt, with nothing lost or duplicated. Story 31 isn't met, and that's accepted (design 13.10).
 - **Out of scope:** the cross-app run, recovery of week 6's cases, and the E2E are step 3's.
 ```

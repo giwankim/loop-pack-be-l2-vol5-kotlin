@@ -423,6 +423,7 @@ scripts/final-check
 ```
 
 - 끝의 확인은 2026-11-04 `8ee98a2`의 깨끗한 트리에서 `scripts/final-check`으로 돌렸다(06:05:08Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(50 s). commerce-api는 90개 클래스, 1032개 테스트, 실패 0, 오류 0, 건너뜀 0이다(3 min 45 s). `8ee98a2` 뒤로는 문서만 바뀌었다. 위 블록의 거른 명령도 같은 날 그 트리에서 하나씩 돌려 괄호의 수를 읽었다.
+- (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 검토의 수정 뒤 끝의 확인을 `7ec8227`의 깨끗한 트리에서 `scripts/final-check`으로 다시 돌렸다(05:49:08Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(48 s). commerce-api는 90개 클래스, 1031개 테스트, 실패 0, 오류 0, 건너뜀 0이다(3 min 45 s). 위의 1032개에서 `coerceAtLeast(0)`만 못 박던 장면이 빠져 `OrderEventOutboxStateTest`는 16개다. 다른 클래스의 수는 위 블록의 괄호 그대로이고, 거른 명령을 다시 돌리지 않고 이 실행의 보고서에서 읽었다. `7ec8227` 뒤로는 문서만 바뀌었다.)
 - 2단계의 수는 1단계의 끝(82개 클래스, 969개 테스트)에서 이렇게 왔다. 새 클래스 8개가 54개다(`OrderEventRelayerTest` 18, `OrderEventOutboxStateTest` 17, `OrderEventRelayFailedSendTest` 12, 트리거의 넷 6, `OrderEventOutboxClaimTest` 1). 있던 클래스에 9개가 늘었다(`OrderEventOutboxRepositoryTest` 4 → 8, `OrderEventsProducerTest` 1 → 4, `OrderEventOutboxImmutabilityTest` 1 → 2, `HexagonalArchitectureTest` 7 → 8). streamer의 수는 그대로다.
 - `--tests`로 거른 실행은 여전히 `HexagonalArchitectureTest`도 함께 돌고, 이제 그 수는 8개다. 12절의 메모 그대로 위의 수는 그것을 뺀 것이다.
 - 13.7절의 문장은 `OrderEventRelayFailedSendTest`가 이 문서에서 읽는다. 그래서 이 문서를 고치면 commerce-api의 `test`가 다시 돈다.
