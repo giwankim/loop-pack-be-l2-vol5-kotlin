@@ -2,6 +2,25 @@
 
 이 저장소의 코드가 지키는 규칙이다. `/code-review`는 변경을 이 문서에 비추어 본다. 결정의 까닭은 각 규칙이 가리키는 ADR과 설계 문서에 있다.
 
+## 운영 코드
+
+- 함수는 블록 본문이다. `fun f(): T { return … }`로 쓰고 `= …`로 쓰지 않는다. 테스트도 같다([카탈로그 설계](docs/design/catalog.md) 5.34).
+- 웹 어댑터는 `.let` 사슬보다 이름 있는 지역 변수를 쓰고, guard에 중괄호를 두고, `return` 앞을 한 줄 띄운다([카탈로그 설계](docs/design/catalog.md) 5.33).
+- 응답 DTO는 `<애그리거트><수식어>Response`인 최상위 data class다. `object XxxDto`로 감싸지 않는다([카탈로그 설계](docs/design/catalog.md) 5.7). application의 요청은 `<애그리거트><동사>Request`다.
+- 변경 Service는 바꾼 애그리거트를 자기 슬라이스의 저장소에 저장하고 dirty checking에 기대지 않는다. 여럿이면 `saveAll`에 넘기고, `save`가 돌려준 값을 쓴다([카탈로그 설계](docs/design/catalog.md) 5.37).
+- 저장소는 없는 행을 null로 돌려준다. 없을 때 던지는 일은 application Service의 `find`가 맡는다.
+- 엔티티가 상태를 지키는 메서드는 `ensure<상태>()`다. `validate*`는 application의 Validator가 쓴다.
+- id 매개변수에는 애그리거트의 이름을 붙인다(`brandId`, `orderId`). 메서드 이름은 그대로 둔다.
+- Bean Validation은 Request와 그 중첩 항목에만 둔다. 도메인 모델은 직접 검사한다. 층마다 컨트롤러 없이 불릴 수 있으므로 검사가 겹쳐도 된다.
+- 조회 Service는 `@ApplicationService(readOnly = true)`로 읽기 전용이 된다.
+- 로거는 `private val log = KotlinLogging.logger {}`이고 람다 API로 쓴다.
+- 새 주석은 영어로 쓴다. 로그와 예외 메시지는 이웃을 따른다. 설계 문서, ADR, `CONTEXT.md`는 한국어다.
+
+## 측정과 증거
+
+- 측정에 기댄 이야기와 값은 그 실행의 설정을 적는다. 그 설정은 운영에 나가는 값과 같아야 한다. 다른 값으로 잰 것은 참고일 뿐이다. [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 이야기 31이 그랬다. `max.block.ms` 20 s로 잰 재시작은 1 s의 증거가 되지 못했고, 1 s로 재자 실패가 나왔다.
+- 명세의 "구현에서 확인할 것"은 티켓의 인수 조건이 되거나, 닫는 검토에서 열린 것으로 보고된다.
+
 ## 테스트
 
 ### 이름과 구조
@@ -119,7 +138,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 - 테스트는 단언하는 값, 기대는 경계(품절, 잔액 0원, 이름 길이의 한계 등), 기대는 값 사이의 관계(앞뒤 공백만 다른 이름, 대소문자만 다른 이름 등)를 이름 있는 인자로 넘긴다. 그 밖의 인자는 검증하는 동작의 입력이어도 fixture의 기본값에 맡긴다. 그래서 JSON 본문 밖에 남은 리터럴은 모두 그 테스트가 확인하거나 기대는 값이다.
 - 생성된 값을 확인할 때는 fixture나 `prepare`가 만든 객체에서 읽는다. 예: 요청 fixture의 `name`과 응답의 `name`을 비교한다.
 - MockMvc 요청의 JSON 본문은 손으로 적는다. 필드 이름과 JSON 타입까지 HTTP 계약이다.
-- 서비스·MockMvc·저장소 테스트는 자기 슬라이스든 다른 슬라이스든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`), 그리고 PG 조회의 서킷 브레이커를 여는 준비(`OrderPaymentIntegrationTest`의 `openPgLookupBreaker`, `PaymentApiTest`에서 죽은 테스트 PG에 보내는 알림 두 번)뿐이다. 브레이커는 [ADR 0030](docs/adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) 규칙 8대로 `transitionTo*` 없이 실제 실패로 열어야 하므로, 그 준비는 죽은 테스트 PG에 대사 포트를 두 번 부른다. (2026-11-04, [issue 202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202): `OrderEventRelayFailedSendTest`의 `blockOutboxThroughFailedRounds`도 준비로 중계의 포트를 스무 번 부른다. 테스트가 `status`를 써서 `BLOCKED`를 만들지 않으므로, 그 행은 실제 실패로만 닿는다.) (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 중계의 장면 둘도 준비로 중계를 부른다. `OrderEventRelayFailedSendTest`의 적체 SQL 장면은 회차 한 번으로 행들의 상태를 나누고, `OrderEventRelayerTest`의 늦은 실패 장면은 `claimDueOutboxes`와 다른 중계의 회차로 리스를 넘긴 상황을 만든다. 테스트가 `status`를 쓰지 않으므로 그 상태에는 중계를 거쳐야 닿는다.) 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다.
+- 서비스·MockMvc·저장소 테스트는 자기 슬라이스든 다른 슬라이스든 데이터를 기반 클래스의 `prepare<타입>`과 변경 도우미로 준비한다. 준비하려고 포트를 직접 부르지 않는다. 포트를 직접 부르는 것은 검증하는 동작과 그 결과를 읽는 단언, 검증하는 동작과 엇갈리도록 다른 스레드에서 잠금을 쥐는 트랜잭션(`LockFailureApiTest`), 그리고 PG 조회의 서킷 브레이커를 여는 준비(`OrderPaymentIntegrationTest`의 `openPgLookupBreaker`, `PaymentApiTest`에서 죽은 테스트 PG에 보내는 알림 두 번)뿐이다. 브레이커는 [ADR 0030](docs/adr/0030-pg-lookups-retry-once-inside-an-annotated-circuit-breaker.md) 규칙 8대로 `transitionTo*` 없이 실제 실패로 열어야 하므로, 그 준비는 죽은 테스트 PG에 대사 포트를 두 번 부른다. (2026-11-04, [issue 202](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/202): `OrderEventRelayFailedSendTest`의 `blockOutboxThroughFailedRounds`도 준비로 중계의 포트를 스무 번 부른다. 테스트가 `status`를 써서 `BLOCKED`를 만들지 않으므로, 그 행은 실제 실패로만 닿는다.) (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 중계의 장면 둘도 준비로 중계를 부른다. `OrderEventRelayFailedSendTest`의 적체 SQL 장면은 회차 한 번으로 행들의 상태를 나누고, `OrderEventRelayerTest`의 늦은 실패 장면은 `claimDueOutboxes`와 다른 중계의 회차로 리스를 넘긴 상황을 만든다. 테스트가 `status`를 쓰지 않으므로 그 상태에는 중계를 거쳐야 닿는다.) 한 클래스만 쓰는 준비 도우미(`BrandRepositoryTest`의 `prepareBrandRegisteredAt` 등)는 그 클래스에 private으로 둔다. (2026-11-05: 상태를 바꾸는 변경 도우미는 여기에 들지 않는다. 한 클래스만 써도 기반에 둔다(`deleteBrandKeepingProducts`, `deleteUser`).)
 - `prepare`가 데이터를 만드는 길은 기반마다 다르다.
   - `BaseApplicationServiceTest`(`BaseWebApiAdapterTest`도)는 그 슬라이스의 provided 포트가 만들 수 있는 상태를 포트와 Request fixture로 만든다(브랜드는 `BrandRegister`, 상품은 `ProductRegister`). 포트가 돌려준 엔티티는 그대로 돌려주고, `ProductInfo`를 돌려주는 상품만 엔티티를 ID로 다시 읽는다([ADR 0014](docs/adr/0014-finders-load-whole-aggregates.md)). 포트가 없는 데이터(사용자, 0원 포인트 계정)와 포트가 막는 상태는 저장소로 만든다. 저장할 엔티티는 fixture가 있으면 fixture로, 없으면 생성자로 만든다(아래 fixture 쪽). 포트가 막는 상태를 만드는 도우미는 우회를 이름에 드러낸다(`BaseRepositoryTest`의 `deleteBrandKeepingProducts`).
   - `BaseRepositoryTest`는 같은 이름으로 저장소에 엔티티를 저장한다. 저장소 테스트의 컨텍스트에는 포트가 없다.
