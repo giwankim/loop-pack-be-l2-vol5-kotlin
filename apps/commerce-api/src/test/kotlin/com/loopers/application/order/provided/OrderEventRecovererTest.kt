@@ -8,6 +8,7 @@ import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.provided.OrderEventRecoveryResult.Outcome
 import com.loopers.application.order.required.OrderEventOutboxRepository
+import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.domain.product.Product
@@ -103,7 +104,7 @@ class OrderEventRecovererTest(
 
     /**
      * The event columns are compared with the literals [OrderEventOutboxTest] pins for TX B's row, the payload as a whole string. The
-     * row is due when it was added, not when the order was confirmed, so the relay sends it on its next round.
+     * row is due when it was added, not when the order was confirmed, so the relay publishes it on its next round.
      */
     @Test
     fun `a confirmed PG order without a row gets the row TX B would have written, pending and due at the clock's now`() {
@@ -132,7 +133,7 @@ class OrderEventRecovererTest(
         assertThat(row.lastError).isNull()
     }
 
-    /** The relay needs nothing of its own for a recovered row: one round sends it, read back from the broker. */
+    /** The relay needs nothing of its own for a recovered row: one round publishes it, read back from the broker. */
     @Test
     fun `one relay round after recovery puts one record of the order's event on the topic`() {
         confirmAnOrderLeavingNoRow(prepareProduct() to 2)
@@ -195,11 +196,9 @@ class OrderEventRecovererTest(
     /** One result and one line per order, in the order given, after that order's transaction committed. */
     @Test
     fun `each order logs one info line naming the order, the event and the result`() {
-        confirmAnOrderLeavingNoRow(prepareProduct() to 2)
-        val missingOrder = order
-        prepareOrder(prepareProduct() to 1)
-        confirmOrder(testPg)
-        val presentOrder = order
+        val missingOrder = confirmAnOrderLeavingNoRow(prepareProduct() to 2)
+        val presentOrder = prepareOrder(prepareProduct() to 1)
+        confirmOrder(testPg, presentOrder)
         clock.pin(RECOVERED_AT)
 
         val results = orderEventRecoverer.recover(listOf(missingOrder.id, presentOrder.id))
@@ -209,9 +208,9 @@ class OrderEventRecovererTest(
             OrderEventRecoveryResult(presentOrder.id, "order-confirmed:v1:${presentOrder.id}", Outcome.ALREADY_PRESENT),
         )
         assertThat(orderApplicationLogs.linesAt(Level.INFO).map { it.formattedMessage }).containsExactly(
-            "Recovered the order confirmed event. orderId=${missingOrder.id}, " +
+            "Ran 누락 복구 for the order confirmed event. orderId=${missingOrder.id}, " +
                 "eventId=order-confirmed:v1:${missingOrder.id}, result=ADDED",
-            "Recovered the order confirmed event. orderId=${presentOrder.id}, " +
+            "Ran 누락 복구 for the order confirmed event. orderId=${presentOrder.id}, " +
                 "eventId=order-confirmed:v1:${presentOrder.id}, result=ALREADY_PRESENT",
         )
     }
@@ -270,12 +269,15 @@ class OrderEventRecovererTest(
      * Confirms an order of [items] at [CONFIRMED_AT] through the real TX A and TX B, with TX B's row saved nowhere, and checks in a new
      * transaction that no row committed.
      */
-    private fun confirmAnOrderLeavingNoRow(vararg items: Pair<Product, Int?>) {
-        prepareOrder(*items)
+    private fun confirmAnOrderLeavingNoRow(vararg items: Pair<Product, Int?>): Order {
+        val preparedOrder = prepareOrder(*items)
         every { orderEventOutboxRepository.save(any()) } answers { firstArg() } andThenAnswer { callOriginal() }
         clock.pin(CONFIRMED_AT)
-        confirmOrder(testPg)
+        confirmOrder(testPg, preparedOrder)
 
-        assertThat(inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:${order.id}") }).isNull()
+        val eventId = "order-confirmed:v1:${preparedOrder.id}"
+        assertThat(inNewTransaction { orderEventOutboxRepository.findByEventId(eventId) }).isNull()
+
+        return preparedOrder
     }
 }

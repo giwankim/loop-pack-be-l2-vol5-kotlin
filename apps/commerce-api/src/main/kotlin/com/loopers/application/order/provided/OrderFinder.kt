@@ -67,8 +67,8 @@ interface OrderFinder {
     fun findForPg(orderId: Long): Order
 
     /**
-     * The order 누락 복구 ([OrderEventRecoverer]) adds a row for. It asks for no user: an operator names the order by ID, and there is
-     * no requester (ADR 0036 rule 2). A missing order is `ORDER_NOT_FOUND`. It takes no lock, since the order is already confirmed
+     * The order 누락 복구 ([OrderEventRecoverer]) adds a row for. It asks for no user: a person names the order by ID, and there is no
+     * requester (ADR 0036 rule 2). A missing order is `ORDER_NOT_FOUND`. It takes no lock, since the order is already confirmed
      * and no confirmation can overlap it (ADR 0036 rule 4).
      *
      * Like [findForPg], it doesn't ask about ownership, so its name says who calls it.

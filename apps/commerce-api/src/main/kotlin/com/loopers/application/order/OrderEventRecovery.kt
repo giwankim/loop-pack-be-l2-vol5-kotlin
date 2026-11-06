@@ -25,7 +25,7 @@ class OrderEventRecovery(
         val recoveryResult = orderEventOutboxModifyService.recover(orderId)
 
         log.info {
-            "Recovered the order confirmed event. orderId=${recoveryResult.orderId}, eventId=${recoveryResult.eventId}, " +
+            "Ran 누락 복구 for the order confirmed event. orderId=${recoveryResult.orderId}, eventId=${recoveryResult.eventId}, " +
                 "result=${recoveryResult.outcome}"
         }
 

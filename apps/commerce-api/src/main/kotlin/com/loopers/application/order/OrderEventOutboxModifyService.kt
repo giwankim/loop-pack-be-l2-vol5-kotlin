@@ -26,9 +26,10 @@ class OrderEventOutboxModifyService(
     private val clock: Clock,
 ) {
     /**
-     * Adds the row [orderId]'s confirmation is missing, built from the order as TX B builds it and due now, so the relay sends it on
-     * its next round. An order that already has its row keeps it as it is, whatever its state (ADR 0036 rule 3). Nothing is locked:
-     * two recoveries of one order at once meet at the unique event ID (rule 4). It reads the order and writes this row, nothing else.
+     * Adds the row [orderId]'s confirmation is missing, built from the order as TX B builds it and due now, so the relay publishes it
+     * on its next round. An order that already has a row of its event ID keeps that row as it is, whatever its state (ADR 0036 rule 3).
+     * Nothing is locked: two recoveries of one order at once meet at the unique event ID (rule 4). It reads the order and writes this
+     * row, nothing else.
      */
     fun recover(orderId: Long): OrderEventRecoveryResult {
         val order = orderFinder.findForRecovery(orderId)
