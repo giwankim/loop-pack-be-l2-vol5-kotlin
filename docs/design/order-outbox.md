@@ -462,6 +462,8 @@ scripts/final-check
 
 모두 한 `@Test` 안이라 사이에 정리가 돌지 않는다. 컨테이너는 이 JVM의 Testcontainers이고, 이것을 과제의 "새 격리 실행"으로 본다. 행을 지우거나 `SUCCESS`를 넣거나 상태를 덮어쓰지 않는다. 6주차의 원본 DB는 없으므로 이것은 재현이고 원본 사건의 복구라 부르지 않는다.
 
+(2026-11-06, [issue 216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216): 첫 컨텍스트는 닫지 않는다. JUnit의 테스트 컨텍스트라 장면 안에서 닫을 수 없고, test 프로필이라 중계가 꺼져 있어 발행하지 않는다. 그 컨텍스트의 다른 빈이 움직였다면 PG 조회 수나 주문·결제의 `updated_at`이 달라졌을 것이다. 둘째와 셋째는 `com.loopers.support`의 `restartedCommerceApi`로 띄우고, 셋째도 중계를 켠 채 2 s 동안 행이 그대로인지 본다. T는 테스트 PG가 202로 답한 생성의 거래 키이고 두 결제에 저장된 거래 키와 같다. C는 결제마다 1이다. callback은 세지 못한다. 테스트 PG는 callback을 보내지 않으므로, PG 조회 0번 더와 결제의 상태·거래 키·`updated_at`이 그대로인 것으로 본다.)
+
 받아들인 것: 도는 6주차 코드는 실제 판이 아니라 지금의 TX B와 테스트의 훅이다. 표가 처음부터 있으므로 W6 DB에 아웃박스 표를 더하는 단계는 테스트되지 않는다. 2026-11-05 W6의 실제 jar로 한 번 쟀다([측정 기록](../research/week7-outbox-recovery-probe.md)). `ddl-auto=update`는 표와 키, 검사, 인덱스를 더하고 W6 표의 정의를 바꾸지 않았지만, W6 표의 열 넷에 정의가 그대로인 `modify column`을 냈다. 닿지 않는 broker 주소로 띄운 W6 jar는 확정을 커밋하고 send가 막힌 채 `kill -9`되어 record를 남기지 않았다.
 
 ### 14.4 실제 consumer
