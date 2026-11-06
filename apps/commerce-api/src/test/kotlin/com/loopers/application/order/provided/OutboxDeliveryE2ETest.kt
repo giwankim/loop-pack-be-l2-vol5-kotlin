@@ -5,22 +5,31 @@ import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.OrderEventOutboxModifyService
 import com.loopers.application.order.OrderEventRelay
 import com.loopers.application.order.required.OrderEventPublisher
+import com.loopers.application.payment.provided.PaymentFinder
+import com.loopers.application.point.provided.PointAccountFinder
+import com.loopers.application.product.provided.ProductFinder
 import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.domain.order.OrderStatus
+import com.loopers.domain.product.Product
 import com.loopers.support.CommerceStreamerProcess
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
+import com.loopers.support.stopRelayAfterBrokerAckBeforeMarkingPublished
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
+import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.core.env.Environment
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.context.TestPropertySource
 import org.wiremock.spring.InjectWireMock
 import java.time.Instant
@@ -38,13 +47,16 @@ private val log = KotlinLogging.logger {}
  * The streamer's tables are its own and the base doesn't truncate them; `ddl-auto=create` recreates them at each start.
  *
  * Each stop is a controlled stop: the JVM stays up, no process is killed, and the restart is a new [OrderEventRelay] on the same
- * database and topic. The clock is pinned, so the confirmation time is a literal.
+ * database and topic. The stop after the broker's ack is a one-shot stub on the spied [OrderEventOutboxModifyService], the same as
+ * step 2's. The clock is pinned, so the confirmation time is a literal.
  */
 @EnableTestPg
 @TestPropertySource(properties = ["order-events.topic=${OutboxDeliveryE2ETest.TOPIC}"])
 class OutboxDeliveryE2ETest(
     private val orderFinder: OrderFinder,
-    private val orderEventOutboxModifyService: OrderEventOutboxModifyService,
+    private val paymentFinder: PaymentFinder,
+    private val productFinder: ProductFinder,
+    private val pointAccountFinder: PointAccountFinder,
     private val orderEventPublisher: OrderEventPublisher,
     private val clock: TestClock,
     private val kafkaProperties: KafkaProperties,
@@ -60,9 +72,19 @@ class OutboxDeliveryE2ETest(
         private val CONFIRMED_AT: Instant = Instant.parse("2026-11-06T01:02:03.123456Z")
         private val ROUND_STARTED_AT: Instant = Instant.parse("2026-11-06T01:02:08.123456Z")
 
+        /** A second past the lease the stopped round left (due again at [ROUND_STARTED_AT] plus 60 s), as in step 2's stop scene. */
+        private val PAST_THE_LEASE: Instant = Instant.parse("2026-11-06T01:03:09.123456Z")
+
+        private const val STOCK = 10
+        private const val POINTS = 10_000L
+
         /** A `datetime(6)` column in `Instant`'s form. The columns hold UTC (`jpa.yml`'s `NORMALIZE_UTC`). */
         private const val STORED_UTC_TIME = "date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ')"
     }
+
+    /** Where the republish scene stops the relay (`stopRelayAfterBrokerAckBeforeMarkingPublished`). Unstubbed, it is the real service. */
+    @MockkSpyBean
+    private lateinit var orderEventOutboxModifyService: OrderEventOutboxModifyService
 
     @InjectWireMock(TestPg.NAME)
     private lateinit var server: WireMockServer
@@ -128,7 +150,7 @@ class OutboxDeliveryE2ETest(
             .describedAs { "records on the broker; ${rowsLine()}\nThe streamer's recent log:\n${streamer.recentLog()}" }
             .hasSize(1)
         val publishedRecord = recordsAfterTheRelay.single()
-        val recordedLine = streamer.awaitRecordedLines(expected = 1) { rowsLine() }.single()
+        val deliveryLine = streamer.awaitRecordedLines(expected = 1) { rowsLine() }.single()
         val publishedOutbox = committedOrderEventOutbox()
         val activities = storedActivities()
         val confirmations = storedConfirmations()
@@ -136,10 +158,7 @@ class OutboxDeliveryE2ETest(
         assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
         assertThat(publishedOutbox.attemptCount).isOne()
         assertThat(publishedRecord.key()).isEqualTo(order.id.toString())
-        assertThat(recordedLine).isEqualTo(
-            "Recorded the order confirmed event. eventId=$eventId, orderId=${order.id}, " +
-                "partition=${publishedRecord.partition()}, offset=${publishedRecord.offset()}, result=RECORDED",
-        )
+        assertThat(deliveryLine).isEqualTo(recordedLine(eventId, publishedRecord, result = "RECORDED"))
         assertThat(confirmations).containsExactly("$eventId order ${order.id} confirmed_at $CONFIRMED_AT")
         assertThat(activities).containsExactly("order ${order.id} product ${product.id} quantity 2 confirmed_at $CONFIRMED_AT")
 
@@ -149,10 +168,113 @@ class OutboxDeliveryE2ETest(
                 "purchase activities ${activitiesBeforeTheRelay.size}; " +
                 "a recreated relay: row ${describe(publishedOutbox)}; record key ${publishedRecord.key()} " +
                 "partition ${publishedRecord.partition()} offset ${publishedRecord.offset()}; " +
-                "deliveries ${streamer.recordedLines().size} ($recordedLine); " +
+                "deliveries ${streamer.recordedLines().size} ($deliveryLine); " +
                 "processed_order_confirmation [${confirmations.joinToString("; ")}]; " +
                 "purchase_activity [${activities.joinToString("; ")}]"
         }
+    }
+
+    /**
+     * The assignment's §7 (order-outbox design 14.5): one order of two products, 2 and 1 of each, from its confirmation to the purchase
+     * activity, through a republish. The first relay stops after the broker's ack and before `PUBLISHED` is saved, so the broker holds a
+     * record while the row stays pending under its lease. A recreated relay past the lease publishes the same event again. The streamer
+     * receives both records, records the first, and finds the second already recorded, so the purchase activity is left once. The order
+     * side doesn't move after the confirmation: no PG call, no stock taken or given back, and no points spent.
+     */
+    @Test
+    fun `an order republished after the broker's ack reaches the streamer twice and leaves its purchase activity once`() {
+        val shirt = prepareProduct(stock = STOCK)
+        val socks = prepareProduct(stock = STOCK)
+        prepareOrder(shirt to 2, socks to 1)
+        charge(POINTS)
+        val streamer = startTheStreamer()
+        clock.pin(CONFIRMED_AT)
+        confirmOrder(testPg)
+        val stocksAfterTheConfirmation = stocksOf(shirt, socks)
+        clock.pin(ROUND_STARTED_AT)
+        orderEventOutboxModifyService.stopRelayAfterBrokerAckBeforeMarkingPublished()
+
+        assertThrows<DataAccessResourceFailureException> { newRelay().publishDueEvents() }
+
+        val firstRecord = orderEvents.publishedRecords(expected = 1).single()
+        val stoppedOutbox = committedOrderEventOutbox()
+        val firstLine = streamer.awaitRecordedLines(expected = 1) { rowsLine() }.single()
+        assertThat(stoppedOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(stoppedOutbox.attemptCount).isOne()
+        assertThat(stoppedOutbox.publishedAt).isNull()
+
+        clock.pin(PAST_THE_LEASE)
+        newRelay().publishDueEvents()
+
+        val secondRecord = orderEvents.publishedRecords(expected = 1).single()
+        val recordedLines = streamer.awaitRecordedLines(expected = 2) { rowsLine() }
+        val confirmedOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
+        val payment = inNewTransaction { paymentFinder.findByOrder(order.id) }
+        val publishedOutbox = committedOrderEventOutbox()
+        val confirmations = storedConfirmations()
+        val activities = storedActivities()
+        val stocks = stocksOf(shirt, socks)
+        val balance = inNewTransaction { pointAccountFinder.findByUser(user.id).balance.amount }
+        val eventId = "order-confirmed:v1:${order.id}"
+        assertThat(confirmedOrder.status).isEqualTo(OrderStatus.CONFIRMED)
+        assertThat(rowCount("orders")).isOne()
+        assertThat(payment.transactionKey).isNotNull()
+        assertThat(testPg.createCount()).isOne()
+        assertThat(testPg.requestCount()).isOne()
+        assertThat(rowCount("order_event_outbox")).isOne()
+        assertThat(publishedOutbox.eventId).isEqualTo(eventId)
+        assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
+        assertThat(publishedOutbox.attemptCount).isEqualTo(2)
+        assertThat(publishedOutbox.publishedAt).isEqualTo(PAST_THE_LEASE)
+        assertThat(secondRecord.value()).isEqualTo(firstRecord.value())
+        assertThat(firstRecord.value()).contains(""""eventId":"$eventId"""")
+        assertThat(secondRecord.key()).isEqualTo(firstRecord.key())
+        assertThat(secondRecord.partition()).isEqualTo(firstRecord.partition())
+        assertThat(secondRecord.offset()).isGreaterThan(firstRecord.offset())
+        assertThat(recordedLines).containsExactly(
+            recordedLine(eventId, firstRecord, result = "RECORDED"),
+            recordedLine(eventId, secondRecord, result = "ALREADY_RECORDED"),
+        )
+        assertThat(recordedLines.first()).isEqualTo(firstLine)
+        assertThat(confirmations).containsExactly("$eventId order ${order.id} confirmed_at $CONFIRMED_AT")
+        assertThat(activities).containsExactly(
+            "order ${order.id} product ${shirt.id} quantity 2 confirmed_at $CONFIRMED_AT",
+            "order ${order.id} product ${socks.id} quantity 1 confirmed_at $CONFIRMED_AT",
+        )
+        assertThat(stocksAfterTheConfirmation).containsExactly(STOCK - 2, STOCK - 1)
+        assertThat(stocks).isEqualTo(stocksAfterTheConfirmation)
+        assertThat(balance).isEqualTo(POINTS.toBigInteger())
+
+        log.info {
+            "Delivery, republished after the broker's ack: order ${order.id} ${confirmedOrder.status}, " +
+                "PG requests ${testPg.requestCount()}; after the stop: row ${describe(stoppedOutbox)}, " +
+                "record ${describe(firstRecord)}; past the lease: row ${describe(publishedOutbox)}, " +
+                "record ${describe(secondRecord)}; deliveries ${recordedLines.size} (${recordedLines.joinToString("; ")}); " +
+                "processed_order_confirmation [${confirmations.joinToString("; ")}]; " +
+                "purchase_activity [${activities.joinToString("; ")}]; " +
+                "stock $stocksAfterTheConfirmation after the confirmation, $stocks at the end, of $STOCK each; " +
+                "points $balance of $POINTS"
+        }
+    }
+
+    /** The line the streamer logs for one delivery of [record]. */
+    private fun recordedLine(eventId: String, record: ConsumerRecord<String, String>, result: String): String {
+        return "Recorded the order confirmed event. eventId=$eventId, orderId=${order.id}, " +
+            "partition=${record.partition()}, offset=${record.offset()}, result=$result"
+    }
+
+    /** Each product's stock, as committed. */
+    private fun stocksOf(vararg products: Product): List<Int> {
+        return inNewTransaction { products.map { productFinder.find(it.id).stock } }
+    }
+
+    /** How many rows [table] holds, as committed. */
+    private fun rowCount(table: String): Int {
+        return nativeStrings("select count(*) from `$table`").single().toInt()
+    }
+
+    private fun describe(record: ConsumerRecord<String, String>): String {
+        return "key ${record.key()} partition ${record.partition()} offset ${record.offset()}"
     }
 
     /** Starts the streamer on the context's MySQL and broker, with the class's topic and group, and keeps it for [terminateTheStreamer]. */

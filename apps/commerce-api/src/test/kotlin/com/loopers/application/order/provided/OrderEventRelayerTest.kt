@@ -17,10 +17,10 @@ import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
 import com.loopers.support.linesAt
+import com.loopers.support.stopRelayAfterBrokerAckBeforeMarkingPublished
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.mockk.every
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.test.context.TestPropertySource
-import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
@@ -72,7 +71,7 @@ class OrderEventRelayerTest(
                 "at com.loopers.adapter.integration.kafka.OrderConfirmedMessage\$Payload[\"orderId\"]"
     }
 
-    /** Where the stop scene stops the relay ([stopRelayAfterBrokerAckBeforeMarkingPublished]). Unstubbed, it is the real service. */
+    /** Where the stop scene stops the relay (`stopRelayAfterBrokerAckBeforeMarkingPublished`). Unstubbed, it is the real service. */
     @MockkSpyBean
     private lateinit var orderEventOutboxModifyService: OrderEventOutboxModifyService
 
@@ -331,7 +330,7 @@ class OrderEventRelayerTest(
     fun `a relay stopped after the broker's ack leaves the row pending, and a new relay republishes it past the lease`() {
         confirmAnOrderLeavingARow()
         clock.pin(ROUND_STARTED_AT)
-        stopRelayAfterBrokerAckBeforeMarkingPublished()
+        orderEventOutboxModifyService.stopRelayAfterBrokerAckBeforeMarkingPublished()
 
         assertThrows<DataAccessResourceFailureException> { orderEventRelayer.publishDueEvents() }
 
@@ -372,17 +371,6 @@ class OrderEventRelayerTest(
                 "new records ${recordsInsideTheLease.size}; past the lease: row ${describe(publishedOutbox)}, " +
                 "record ${describe(secondRecord)}"
         }
-    }
-
-    /**
-     * Stops a round between the broker's ack and saving `PUBLISHED`: the first `markPublished` throws and later calls are the real ones.
-     * The relay doesn't catch the failure, so it leaves the round the way a database failure in that transaction would (order-outbox
-     * design 13.5). The field is a CGLIB proxy, so the stub goes on the spy it wraps.
-     */
-    private fun stopRelayAfterBrokerAckBeforeMarkingPublished() {
-        val target = AopTestUtils.getUltimateTargetObject<OrderEventOutboxModifyService>(orderEventOutboxModifyService)
-        val failure = DataAccessResourceFailureException("The relay stopped after the broker's ack, before saving PUBLISHED.")
-        every { target.markPublished(any()) } throws failure andThenAnswer { callOriginal() }
     }
 
     /** What a restart makes: a new instance on the context's beans. Called directly, it has no proxy, which a scene's round doesn't need. */

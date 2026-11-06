@@ -487,6 +487,8 @@ scripts/final-check
 
 멈춤은 13.9절의 `stopRelayAfterBrokerAckBeforeMarkingPublished`이고, 재시작은 새 `OrderEventRelay`다.
 
+(2026-11-06, [issue 215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215): 장면은 `OutboxDeliveryE2ETest`의 둘째 `@Test`다. 멈춤은 2단계처럼 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이고, 두 클래스가 함께 거므로 `OrderPaymentSpies.kt`의 확장 함수로 옮겼다. 이 클래스도 그 spy를 둔다. 과제의 상품 7과 8은 ID가 아니라 두 상품이다. 표를 비우면 ID가 1부터 다시 매겨지므로 두 상품은 1과 2다. 첫 중계가 멈춘 뒤 streamer가 첫 record를 `RECORDED`로 남기기를 기다리고, 임대가 끝난 뒤의 새 중계가 같은 이벤트를 새 record로 다시 발행한다. 둘째 줄은 `ALREADY_RECORDED`다. 행은 시도 2번에 `PUBLISHED`이고, 테스트 PG가 받은 요청은 생성 1번뿐이다. 재고는 확정 뒤 10에서 8과 9가 되고 끝까지 그대로이며, 충전한 포인트 10,000은 그대로다. 클래스의 토픽과 group을 첫 장면과 나눠 쓰므로 offset은 장면의 차례에 따라 다르다. 실행 값은 [글감](../research/week7-outbox-recovery-writing-material.md)에 있다.)
+
 ### 14.6 과제의 이름과 이 저장소의 이름
 
 11절의 표에 더한다.
