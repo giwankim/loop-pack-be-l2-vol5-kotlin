@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
+import com.loopers.application.order.OrderEventOutboxFactory
 import com.loopers.application.order.provided.OrderEventRecoveryResult.Outcome
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.Order
@@ -26,8 +27,13 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.kafka.core.KafkaProducerException
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.SendResult
@@ -38,11 +44,13 @@ import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
 /**
- * 누락 복구 adds the row an order confirmed without one is missing, and leaves a row that is there alone (ADR 0036 rule 3). The scenes
+ * 누락 복구 adds the row an order confirmed without one is missing, leaves the same row alone, and refuses an order or a row it can't
+ * take as it is (ADR 0036 rule 3). The scenes
  * call the port on the real MySQL with the test PG and read rows in a new transaction, so only what committed answers.
  *
  * An order confirmed without a row is what week 6 left: the same TX B, minus the row. The spy on the repository makes TX B's save
- * write nothing, once, as the §5 run does (ADR 0036 rule 5). Later saves are the real ones. No scene writes `status`.
+ * write nothing, once, as the §5 run does (ADR 0036 rule 5). Later saves are the real ones. A differing row is TX B's too, built with
+ * one column changed by the spy on the factory. No scene writes a row or `status`.
  */
 @EnableTestPg
 @TestPropertySource(properties = ["order-events.topic=order-events-recovery"])
@@ -52,6 +60,7 @@ class OrderEventRecovererTest(
     private val clock: TestClock,
     private val kafkaProperties: KafkaProperties,
     private val orderEventsProperties: OrderEventsProperties,
+    private val jdbc: JdbcTemplate,
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         /** Already in microseconds, so the order and the row keep it as it is. */
@@ -62,6 +71,10 @@ class OrderEventRecovererTest(
     /** Where TX B's row goes missing ([confirmAnOrderLeavingNoRow]). Unstubbed, it is the real repository. */
     @MockkSpyBean
     private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
+
+    /** Where TX B's row comes out different in one column ([confirmAnOrderLeavingADifferingRow]). Unstubbed, it is the real factory. */
+    @MockkSpyBean
+    private lateinit var orderEventOutboxFactory: OrderEventOutboxFactory
 
     /** The test PG's server. Like [OrderPaymentIntegrationTest], WireMock's listener injects it into a field. */
     @InjectWireMock(TestPg.NAME)
@@ -228,6 +241,147 @@ class OrderEventRecovererTest(
         assertThat(testPg.requestCount()).isEqualTo(requestsBeforeRecovery)
     }
 
+    @Test
+    fun `recovering an order that doesn't exist is refused, with no row written`() {
+        val exception = assertThrows<OrderEventRecoveryRefusedException.OrderNotFound> {
+            orderEventRecoverer.recover(listOf(404L))
+        }
+
+        assertThat(exception.message).isEqualTo("Refused 누락 복구: order 404 doesn't exist.")
+        assertNoRows()
+    }
+
+    @Test
+    fun `recovering a draft order is refused, since it has no confirmation time, with no row written`() {
+        prepareOrder(prepareProduct() to 2)
+
+        val exception = assertThrows<OrderEventRecoveryRefusedException.OrderNotConfirmed> {
+            orderEventRecoverer.recover(listOf(order.id))
+        }
+
+        assertThat(exception.message).isEqualTo("Refused 누락 복구: order ${order.id} has no confirmation time.")
+        assertNoRows()
+    }
+
+    @Test
+    fun `recovering an order whose PG payment failed is refused, since it has no confirmation time, with no row written`() {
+        prepareOrder(prepareProduct() to 2)
+        confirmOrder(testPg, pgStatus = "FAILED")
+
+        val exception = assertThrows<OrderEventRecoveryRefusedException.OrderNotConfirmed> {
+            orderEventRecoverer.recover(listOf(order.id))
+        }
+
+        assertThat(exception.message).isEqualTo("Refused 누락 복구: order ${order.id} has no confirmation time.")
+        assertNoRows()
+    }
+
+    /** A point-paid order is one an earlier week confirmed, which no code path makes now, so the scene writes it as those tests do. */
+    @Test
+    fun `recovering an order confirmed with points is refused, with no row written`() {
+        prepareOrder(prepareProduct() to 2)
+        jdbc.update(
+            "update orders set status = 'CONFIRMED', payment_method = 'POINT', confirmed_at = now(6) where id = ?",
+            order.id,
+        )
+
+        val exception = assertThrows<OrderEventRecoveryRefusedException.OrderNotPaidThroughPg> {
+            orderEventRecoverer.recover(listOf(order.id))
+        }
+
+        assertThat(exception.message).isEqualTo("Refused 누락 복구: order ${order.id} wasn't paid through the PG.")
+        assertNoRows()
+    }
+
+    /**
+     * The row is TX B's own, built with one column changed, so the scene writes no row itself. The event ID differs only in case: the
+     * column's collation is case-insensitive, so the lookup still finds the row, as the unique key would. The payload is the same JSON
+     * with a space after each comma, so it is compared as the exact string, not as JSON.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = ["event_id", "order_id", "event_type", "schema_version", "message_key", "payload"])
+    fun `recovering an order whose row differs in a column is refused, naming the event and the column but not the payload`(
+        column: String,
+    ) {
+        confirmAnOrderLeavingADifferingRow(prepareProduct() to 2, column = column)
+        val storedOutbox = committedOrderEventOutbox()
+        clock.pin(RECOVERED_AT)
+
+        val exception = assertThrows<OrderEventRecoveryRefusedException.OutboxRowDiffers> {
+            orderEventRecoverer.recover(listOf(order.id))
+        }
+
+        val eventId = "order-confirmed:v1:${order.id}"
+        assertThat(exception.message).isEqualTo("Refused 누락 복구: the outbox row of event $eventId differs in $column.")
+        assertThat(exception.message).doesNotContain(storedOutbox.payload, """"items"""")
+        val warnLines = orderApplicationLogs.linesAt(Level.WARN).map { it.formattedMessage }
+        assertThat(warnLines).containsExactly("${exception.message} orderId=${order.id}")
+        assertThat(warnLines.single()).doesNotContain(storedOutbox.payload, """"items"""")
+        assertUnchanged(storedOutbox, OrderEventOutboxStatus.PENDING)
+    }
+
+    /**
+     * The middle order is a draft, refused as unconfirmed. Once it is confirmed, the same list runs again: the first order's row is
+     * found as it was, and only the last two are added.
+     */
+    @Test
+    fun `a refusal stops the list, the orders before it keep their rows, and a rerun of the whole list adds only the rest`() {
+        val firstOrder = confirmAnOrderLeavingNoRow(prepareProduct() to 2)
+        val draftOrder = prepareOrder(prepareProduct() to 1)
+        val lastOrder = confirmAnOrderLeavingNoRow(prepareProduct() to 3)
+        val orderIds = listOf(firstOrder.id, draftOrder.id, lastOrder.id)
+        clock.pin(RECOVERED_AT)
+
+        assertThrows<OrderEventRecoveryRefusedException.OrderNotConfirmed> {
+            orderEventRecoverer.recover(orderIds)
+        }
+
+        val firstOutbox = committedOrderEventOutbox(firstOrder.id)
+        assertThat(firstOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
+        assertThat(committedOrderEventOutboxOrNull(draftOrder.id)).isNull()
+        assertThat(committedOrderEventOutboxOrNull(lastOrder.id)).isNull()
+        assertThat(orderApplicationLogs.linesAt(Level.INFO).map { it.formattedMessage }).containsExactly(
+            "Ran 누락 복구 for the order confirmed event. orderId=${firstOrder.id}, " +
+                "eventId=order-confirmed:v1:${firstOrder.id}, result=ADDED",
+        )
+
+        confirmLeavingNoRow(draftOrder)
+        clock.pin(RECOVERED_AT)
+        val results = orderEventRecoverer.recover(orderIds)
+
+        assertThat(results).containsExactly(
+            OrderEventRecoveryResult(firstOrder.id, "order-confirmed:v1:${firstOrder.id}", Outcome.ALREADY_PRESENT),
+            OrderEventRecoveryResult(draftOrder.id, "order-confirmed:v1:${draftOrder.id}", Outcome.ADDED),
+            OrderEventRecoveryResult(lastOrder.id, "order-confirmed:v1:${lastOrder.id}", Outcome.ADDED),
+        )
+        assertThat(committedOrderEventOutbox(firstOrder.id).id).isEqualTo(firstOutbox.id)
+        assertThat(inNewTransaction { orderEventOutboxRepository.count() }).isEqualTo(3)
+    }
+
+    /**
+     * Nothing is locked (ADR 0036 rule 4). Either both miss the row, and the later insert collides on the unique event ID, or the
+     * later one reads the row the first committed. Which one happens is up to the race, so both are allowed. Either way one row.
+     */
+    @Test
+    fun `two recoveries of one order started together leave one row, added by one while the other collides or finds it`() {
+        confirmAnOrderLeavingNoRow(prepareProduct() to 2)
+        clock.pin(RECOVERED_AT)
+
+        val results = runConcurrently(List(2) { { orderEventRecoverer.recover(listOf(order.id)).single() } })
+
+        val outcomes = tally(results, DataIntegrityViolationException::class)
+        assertThat(outcomes.technicalErrors).isZero()
+        assertThat(outcomes.total).isEqualTo(2)
+        val successfulOutcomes = results.mapNotNull { it.getOrNull()?.outcome }
+        assertThat(successfulOutcomes).containsOnlyOnce(Outcome.ADDED)
+        assertThat(successfulOutcomes - Outcome.ADDED).isSubsetOf(Outcome.ALREADY_PRESENT)
+        assertThat(inNewTransaction { orderEventOutboxRepository.count() }).isOne()
+    }
+
+    private fun assertNoRows() {
+        assertThat(inNewTransaction { orderEventOutboxRepository.count() }).isZero()
+    }
+
     private fun alreadyPresent(): OrderEventRecoveryResult {
         return OrderEventRecoveryResult(order.id, "order-confirmed:v1:${order.id}", Outcome.ALREADY_PRESENT)
     }
@@ -266,18 +420,52 @@ class OrderEventRecovererTest(
     }
 
     /**
+     * Confirms an order of [items] at [CONFIRMED_AT] through the real TX A and TX B, with TX B's row built differently in [column]
+     * once. TX B saves what the factory gave it, and recovery's own build is the real one.
+     */
+    private fun confirmAnOrderLeavingADifferingRow(vararg items: Pair<Product, Int?>, column: String): Order {
+        val preparedOrder = prepareOrder(*items)
+        every { orderEventOutboxFactory.create(any()) } answers { differingIn(column, callOriginal()) } andThenAnswer
+            { callOriginal() }
+        clock.pin(CONFIRMED_AT)
+        confirmOrder(testPg, preparedOrder)
+
+        return preparedOrder
+    }
+
+    private fun differingIn(column: String, outbox: OrderEventOutbox): OrderEventOutbox {
+        return OrderEventOutbox(
+            eventId = if (column == "event_id") outbox.eventId.uppercase() else outbox.eventId,
+            orderId = if (column == "order_id") outbox.orderId + 1_000 else outbox.orderId,
+            eventType = if (column == "event_type") "OrderCancelled" else outbox.eventType,
+            schemaVersion = if (column == "schema_version") outbox.schemaVersion + 1 else outbox.schemaVersion,
+            messageKey = if (column == "message_key") "${outbox.messageKey}-other" else outbox.messageKey,
+            payload = if (column == "payload") outbox.payload.replace(",", ", ") else outbox.payload,
+            nextAttemptAt = outbox.nextAttemptAt,
+        )
+    }
+
+    /**
      * Confirms an order of [items] at [CONFIRMED_AT] through the real TX A and TX B, with TX B's row saved nowhere, and checks in a new
      * transaction that no row committed.
      */
     private fun confirmAnOrderLeavingNoRow(vararg items: Pair<Product, Int?>): Order {
         val preparedOrder = prepareOrder(*items)
-        every { orderEventOutboxRepository.save(any()) } answers { firstArg() } andThenAnswer { callOriginal() }
-        clock.pin(CONFIRMED_AT)
-        confirmOrder(testPg, preparedOrder)
-
-        val eventId = "order-confirmed:v1:${preparedOrder.id}"
-        assertThat(inNewTransaction { orderEventOutboxRepository.findByEventId(eventId) }).isNull()
+        confirmLeavingNoRow(preparedOrder)
 
         return preparedOrder
+    }
+
+    /** Confirms the draft [order] as [confirmAnOrderLeavingNoRow] does, for a scene that holds the order unconfirmed first. */
+    private fun confirmLeavingNoRow(order: Order) {
+        every { orderEventOutboxRepository.save(any()) } answers { firstArg() } andThenAnswer { callOriginal() }
+        clock.pin(CONFIRMED_AT)
+        confirmOrder(testPg, order)
+
+        assertThat(committedOrderEventOutboxOrNull(order.id)).isNull()
+    }
+
+    private fun committedOrderEventOutboxOrNull(orderId: Long): OrderEventOutbox? {
+        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId") }
     }
 }

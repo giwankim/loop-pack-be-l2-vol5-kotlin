@@ -448,6 +448,7 @@ scripts/final-check
 - 진입점은 한 클래스의 `ApplicationRunner`이고 `order-events.recovery.order-ids`가 비면(기본) 아무것도 하지 않는다. 엔드포인트가 없다. 앱을 그 값으로 다시 띄운다.
 - 결과는 ADR 0036 규칙 3의 표다. 거절은 시작을 실패시킨다. 첫 거절에서 멈추고, 앞서 더한 행은 남는다. 다시 돌려도 같은 행이면 아무것도 하지 않는다. 주문마다 INFO 한 줄이다.
 - 잠그지 않는다. 동시의 두 실행은 유일한 `event_id`에서 하나가 실패한다.
+- (2026-11-06, [issue 212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212): 거절은 봉인된 `OrderEventRecoveryRefusedException`의 넷이다. 없는 주문은 `OrderNotFound`이고 `ORDER_NOT_FOUND`가 아니다(`findForRecovery`가 던진다). `confirmedAt`이 없으면 `OrderNotConfirmed`, PG가 아니면 `OrderNotPaidThroughPg`, 행이 다르면 `OutboxRowDiffers`다. 마지막은 이벤트 ID와 다른 열 이름을 모두 표의 차례로 싣고 payload는 싣지 않는다. 있는 행은 그대로 `event_id`로 찾는다. 찾기와 유일 키가 열의 collation(`utf8mb4_general_ci`)을 나눠 쓰므로, 새 행이 부딪힐 행이 견줄 행이다. 그래서 대소문자만 다른 `event_id`도 찾혀 `event_id`가 다르다고 거절된다. 견주기는 Kotlin의 문자열 그대로다. 거절은 그 주문의 트랜잭션이 되돌아간 뒤 `OrderEventRecovery`가 WARN 한 줄(예외의 메시지와 `orderId=`)로 남기고 다시 던진다. 동시의 두 실행에서 진 쪽은 `DataIntegrityViolationException`으로 실패하거나, 먼저 커밋된 행을 같은 행으로 찾는다.)
 
 ### 14.3 5절의 준비: 보존한 W6 테스트 구성
 

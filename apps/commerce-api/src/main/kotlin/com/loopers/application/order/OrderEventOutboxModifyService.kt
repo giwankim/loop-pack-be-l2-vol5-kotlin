@@ -1,8 +1,10 @@
 package com.loopers.application.order
 
+import com.loopers.application.order.provided.OrderEventRecoveryRefusedException
 import com.loopers.application.order.provided.OrderEventRecoveryResult
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.required.OrderEventOutboxRepository
+import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.stereotype.ApplicationService
@@ -27,21 +29,62 @@ class OrderEventOutboxModifyService(
 ) {
     /**
      * Adds the row [orderId]'s confirmation is missing, built from the order as TX B builds it and due now, so the relay publishes it
-     * on its next round. An order that already has a row of its event ID keeps that row as it is, whatever its state (ADR 0036 rule 3).
+     * on its next round. An order that already has the same row keeps it as it is, whatever its state (ADR 0036 rule 3). An order
+     * whose facts don't fit, or whose row differs, is refused with an [OrderEventRecoveryRefusedException], and nothing is written.
      * Nothing is locked: two recoveries of one order at once meet at the unique event ID (rule 4). It reads the order and writes this
      * row, nothing else.
+     *
+     * The row that's there is the one the event ID finds: the lookup and the unique key share the column's collation, so the row a
+     * new one would collide with is the row compared, even when its event ID differs in case.
      */
     fun recover(orderId: Long): OrderEventRecoveryResult {
         val order = orderFinder.findForRecovery(orderId)
+        ensureRecoverable(order)
         val recoveredOutbox = orderEventOutboxFactory.create(order)
+        val existingOutbox = orderEventOutboxRepository.findByEventId(recoveredOutbox.eventId)
 
-        if (orderEventOutboxRepository.findByEventId(recoveredOutbox.eventId) != null) {
+        if (existingOutbox != null) {
+            ensureSameRow(existingOutbox, recoveredOutbox)
+
             return OrderEventRecoveryResult(orderId, recoveredOutbox.eventId, OrderEventRecoveryResult.Outcome.ALREADY_PRESENT)
         }
 
         orderEventOutboxRepository.save(recoveredOutbox)
 
         return OrderEventRecoveryResult(orderId, recoveredOutbox.eventId, OrderEventRecoveryResult.Outcome.ADDED)
+    }
+
+    /** The order facts recovery refuses rather than guess at (ADR 0036 rule 3). Checked before the row is built, so nothing is written. */
+    private fun ensureRecoverable(order: Order) {
+        if (order.confirmedAt == null) {
+            throw OrderEventRecoveryRefusedException.OrderNotConfirmed(order.id)
+        }
+
+        if (!order.paysThroughPg) {
+            throw OrderEventRecoveryRefusedException.OrderNotPaidThroughPg(order.id)
+        }
+    }
+
+    /**
+     * Compares the six event columns as they are stored, the payload as the exact string (ADR 0036 rule 3). The state columns aren't
+     * compared: a published or blocked row is still the same row.
+     */
+    private fun ensureSameRow(existingOutbox: OrderEventOutbox, recoveredOutbox: OrderEventOutbox) {
+        val columnValues = listOf<Pair<String, (OrderEventOutbox) -> Any>>(
+            "event_id" to { it.eventId },
+            "order_id" to { it.orderId },
+            "event_type" to { it.eventType },
+            "schema_version" to { it.schemaVersion },
+            "message_key" to { it.messageKey },
+            "payload" to { it.payload },
+        )
+        val differingColumns = columnValues
+            .filter { (_, valueOf) -> valueOf(existingOutbox) != valueOf(recoveredOutbox) }
+            .map { (column, _) -> column }
+
+        if (differingColumns.isNotEmpty()) {
+            throw OrderEventRecoveryRefusedException.OutboxRowDiffers(recoveredOutbox.eventId, differingColumns)
+        }
     }
 
     /** Locks up to [batchSize] due rows and starts an attempt on each. The commit ends the lock, and the lease then protects the rows. */
