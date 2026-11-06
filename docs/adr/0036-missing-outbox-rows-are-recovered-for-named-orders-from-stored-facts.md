@@ -20,7 +20,7 @@ date: 2026-11-06
    | 행이 있고 `event_id`, `order_id`, `event_type`, `schema_version`, `message_key`, `payload`(문자열 그대로)가 모두 같다 | 아무것도 하지 않는다. 상태가 `PUBLISHED`나 `BLOCKED`여도 같다 |
    | 행이 있고 하나라도 다르다 | 거절. 이벤트 ID와 다른 열 이름을 드러내고 payload는 적지 않는다 |
 
-   주문마다 INFO 한 줄로 결과를 남긴다. 주문마다 자기 트랜잭션이고 첫 거절에서 멈춘다. 앞서 더한 행은 남지만 다시 돌리면 아무것도 하지 않으므로 안전하다. 거절은 시작을 실패시켜 눈에 띈다.
+   주문마다 INFO 한 줄로 결과를 남긴다. 주문마다 자기 트랜잭션이고 첫 거절에서 멈춘다. 앞서 더한 행은 남지만 다시 돌리면 아무것도 하지 않으므로 안전하다. 거절은 시작을 실패시켜 눈에 띈다. (2026-11-06, [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209)의 닫는 검토: 거절된 주문은 INFO 줄을 남기지 않는다. 남길 결과가 없어, 트랜잭션이 되돌려진 뒤 거절의 메시지와 주문 ID를 WARN 한 줄로 남기고 멈춘다. 주문 아웃박스 설계 14.2절이다.)
 4. **잠그지 않는다.** 동시에 두 번 돌면 유일한 `event_id`에서 하나가 실패하고, 다시 돌리면 아무것도 하지 않는다. TX B와는 겹치지 않는다. 대상이 이미 확정된 주문이기 때문이다. (2026-11-06, [issue 217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217): 진 쪽이 늘 실패하지는 않는다. 먼저 커밋된 행을 찾으면 같은 행이라 `ALREADY_PRESENT`로 끝난다. 어느 쪽이든 행은 하나다. [issue 212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212)의 장면이 두 갈래를 모두 받아들이고, 처음 돌린 때는 충돌 쪽을 탔다. 주문 아웃박스 설계 14.2절이다.)
 5. **5절의 준비는 보존한 W6 테스트 구성이다. W6 revision의 jar를 띄우지 않는다.** 6주차와 지금의 확정 경로는 TX B의 한 곳(`publish` 대신 `leaveInOutbox`)만 다르다. 테스트는 `OrderEventOutboxRepository`의 spy로 `save`가 행을 쓰지 않게 하고 커밋 뒤 보내기를 건다. A는 보내지 않고, B는 그 행을 지금의 `KafkaOrderEventPublisher`로 보낸다. record의 bytes는 6주차와 같다고 못 박혀 있다. 그다음 spy 없는 둘째 컨텍스트가 같은 컨테이너에서 복구 ID로 뜨고, 셋째가 같은 ID로 다시 뜬다. 행을 지우거나 `SUCCESS`를 넣지 않는다.
 

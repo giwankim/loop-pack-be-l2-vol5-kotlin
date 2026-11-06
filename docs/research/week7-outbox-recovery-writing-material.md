@@ -331,7 +331,7 @@ W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed
 **The test heap.** The first final check failed: commerce-api's test JVM ran out of heap (`Java heap space`), and `HexagonalArchitectureTest`, running last, was skipped. Nothing set the test heap, so Gradle's 512 MB default applied.
 
 - A control run of the same tree without this class passed, but ended at about 419 MB live after 13 full GCs. The suite was already near the limit.
-- Sampling the live heap every 3 s after a forced full GC, with soft references cleared, shows no single test using it up. Spring keeps up to 32 test contexts, the run starts 35, and a new one costs about 40 MB (`BrandRegisterConcurrencyTest`, with no restart, adds 45 MB). Each restarted context leaves about 6 MB of classes that are never unloaded (`OrderEventRecoveryRunnerTest`, with six restarts, adds 78 MB). This class adds about 47 MB: its own context and two restarts.
+- Sampling the live heap every 3 s after a forced full GC, with soft references cleared, shows no single test using it up. Spring keeps up to 32 test contexts, the run starts 35, and a new one costs about 40 MB (`BrandRegisterConcurrencyTest`, with no restart, adds 45 MB). Each restarted context leaves about 6 MB of classes that are never unloaded (`OrderEventRecoveryRunnerTest`, with five restarts, adds 78 MB). This class adds about 47 MB: its own context and two restarts. (2026-11-06, spec 209's closing review: the runner's class restarts five times, not six as this said, since one of its six tests calls the runner without a restart. The sampling's commit and tree weren't recorded, so these figures come from one unpinned run and the 1 GB setting rests on the failed and passing final checks, not on them.)
 - So `build-logic`'s Spring convention now sets `maxHeapSize = "1g"` on `tasks.test` (`fc28dbc`). With it the suite ends at about 590 MB live with no full GC. The user chose this over closing single-use contexts with `@DirtiesContext`, which would have left the suite near its limit as classes are added.
 
 **Final check:** `scripts/final-check` on `fc28dbc` (clean), rebased onto issue 215, started 2026-11-06T04:05:40Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (57 s). commerce-api: 95 classes, 1062 tests, 0 failures, 0 errors, 0 skipped (5 min 12 s). That is issue 215's 94 classes and 1061 tests plus this class's scene. Only this section's text changed after that run.
@@ -390,11 +390,12 @@ A first start of the check was stopped while commerce-api's tests ran, because t
 
 ## Spec 209: where the implementation differs
 
-Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923) without this line. Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all seven.
+Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923) without this line. Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all eight.
 
 | The spec or ticket said | What is there | How it was found |
 | --- | --- | --- |
 | Issue 213: a refusal at startup fails the context with the refusal as the cause | The start throws the refusal itself. Boot 4.1 wraps only checked exceptions from a runner, and the refusal is unchecked, so it leaves `SpringApplication.run` as is, after the context is closed | Issue 213's scene (design 14.2) |
+| Spec 209, story 15, and ADR 0036 rule 3: one INFO line per order with its result | A refused order logs one WARN line instead, with the refusal's message and the order ID, after its transaction rolled back. It has no result to log, and the run stops there | Spec 209's closing review (design 14.2, ADR 0036 rule 3) |
 | Design 14.3: the first context is closed before the second starts | It stays up. It is JUnit's test context, which a scene can't close, and its relay is off under `test` | Issue 216 (design 14.3) |
 | No PG callback is added during recovery | Not counted: the test PG sends none. The scene reads it as no lookup added and both payments unchanged, since a callback's reconcile does one or the other | Issue 216 (design 14.3) |
 | The third context starts with the same IDs | It also stays up 2 s with its relay on, two ticks, while every column of both rows stays as it was | Issue 216's review (design 14.3) |
@@ -404,7 +405,6 @@ Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-
 
 **Additions the spec didn't ask for:**
 
-- A refusal also logs one WARN line, after its transaction rolled back (design 14.2).
 - The runner sits in a new `adapter.startup` layer. Its rule, that it reaches only provided ports, issue 213 anticipated. Both trigger rules now come from one helper, `triggerReachesOnlyProvidedPorts`.
 - One restart helper, `restartedCommerceApi`, for its three users, with the banner off so it can't read as a scene line's continuation.
 - A 1 GB heap for every Spring app's test JVM, through `build-logic` (`fc28dbc`). commerce-api's suite outgrew Gradle's 512 MB default when issue 216's class added its context and two restarts (design 14.8).
