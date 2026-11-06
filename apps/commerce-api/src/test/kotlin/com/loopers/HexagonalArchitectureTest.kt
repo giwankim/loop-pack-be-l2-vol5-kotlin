@@ -32,8 +32,8 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
     ],
 )
 class HexagonalArchitectureTest {
-    // splearn's three layers, with its single adapter layer split in four so that the web, persistence, integration
-    // (outbound HTTP, ADR 0021) and scheduling (ADR 0035) adapters cannot reach each other. ApiControllerAdvice sits at the
+    // splearn's three layers, with its single adapter layer split in five so that the web, persistence, integration
+    // (outbound HTTP, ADR 0021), scheduling (ADR 0035) and startup (ADR 0036) adapters cannot reach each other. ApiControllerAdvice sits at the
     // adapter root as in splearn, but it only answers web requests, so that one package belongs to the web adapter.
     @ArchTest
     val dependenciesPointInward: ArchRule = layeredArchitecture()
@@ -44,27 +44,33 @@ class HexagonalArchitectureTest {
         .layer("adapter.persistence").definedBy("$ROOT.adapter.persistence..")
         .layer("adapter.integration").definedBy("$ROOT.adapter.integration..")
         .layer("adapter.scheduling").definedBy("$ROOT.adapter.scheduling..")
+        .layer("adapter.startup").definedBy("$ROOT.adapter.startup..")
         .layer("support").definedBy("$ROOT.support..")
         .whereLayer("domain")
         .mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence", "adapter.integration")
         .whereLayer("application")
-        .mayOnlyBeAccessedByLayers("adapter.webapi", "adapter.persistence", "adapter.integration", "adapter.scheduling")
+        .mayOnlyBeAccessedByLayers(
+            "adapter.webapi",
+            "adapter.persistence",
+            "adapter.integration",
+            "adapter.scheduling",
+            "adapter.startup",
+        )
         .whereLayer("adapter.webapi").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.integration").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.scheduling").mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter.startup").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
     // A trigger starts what the application offers and decides nothing, so of this code base it sees only the provided ports. The layer
-    // rule above can't say this: to it, OrderEventRelay itself and a required port are "the application layer" too.
+    // rule above can't say this: to it, OrderEventRelay itself and a required port are "the application layer" too. The relay's
+    // schedule and 누락 복구's startup runner are both triggers.
     @ArchTest
-    val schedulingReachesOnlyProvidedPorts: ArchRule = classes()
-        .that().resideInAPackage("$ROOT.adapter.scheduling..")
-        .should().onlyDependOnClassesThat(
-            resideOutsideOfPackage("$ROOT..")
-                .or(resideInAnyPackage("$ROOT.adapter.scheduling..", "$ROOT.application..provided..")),
-        )
-        .because("a trigger calls a provided port and nothing else (ADR 0035)")
+    val schedulingReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.scheduling", "ADR 0035")
+
+    @ArchTest
+    val startupReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.startup", "ADR 0036")
 
     // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
     // likes while application.like calls application.product is two layers each looking one way, not a loop
@@ -89,6 +95,17 @@ class HexagonalArchitectureTest {
     val domainSlicesOnlyReadEachOther: ArchRule = slicesOf("domain")
         .should(onlyReadOtherSlices())
         .because("an aggregate must not change another aggregate's state, even through a JPA association (design 5.1)")
+}
+
+/** The classes in [layerPattern] depend on nothing of this code base but their own layer and the provided ports. */
+private fun triggerReachesOnlyProvidedPorts(layerPattern: String, adr: String): ArchRule {
+    return classes()
+        .that().resideInAPackage("$ROOT.$layerPattern..")
+        .should().onlyDependOnClassesThat(
+            resideOutsideOfPackage("$ROOT..")
+                .or(resideInAnyPackage("$ROOT.$layerPattern..", "$ROOT.application..provided..")),
+        )
+        .because("a trigger calls a provided port and nothing else ($adr)")
 }
 
 /** Slices of one layer: the package segment right after [layerPattern] names the feature. */
