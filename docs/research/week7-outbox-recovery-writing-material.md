@@ -21,6 +21,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [211](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/211) | 누락 복구's happy paths through a provided port | [Issue 211](#issue-211-누락-복구-adds-a-missing-outbox-row-and-the-relay-publishes-it) |
 | [212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212) | 누락 복구's refusals | [Issue 212](#issue-212-누락-복구-refuses-rather-than-guesses) |
 | [213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213) | the startup runner that triggers 누락 복구 | [Issue 213](#issue-213-a-restart-with-order-eventsrecoveryorder-ids-triggers-누락-복구) |
+| [215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215) | §7: one order through a republish to the streamer | [Issue 215](#issue-215-one-order-through-a-republish-recorded-once) |
 
 The sections keep the order the tickets land in.
 
@@ -217,3 +218,60 @@ The order checks run before the row is built, so `OrderConfirmedEvent.from`'s `r
 - Kept as they are: `started` repeats `OrderPaymentIntegrationTest.restarted()` apart from its extra arguments. With two users, moving it to `support` can wait for a third. `committedRowOrNull` spells the event ID as the base class's `committedOrderEventOutbox` does. The documented empty key sits in the `local` block beside the relay's switch, as the ticket asks, not in the default document.
 
 **Final check:** `scripts/final-check` on the tree rebased onto issue 212 (`17ad415`, clean, which holds `6d7643c`'s code; this commit changes only this section), started 2026-11-06T03:02:42Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (50 s). commerce-api: 94 classes, 1060 tests, 0 failures, 0 errors, 0 skipped (4 min 31 s). That is issue 212's 93 classes and 1053 tests, plus this class with its 6 scenes and `HexagonalArchitectureTest`'s new rule (9 → 10). Before the rebase, the same code passed on `596124c` with 1048 tests (issue 211's 1041 plus the same 7).
+
+## Issue 215: one order through a republish, recorded once
+
+Closed 2026-11-06 by `2f63981` on `feat/outbox-recovery`, rebased onto issue 213's `e49f831`. Test code and notes only, no production code. This is the assignment's §7, design 14.5's table, run once with the real commerce-streamer consuming.
+
+**The scene.** `OutboxDeliveryE2ETest`'s second `@Test`, beside issue 214's scene, on the class's topic and group:
+
+1. One order of two products, 2 and 1, confirmed through the provided ports with the test PG. 10,000 points are charged first, so "no point deduction" has a balance to keep.
+2. Step 2's stop: the first `markPublished` throws after the broker's ack. The broker holds a record, the row stays `PENDING` at attempt 1 under its lease, and the scene waits for the streamer's `RECORDED` line before going on.
+3. A recreated `OrderEventRelay`, a second past the lease, publishes the event again as a new record at the next offset. The streamer logs `ALREADY_RECORDED` for it.
+
+**What was observed, per row of design 14.5's table:**
+
+| Observation | Expected | Observed |
+| --- | --- | --- |
+| Order and PG transaction | 1 confirmed order, 1 external transaction | 1 row in `orders`, `CONFIRMED`; the test PG got 1 request, the create |
+| Outbox | 1 row of the event ID, `PUBLISHED` at the end | 1 row, `PUBLISHED` at attempt 2 |
+| Kafka | ≥ 2 records of the event ID, different offsets | 2 records, same key, partition and value, offsets 1 and 2 |
+| Consumer | the event received ≥ 2 times | `RECORDED` at offset 1, then `ALREADY_RECORDED` at offset 2 |
+| Processed confirmation | 1, for the order and event ID | 1 |
+| Purchase activity | 1 row per product, quantities 2 and 1 | 2 rows, 2 and 1, at the confirmation time |
+| Stock and points | no extra take or give-back, no deduction | `[8, 9]` of 10 after the confirmation and at the end; 10,000 of 10,000 |
+
+The offsets are 1 and 2 because issue 214's scene ran first and wrote offset 0 to the shared topic. In another order they would be 0 and 1.
+
+**One run's line, from `scripts/scene-lines` on the final check's reports:**
+
+```text
+Delivery, republished after the broker's ack: order 1 CONFIRMED, PG requests 1; after the stop: row order-confirmed:v1:1 PENDING attempts 1 published_at null, record key 1 partition 0 offset 1; past the lease: row order-confirmed:v1:1 PUBLISHED attempts 2 published_at 2026-11-06T01:03:09.123456Z, record key 1 partition 0 offset 2; deliveries 2 (Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=1, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=2, result=ALREADY_RECORDED); processed_order_confirmation [order-confirmed:v1:1 order 1 confirmed_at 2026-11-06T01:02:03.123456Z]; purchase_activity [order 1 product 1 quantity 2 confirmed_at 2026-11-06T01:02:03.123456Z; order 1 product 2 quantity 1 confirmed_at 2026-11-06T01:02:03.123456Z]; stock [8, 9] after the confirmation, [8, 9] at the end, of 10 each; points 10000 of 10000
+```
+
+**Where the spec's words and the test differ:**
+
+- **Products 7 and 8 are not IDs.** The tables are emptied after each test, so IDs restart at 1, and the two products are 1 and 2. Preparing six throwaway products to reach 7 and 8 would show nothing.
+- **"At least two" is asserted as exactly two.** This holds for the records and for the deliveries. The group's assignment is awaited until `STABLE` before anything publishes, so a rebalance redelivery would be a defect worth seeing, not noise.
+- **Two checks hold by construction.** Neither the relay nor the streamer touches stock or points, so those assertions show the republish has no such path more than they test one. Stock is read right after the confirmation and again at the end, so "extra" is a comparison, not just a final value.
+
+**What the review changed** (two parallel reviewers, standards and spec):
+
+- **The stop's stub moved.** It was copied line for line from `OrderEventRelayerTest`. CODING_STANDARDS.md says a stub two classes use is an extension in `OrderPaymentSpies.kt`, so it is now `OrderEventOutboxModifyService.stopRelayAfterBrokerAckBeforeMarkingPublished()`, used by both. Its list of shared stubs names it.
+- **CODING_STANDARDS.md got the class's spy note**, as every new `@MockkSpyBean` has. The note says why the first scene isn't split off: design 14.1 places both scenes in the class, sharing its topic, group and streamer.
+- **Design wording.** "같은 record를 다시 보낸다" used a word from 발행하다's Avoid list and contradicted 다시 발행하다, since a republish is a new record. It now reads "같은 이벤트를 새 record로 다시 발행한다".
+- **Stock is read after the confirmation too**, as described above.
+- **Smaller fixes.** The first scene uses the new `recordedLine` helper, and its local was renamed so it no longer shadows the helper. The lease constant's KDoc says "a second past".
+- **Kept as they are:**
+  - the exact counts, explained above;
+  - the `order-confirmed:v1:` literal in both scenes, the event ID's spelled-out contract, as in step 2;
+  - the scene's length, one §7 run whose table is the behaviour;
+  - `describe(record)`, private in both classes, as step 2 left it.
+
+**Red check, a local edit run and reverted, not committed:**
+
+| Edit | What went red |
+| --- | --- |
+| the stop not stubbed | the scene: `Expected DataAccessResourceFailureException to be thrown, but nothing was thrown.` The other scene stayed green. |
+
+**Final check:** `scripts/final-check` on the rebased tree (`7259334`, clean, which holds `2f63981`'s code; the amended commit changes only this section), started 2026-11-06T03:28:14Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (59 s). commerce-api: 94 classes, 1061 tests, 0 failures, 0 errors, 0 skipped (5 min 3 s): issue 213's 1060 plus this scene. Before the rebase, the same code passed on `03773a5` with 1054 tests (issue 212's 1053 plus this scene).
