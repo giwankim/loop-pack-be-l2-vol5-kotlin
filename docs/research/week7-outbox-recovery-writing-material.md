@@ -340,7 +340,7 @@ W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed
 
 The last ticket. Documents only: no production or test code changed after `2b55dd0`, where the final check ran.
 
-**One run's lines for every E2E scene.** All three come from one run: `scripts/scene-lines --results build/final-check/commerce-api-test-results` on the final check's reports. The issue sections above quote lines from earlier runs of the same scenes. Pinned values (confirmation times, order and product IDs) repeat between runs, but offsets, `published_at`, PG identifiers and `updated_at` don't.
+**One run's lines for every E2E scene.** All three come from one run: `scripts/scene-lines --results build/final-check/commerce-api-test-results` on the final check's reports. The issue sections above quote lines from earlier runs of the same scenes. Whatever `TestClock` and the scene's order pin repeats between runs. What the clock doesn't pin, like the §5 restarts' `published_at` and `updated_at` and PG identifiers, doesn't.
 
 `OutboxDeliveryE2ETest`, design 14.1's §6 rows 3 and 4:
 
@@ -367,7 +367,7 @@ The class's two scenes ran in the same order as in issue 215's run, the §6 scen
 **What the records gained.**
 
 - Design 14.7 has a table of what each ticket built, the names the spec left open, and the spec's and tickets' differences, each with its dated note in place. 14.8 has the commands and this final check.
-- The dated notes this ticket added: 14.2 for issue 211's names and issue 213's runner (its layer, and the refusal coming out of the start as itself rather than as a cause), 14.5 for issue 215's exact counts, 10 for the week 6 path that was never rebuilt from the `week6` revision, and 1.1's row for step 3.
+- The dated notes this ticket added: ADR 0036 rule 4 for the concurrent recovery that finds the row rather than fails, 14.2 for issue 211's names and issue 213's runner (its layer, and the refusal coming out of the start as itself rather than as a cause), 14.5 for issue 215's exact counts, 10 for the week 6 path that was never rebuilt from the `week6` revision, and 1.1's row for step 3.
 - **The `PUBLISHED` cleanup, looked at again with recovery.** Design 13.8 deferred it to after step 3. 누락 복구 adds a row whenever its event ID has none, so if a cleanup deleted a `PUBLISHED` row and someone later named that order, the row would come back and be published again. The streamer's processed confirmation turns that into `ALREADY_RECORDED`, which is what B shows in the §5 scene, so nothing is counted twice. It adds one condition to any future cleanup: the consumer's record has to last as long as anyone can name the order, which has no end. Today neither side deletes anything, so it holds. This comes from the code; no scene deletes a row and recovers it. Nothing was built.
 
 **A count corrected.** Issue 213's section says `HexagonalArchitectureTest` went from 9 to 10. The reports say 8 to 9: it had 8 at the end of step 2 (design 13.13), and the `adapter.startup` rule is its ninth. Issue 213's totals are right, so its runner class has 6 scenes and the rule adds 1, which gives the 7 it reported. Its section is left as written, and this paragraph corrects it.
@@ -378,11 +378,19 @@ The class's two scenes ran in the same order as in issue 215's run, the §6 scen
 
 A first start of the check was stopped while commerce-api's tests ran, because the design document, which is an input of that task, was being edited. It was rerun from scratch on the clean tree, and only that run is recorded.
 
+**What the review changed** (two parallel reviewers, standards and spec; both reran every number against the final check's reports and found none wrong):
+
+- **A seventh difference.** The spec reviewer found that spec 209 and ADR 0036 rule 4 say the losing one of two concurrent recoveries fails, while it can also find the committed row and report `ALREADY_PRESENT`. Issue 212's note had it, but the lists didn't. It is in both now, with a dated note on the ADR.
+- **Glossary words.** 콜백 became 알림, the PR draft's "send" and "sent" became "published", and 소급 and "backfilling" became plain words for what is out of scope.
+- **The additions lists agree.** Design 14.7 now names the shared trigger-rule helper and the restart helper's banner, and both lists say issue 213 anticipated the `adapter.startup` rule. Only the layer is new.
+- **One sentence contradicted the next.** It said offsets never repeat between runs, and then that §7's did. It now says what `TestClock` pins repeats.
+- **Kept:** the final check's numbers in four places (design 14.8, this section, the preface and the PR draft), as step 2 did. If the closing review changes code, 14.8 gets a dated rerun note.
+
 **Red checks:** none. This ticket changes no behaviour.
 
 ## Spec 209: where the implementation differs
 
-Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists them.
+Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all seven.
 
 | The spec or ticket said | What is there | How it was found |
 | --- | --- | --- |
@@ -390,13 +398,14 @@ Step 3 is built. These are the differences from the spec and its tickets. Each h
 | Design 14.3: the first context is closed before the second starts | It stays up. It is JUnit's test context, which a scene can't close, and its relay is off under `test` | Issue 216 (design 14.3) |
 | No PG callback is added during recovery | Not counted: the test PG sends none. The scene reads it as no lookup added and both payments unchanged, since a callback's reconcile does one or the other | Issue 216 (design 14.3) |
 | The third context starts with the same IDs | It also stays up 2 s with its relay on, two ticks, while every column of both rows stays as it was | Issue 216's review (design 14.3) |
+| Spec 209: two recoveries running at once fail on the unique event ID | The loser either fails on it or finds the committed row and reports `ALREADY_PRESENT`. Either way there is one row. Ticket 212 allowed both, and the scene's first run took the collision | Issue 212 (design 14.2, ADR 0036 rule 4) |
 | Products 7 × 2 and 8 × 1 | Two products, 1 and 2, since IDs restart after each test's cleanup | Issue 215 (design 14.5) |
 | At least two records and two deliveries | Exactly two of each. Nothing publishes before the group is `STABLE`, so a third would be a defect | Issue 215 (design 14.5) |
 
 **Additions the spec didn't ask for:**
 
 - A refusal also logs one WARN line, after its transaction rolled back (design 14.2).
-- The runner sits in a new `adapter.startup` layer with its own architecture rule, that it reaches only provided ports. Both trigger rules now come from one helper.
+- The runner sits in a new `adapter.startup` layer. Its rule, that it reaches only provided ports, issue 213 anticipated. Both trigger rules now come from one helper, `triggerReachesOnlyProvidedPorts`.
 - One restart helper, `restartedCommerceApi`, for its three users, with the banner off so it can't read as a scene line's continuation.
 - A 1 GB heap for every Spring app's test JVM, through `build-logic` (`fc28dbc`). commerce-api's suite outgrew Gradle's 512 MB default when issue 216's class added its context and two restarts (design 14.8).
 
@@ -455,7 +464,7 @@ The stop is step 2's controlled one: the JVM stays up, and a restart is a new `O
 
 ### Week 6's two cases
 
-`OrderEventRecoveryE2ETest` reproduces them in this run: week 6's database is gone, and week 6's path differs from today's at one call in TX B, which a test double replaces. A was confirmed and its send never happened, B was sent and recorded, and neither has a row. A restart with `order-events.recovery.order-ids` set to both adds two rows: A gains its purchase activity, and B's republish is `ALREADY_RECORDED`. No PG request, reconfirmation or stock change happens during recovery, and a second restart with the same IDs changes nothing.
+`OrderEventRecoveryE2ETest` reproduces them in this run: week 6's database is gone, and week 6's path differs from today's at one call in TX B, which a test double replaces. A was confirmed and never published, since its hook does nothing, B was published and recorded, and neither has a row. A restart with `order-events.recovery.order-ids` set to both adds two rows: A gains its purchase activity, and B's republish is `ALREADY_RECORDED`. No PG request, reconfirmation or stock change happens during recovery, and a second restart with the same IDs changes nothing.
 
 ### The single-relay limit
 
@@ -512,5 +521,5 @@ Recovered rows stay after a revert and are published like any other.
 - **A refusal fails the start.** That's on purpose, but a property left set keeps failing it.
 - **Test build.** commerce-api's `test` depends on commerce-streamer's `bootJar`, and every Spring app's test JVM gets 1 GB of heap through `build-logic`.
 - **No schema change, no new endpoint, and no runtime dependency** from commerce-api to commerce-streamer.
-- **Out of scope:** finding orders that are missing a row, backfilling old point orders, and cleaning up `PUBLISHED` rows (design 13.8).
+- **Out of scope:** finding orders that are missing a row, publishing for old point-confirmed orders, and cleaning up `PUBLISHED` rows (design 13.8).
 ```

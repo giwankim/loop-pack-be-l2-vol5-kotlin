@@ -515,13 +515,13 @@ scripts/final-check
 | [213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213) | `OrderEventRecoveryRunner`, `adapter.startup` 층과 그 아키텍처 규칙, `application.yml`의 설명. `OrderEventRecoveryRunnerTest`. |
 | [215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215) | 7절의 장면(`OutboxDeliveryE2ETest`의 둘째). 멈춤의 stub을 `OrderPaymentSpies.kt`의 확장 함수로 옮겼다. |
 | [216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216) | 5절의 장면 `OrderEventRecoveryE2ETest`. 재시작 도우미 `restartedCommerceApi`(세 곳의 복사를 하나로), 커밋하는 기반의 구매 활동 읽기, `build-logic`의 테스트 heap 1 GB. |
-| [217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217) | 이 표와 14.8절, 날짜 메모, 13.8절의 정리를 복구와 함께 다시 본 메모, 글감의 실행 값과 PR 본문 초안, 명세의 닫는 글. |
+| [217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217) | 이 표와 14.8절, 날짜 메모(ADR 0036 규칙 4 포함), 13.8절의 정리를 복구와 함께 다시 본 메모, 글감의 실행 값과 PR 본문 초안, 명세의 닫는 글. |
 
 운영 코드는 211, 212, 213만 바꿨다. 나머지는 테스트와 빌드, 문서다.
 
-명세와 티켓에서 달라진 것은 여섯이다. 모두 각 절의 날짜 메모에 있다. 시작의 거절은 원인으로 싸이지 않고 그대로 나온다(14.2절). 첫 컨텍스트는 닫지 않는다, callback은 세지 않고 PG 조회와 결제가 그대로인 것으로 본다, 셋째 컨텍스트도 중계를 켠 채 2 s 머문다(14.3절). 상품 7과 8은 두 상품 1과 2다, "2개 이상"은 정확히 2개로 단언한다(14.5절). 명세가 요구하지 않았는데 더한 것은 거절의 WARN(14.2절), `adapter.startup`의 규칙, 재시작 도우미, 테스트 heap이다.
+명세와 티켓에서 달라진 것은 일곱이다. 모두 각 절이나 ADR의 날짜 메모에 있다. 시작의 거절은 원인으로 싸이지 않고 그대로 나온다(14.2절). 동시의 두 복구에서 진 쪽은 실패하거나, 먼저 커밋된 행을 같은 행으로 찾아 `ALREADY_PRESENT`로 끝난다. 명세는 실패만 말했다(14.2절, ADR 0036 규칙 4). 첫 컨텍스트는 닫지 않는다, 알림은 세지 않고 PG 조회와 결제가 그대로인 것으로 본다, 셋째 컨텍스트도 중계를 켠 채 2 s 머문다(14.3절). 상품 7과 8은 두 상품 1과 2다, "2개 이상"은 정확히 2개로 단언한다(14.5절). 명세가 요구하지 않았는데 더한 것은 거절의 WARN(14.2절), 새 `adapter.startup` 층(그 규칙은 issue 213이 예고했고, 두 트리거의 규칙은 이제 한 도우미 `triggerReachesOnlyProvidedPorts`에서 나온다), 배너를 끈 재시작 도우미, 테스트 heap이다.
 
-명세의 범위 밖으로 남긴다. 확정됐는데 행이 없는 주문을 찾는 일, 이전 포인트 주문의 소급, W6 DB에 표를 더하는 단계의 테스트, `PUBLISHED` 행의 정리(13.8절의 메모)다.
+명세의 범위 밖으로 남긴다. 확정됐는데 행이 없는 주문을 찾는 일, 포인트로 확정된 이전 주문의 발행, W6 DB에 표를 더하는 단계의 테스트, `PUBLISHED` 행의 정리(13.8절의 메모)다.
 
 ### 14.8 3단계의 명령
 
