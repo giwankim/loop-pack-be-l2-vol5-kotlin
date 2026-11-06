@@ -338,7 +338,7 @@ W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed
 
 ## Issue 217: step 3's records match what was built
 
-The last ticket. Documents only: no production or test code changed after `2b55dd0`, where the final check ran.
+Posted as [issue 217's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217#issuecomment-6676980169) without this line. The last ticket. Documents only: no production or test code changed after `2b55dd0`, where the final check ran.
 
 **One run's lines for every E2E scene.** All three come from one run: `scripts/scene-lines --results build/final-check/commerce-api-test-results` on the final check's reports. The issue sections above quote lines from earlier runs of the same scenes. Whatever `TestClock` and the scene's order pin repeats between runs. What the clock doesn't pin, like the §5 restarts' `published_at` and `updated_at` and PG identifiers, doesn't.
 
@@ -390,7 +390,7 @@ A first start of the check was stopped while commerce-api's tests ran, because t
 
 ## Spec 209: where the implementation differs
 
-Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all seven.
+Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923) without this line. Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all seven.
 
 | The spec or ticket said | What is there | How it was found |
 | --- | --- | --- |
