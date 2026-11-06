@@ -549,6 +549,7 @@ scripts/final-check
 ```
 
 - 끝의 확인은 2026-11-06 `2b55dd0`의 깨끗한 트리에서 `scripts/final-check`으로 돌렸다(04:20:49Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(51 s). commerce-api는 95개 클래스, 1062개 테스트, 실패 0, 오류 0, 건너뜀 0이다(4 min 38 s). `2b55dd0` 뒤로는 문서만 바뀌었다. 위 블록의 괄호는 거른 명령을 따로 돌리지 않고 이 실행의 보고서에서 `scripts/test-counts`로 읽었다.
+- (2026-11-06, [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209)의 닫는 검토: 검토의 수정 뒤 끝의 확인을 `c395d4a`의 깨끗한 트리에서 `scripts/final-check`으로 다시 돌렸다(04:56:46Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(48 s). commerce-api는 95개 클래스, 1062개 테스트, 실패 0, 오류 0, 건너뜀 0이다(4 min 47 s). 검토는 테스트를 더하거나 빼지 않아 수가 위와 같다. `c395d4a` 뒤로는 문서만 바뀌었다.)
 - 3단계의 수는 2단계의 끝(90개 클래스, 1031개 테스트)에서 이렇게 왔다. 새 클래스 5개가 30개다(`OrderEventRecovererTest` 19, `OrderEventRecoveryRunnerTest` 6, `OutboxDeliveryE2ETest` 2, `CommerceStreamerProcessTest` 2, `OrderEventRecoveryE2ETest` 1). 있던 클래스에 1개가 늘었다(`HexagonalArchitectureTest` 8 → 9, `adapter.startup`의 규칙). streamer의 수는 그대로다.
 - `--tests`로 거른 실행은 여전히 `HexagonalArchitectureTest`도 함께 돈다. 12절의 메모 그대로 위의 괄호는 그것을 뺀 것이다.
 - 테스트 heap은 [issue 216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216)부터 1 GB다(`fc28dbc`). 그 클래스가 컨텍스트 하나와 재시작 둘을 더하자 commerce-api의 전체 실행이 Gradle의 기본 512 MB를 넘었다. 측정은 [글감](../research/week7-outbox-recovery-writing-material.md)에 있다.

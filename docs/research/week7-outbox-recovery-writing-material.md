@@ -10,7 +10,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 - **What it shows.** The assignment's §5 (week 6's unpublished and consumed cases reproduced and recovered in one run), §7 (one order from confirmation to purchase activity, through a republish) and the two §6 scenes step 2 left at the broker, all with the real commerce-streamer consuming.
 - **How it shows it.** §5's preparation is the preserved W6 test configuration, not the W6 revision's jar: week 6 and week 7 differ at one point in TX B, so a test double replaces that point. The streamer runs as its own bootJar, so commerce-api gains no dependency on it.
 - **What it costs.** The week 6 code that runs is today's TX B plus a test hook, and A's stop is a send that never happened, not a process kill. Adding the outbox table to a week 6 database is measured once, not tested.
-- **The numbers.** `scripts/final-check` on `2b55dd0`: commerce-api 95 classes and 1062 tests, commerce-streamer 18 and 67, no failures. Step 2 ended at 90 and 1031.
+- **The numbers.** `scripts/final-check` on `c395d4a`, after the spec's closing review: commerce-api 95 classes and 1062 tests, commerce-streamer 18 and 67, no failures. Step 2 ended at 90 and 1031.
 - **Records.** [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md), [design section 14](../design/order-outbox.md#14-누락-복구와-앱을-건너는-실행), where 14.7 is the tickets and 14.8 the commands, and the [probe note](./week7-outbox-recovery-probe.md).
 
 ### Where each closing comment sits
@@ -26,6 +26,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216) | §5: week 6's two cases reproduced and recovered in one run | [Issue 216](#issue-216-week-6s-two-cases-reproduced-and-recovered-in-one-run) |
 | [217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217) | these records, and one run's lines for every E2E scene | [Issue 217](#issue-217-step-3s-records-match-what-was-built) |
 | [209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209) | the spec's differences | [Spec 209](#spec-209-where-the-implementation-differs) |
+| [209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209) | the closing review | [Spec 209's closing review](#spec-209-the-closing-review) |
 
 The sections keep the order the tickets land in. A draft of the PR body is at the [end](#draft-pr-body).
 
@@ -390,7 +391,7 @@ A first start of the check was stopped while commerce-api's tests ran, because t
 
 ## Spec 209: where the implementation differs
 
-Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923) without this line. Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all eight.
+Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923) without this line, and edited after the closing review to add the eighth difference. Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists all eight.
 
 | The spec or ticket said | What is there | How it was found |
 | --- | --- | --- |
@@ -420,9 +421,45 @@ Posted as [spec 209's comment](https://github.com/giwankim/loop-pack-be-l2-vol5-
 
 The spec stays open for its closing review.
 
+## Spec 209: the closing review
+
+Recorded 2026-11-06 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6677407242) of [spec 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209). The text is the comment's, with its blob URLs and its headings one level down.
+
+Step 3 of week 7 is built, and its closing review is done. `scripts/final-check` on `c395d4a`, a clean tree, started 2026-11-06T04:56:46Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-streamer 18 classes, 67 tests (48 s), commerce-api 95 classes, 1062 tests (4 min 47 s), 0 failures, 0 errors, 0 skipped in both**. Only documents changed after `c395d4a`.
+
+The spec's differences are in the [earlier comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209#issuecomment-6676979923). This review found an eighth, and that comment is edited to include it.
+
+#### What the review covered
+
+A two-axis review of `week7...e318f0c`, with one reviewer on the standards and one on this spec. The standards axis reported 9 findings: two words the glossary avoids, and seven smells. The spec axis found nothing missing and nothing added beyond the four listed additions, and reported 2 findings, both in the records. Each finding was checked against the code and decided one by one.
+
+#### The eighth difference: a refusal logs WARN instead of INFO
+
+Story 15 and ADR 0036 rule 3 say each order leaves one INFO line with its result. A refused order leaves none: it has no result, so `OrderEventRecovery` logs one WARN line with the refusal's message and the order ID, after its transaction rolled back, and the run stops. The code stays. The earlier comment called the WARN an addition ("also logs"), and design 14.7 listed it as one. Both now count it as a difference, with a dated note on [ADR 0036 rule 3](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/outbox-recovery/docs/adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md).
+
+#### What changed
+
+No behaviour changed.
+
+- `OrderEventRecoveryRefusedException.OrderNotPaidThroughPg`'s KDoc and one `OrderEventRecovererTest` name said "PG order" and "backfill", which `CONTEXT.md` avoids. They now say "an order paid through the PG" and "add an event that was never missing".
+- `OrderEventRecovererTest` and `OrderEventRecoveryRunnerTest` each had a private read of the committed row or null. It is now one `committedOrderEventOutboxOrNull` in `BaseCommittingApplicationServiceTest`, beside `committedOrderEventOutbox`, which calls it.
+- The runner test's `started` takes no block by default, so four scenes no longer pass `{ }`.
+- The writing material said `OrderEventRecoveryRunnerTest` restarts six times. It restarts five: one of its six tests calls the runner without a restart. A dated note there also says the heap sampling's commit wasn't recorded, so the 1 GB setting rests on the failed and passing final checks, not on those figures.
+
+#### Left as they were
+
+- **"send" in `OrderEventRecoveryE2ETest`'s log lines.** They describe week 6's after-commit send through `KafkaOrderEventPublisher`, outside the outbox. That isn't 발행 as the glossary defines it, and the word marks the difference.
+- **The event ID literal in the tests.** It is the expected value, which a test spells out.
+- **The helpers both E2E classes repeat.** Two copies. Issue 216's review already shared what three users had.
+- **Column names as strings in `eventColumnsDifferingFrom`.** They are the refusal message's words, which ADR 0036 asks for, and an enum would serve this one comparison.
+- **`refuseUnrecoverableOrder` reading the order's state.** The refusals are application exceptions, not entity guards.
+- **`repeat(20)` in `blockThroughFailedRounds`.** The limit is private to the entity, and the helper's KDoc says it repeats it.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/outbox-recovery/docs/research/week7-outbox-recovery-writing-material.md#spec-209-the-closing-review).
+
 ## Draft PR body
 
-A draft for the PR from `feat/outbox-recovery` into `week7`, in the shape of step 2's PR 207. It's written before the spec's closing review, so its numbers may move. The PR's copy should link these documents with blob URLs, as step 2's did, and carry the spec's closing comment.
+A draft for the PR from `feat/outbox-recovery` into `week7`, in the shape of step 2's PR 207. Updated after the spec's closing review. The PR's copy should link these documents with blob URLs, as step 2's did, and carry the spec's closing comment.
 
 Title: `feat(commerce-api): recover the outbox rows week 6 left missing, and run one order from confirmation to purchase activity across both apps`
 
@@ -501,7 +538,7 @@ commerce-api's `test` task now depends on commerce-streamer's `bootJar` and star
 
 **Before:** on `week7`, a confirmed order without a row has no way back, and the scenes stop at the broker.
 
-**After:** the path above, and `scripts/final-check` on `2b55dd0`, a clean tree, with ktlint passing and only documents changed since:
+**After:** the path above, and `scripts/final-check` on `c395d4a`, a clean tree, with ktlint passing and only documents changed since:
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
