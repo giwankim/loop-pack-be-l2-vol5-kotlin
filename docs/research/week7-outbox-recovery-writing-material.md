@@ -22,6 +22,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212) | 누락 복구's refusals | [Issue 212](#issue-212-누락-복구-refuses-rather-than-guesses) |
 | [213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213) | the startup runner that triggers 누락 복구 | [Issue 213](#issue-213-a-restart-with-order-eventsrecoveryorder-ids-triggers-누락-복구) |
 | [215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215) | §7: one order through a republish to the streamer | [Issue 215](#issue-215-one-order-through-a-republish-recorded-once) |
+| [216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216) | §5: week 6's two cases reproduced and recovered in one run | [Issue 216](#issue-216-week-6s-two-cases-reproduced-and-recovered-in-one-run) |
 
 The sections keep the order the tickets land in.
 
@@ -275,3 +276,59 @@ Delivery, republished after the broker's ack: order 1 CONFIRMED, PG requests 1; 
 | the stop not stubbed | the scene: `Expected DataAccessResourceFailureException to be thrown, but nothing was thrown.` The other scene stayed green. |
 
 **Final check:** `scripts/final-check` on the rebased tree (`7259334`, clean, which holds `2f63981`'s code; the amended commit changes only this section), started 2026-11-06T03:28:14Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (59 s). commerce-api: 94 classes, 1061 tests, 0 failures, 0 errors, 0 skipped (5 min 3 s): issue 213's 1060 plus this scene. Before the rebase, the same code passed on `03773a5` with 1054 tests (issue 212's 1053 plus this scene).
+
+## Issue 216: week 6's two cases reproduced and recovered in one run
+
+**What landed.** `OrderEventRecoveryE2ETest`, one `@Test` on `BaseCommittingApplicationServiceTest` with its own topic and streamer group, and the real commerce-streamer as a child process. It is a reproduction in this run, not a recovery of week 6's incident: week 6's database is gone, and the week 6 code that runs is today's TX B with a test hook at the one point where week 6 differed.
+
+- **Week 6, in this class's context.** A spy on `OrderEventOutboxRepository` makes TX B's `save` write no row and register an after-commit hook instead. A's hook sends nothing, so A's stop is a send that never happened, not a process kill. B's hook sends the row it was given through today's `KafkaOrderEventPublisher` and waits for the broker. Both orders go through the provided ports with the test PG, at pinned confirmation times.
+- **Recovery.** The app is restarted on the same containers, without the spy, with `ddl-auto=none`, the relay on and `order-events.recovery.order-ids` set to A and B. A second restart uses the same IDs and stays up for 2 s with its relay on.
+- **Nothing is cleaned in between.** No step deletes a row, inserts a `SUCCESS`, writes a `status` or empties a table before the end.
+
+**What the scene shows:**
+
+| When | Observed |
+| --- | --- |
+| Before recovery | Both orders `CONFIRMED`, stock down by 2 and 1 (the reservations consumed), no outbox row. One record on the broker, B's, and one `RECORDED` line. Only B has purchase activity. C=2 (one create per payment), T=2, and the stored transaction keys are those T created. |
+| First restart | `ADDED` for A and B, in that order. Both rows reach `PUBLISHED` at attempt 1. Two new records, and B's record value is byte for byte the one week 6's path sent. The streamer logs `RECORDED` for A and `ALREADY_RECORDED` for B. A gains its purchase activity and B's is unchanged. |
+| During recovery | Orders, payments and stock are as before recovery: status, `confirmed_at`, `updated_at`, PG order ID, payment status and transaction key. PG creates stay at C, the same T transaction keys, 0 lookups, no unmatched request. |
+| Second restart | `ALREADY_PRESENT` for both. Every column of both rows is unchanged while its relay runs. No record, no streamer line, no purchase activity, no PG request. |
+
+**One run's lines, from `scripts/scene-lines` on the final check's reports:**
+
+```text
+W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed:v1:1 confirmed_at 2026-10-29T01:02:03.123456Z items [product 1 quantity 2] pg_order_id f2a4d44f-0fc2-42e2-8b6e-44facc03ce26 transaction_key 82eba3e7-4b6e-4df7-86fe-ee42cda57c40, sent nothing after the commit; B order 2 CONFIRMED event order-confirmed:v1:2 confirmed_at 2026-10-29T01:02:04.654321Z items [product 2 quantity 1] pg_order_id d3758364-e185-421b-b427-bd8360331f69 transaction_key 5fa58e4f-d708-4801-b3b6-b12346d32439, sent after the commit (record key 2 partition 2 offset 0); PG creates C=2, PG transactions T=2, PG lookups 0; stock 431/212 -> 429/211; outbox rows 0; deliveries 1 (Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=0, result=RECORDED); purchase_activity [order 2 product 2 quantity 1 confirmed_at 2026-10-29T01:02:04.654321Z]
+누락 복구, the first start with A and B: Ran 누락 복구 for the order confirmed event. orderId=1, eventId=order-confirmed:v1:1, result=ADDED; Ran 누락 복구 for the order confirmed event. orderId=2, eventId=order-confirmed:v1:2, result=ADDED; rows [order-confirmed:v1:1 PUBLISHED attempts 1 published_at 2026-11-06T04:09:55.754415Z; order-confirmed:v1:2 PUBLISHED attempts 1 published_at 2026-11-06T04:09:55.760553Z]; records [key 2 partition 2 offset 1; key 1 partition 0 offset 0]; deliveries [Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=1, result=ALREADY_RECORDED]; purchase_activity [order 2 product 2 quantity 1 confirmed_at 2026-10-29T01:02:04.654321Z; order 1 product 1 quantity 2 confirmed_at 2026-10-29T01:02:03.123456Z]; PG creates 2, PG transactions 2, PG lookups 0; orders, payments and stock unchanged: order 1 CONFIRMED confirmed_at 2026-10-29T01:02:03.123456Z updated_at 2026-11-06T04:09:51.350619Z payment f2a4d44f-0fc2-42e2-8b6e-44facc03ce26 SUCCESS 82eba3e7-4b6e-4df7-86fe-ee42cda57c40 updated_at 2026-11-06T04:09:51.350666Z; order 2 CONFIRMED confirmed_at 2026-10-29T01:02:04.654321Z updated_at 2026-11-06T04:09:51.375105Z payment d3758364-e185-421b-b427-bd8360331f69 SUCCESS 5fa58e4f-d708-4801-b3b6-b12346d32439 updated_at 2026-11-06T04:09:51.375125Z; stock 429/211
+누락 복구, the second start with the same IDs: Ran 누락 복구 for the order confirmed event. orderId=1, eventId=order-confirmed:v1:1, result=ALREADY_PRESENT; Ran 누락 복구 for the order confirmed event. orderId=2, eventId=order-confirmed:v1:2, result=ALREADY_PRESENT; rows 2, unchanged while it ran 2 s with the relay on; records 0; deliveries 3; purchase_activity 2, unchanged; PG requests 0 more
+```
+
+**Where the spec's words and the test differ** (design 14.3 carries a dated note):
+
+- **The first context isn't closed.** It is JUnit's test context, which a scene can't close. Its relay is off under `test`, so it publishes nothing. If another of its beans acted, the PG lookup count or an order's or payment's `updated_at` would change.
+- **Callbacks are inferred, not counted.** The test PG sends none. A callback's reconcile looks the payment up (ADR 0031), or finds it finished and changes nothing, so the scene reads "no callback" as 0 lookups added and payments unchanged.
+- **T is the test PG's count.** It is the transaction keys of the creates the test PG answered with a PG transaction (`TestPg.createdTransactionKeys()`), checked against the keys both payments stored.
+- **The restarts' banner is off.** Printed after a step's INFO line, it read as that line's continuation in `scripts/scene-lines`.
+
+**What the review changed** (two parallel reviewers, standards and spec):
+
+- **One restart helper.** `restarted`/`started` had three copies (`OrderPaymentIntegrationTest`, `OrderEventRecoveryRunnerTest`, this class). It is now `com.loopers.support.restartedCommerceApi`, and CODING_STANDARDS.md's restart note names it and its fifth override, `spring.main.banner-mode=off`.
+- **Shared streamer pieces.** `CommerceStreamerProcess.Settings.of(…)` builds the settings both E2E classes spelled out. `storedPurchaseActivities()`, `nativeStrings` and `STORED_UTC_TIME` moved into `BaseCommittingApplicationServiceTest`.
+- **Creates per payment.** CODING_STANDARDS.md asks a scene with several payments to count creates per PG order ID, so both counts are `createCount(pgOrderId)` = 1, besides the total.
+- **The second restart is held.** It used to close straight after startup, so its relay never ran. It now stays up 2 s, two relay ticks, while every row stays as it was.
+- **T is tied to stored facts.** The created transaction keys must equal the payments' stored keys.
+- **Smaller.** `createdTransactionKeys()` names the response when a 202 carries no key, instead of an NPE.
+- **Kept as they are:** comparing state as one joined line (a failure prints both lines), the local `streamer` beside the field `terminateTheStreamer` reads (as in `OutboxDeliveryE2ETest`), and one long `@Test`, since the steps must share one run with no cleanup between them.
+
+**Red check, a local edit run and reverted, not committed:**
+
+| Edit | What went red |
+| --- | --- |
+| `OrderEventRecoveryRunner` doesn't call the port | the scene, with `ConditionTimeoutException` at the first restart's wait for both rows `PUBLISHED` |
+
+**The test heap.** The first final check failed: commerce-api's test JVM ran out of heap (`Java heap space`), and `HexagonalArchitectureTest`, running last, was skipped. Nothing set the test heap, so Gradle's 512 MB default applied.
+
+- A control run of the same tree without this class passed, but ended at about 419 MB live after 13 full GCs. The suite was already near the limit.
+- Sampling the live heap every 3 s after a forced full GC, with soft references cleared, shows no single test using it up. Spring keeps up to 32 test contexts, the run starts 35, and a new one costs about 40 MB (`BrandRegisterConcurrencyTest`, with no restart, adds 45 MB). Each restarted context leaves about 6 MB of classes that are never unloaded (`OrderEventRecoveryRunnerTest`, with six restarts, adds 78 MB). This class adds about 47 MB: its own context and two restarts.
+- So `build-logic`'s Spring convention now sets `maxHeapSize = "1g"` on `tasks.test` (`fc28dbc`). With it the suite ends at about 590 MB live with no full GC. The user chose this over closing single-use contexts with `@DirtiesContext`, which would have left the suite near its limit as classes are added.
+
+**Final check:** `scripts/final-check` on `fc28dbc` (clean), rebased onto issue 215, started 2026-11-06T04:05:40Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (57 s). commerce-api: 95 classes, 1062 tests, 0 failures, 0 errors, 0 skipped (5 min 12 s). That is issue 215's 94 classes and 1061 tests plus this class's scene. Only this section's text changed after that run.
