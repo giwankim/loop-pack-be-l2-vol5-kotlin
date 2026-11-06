@@ -45,8 +45,8 @@ import java.util.concurrent.CompletableFuture
 
 /**
  * 누락 복구 adds the row an order confirmed without one is missing, leaves the same row alone, and refuses an order or a row it can't
- * take as it is (ADR 0036 rule 3). The scenes
- * call the port on the real MySQL with the test PG and read rows in a new transaction, so only what committed answers.
+ * take as it is (ADR 0036 rule 3). The scenes call the port on the real MySQL with the test PG and read rows in a new transaction, so
+ * only what committed answers.
  *
  * An order confirmed without a row is what week 6 left: the same TX B, minus the row. The spy on the repository makes TX B's save
  * write nothing, once, as the §5 run does (ADR 0036 rule 5). Later saves are the real ones. A differing row is TX B's too, built with
@@ -456,13 +456,13 @@ class OrderEventRecovererTest(
         return preparedOrder
     }
 
-    /** Confirms the draft [order] as [confirmAnOrderLeavingNoRow] does, for a scene that holds the order unconfirmed first. */
-    private fun confirmLeavingNoRow(order: Order) {
+    /** Confirms [draftOrder] as [confirmAnOrderLeavingNoRow] does, for a scene that holds the order unconfirmed first. */
+    private fun confirmLeavingNoRow(draftOrder: Order) {
         every { orderEventOutboxRepository.save(any()) } answers { firstArg() } andThenAnswer { callOriginal() }
         clock.pin(CONFIRMED_AT)
-        confirmOrder(testPg, order)
+        confirmOrder(testPg, draftOrder)
 
-        assertThat(committedOrderEventOutboxOrNull(order.id)).isNull()
+        assertThat(committedOrderEventOutboxOrNull(draftOrder.id)).isNull()
     }
 
     private fun committedOrderEventOutboxOrNull(orderId: Long): OrderEventOutbox? {

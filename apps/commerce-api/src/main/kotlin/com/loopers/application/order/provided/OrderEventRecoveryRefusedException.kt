@@ -5,8 +5,9 @@ package com.loopers.application.order.provided
  * The refused order's transaction rolls back, so it writes no row, and [OrderEventRecoverer] stops there: the orders after it
  * aren't touched, and the ones before keep the rows they got. A rerun recovers those again as already present.
  *
- * Like the PG's exceptions it widens `RuntimeException` rather than `RuleViolationException`: no request carries the order ID, a
- * person names it, so nothing should answer 400 as if a caller were wrong.
+ * It widens `RuntimeException` rather than `RuleViolationException`: no request carries the order ID, a person names it, so nothing
+ * should answer 400 as if a request were wrong. Unlike the PG's exceptions (ADR 0023 rule 2) the refusals share a sealed supertype,
+ * because whoever runs recovery handles them alike: the run stops and the refusal shows.
  */
 sealed class OrderEventRecoveryRefusedException(
     message: String,

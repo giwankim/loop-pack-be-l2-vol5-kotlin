@@ -39,12 +39,12 @@ class OrderEventOutboxModifyService(
      */
     fun recover(orderId: Long): OrderEventRecoveryResult {
         val order = orderFinder.findForRecovery(orderId)
-        ensureRecoverable(order)
+        refuseUnrecoverableOrder(order)
         val recoveredOutbox = orderEventOutboxFactory.create(order)
         val existingOutbox = orderEventOutboxRepository.findByEventId(recoveredOutbox.eventId)
 
         if (existingOutbox != null) {
-            ensureSameRow(existingOutbox, recoveredOutbox)
+            refuseDifferingRow(existingOutbox, recoveredOutbox)
 
             return OrderEventRecoveryResult(orderId, recoveredOutbox.eventId, OrderEventRecoveryResult.Outcome.ALREADY_PRESENT)
         }
@@ -55,7 +55,7 @@ class OrderEventOutboxModifyService(
     }
 
     /** The order facts recovery refuses rather than guess at (ADR 0036 rule 3). Checked before the row is built, so nothing is written. */
-    private fun ensureRecoverable(order: Order) {
+    private fun refuseUnrecoverableOrder(order: Order) {
         if (order.confirmedAt == null) {
             throw OrderEventRecoveryRefusedException.OrderNotConfirmed(order.id)
         }
@@ -65,22 +65,9 @@ class OrderEventOutboxModifyService(
         }
     }
 
-    /**
-     * Compares the six event columns as they are stored, the payload as the exact string (ADR 0036 rule 3). The state columns aren't
-     * compared: a published or blocked row is still the same row.
-     */
-    private fun ensureSameRow(existingOutbox: OrderEventOutbox, recoveredOutbox: OrderEventOutbox) {
-        val columnValues = listOf<Pair<String, (OrderEventOutbox) -> Any>>(
-            "event_id" to { it.eventId },
-            "order_id" to { it.orderId },
-            "event_type" to { it.eventType },
-            "schema_version" to { it.schemaVersion },
-            "message_key" to { it.messageKey },
-            "payload" to { it.payload },
-        )
-        val differingColumns = columnValues
-            .filter { (_, valueOf) -> valueOf(existingOutbox) != valueOf(recoveredOutbox) }
-            .map { (column, _) -> column }
+    /** A row of the same event ID that isn't the same row is refused, naming the columns but not their values (ADR 0036 rule 3). */
+    private fun refuseDifferingRow(existingOutbox: OrderEventOutbox, recoveredOutbox: OrderEventOutbox) {
+        val differingColumns = existingOutbox.eventColumnsDifferingFrom(recoveredOutbox)
 
         if (differingColumns.isNotEmpty()) {
             throw OrderEventRecoveryRefusedException.OutboxRowDiffers(recoveredOutbox.eventId, differingColumns)
