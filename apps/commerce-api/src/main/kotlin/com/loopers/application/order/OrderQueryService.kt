@@ -1,6 +1,7 @@
 package com.loopers.application.order
 
 import com.loopers.application.order.provided.OrderAdminListRequest
+import com.loopers.application.order.provided.OrderEventRecoveryRefusedException
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.provided.OrderListRequest
@@ -61,5 +62,9 @@ class OrderQueryService(
 
     override fun findForPg(orderId: Long): Order {
         return orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    }
+
+    override fun findForRecovery(orderId: Long): Order {
+        return orderRepository.findWithLineItemsById(orderId) ?: throw OrderEventRecoveryRefusedException.OrderNotFound(orderId)
     }
 }

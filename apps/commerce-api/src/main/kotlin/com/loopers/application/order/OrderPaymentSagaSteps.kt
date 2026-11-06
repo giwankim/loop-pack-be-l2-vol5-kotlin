@@ -2,16 +2,13 @@ package com.loopers.application.order
 
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
-import com.loopers.application.order.required.OrderConfirmedEvent
 import com.loopers.application.order.required.OrderEventOutboxRepository
-import com.loopers.application.order.required.OrderEventSerializer
 import com.loopers.application.order.required.OrderRepository
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.payment.provided.PaymentValidator
 import com.loopers.application.product.provided.StockReserver
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PgRejection
@@ -35,7 +32,7 @@ import java.time.Clock
 class OrderPaymentSagaSteps(
     private val orderRepository: OrderRepository,
     private val orderEventOutboxRepository: OrderEventOutboxRepository,
-    private val orderEventSerializer: OrderEventSerializer,
+    private val orderEventOutboxFactory: OrderEventOutboxFactory,
     private val orderFinder: OrderFinder,
     private val orderInfoAssembler: OrderInfoAssembler,
     private val stockReserver: StockReserver,
@@ -124,12 +121,12 @@ class OrderPaymentSagaSteps(
      *   결제에 실패한 주문으로 가는 것은 한 번이고, 끝난 결제는 같은 답에 `Unchanged`라 다시 실패로 가지 않는다(ADR 0026 규칙 3).
      * - 처리 중, 바뀌지 않음, 충돌이면 주문은 그대로다.
      *
-     * A change to success also leaves the confirmation's [OrderConfirmedEvent] in an outbox row in this transaction
+     * A change to success also leaves the confirmation's `OrderConfirmedEvent` in an outbox row in this transaction
      * ([leaveInOutbox], ADR 0034 rule 1), once the order is saved, so the confirmation and the row commit together. This is the
-     * only place that writes one. No other result leaves a row: a failure or a payment still in progress leaves the order
-     * unconfirmed, `Conflicted` changes nothing, and `Unchanged` (a late create answer, or a callback or reconcile that waited
-     * on the order lock while another applied the same answer) repeats an answer that an earlier change applied and, if that
-     * change confirmed the order, left its row.
+     * only place a confirmation writes one, and 누락 복구 is the only other (ADR 0036). No other result leaves a row: a failure or
+     * a payment still in progress leaves the order unconfirmed, `Conflicted` changes nothing, and `Unchanged` (a late create
+     * answer, or a callback or reconcile that waited on the order lock while another applied the same answer) repeats an answer
+     * that an earlier change applied and, if that change confirmed the order, left its row.
      *
      * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockReserver.release]가,
      * revision은 커밋 앞의 훅이 잠근다. 결제는 주문 잠금 뒤의 일반 읽기로 가장 최근에 커밋된 것을 본다.
@@ -151,7 +148,7 @@ class OrderPaymentSagaSteps(
         val savedOrder = orderRepository.save(order)
 
         if (isChangedToSuccess(result)) {
-            leaveInOutbox(OrderConfirmedEvent.from(savedOrder))
+            leaveInOutbox(savedOrder)
         }
 
         return orderInfoAssembler.toInfo(savedOrder)
@@ -161,21 +158,12 @@ class OrderPaymentSagaSteps(
         return result is ReconcileResult.Changed && result.to == PaymentStatus.SUCCESS
     }
 
-    /** Saves the row of [orderConfirmedEvent] in this transaction, so that a failure to serialize or save rolls the confirmation back (ADR 0034 rules 1 and 2). */
-    private fun leaveInOutbox(orderConfirmedEvent: OrderConfirmedEvent) {
-        val serializedOrderEvent = orderEventSerializer.serialize(orderConfirmedEvent)
-
-        orderEventOutboxRepository.save(
-            OrderEventOutbox(
-                eventId = orderConfirmedEvent.eventId,
-                orderId = orderConfirmedEvent.orderId,
-                eventType = serializedOrderEvent.eventType,
-                schemaVersion = serializedOrderEvent.schemaVersion,
-                messageKey = serializedOrderEvent.messageKey,
-                payload = serializedOrderEvent.payload,
-                nextAttemptAt = clock.instant(),
-            ),
-        )
+    /**
+     * Saves the row of [order]'s confirmation in this transaction, so that a failure to serialize or save rolls the confirmation back
+     * (ADR 0034 rules 1 and 2). [OrderEventOutboxFactory] builds the row, as it does for 누락 복구 (ADR 0036 rule 1).
+     */
+    private fun leaveInOutbox(order: Order) {
+        orderEventOutboxRepository.save(orderEventOutboxFactory.create(order))
     }
 
     /**

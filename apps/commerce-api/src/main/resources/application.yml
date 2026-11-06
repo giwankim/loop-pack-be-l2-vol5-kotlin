@@ -124,6 +124,10 @@ spring:
 order-events:
   relay:
     enabled: true
+  # 누락 복구 (ADR 0036 rule 2): restart with the IDs of confirmed orders missing their outbox row, comma-separated
+  # (--order-events.recovery.order-ids=3,7). No profile sets it, and empty or unset, startup recovers nothing. A refusal fails the start.
+  recovery:
+    order-ids:
 
 ---
 spring:

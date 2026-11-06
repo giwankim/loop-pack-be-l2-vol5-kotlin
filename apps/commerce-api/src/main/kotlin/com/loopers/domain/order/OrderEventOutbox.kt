@@ -119,6 +119,23 @@ class OrderEventOutbox(
     }
 
     /**
+     * The event columns, by their column names in table order, whose values differ from [other]'s: the payload as the exact string,
+     * not as JSON. The state columns aren't compared, so a published or blocked row is still the same row (ADR 0036 rule 3).
+     */
+    fun eventColumnsDifferingFrom(other: OrderEventOutbox): List<String> {
+        val eventColumns = listOf(
+            "event_id" to (eventId == other.eventId),
+            "order_id" to (orderId == other.orderId),
+            "event_type" to (eventType == other.eventType),
+            "schema_version" to (schemaVersion == other.schemaVersion),
+            "message_key" to (messageKey == other.messageKey),
+            "payload" to (payload == other.payload),
+        )
+
+        return eventColumns.filterNot { (_, isSame) -> isSame }.map { (column, _) -> column }
+    }
+
+    /**
      * Counts the attempt and leases the row: until the lease ends the row isn't due, which is what protects it during the send, after
      * the claim's lock has gone (ADR 0035 rule 2).
      */

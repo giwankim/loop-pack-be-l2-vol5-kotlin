@@ -77,6 +77,10 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     maxParallelForks = 1
+    // Gradle's default test heap is 512 MB. Spring keeps up to 32 test contexts at about 40 MB each, and each restarted context
+    // leaves about 6 MB of classes behind, so commerce-api's suite ran out of heap at 95 classes (issue 216). With 1 GB it ends
+    // at about 590 MB live, with no full GC.
+    maxHeapSize = "1g"
     useJUnitPlatform()
     systemProperty("user.timezone", "Asia/Seoul")
     systemProperty("spring.profiles.active", "test")

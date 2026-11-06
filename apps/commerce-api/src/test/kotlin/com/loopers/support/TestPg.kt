@@ -70,6 +70,9 @@ class TestPg(
 
         /** [stallsCreate]와 [stallsLookup]의 고정 지연. 운영의 응답 한도 1 s를 넘는다. */
         private const val STALL_MILLIS = 1_500
+
+        /** The transaction key in a PG transaction's JSON, which this class writes itself ([transactionJson]). */
+        private val CREATED_TRANSACTION_KEY = Regex(""""transactionKey":"([^"]+)"""")
     }
 
     /** 생성을 받아들여 202와 PG 거래를 돌려준다. PG 상태는 문자열 그대로 싣는다. */
@@ -147,6 +150,23 @@ class TestPg(
         return server.findAll(
             postRequestedFor(urlEqualTo(PAYMENTS_PATH)).withRequestBody(matchingJsonPath("$.orderId", equalTo(pgOrderId))),
         ).size
+    }
+
+    /**
+     * The transaction keys of the PG transactions the test PG created: one for each create it answered with a PG transaction (202),
+     * in no particular order. A create that was rejected, lost or unmatched created none.
+     */
+    fun createdTransactionKeys(): List<String> {
+        return server.allServeEvents
+            .filter { it.request.method.value() == "POST" && it.request.url == PAYMENTS_PATH && it.response.status == 202 }
+            .map { event ->
+                val body = event.response.bodyAsString
+                val match = checkNotNull(CREATED_TRANSACTION_KEY.find(body)) {
+                    "A 202 to a create carried no transaction key: $body"
+                }
+
+                match.groupValues[1]
+            }
     }
 
     /** PG가 받은 모든 요청 수. 메서드와 경로가 무엇이든, 맞는 스텁이 없던 요청까지 센다. */
