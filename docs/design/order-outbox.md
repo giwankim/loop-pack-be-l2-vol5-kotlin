@@ -427,3 +427,70 @@ scripts/final-check
 - 2단계의 수는 1단계의 끝(82개 클래스, 969개 테스트)에서 이렇게 왔다. 새 클래스 8개가 54개다(`OrderEventRelayerTest` 18, `OrderEventOutboxStateTest` 17, `OrderEventRelayFailedSendTest` 12, 트리거의 넷 6, `OrderEventOutboxClaimTest` 1). 있던 클래스에 9개가 늘었다(`OrderEventOutboxRepositoryTest` 4 → 8, `OrderEventsProducerTest` 1 → 4, `OrderEventOutboxImmutabilityTest` 1 → 2, `HexagonalArchitectureTest` 7 → 8). streamer의 수는 그대로다.
 - `--tests`로 거른 실행은 여전히 `HexagonalArchitectureTest`도 함께 돌고, 이제 그 수는 8개다. 12절의 메모 그대로 위의 수는 그것을 뺀 것이다.
 - 13.7절의 문장은 `OrderEventRelayFailedSendTest`가 이 문서에서 읽는다. 그래서 이 문서를 고치면 commerce-api의 `test`가 다시 돈다.
+
+## 14. 누락 복구와 앱을 건너는 실행
+
+2026-11-06 3단계를 인터뷰해 정했다. 누락 복구의 까닭과 고르지 않은 것은 [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md)에 있다. 이 절은 구현 전에 썼고, 구현이 바꾼 것은 날짜 메모로 단다.
+
+### 14.1 범위
+
+과제의 5절(6주차 누락 상태의 재현과 복구), 7절(주문부터 구매 활동까지 한 번), 8절(회귀와 제출), 그리고 13.1절이 넘긴 구매 활동의 칸이다.
+
+| 과제 | 이 단계의 테스트 |
+| --- | --- |
+| 5절: W6 누락·소비 완료 재현, 같은 실행 안의 복구, 두 번째 복구 | `OrderEventRecoveryE2ETest` |
+| 7절: 7×2와 8×1인 주문, broker 확인 뒤 `PUBLISHED` 저장 전 멈춤, 재발행 | `OutboxDeliveryE2ETest` |
+| 6절의 셋째와 넷째 칸: commit 뒤 중계 전 멈춤, 중계 재생성 뒤 구매 활동 | `OutboxDeliveryE2ETest` |
+
+### 14.2 누락 복구
+
+- 애플리케이션 서비스가 지정한 주문마다 자기 트랜잭션에서 주문을 읽고, `OrderConfirmedEvent.from(order)`와 `OrderEventSerializer`로 행을 만든다. TX B의 행 만들기(`leaveInOutbox`)를 뽑아 둘이 나눠 쓴다(10절의 예고).
+- 진입점은 한 클래스의 `ApplicationRunner`이고 `order-events.recovery.order-ids`가 비면(기본) 아무것도 하지 않는다. 엔드포인트가 없다. 앱을 그 값으로 다시 띄운다.
+- 결과는 ADR 0036 규칙 3의 표다. 거절은 시작을 실패시킨다. 첫 거절에서 멈추고, 앞서 더한 행은 남는다. 다시 돌려도 같은 행이면 아무것도 하지 않는다. 주문마다 INFO 한 줄이다.
+- 잠그지 않는다. 동시의 두 실행은 유일한 `event_id`에서 하나가 실패한다.
+
+### 14.3 5절의 준비: 보존한 W6 테스트 구성
+
+6주차와 지금의 확정 경로는 TX B의 한 곳만 다르다(`publish` 대신 `leaveInOutbox`). 그래서 W6 revision을 띄우지 않고 그 한 곳만 테스트에서 6주차처럼 바꾼다.
+
+1. 첫 컨텍스트는 `OrderEventOutboxRepository`의 spy를 둔다. `save`는 행을 쓰지 않고 커밋 뒤의 훅을 건다. A의 훅은 보내지 않는다(보내기 직전의 멈춤, 프로세스 강제 종료가 아니다). B의 훅은 받은 행을 지금의 `KafkaOrderEventPublisher`로 보낸다. record의 bytes는 6주차와 같다고 못 박혀 있다(10절).
+2. 주문은 제공 포트로 만들고 확정한다. PG는 테스트 PG다. A와 B 모두 `CONFIRMED`·예약 소비·행 0이고, B만 구매 활동이 있다. 두 주문의 `orderId`, 이벤트 ID, `confirmedAt`, 품목, PG 거래 식별자와 PG 생성 누적 C, 외부 거래 수 T를 남긴다(C=2, T=2).
+3. 첫 컨텍스트를 닫고 spy 없는 둘째 컨텍스트를 같은 컨테이너에서 띄운다. `ddl-auto=none`, 중계 켜짐, `order-events.recovery.order-ids`는 A와 B다(`OrderPaymentIntegrationTest.restarted()`의 선례).
+4. A에는 빠졌던 구매 활동이 생기고 B의 구매 활동은 그대로다. PG 생성은 C, PG 조회와 callback은 0번 더, 외부 거래는 T, 주문의 재확정과 예약의 추가 소비는 0이다.
+5. 같은 ID로 셋째 컨텍스트를 띄운다. 두 주문 모두 같은 행이라 아무것도 하지 않고, 행·구매 활동·PG 호출이 늘지 않는다.
+
+모두 한 `@Test` 안이라 사이에 정리가 돌지 않는다. 컨테이너는 이 JVM의 Testcontainers이고, 이것을 과제의 "새 격리 실행"으로 본다. 행을 지우거나 `SUCCESS`를 넣거나 상태를 덮어쓰지 않는다. 6주차의 원본 DB는 없으므로 이것은 재현이고 원본 사건의 복구라 부르지 않는다.
+
+받아들인 것: 도는 6주차 코드는 실제 판이 아니라 지금의 TX B와 테스트의 훅이다. 표가 처음부터 있으므로 W6 DB에 아웃박스 표를 더하는 단계는 테스트되지 않는다. 2026-11-05 W6의 실제 jar로 한 번 쟀다([측정 기록](../research/week7-outbox-recovery-probe.md)). `ddl-auto=update`는 표와 키, 검사, 인덱스를 더하고 W6 표의 정의를 바꾸지 않았지만, W6 표의 열 넷에 정의가 그대로인 `modify column`을 냈다. 닿지 않는 broker 주소로 띄운 W6 jar는 확정을 커밋하고 send가 막힌 채 `kill -9`되어 record를 남기지 않았다.
+
+### 14.4 실제 consumer
+
+- commerce-streamer는 HEAD의 bootJar를 자식 프로세스로 띄운다. 클래스패스를 합치면 `application.yml`, `ApplicationService`, `ValidatedApplicationService`, `BaseApplicationServiceTest`가 부딪히고 두 앱이 `com.loopers`를 훑는다. 운영의 commerce-api → commerce-streamer 의존성은 생기지 않는다. `test`가 streamer의 `bootJar`에 기대고 jar의 경로를 시스템 속성으로 받는다. jar가 없으면 건너뛰지 않고 실패한다.
+- 인자는 `test` 프로필, 같은 MySQL과 broker의 주소, `ddl-auto=create`(streamer의 두 표만 만든다), 빈 포트, 클래스마다의 토픽과 group이다.
+- 테스트 안에서 띄우고, 그 클래스의 `@AfterEach`에서 멈춘다. JUnit은 하위 클래스의 `@AfterEach`를 먼저 돌리므로 기반이 표를 비우기 전에 consumer가 멈춘다.
+- 받은 횟수는 streamer의 `Recorded the order confirmed event. eventId=…, offset=…, result=…` 줄로 센다(`RECORDED` 한 번, 뒤는 `ALREADY_RECORDED`). record는 broker에서 읽는다. send 호출 수를 세지 않는다.
+- broker 준비, consumer 배정, 결과에는 기한을 두고, 넘으면 그 단계의 실제 상태를 출력한다.
+
+### 14.5 7절
+
+| 관찰 | 7×2와 8×1인 한 주문의 기대 | 어디서 보는가 |
+| --- | --- | --- |
+| 주문·PG 거래 | 확정 주문 1, 외부 거래 1 | DB, 테스트 PG의 기록 |
+| 아웃박스 | 같은 이벤트 ID의 행 1, 끝에 `PUBLISHED` | DB |
+| Kafka | 같은 이벤트 ID의 record 2개 이상, 다른 offset | broker |
+| consumer | 같은 이벤트를 2번 이상 받음 | streamer의 줄 |
+| 처리한 주문 확정 | 같은 주문과 이벤트 ID로 1 | DB |
+| 구매 활동 | 상품마다 1행, 수량 2와 1 | DB |
+| 재고·포인트 | 예약의 추가 소비와 반환 없음, 포인트 차감 없음 | DB |
+
+멈춤은 13.9절의 `stopRelayAfterBrokerAckBeforeMarkingPublished`이고, 재시작은 새 `OrderEventRelay`다.
+
+### 14.6 과제의 이름과 이 저장소의 이름
+
+11절의 표에 더한다.
+
+| 과제 | 이 저장소 | 까닭 |
+| --- | --- | --- |
+| 복구 | 누락 복구, `recovery` | 재개(막힌 이벤트를 되돌림)와 예약을 돌려주다(`복구하다`를 피한다)와 갈라 쓴다. |
+| 기존 주문 API로 주문 | 제공 포트(`OrderConfirmer`와 주문의 포트)로 주문 | 컨트롤러가 부르는 포트다. 커밋하는 기반에는 HTTP 클라이언트가 없고, 서버를 띄우면 서버 스레드의 요청이 남긴 것을 따로 정리해야 한다. 6주차의 공백 테스트도 포트로 확정했다. |
+| W6 revision 실행물 또는 보존한 W6 테스트 구성 | 보존한 W6 테스트 구성 | ADR 0036 규칙 5. |
