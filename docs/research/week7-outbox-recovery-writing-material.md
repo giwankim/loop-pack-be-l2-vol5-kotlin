@@ -10,7 +10,8 @@ Material for the technical writing quest, not the write-up itself. Each section 
 - **What it shows.** The assignment's §5 (week 6's unpublished and consumed cases reproduced and recovered in one run), §7 (one order from confirmation to purchase activity, through a republish) and the two §6 scenes step 2 left at the broker, all with the real commerce-streamer consuming.
 - **How it shows it.** §5's preparation is the preserved W6 test configuration, not the W6 revision's jar: week 6 and week 7 differ at one point in TX B, so a test double replaces that point. The streamer runs as its own bootJar, so commerce-api gains no dependency on it.
 - **What it costs.** The week 6 code that runs is today's TX B plus a test hook, and A's stop is a send that never happened, not a process kill. Adding the outbox table to a week 6 database is measured once, not tested.
-- **Records.** [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md), [design section 14](../design/order-outbox.md#14-누락-복구와-앱을-건너는-실행) and the [probe note](./week7-outbox-recovery-probe.md).
+- **The numbers.** `scripts/final-check` on `2b55dd0`: commerce-api 95 classes and 1062 tests, commerce-streamer 18 and 67, no failures. Step 2 ended at 90 and 1031.
+- **Records.** [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md), [design section 14](../design/order-outbox.md#14-누락-복구와-앱을-건너는-실행), where 14.7 is the tickets and 14.8 the commands, and the [probe note](./week7-outbox-recovery-probe.md).
 
 ### Where each closing comment sits
 
@@ -23,8 +24,10 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213) | the startup runner that triggers 누락 복구 | [Issue 213](#issue-213-a-restart-with-order-eventsrecoveryorder-ids-triggers-누락-복구) |
 | [215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215) | §7: one order through a republish to the streamer | [Issue 215](#issue-215-one-order-through-a-republish-recorded-once) |
 | [216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216) | §5: week 6's two cases reproduced and recovered in one run | [Issue 216](#issue-216-week-6s-two-cases-reproduced-and-recovered-in-one-run) |
+| [217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217) | these records, and one run's lines for every E2E scene | [Issue 217](#issue-217-step-3s-records-match-what-was-built) |
+| [209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209) | the spec's differences | [Spec 209](#spec-209-where-the-implementation-differs) |
 
-The sections keep the order the tickets land in.
+The sections keep the order the tickets land in. A draft of the PR body is at the [end](#draft-pr-body).
 
 ## What the interview overturned
 
@@ -332,3 +335,182 @@ W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed
 - So `build-logic`'s Spring convention now sets `maxHeapSize = "1g"` on `tasks.test` (`fc28dbc`). With it the suite ends at about 590 MB live with no full GC. The user chose this over closing single-use contexts with `@DirtiesContext`, which would have left the suite near its limit as classes are added.
 
 **Final check:** `scripts/final-check` on `fc28dbc` (clean), rebased onto issue 215, started 2026-11-06T04:05:40Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (57 s). commerce-api: 95 classes, 1062 tests, 0 failures, 0 errors, 0 skipped (5 min 12 s). That is issue 215's 94 classes and 1061 tests plus this class's scene. Only this section's text changed after that run.
+
+## Issue 217: step 3's records match what was built
+
+The last ticket. Documents only: no production or test code changed after `2b55dd0`, where the final check ran.
+
+**One run's lines for every E2E scene.** All three come from one run: `scripts/scene-lines --results build/final-check/commerce-api-test-results` on the final check's reports. The issue sections above quote lines from earlier runs of the same scenes. Pinned values (confirmation times, order and product IDs) repeat between runs, but offsets, `published_at`, PG identifiers and `updated_at` don't.
+
+`OutboxDeliveryE2ETest`, design 14.1's §6 rows 3 and 4:
+
+```text
+Delivery, after the commit before the relay: order 1 CONFIRMED; row order-confirmed:v1:1 PENDING attempts 0 published_at null; records 0; purchase activities 0; a recreated relay: row order-confirmed:v1:1 PUBLISHED attempts 1 published_at 2026-11-06T01:02:08.123456Z; record key 1 partition 0 offset 0; deliveries 1 (Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED); processed_order_confirmation [order-confirmed:v1:1 order 1 confirmed_at 2026-11-06T01:02:03.123456Z]; purchase_activity [order 1 product 1 quantity 2 confirmed_at 2026-11-06T01:02:03.123456Z]
+```
+
+`OutboxDeliveryE2ETest`, §7:
+
+```text
+Delivery, republished after the broker's ack: order 1 CONFIRMED, PG requests 1; after the stop: row order-confirmed:v1:1 PENDING attempts 1 published_at null, record key 1 partition 0 offset 1; past the lease: row order-confirmed:v1:1 PUBLISHED attempts 2 published_at 2026-11-06T01:03:09.123456Z, record key 1 partition 0 offset 2; deliveries 2 (Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=1, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=2, result=ALREADY_RECORDED); processed_order_confirmation [order-confirmed:v1:1 order 1 confirmed_at 2026-11-06T01:02:03.123456Z]; purchase_activity [order 1 product 1 quantity 2 confirmed_at 2026-11-06T01:02:03.123456Z; order 1 product 2 quantity 1 confirmed_at 2026-11-06T01:02:03.123456Z]; stock [8, 9] after the confirmation, [8, 9] at the end, of 10 each; points 10000 of 10000
+```
+
+`OrderEventRecoveryE2ETest`, §5:
+
+```text
+W6 reproduction, before 누락 복구: A order 1 CONFIRMED event order-confirmed:v1:1 confirmed_at 2026-10-29T01:02:03.123456Z items [product 1 quantity 2] pg_order_id cb2f3446-870e-4cf5-a5e2-2fe4c603fb6e transaction_key c42dbd01-98b4-4ea6-82a6-a4cc9b5909e3, sent nothing after the commit; B order 2 CONFIRMED event order-confirmed:v1:2 confirmed_at 2026-10-29T01:02:04.654321Z items [product 2 quantity 1] pg_order_id 56ab24c7-8ffd-4a10-88d3-05025452b0b3 transaction_key 93da82a2-6460-488f-9336-3284050e214e, sent after the commit (record key 2 partition 2 offset 0); PG creates C=2, PG transactions T=2, PG lookups 0; stock 290/224 -> 288/223; outbox rows 0; deliveries 1 (Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=0, result=RECORDED); purchase_activity [order 2 product 2 quantity 1 confirmed_at 2026-10-29T01:02:04.654321Z]
+누락 복구, the first start with A and B: Ran 누락 복구 for the order confirmed event. orderId=1, eventId=order-confirmed:v1:1, result=ADDED; Ran 누락 복구 for the order confirmed event. orderId=2, eventId=order-confirmed:v1:2, result=ADDED; rows [order-confirmed:v1:1 PUBLISHED attempts 1 published_at 2026-11-06T04:24:38.732940Z; order-confirmed:v1:2 PUBLISHED attempts 1 published_at 2026-11-06T04:24:38.741059Z]; records [key 2 partition 2 offset 1; key 1 partition 0 offset 0]; deliveries [Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=1, result=ALREADY_RECORDED]; purchase_activity [order 2 product 2 quantity 1 confirmed_at 2026-10-29T01:02:04.654321Z; order 1 product 1 quantity 2 confirmed_at 2026-10-29T01:02:03.123456Z]; PG creates 2, PG transactions 2, PG lookups 0; orders, payments and stock unchanged: order 1 CONFIRMED confirmed_at 2026-10-29T01:02:03.123456Z updated_at 2026-11-06T04:24:34.670345Z payment cb2f3446-870e-4cf5-a5e2-2fe4c603fb6e SUCCESS c42dbd01-98b4-4ea6-82a6-a4cc9b5909e3 updated_at 2026-11-06T04:24:34.670397Z; order 2 CONFIRMED confirmed_at 2026-10-29T01:02:04.654321Z updated_at 2026-11-06T04:24:34.687496Z payment 56ab24c7-8ffd-4a10-88d3-05025452b0b3 SUCCESS 93da82a2-6460-488f-9336-3284050e214e updated_at 2026-11-06T04:24:34.687507Z; stock 288/223
+누락 복구, the second start with the same IDs: Ran 누락 복구 for the order confirmed event. orderId=1, eventId=order-confirmed:v1:1, result=ALREADY_PRESENT; Ran 누락 복구 for the order confirmed event. orderId=2, eventId=order-confirmed:v1:2, result=ALREADY_PRESENT; rows 2, unchanged while it ran 2 s with the relay on; records 0; deliveries 3; purchase_activity 2, unchanged; PG requests 0 more
+```
+
+The class's two scenes ran in the same order as in issue 215's run, the §6 scene first, so §7's records are at offsets 1 and 2 again. Both delivery lines match the ones quoted under issues 214 and 215 character for character, because `TestClock` pins every time they print. The §5 line differs from issue 216's only in PG identifiers, stock levels, `published_at` and `updated_at`.
+
+**What the records gained.**
+
+- Design 14.7 has a table of what each ticket built, the names the spec left open, and the spec's and tickets' differences, each with its dated note in place. 14.8 has the commands and this final check.
+- The dated notes this ticket added: 14.2 for issue 211's names and issue 213's runner (its layer, and the refusal coming out of the start as itself rather than as a cause), 14.5 for issue 215's exact counts, 10 for the week 6 path that was never rebuilt from the `week6` revision, and 1.1's row for step 3.
+- **The `PUBLISHED` cleanup, looked at again with recovery.** Design 13.8 deferred it to after step 3. 누락 복구 adds a row whenever its event ID has none, so if a cleanup deleted a `PUBLISHED` row and someone later named that order, the row would come back and be published again. The streamer's processed confirmation turns that into `ALREADY_RECORDED`, which is what B shows in the §5 scene, so nothing is counted twice. It adds one condition to any future cleanup: the consumer's record has to last as long as anyone can name the order, which has no end. Today neither side deletes anything, so it holds. This comes from the code; no scene deletes a row and recovers it. Nothing was built.
+
+**A count corrected.** Issue 213's section says `HexagonalArchitectureTest` went from 9 to 10. The reports say 8 to 9: it had 8 at the end of step 2 (design 13.13), and the `adapter.startup` rule is its ninth. Issue 213's totals are right, so its runner class has 6 scenes and the rule adds 1, which gives the 7 it reported. Its section is left as written, and this paragraph corrects it.
+
+**CONTEXT.md, against the code.** 누락 복구, 아웃박스 and 발행하다 hold. 누락 복구 says an existing event is only checked for being the same, which is the six-column comparison, and that facts missing or not matching are refused, which is the four refusals. 중계 and 막힌 이벤트 are unchanged by this step.
+
+**Final check:** `scripts/final-check` on `2b55dd0`, a clean tree, started 2026-11-06T04:20:49Z, `BOOTSTRAP_SERVERS` unset. ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (51 s). commerce-api: 95 classes, 1062 tests, 0 failures, 0 errors, 0 skipped (4 min 38 s). The per-class counts in design 14.8 are read from this run's reports, not from separate filtered runs.
+
+A first start of the check was stopped while commerce-api's tests ran, because the design document, which is an input of that task, was being edited. It was rerun from scratch on the clean tree, and only that run is recorded.
+
+**Red checks:** none. This ticket changes no behaviour.
+
+## Spec 209: where the implementation differs
+
+Step 3 is built. These are the differences from the spec and its tickets. Each has a dated note where a reader would go wrong, and design 14.7 lists them.
+
+| The spec or ticket said | What is there | How it was found |
+| --- | --- | --- |
+| Issue 213: a refusal at startup fails the context with the refusal as the cause | The start throws the refusal itself. Boot 4.1 wraps only checked exceptions from a runner, and the refusal is unchecked, so it leaves `SpringApplication.run` as is, after the context is closed | Issue 213's scene (design 14.2) |
+| Design 14.3: the first context is closed before the second starts | It stays up. It is JUnit's test context, which a scene can't close, and its relay is off under `test` | Issue 216 (design 14.3) |
+| No PG callback is added during recovery | Not counted: the test PG sends none. The scene reads it as no lookup added and both payments unchanged, since a callback's reconcile does one or the other | Issue 216 (design 14.3) |
+| The third context starts with the same IDs | It also stays up 2 s with its relay on, two ticks, while every column of both rows stays as it was | Issue 216's review (design 14.3) |
+| Products 7 × 2 and 8 × 1 | Two products, 1 and 2, since IDs restart after each test's cleanup | Issue 215 (design 14.5) |
+| At least two records and two deliveries | Exactly two of each. Nothing publishes before the group is `STABLE`, so a third would be a defect | Issue 215 (design 14.5) |
+
+**Additions the spec didn't ask for:**
+
+- A refusal also logs one WARN line, after its transaction rolled back (design 14.2).
+- The runner sits in a new `adapter.startup` layer with its own architecture rule, that it reaches only provided ports. Both trigger rules now come from one helper.
+- One restart helper, `restartedCommerceApi`, for its three users, with the banner off so it can't read as a scene line's continuation.
+- A 1 GB heap for every Spring app's test JVM, through `build-logic` (`fc28dbc`). commerce-api's suite outgrew Gradle's 512 MB default when issue 216's class added its context and two restarts (design 14.8).
+
+**Settled from "to check in implementation":**
+
+- The row TX B builds and the row recovery builds: one `OrderEventOutboxFactory`, and step 1's outbox tests passed unchanged before anything else landed.
+- `ALREADY_PRESENT` means equal in all six event columns, once issue 212 added the comparison. Its name stayed.
+- Which row is compared: the one `findByEventId` finds, under the column's case-insensitive collation, so an event ID differing only in case is found and refused.
+- The streamer's start, assignment and graceful end: 7.4 s, 0.6 s and 20 ms, measured once (design 14.4).
+
+**Not exercised:** a deleted `PUBLISHED` row recovered again (above), adding the outbox table to a week 6 database (measured once with the W6 jar, in the probe note), and two recoveries racing through two real app starts rather than two threads.
+
+The spec stays open for its closing review.
+
+## Draft PR body
+
+A draft for the PR from `feat/outbox-recovery` into `week7`, in the shape of step 2's PR 207. It's written before the spec's closing review, so its numbers may move. The PR's copy should link these documents with blob URLs, as step 2's did, and carry the spec's closing comment.
+
+Title: `feat(commerce-api): recover the outbox rows week 6 left missing, and run one order from confirmation to purchase activity across both apps`
+
+```markdown
+## Summary
+
+Week 7 step 3. 누락 복구 adds the outbox row a confirmed order from before the outbox is missing, for the orders a person names, and commerce-api's tests now run the real commerce-streamer, so a scene ends at purchase activity rather than at the broker.
+
+- **Spec:** issue 209, with tickets 210–217
+- **Decision:** ADR 0036
+- **Design:** `docs/design/order-outbox.md` §14. 14.2 is 누락 복구, 14.3 §5's preparation, 14.4 the real consumer, 14.5 §7, 14.7 the tickets and differences, 14.8 the commands
+- **Measurements:** `docs/research/week7-outbox-recovery-probe.md`, the week 6 jar measured once
+- **Writing material:** `docs/research/week7-outbox-recovery-writing-material.md`, which holds every ticket's closing comment
+
+    OrderEventRecoveryRunner                     # adapter.startup: order-events.recovery.order-ids, empty by default
+      OrderEventRecovery.recover(orderIds)       # NEVER: one order at a time, stops at the first refusal
+        OrderEventOutboxModifyService.recover    # own TX per order
+          OrderFinder.findForRecovery            # refuse: no order, no confirmation time, not paid through the PG
+          OrderEventOutboxFactory.create         # the same row TX B builds
+          no row: save PENDING, due now | same six columns: ALREADY_PRESENT | any differs: refuse, naming the columns
+    OrderEventRelay                              # publishes a recovered row like any other
+
+### One event's path
+
+Order to outbox to broker to purchase activity for event ID `order-confirmed:v1:1`, from one run of `OutboxDeliveryE2ETest`'s §7 scene (`scripts/scene-lines`), with the real commerce-streamer consuming:
+
+    Delivery, republished after the broker's ack: order 1 CONFIRMED, PG requests 1
+    after the stop: row order-confirmed:v1:1 PENDING attempts 1 published_at null, record key 1 partition 0 offset 1
+    past the lease: row order-confirmed:v1:1 PUBLISHED attempts 2 published_at 2026-11-06T01:03:09.123456Z, record key 1 partition 0 offset 2
+    deliveries 2 (Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=1, result=RECORDED
+    Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=2, result=ALREADY_RECORDED)
+    processed_order_confirmation [order-confirmed:v1:1 order 1 confirmed_at 2026-11-06T01:02:03.123456Z]
+    purchase_activity [order 1 product 1 quantity 2 confirmed_at 2026-11-06T01:02:03.123456Z
+    order 1 product 2 quantity 1 confirmed_at 2026-11-06T01:02:03.123456Z]
+    stock [8, 9] after the confirmation, [8, 9] at the end, of 10 each
+    points 10000 of 10000
+
+The stop is step 2's controlled one: the JVM stays up, and a restart is a new `OrderEventRelay`.
+
+### Week 6's two cases
+
+`OrderEventRecoveryE2ETest` reproduces them in this run: week 6's database is gone, and week 6's path differs from today's at one call in TX B, which a test double replaces. A was confirmed and its send never happened, B was sent and recorded, and neither has a row. A restart with `order-events.recovery.order-ids` set to both adds two rows: A gains its purchase activity, and B's republish is `ALREADY_RECORDED`. No PG request, reconfirmation or stock change happens during recovery, and a second restart with the same IDs changes nothing.
+
+### The single-relay limit
+
+Unchanged from step 2: `order-events.relay.enabled` is a setting, not ownership. Recovery adds rows and leaves publishing to that relay, so recovered rows get the same lease, backoff and `BLOCKED` rule. In the §5 scene the test's context has its relay off and the restarted app has it on, so one relay runs at a time.
+
+### An unresolved error
+
+There are two now, and neither has an endpoint.
+
+- **A row that keeps failing** is `BLOCKED`, as in step 2, and design 13.7's SQL resumes it.
+- **A refused recovery** fails the start with the refusal, after one WARN line naming the order and, for a differing row, the event ID and its columns, never the payload. Orders before it keep their rows, so after fixing the list or the facts, running the same list again adds only the rest. A differing row is never overwritten: deciding which version is right is a person's call.
+
+## Review Points
+
+#### 1. Is a startup property a good enough trigger for recovery?
+
+There's no endpoint: a person sets `order-events.recovery.order-ids` and restarts. A rerun is harmless, since an identical row is left alone, but a property left set reruns on every start, and a refusal then fails every start until someone removes it.
+
+**In practice, would you trigger a one-off repair like this through startup, or through something you can call without a restart?**
+
+#### 2. Is a test double over today's code a fair reproduction of week 6?
+
+The assignment allows the preserved W6 test configuration or the W6 revision's jar. I took the first, because the two paths differ at one call. The cost is that adding the outbox table to a week 6 database is measured once with the real jar, not tested.
+
+**In practice, would you accept this, or insist on running the old revision?**
+
+#### 3. Is the real consumer as a child process worth what it costs?
+
+commerce-api's `test` task now depends on commerce-streamer's `bootJar` and starts it per scene. That means real records, real idempotency and no shared classpath, but it costs a build dependency between the apps' tests, a few seconds per scene, and the suite outgrew its default heap at the same time.
+
+**In practice, where do you draw the line between a contract test and running the other app?**
+
+## Evidence
+
+**Before:** on `week7`, a confirmed order without a row has no way back, and the scenes stop at the broker.
+
+**After:** the path above, and `scripts/final-check` on `2b55dd0`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 95 (90 before) | 1062 (1031 before) | 0 |
+| commerce-streamer | 18 | 67 | 0 |
+
+Red checks are in the writing material, ticket by ticket.
+
+## Merge Danger
+
+**Door:** two-way
+
+Recovered rows stay after a revert and are published like any other.
+
+**Blast Radius:** startup and the test build
+
+- **A refusal fails the start.** That's on purpose, but a property left set keeps failing it.
+- **Test build.** commerce-api's `test` depends on commerce-streamer's `bootJar`, and every Spring app's test JVM gets 1 GB of heap through `build-logic`.
+- **No schema change, no new endpoint, and no runtime dependency** from commerce-api to commerce-streamer.
+- **Out of scope:** finding orders that are missing a row, backfilling old point orders, and cleaning up `PUBLISHED` rows (design 13.8).
+```

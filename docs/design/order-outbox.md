@@ -2,7 +2,7 @@
 
 7주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 아웃박스, 중계, 누락 구간, 발행하다를 따른다. 결정은 [ADR 0034](../adr/0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md)에 있다. 6주차의 계약은 [주문 이벤트 설계](./order-events.md) 2절이고 바뀌지 않는다.
 
-상태: 2026-11-02 1단계(`feat/order-outbox`)를 인터뷰하고 썼다. 중계(2단계, `feat/outbox-relay`)와 복구와 E2E(3단계, `feat/outbox-recovery`)는 저마다의 인터뷰 뒤에 절을 더한다. 같은 날 1단계([명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191))를 마치고, 구현이 바꾼 것을 날짜 메모로 달고 1.2절과 12절을 더했다. (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 2단계를 인터뷰해 13절을 더했다. 결정은 [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md)에 있다.) (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 2단계를 마치고 13.11절부터 13.13절까지를 더했다.)
+상태: 2026-11-02 1단계(`feat/order-outbox`)를 인터뷰하고 썼다. 중계(2단계, `feat/outbox-relay`)와 복구와 E2E(3단계, `feat/outbox-recovery`)는 저마다의 인터뷰 뒤에 절을 더한다. 같은 날 1단계([명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191))를 마치고, 구현이 바꾼 것을 날짜 메모로 달고 1.2절과 12절을 더했다. (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 2단계를 인터뷰해 13절을 더했다. 결정은 [ADR 0035](../adr/0035-the-relay-claims-rows-with-skip-locked-and-a-lease-and-keeps-a-result-per-row.md)에 있다.) (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 2단계를 마치고 13.11절부터 13.13절까지를 더했다.) (2026-11-06, [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209): 3단계를 인터뷰해 14절을 더했다. 결정은 [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md)에 있다.) (2026-11-06, [issue 217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217): 3단계를 마치고 14.7절과 14.8절을 더했다.)
 
 ## 1. 근거와 범위
 
@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | 1 | TX B에서 아웃박스 행을 남긴다. 6주차의 전송 경로를 지운다. insert 전후의 실패와 다시 반영. | `feat/order-outbox` | 인터뷰 끝남(2026-11-02). 구현 끝남(2026-11-02, 1.2절). [명세 191](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/191) |
 | 2 | 단일 중계. 시도의 기록, 재시도, 영구 실패, 적체, 로컬 재개. 커밋 뒤, 중계 재생성, broker 확인 뒤 PUBLISHED 전의 중단 장면. | `feat/outbox-relay` | 인터뷰 끝남(2026-11-04, 13절). 구현 끝남(2026-11-04, 13.12절). [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198) |
-| 3 | 앱을 건너는 실행. 6주차의 두 사례 재현과 복구, 실제 소비자까지의 E2E, 끝의 검사. | `feat/outbox-recovery` | 인터뷰 전 |
+| 3 | 앱을 건너는 실행. 6주차의 두 사례 재현과 복구, 실제 소비자까지의 E2E, 끝의 검사. | `feat/outbox-recovery` | 인터뷰 끝남(2026-11-06, 14절). 구현 끝남(2026-11-06, 14.7절). [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209) |
 
 셋은 모두 `week7`로 PR한다.
 
@@ -146,7 +146,7 @@ payload는 잠근 주문의 저장된 품목, 수량, 시각에서 TX B 안에�
   - record의 bytes를 문자열 전체로 못 박는 테스트. 6주차의 `isStrictlyEqualTo`는 키의 차례를 보지 않는다.
   - 상태의 변화, 재시도 간격, `(status, next_attempt_at, id)` 인덱스, 발행의 INFO와 WARN 로그. (2026-11-04, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198): 13절이다.)
   - 변하지 않는 열이 상태 변화 뒤에도 그대로인지 다시 본다.
-- **복구와 E2E(3단계).** 6주차 경로를 `week6` 판에서 다시 만들어 두 사례를 재현한다. 저장된 사실로 행을 더하는 코드가 TX B의 코드를 되풀이하면 뽑는다.
+- **복구와 E2E(3단계).** 6주차 경로를 `week6` 판에서 다시 만들어 두 사례를 재현한다. 저장된 사실로 행을 더하는 코드가 TX B의 코드를 되풀이하면 뽑는다. (2026-11-06, [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209): `week6` 판을 띄우지 않는다. 두 경로가 다른 TX B의 한 곳만 테스트에서 6주차처럼 바꾼다. ADR 0036 규칙 5와 14.3절이다. 행 만들기는 `OrderEventOutboxFactory`로 뽑아 TX B와 누락 복구가 나눠 쓴다. 14.2절이다.)
 
 ## 11. 과제의 이름과 이 저장소의 이름
 
@@ -315,7 +315,7 @@ WHERE event_id = ? AND status = 'BLOCKED';
 
 행은 지우지 않는다. 나중에 정리한다면 `PUBLISHED`만 대상이고, 재발행될 수 있는 동안의 행을 지우면 안 된다. 받는 쪽의 멱등 기록은 같은 이벤트가 다시 올 수 있는 동안 남아 있어야 하므로, 그 보존 기간은 재발행의 창보다 길어야 한다. 미발행과 `BLOCKED` 행은 정리의 대상이 아니다.
 
-(2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 셋을 이렇게 가른다. 구현과 맞는다. 받는 쪽의 멱등 기록은 streamer의 처리한 주문 확정이고 [보관 기한이 없으므로](../../apps/commerce-streamer/CONTEXT.md) 위의 조건은 지금 지켜진다. 중계는 `PUBLISHED` 행을 가져가지 않으므로 다시 발행하는 창은 행이 `PENDING`이나 `BLOCKED`인 동안과 리스를 넘긴 중계의 send가 끝날 때까지이고, `BLOCKED`는 사람이 돌릴 때까지 끝이 없다. 다시 전달은 행의 상태와 상관없이 토픽에 record가 있는 동안 생긴다. 그 기록에 기한을 두게 되면 가장 오래된 미해결 행과 토픽의 보관 기간 모두보다 길어야 한다. 3단계의 복구가 없는 행을 저장된 사실로 더하므로, `PUBLISHED` 행을 지우는 정리는 3단계 뒤에 그 복구와 함께 다시 본다. 이 관계는 코드에서 읽은 것이고 장면으로 돌리지 않았다.)
+(2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 셋을 이렇게 가른다. 구현과 맞는다. 받는 쪽의 멱등 기록은 streamer의 처리한 주문 확정이고 [보관 기한이 없으므로](../../apps/commerce-streamer/CONTEXT.md) 위의 조건은 지금 지켜진다. 중계는 `PUBLISHED` 행을 가져가지 않으므로 다시 발행하는 창은 행이 `PENDING`이나 `BLOCKED`인 동안과 리스를 넘긴 중계의 send가 끝날 때까지이고, `BLOCKED`는 사람이 돌릴 때까지 끝이 없다. 다시 전달은 행의 상태와 상관없이 토픽에 record가 있는 동안 생긴다. 그 기록에 기한을 두게 되면 가장 오래된 미해결 행과 토픽의 보관 기간 모두보다 길어야 한다. 3단계의 복구가 없는 행을 저장된 사실로 더하므로, `PUBLISHED` 행을 지우는 정리는 3단계 뒤에 그 복구와 함께 다시 본다. 이 관계는 코드에서 읽은 것이고 장면으로 돌리지 않았다.) (2026-11-06, [issue 217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217): 복구와 함께 다시 봤고 정리는 만들지 않는다. 누락 복구는 `event_id`의 행이 없으면 더하므로, 지운 `PUBLISHED` 행의 주문을 누군가 지정하면 같은 이벤트 ID의 행이 다시 생기고 중계가 다시 발행한다. 그 record는 streamer가 처리한 주문 확정으로 `ALREADY_RECORDED`가 되고 구매 활동은 늘지 않는다. 그 장면은 `OrderEventRecoveryE2ETest`의 B다. 다만 B는 행 없이 발행된 경우이고 지운 행을 다시 더한 경우를 돌린 장면은 없다. 그래서 정리를 만든다면 받는 쪽의 기록이 그 주문을 지정할 수 있는 동안, 곧 끝없이 남아야 한다는 조건이 하나 는다. 지금은 둘 다 지우지 않으므로 지켜진다. 이것도 코드에서 읽은 것이다.)
 
 | 말 | 뜻 | 그때 broker에는 | 어디서 보는가 |
 | --- | --- | --- | --- |
@@ -449,6 +449,7 @@ scripts/final-check
 - 결과는 ADR 0036 규칙 3의 표다. 거절은 시작을 실패시킨다. 첫 거절에서 멈추고, 앞서 더한 행은 남는다. 다시 돌려도 같은 행이면 아무것도 하지 않는다. 주문마다 INFO 한 줄이다.
 - 잠그지 않는다. 동시의 두 실행은 유일한 `event_id`에서 하나가 실패한다.
 - (2026-11-06, [issue 212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212): 거절은 봉인된 `OrderEventRecoveryRefusedException`의 넷이다. 없는 주문은 `OrderNotFound`이고 `ORDER_NOT_FOUND`가 아니다(`findForRecovery`가 던진다). `confirmedAt`이 없으면 `OrderNotConfirmed`, PG가 아니면 `OrderNotPaidThroughPg`, 행이 다르면 `OutboxRowDiffers`다. 마지막은 이벤트 ID와 다른 열 이름을 모두 표의 차례로 싣고 payload는 싣지 않는다. 있는 행은 그대로 `event_id`로 찾는다. 찾기와 유일 키가 열의 collation(`utf8mb4_general_ci`)을 나눠 쓰므로, 새 행이 부딪힐 행이 견줄 행이다. 그래서 대소문자만 다른 `event_id`도 찾혀 `event_id`가 다르다고 거절된다. 견주기는 Kotlin의 문자열 그대로다. 거절은 그 주문의 트랜잭션이 되돌아간 뒤 `OrderEventRecovery`가 WARN 한 줄(예외의 메시지와 `orderId=`)로 남기고 다시 던진다. 동시의 두 실행에서 진 쪽은 `DataIntegrityViolationException`으로 실패하거나, 먼저 커밋된 행을 같은 행으로 찾는다.)
+- (2026-11-06, [issue 217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217): [issue 211](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/211)이 정한 이름은 14.7절에 있다. 진입점은 [issue 213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213)이 새 `adapter.startup` 층에 둔 `OrderEventRecoveryRunner`다. 그 층은 다른 어댑터가 부르지 못하고, 스케줄링처럼 제공 포트만 부른다는 규칙을 진다. 값은 `Binder`로 읽어 쉼표로 이은 값과 YAML 목록을 모두 받는다. 티켓은 거절을 원인으로 실은 시작의 실패를 요구했지만, 거절은 싸이지 않고 그 자체로 나온다. Boot 4.1은 러너의 checked 예외만 싸고 거절은 unchecked라, 컨텍스트가 닫힌 뒤 `SpringApplication.run`에서 그대로 던져진다. 장면은 그것을 단언한다.)
 
 ### 14.3 5절의 준비: 보존한 W6 테스트 구성
 
@@ -489,7 +490,7 @@ scripts/final-check
 
 멈춤은 13.9절의 `stopRelayAfterBrokerAckBeforeMarkingPublished`이고, 재시작은 새 `OrderEventRelay`다.
 
-(2026-11-06, [issue 215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215): 장면은 `OutboxDeliveryE2ETest`의 둘째 `@Test`다. 멈춤은 2단계처럼 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이고, 두 클래스가 함께 거므로 `OrderPaymentSpies.kt`의 확장 함수로 옮겼다. 이 클래스도 그 spy를 둔다. 과제의 상품 7과 8은 ID가 아니라 두 상품이다. 표를 비우면 ID가 1부터 다시 매겨지므로 두 상품은 1과 2다. 첫 중계가 멈춘 뒤 streamer가 첫 record를 `RECORDED`로 남기기를 기다리고, 임대가 끝난 뒤의 새 중계가 같은 이벤트를 새 record로 다시 발행한다. 둘째 줄은 `ALREADY_RECORDED`다. 행은 시도 2번에 `PUBLISHED`이고, 테스트 PG가 받은 요청은 생성 1번뿐이다. 재고는 확정 뒤 10에서 8과 9가 되고 끝까지 그대로이며, 충전한 포인트 10,000은 그대로다. 클래스의 토픽과 group을 첫 장면과 나눠 쓰므로 offset은 장면의 차례에 따라 다르다. 실행 값은 [글감](../research/week7-outbox-recovery-writing-material.md)에 있다.)
+(2026-11-06, [issue 215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215): 장면은 `OutboxDeliveryE2ETest`의 둘째 `@Test`다. 멈춤은 2단계처럼 `OrderEventOutboxModifyService`의 spy에 거는 일회성 stub이고, 두 클래스가 함께 거므로 `OrderPaymentSpies.kt`의 확장 함수로 옮겼다. 이 클래스도 그 spy를 둔다. 과제의 상품 7과 8은 ID가 아니라 두 상품이다. 표를 비우면 ID가 1부터 다시 매겨지므로 두 상품은 1과 2다. 첫 중계가 멈춘 뒤 streamer가 첫 record를 `RECORDED`로 남기기를 기다리고, 임대가 끝난 뒤의 새 중계가 같은 이벤트를 새 record로 다시 발행한다. 둘째 줄은 `ALREADY_RECORDED`다. 행은 시도 2번에 `PUBLISHED`이고, 테스트 PG가 받은 요청은 생성 1번뿐이다. 재고는 확정 뒤 10에서 8과 9가 되고 끝까지 그대로이며, 충전한 포인트 10,000은 그대로다. 클래스의 토픽과 group을 첫 장면과 나눠 쓰므로 offset은 장면의 차례에 따라 다르다. 실행 값은 [글감](../research/week7-outbox-recovery-writing-material.md)에 있다.) (2026-11-06, [issue 217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217): 표의 "2개 이상"과 "2번 이상"은 정확히 2로 단언한다. 무엇도 발행하기 전에 group이 `STABLE`이기를 기다리므로, 셋째 record나 셋째 받음은 다시 배정의 소음이 아니라 결함이다. issue 215가 정했다.)
 
 ### 14.6 과제의 이름과 이 저장소의 이름
 
@@ -500,3 +501,55 @@ scripts/final-check
 | 복구 | 누락 복구, `recovery` | 재개(막힌 이벤트를 되돌림)와 예약을 돌려주다(`복구하다`를 피한다)와 갈라 쓴다. |
 | 기존 주문 API로 주문 | 제공 포트(`OrderConfirmer`와 주문의 포트)로 주문 | 컨트롤러가 부르는 포트다. 커밋하는 기반에는 HTTP 클라이언트가 없고, 서버를 띄우면 서버 스레드의 요청이 남긴 것을 따로 정리해야 한다. 6주차의 공백 테스트도 포트로 확정했다. |
 | W6 revision 실행물 또는 보존한 W6 테스트 구성 | 보존한 W6 테스트 구성 | ADR 0036 규칙 5. |
+
+### 14.7 3단계가 만든 것
+
+2026-11-06 [명세 209](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/209)의 티켓이다. 명세가 이름 지은 것(`OrderEventRecoverer`, `order-events.recovery.order-ids`, `OrderEventRecoveryE2ETest`, `OutboxDeliveryE2ETest`, `stopRelayAfterBrokerAckBeforeMarkingPublished`, `commerce-streamer`의 `bootJar`)은 모두 그대로 최종 이름이 됐다. 명세가 이름 짓지 않은 것은 이렇게 정해졌다. 구현은 `OrderEventRecovery`(`NEVER`), 결과는 `OrderEventRecoveryResult`(`ADDED`, `ALREADY_PRESENT`), 주문마다의 트랜잭션은 `OrderEventOutboxModifyService.recover`, 주문 읽기는 `OrderFinder.findForRecovery`, 나눠 쓰는 행 만들기는 `OrderEventOutboxFactory`, 거절은 봉인된 `OrderEventRecoveryRefusedException`의 넷, 진입점은 `adapter.startup`의 `OrderEventRecoveryRunner`, 실제 consumer의 도구는 `CommerceStreamerProcess`, 재시작의 도구는 `restartedCommerceApi`다.
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [210](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/210) | [ADR 0036](../adr/0036-missing-outbox-rows-are-recovered-for-named-orders-from-stored-facts.md), 14절, `CONTEXT.md`의 누락 복구와 아웃박스·발행하다의 고침, [측정 기록](../research/week7-outbox-recovery-probe.md), 글감의 머리말. |
+| [214](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/214) | `CommerceStreamerProcess`, commerce-api의 `test`가 streamer의 `bootArchives`를 입력으로 받는 배선, `OutboxDeliveryE2ETest`의 첫 장면(6절의 셋째와 넷째 칸), `CommerceStreamerProcessTest`. |
+| [211](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/211) | `OrderEventOutboxFactory`로 뽑은 행 만들기(먼저, 따로 커밋), 제공 포트와 구현, 주문마다의 트랜잭션, `findForRecovery`. `OrderEventRecovererTest`의 장면 7. |
+| [212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212) | 넷의 거절, 여섯 열의 견주기(`OrderEventOutbox.eventColumnsDifferingFrom`), 첫 거절에서 멈춤, 거절의 WARN. `OrderEventRecovererTest`에 장면 12. |
+| [213](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/213) | `OrderEventRecoveryRunner`, `adapter.startup` 층과 그 아키텍처 규칙, `application.yml`의 설명. `OrderEventRecoveryRunnerTest`. |
+| [215](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/215) | 7절의 장면(`OutboxDeliveryE2ETest`의 둘째). 멈춤의 stub을 `OrderPaymentSpies.kt`의 확장 함수로 옮겼다. |
+| [216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216) | 5절의 장면 `OrderEventRecoveryE2ETest`. 재시작 도우미 `restartedCommerceApi`(세 곳의 복사를 하나로), 커밋하는 기반의 구매 활동 읽기, `build-logic`의 테스트 heap 1 GB. |
+| [217](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/217) | 이 표와 14.8절, 날짜 메모, 13.8절의 정리를 복구와 함께 다시 본 메모, 글감의 실행 값과 PR 본문 초안, 명세의 닫는 글. |
+
+운영 코드는 211, 212, 213만 바꿨다. 나머지는 테스트와 빌드, 문서다.
+
+명세와 티켓에서 달라진 것은 여섯이다. 모두 각 절의 날짜 메모에 있다. 시작의 거절은 원인으로 싸이지 않고 그대로 나온다(14.2절). 첫 컨텍스트는 닫지 않는다, callback은 세지 않고 PG 조회와 결제가 그대로인 것으로 본다, 셋째 컨텍스트도 중계를 켠 채 2 s 머문다(14.3절). 상품 7과 8은 두 상품 1과 2다, "2개 이상"은 정확히 2개로 단언한다(14.5절). 명세가 요구하지 않았는데 더한 것은 거절의 WARN(14.2절), `adapter.startup`의 규칙, 재시작 도우미, 테스트 heap이다.
+
+명세의 범위 밖으로 남긴다. 확정됐는데 행이 없는 주문을 찾는 일, 이전 포인트 주문의 소급, W6 DB에 표를 더하는 단계의 테스트, `PUBLISHED` 행의 정리(13.8절의 메모)다.
+
+### 14.8 3단계의 명령
+
+```bash
+# 누락 복구의 규칙: OrderEventRecovererTest(19). 더하기, 같은 행, 넷의 거절, 첫 거절에서 멈춤, 동시의 두 실행
+./gradlew :apps:commerce-api:test --tests '*OrderEventRecovererTest'
+
+# 진입점: OrderEventRecoveryRunnerTest(6)
+./gradlew :apps:commerce-api:test --tests '*OrderEventRecoveryRunnerTest'
+
+# 5절: OrderEventRecoveryE2ETest(1). 실행 값은 scripts/scene-lines OrderEventRecoveryE2ETest
+./gradlew :apps:commerce-api:test --tests '*OrderEventRecoveryE2ETest'
+
+# 6절의 셋째·넷째 칸과 7절: OutboxDeliveryE2ETest(2). 실행 값은 scripts/scene-lines OutboxDeliveryE2ETest
+./gradlew :apps:commerce-api:test --tests '*OutboxDeliveryE2ETest'
+
+# 실제 consumer의 jar가 없을 때: CommerceStreamerProcessTest(2)
+./gradlew :apps:commerce-api:test --tests '*CommerceStreamerProcessTest'
+
+# TX B의 행이 추출 뒤에도 같은지: OrderEventOutboxTest(16), OrderEventOutboxAtomicityTest(2)
+./gradlew :apps:commerce-api:test --tests '*OrderEventOutboxTest' --tests '*OrderEventOutboxAtomicityTest'
+
+# 끝의 확인. 트리 전체의 ktlint, 두 앱의 cleanTest와 check, 수까지 돌리고 commit과 시각을 함께 적는다.
+scripts/final-check
+```
+
+- 끝의 확인은 2026-11-06 `2b55dd0`의 깨끗한 트리에서 `scripts/final-check`으로 돌렸다(04:20:49Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-streamer는 18개 클래스, 67개 테스트, 실패 0, 오류 0, 건너뜀 0이다(51 s). commerce-api는 95개 클래스, 1062개 테스트, 실패 0, 오류 0, 건너뜀 0이다(4 min 38 s). `2b55dd0` 뒤로는 문서만 바뀌었다. 위 블록의 괄호는 거른 명령을 따로 돌리지 않고 이 실행의 보고서에서 `scripts/test-counts`로 읽었다.
+- 3단계의 수는 2단계의 끝(90개 클래스, 1031개 테스트)에서 이렇게 왔다. 새 클래스 5개가 30개다(`OrderEventRecovererTest` 19, `OrderEventRecoveryRunnerTest` 6, `OutboxDeliveryE2ETest` 2, `CommerceStreamerProcessTest` 2, `OrderEventRecoveryE2ETest` 1). 있던 클래스에 1개가 늘었다(`HexagonalArchitectureTest` 8 → 9, `adapter.startup`의 규칙). streamer의 수는 그대로다.
+- `--tests`로 거른 실행은 여전히 `HexagonalArchitectureTest`도 함께 돈다. 12절의 메모 그대로 위의 괄호는 그것을 뺀 것이다.
+- 테스트 heap은 [issue 216](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/216)부터 1 GB다(`fc28dbc`). 그 클래스가 컨텍스트 하나와 재시작 둘을 더하자 commerce-api의 전체 실행이 Gradle의 기본 512 MB를 넘었다. 측정은 [글감](../research/week7-outbox-recovery-writing-material.md)에 있다.
+- 첫 시작은 commerce-api의 테스트가 도는 동안 이 문서를 고쳐 멈췄다. 이 문서는 그 작업의 입력이라 그 실행은 깨끗한 트리의 것이 아니다. 고친 것을 물리고 처음부터 다시 돌린 위의 실행만 적는다.
