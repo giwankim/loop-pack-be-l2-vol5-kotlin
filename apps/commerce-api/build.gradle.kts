@@ -53,9 +53,30 @@ dependencies {
     testImplementation(libs.wiremock.springBoot)
 }
 
+// The real consumer in commerce-api's tests: commerce-streamer's bootJar, which a test runs as a child process (order-outbox
+// design 14.4). It is a test input only. Nothing puts it on a class path, so commerce-api gains no dependency on the streamer.
+val commerceStreamerBootJar: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+dependencies {
+    commerceStreamerBootJar(project(path = ":apps:commerce-streamer", configuration = "bootArchives"))
+}
+
 // OrderEventRelayFailedSendTest runs the resume and backlog SQL as the design document states it, so changing the document has to run it again.
 tasks.test {
     inputs.file(rootProject.file("docs/design/order-outbox.md")).withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // Declaring the jar as an input makes the test task depend on the streamer's bootJar, and makes a changed streamer rerun the tests.
+    // CommerceStreamerProcess reads the path from this system property.
+    val streamerJar = commerceStreamerBootJar
+    inputs.files(streamerJar).withPathSensitivity(PathSensitivity.NONE).withPropertyName("commerceStreamerBootJar")
+    jvmArgumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf("-Dcommerce-streamer.jar=${streamerJar.singleFile.absolutePath}")
+        },
+    )
 }
 
 // wiremock-spring-boot 는 Jetty EE10 jar 를 12.1.6 으로 요구하는데, Boot BOM 은 Jetty core 와 EE11 만 jetty.version 으로 관리한다.

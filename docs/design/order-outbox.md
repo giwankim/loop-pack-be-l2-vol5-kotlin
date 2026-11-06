@@ -470,6 +470,7 @@ scripts/final-check
 - 테스트 안에서 띄우고, 그 클래스의 `@AfterEach`에서 멈춘다. JUnit은 하위 클래스의 `@AfterEach`를 먼저 돌리므로 기반이 표를 비우기 전에 consumer가 멈춘다.
 - 받은 횟수는 streamer의 `Recorded the order confirmed event. eventId=…, offset=…, result=…` 줄로 센다(`RECORDED` 한 번, 뒤는 `ALREADY_RECORDED`). record는 broker에서 읽는다. send 호출 수를 세지 않는다.
 - broker 준비, consumer 배정, 결과에는 기한을 두고, 넘으면 그 단계의 실제 상태를 출력한다.
+- (2026-11-06, [issue 214](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/214): 테스트 쪽 도구는 `CommerceStreamerProcess`이고 시스템 속성은 `commerce-streamer.jar`다. commerce-api의 `test`는 streamer의 `bootArchives` 구성을 입력으로만 받고 클래스패스에 넣지 않는다. broker 준비는 클래스의 토픽이 파티션 셋으로 보이는 때, 배정은 admin client가 본 group이 `STABLE`이고 멤버마다 파티션이 있으며 합쳐 셋 모두인 때다. 첫 세대는 멤버 하나가 셋을 다 쥘 수 있어 합만으로는 모자란다(streamer의 `BaseConsumerTest`와 같다). 기한은 토픽 30 s, 배정 90 s, 결과 30 s이고, 넘으면 받은 줄 수, group이 읽었다고 표시한 offset과 토픽의 끝 offset, 장면이 넘긴 행, streamer 로그의 마지막 40줄을 낸다. 끝내기는 SIGTERM 뒤 40 s를 기다리고 그래도 살아 있으면 강제로 끝낸 뒤 프로세스가 없음을 확인한다. 이름은 `terminate`이고, streamer의 멈추다(처리할 수 없는 이벤트에서 consumer가 서는 것)와 갈라 쓴다. 로그는 `apps/commerce-api/build/commerce-streamer/`의 파일에 남고 테스트 보고서에 섞이지 않는다. group은 클래스마다 하나라서, 뒤 장면의 streamer는 앞 장면이 읽었다고 표시한 offset부터 읽는다. 한 번 잰 값은 시작 7.4 s, 그 뒤 배정 0.6 s, 끝내기 20 ms이고, 장면 43 s의 나머지는 컨텍스트다. `a5507d5` 위의 커밋 전 작업 트리를 그 장면 하나만 걸러 돌렸고, 노트북의 Docker에서 Testcontainers의 `mysql:8.4`와 `apache/kafka-native:4.4.0`, streamer의 `test` 프로필이었다. jar가 없을 때의 실패는 `CommerceStreamerProcessTest`가 본다.)
 
 ### 14.5 7절
 
