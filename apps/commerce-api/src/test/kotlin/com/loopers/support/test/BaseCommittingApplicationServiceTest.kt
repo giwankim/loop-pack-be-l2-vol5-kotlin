@@ -151,7 +151,12 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
 
     /** The outbox row of [orderId]'s event, read in a new transaction, so only what committed answers. */
     protected fun committedOrderEventOutbox(orderId: Long = order.id): OrderEventOutbox {
-        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId")!! }
+        return committedOrderEventOutboxOrNull(orderId)!!
+    }
+
+    /** The outbox row of [orderId]'s event if one committed, read in a new transaction. */
+    protected fun committedOrderEventOutboxOrNull(orderId: Long): OrderEventOutbox? {
+        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId") }
     }
 
     /** The purchase activities the real commerce-streamer committed, one line each, in ID order (order-outbox design 14.4). */

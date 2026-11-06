@@ -9,7 +9,6 @@ import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.provided.OrderEventRecoverer
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.Order
-import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
@@ -99,7 +98,7 @@ class OrderEventRecoveryRunnerTest(
     fun `with the property absent, startup recovers nothing and writes no row`() {
         val missingOrder = confirmAnOrderLeavingNoRow()
 
-        started { }
+        started()
 
         assertNoRowAndNoRecovery(missingOrder)
     }
@@ -108,7 +107,7 @@ class OrderEventRecoveryRunnerTest(
     fun `with the property empty, startup recovers nothing and writes no row`() {
         val missingOrder = confirmAnOrderLeavingNoRow()
 
-        started("--order-events.recovery.order-ids=") { }
+        started("--order-events.recovery.order-ids=")
 
         assertNoRowAndNoRecovery(missingOrder)
     }
@@ -148,7 +147,7 @@ class OrderEventRecoveryRunnerTest(
     fun `with order IDs set and the relay off, startup adds the row and leaves it pending`() {
         val missingOrder = confirmAnOrderLeavingNoRow()
 
-        started("--order-events.recovery.order-ids=${missingOrder.id}") { }
+        started("--order-events.recovery.order-ids=${missingOrder.id}")
 
         assertThat(committedOrderEventOutbox(missingOrder.id).status).isEqualTo(OrderEventOutboxStatus.PENDING)
     }
@@ -163,16 +162,11 @@ class OrderEventRecoveryRunnerTest(
         val refusal = checkNotNull(runCatching { orderEventRecoverer.recover(listOf(NONEXISTENT_ORDER_ID)) }.exceptionOrNull())
 
         val exception = assertThrows<RuntimeException> {
-            started("--order-events.recovery.order-ids=$NONEXISTENT_ORDER_ID") { }
+            started("--order-events.recovery.order-ids=$NONEXISTENT_ORDER_ID")
         }
 
         assertThat(exception).isInstanceOf(refusal::class.java).hasMessage(refusal.message)
         assertThat(inNewTransaction { orderEventOutboxRepository.count() }).isZero()
-    }
-
-    /** The row of [order]'s event, if one committed, read in a new transaction. */
-    private fun committedRowOrNull(order: Order): OrderEventOutbox? {
-        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:${order.id}") }
     }
 
     private fun isPublished(order: Order): Boolean {
@@ -180,7 +174,7 @@ class OrderEventRecoveryRunnerTest(
     }
 
     private fun assertNoRowAndNoRecovery(order: Order) {
-        assertThat(committedRowOrNull(order)).isNull()
+        assertThat(committedOrderEventOutboxOrNull(order.id)).isNull()
         assertThat(orderApplicationLogs.linesAt(Level.INFO).map { it.formattedMessage }).noneMatch { it.startsWith("Ran 누락 복구") }
     }
 
@@ -193,13 +187,13 @@ class OrderEventRecoveryRunnerTest(
         every { orderEventOutboxRepository.save(any()) } answers { firstArg() } andThenAnswer { callOriginal() }
         confirmOrder(testPg, preparedOrder)
 
-        assertThat(committedRowOrNull(preparedOrder)).isNull()
+        assertThat(committedOrderEventOutboxOrNull(preparedOrder.id)).isNull()
 
         return preparedOrder
     }
 
     /** The app restarted on the same containers and test PG ([restartedCommerceApi]) with [args]. This class's spy is not in it. */
-    private fun started(vararg args: String, block: (ConfigurableApplicationContext) -> Unit) {
+    private fun started(vararg args: String, block: (ConfigurableApplicationContext) -> Unit = {}) {
         restartedCommerceApi(server.baseUrl(), "--order-events.topic=$TOPIC", *args, block = block)
     }
 }

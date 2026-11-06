@@ -120,7 +120,7 @@ class OrderEventRecovererTest(
      * row is due when it was added, not when the order was confirmed, so the relay publishes it on its next round.
      */
     @Test
-    fun `a confirmed PG order without a row gets the row TX B would have written, pending and due at the clock's now`() {
+    fun `a confirmed order paid through the PG with no row gets the row TX B would have written, pending and due now`() {
         val cheaper = prepareProduct(price = 1_000)
         val pricier = prepareProduct(price = 2_000)
         confirmAnOrderLeavingNoRow(pricier to 1, cheaper to 2)
@@ -463,9 +463,5 @@ class OrderEventRecovererTest(
         confirmOrder(testPg, draftOrder)
 
         assertThat(committedOrderEventOutboxOrNull(draftOrder.id)).isNull()
-    }
-
-    private fun committedOrderEventOutboxOrNull(orderId: Long): OrderEventOutbox? {
-        return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId") }
     }
 }

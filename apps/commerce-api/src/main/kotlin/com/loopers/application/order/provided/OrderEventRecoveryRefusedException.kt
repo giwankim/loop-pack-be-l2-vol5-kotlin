@@ -24,7 +24,8 @@ sealed class OrderEventRecoveryRefusedException(
 
     /**
      * The order was confirmed, but not through the PG: a point-paid order of an earlier week. Only TX B leaves the event, and only
-     * for a PG order, so recovering this one would backfill an event that was never missing (ADR 0036, not chosen: finding them all).
+     * for an order paid through the PG, so recovering this one would add an event that was never missing (ADR 0036, not chosen:
+     * finding them all).
      */
     class OrderNotPaidThroughPg(
         orderId: Long,
