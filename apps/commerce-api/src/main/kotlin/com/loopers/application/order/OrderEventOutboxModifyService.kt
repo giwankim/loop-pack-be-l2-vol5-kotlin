@@ -1,5 +1,7 @@
 package com.loopers.application.order
 
+import com.loopers.application.order.provided.OrderEventRecoveryResult
+import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.OrderEventOutboxStatus
@@ -11,15 +13,36 @@ import java.time.Clock
 private val log = KotlinLogging.logger {}
 
 /**
- * The relay's short transactions (ADR 0035 rule 11). It implements no provided port and only [OrderEventRelay] calls it. Its methods
- * are public on a bean of their own because a transaction is declared at the proxy, which a call within one class wouldn't pass.
- * This isn't a saga: there is no compensation, and it stays inside one aggregate.
+ * The outbox's short transactions: the relay's (ADR 0035 rule 11) and 누락 복구's, one per order (ADR 0036 rule 3). It implements no
+ * provided port, and only [OrderEventRelay] and [OrderEventRecovery] call it. Its methods are public on a bean of their own because
+ * a transaction is declared at the proxy, which a call within one class wouldn't pass. This isn't a saga: there is no compensation,
+ * and it writes only the outbox.
  */
 @ApplicationService
 class OrderEventOutboxModifyService(
     private val orderEventOutboxRepository: OrderEventOutboxRepository,
+    private val orderEventOutboxFactory: OrderEventOutboxFactory,
+    private val orderFinder: OrderFinder,
     private val clock: Clock,
 ) {
+    /**
+     * Adds the row [orderId]'s confirmation is missing, built from the order as TX B builds it and due now, so the relay sends it on
+     * its next round. An order that already has its row keeps it as it is, whatever its state (ADR 0036 rule 3). Nothing is locked:
+     * two recoveries of one order at once meet at the unique event ID (rule 4). It reads the order and writes this row, nothing else.
+     */
+    fun recover(orderId: Long): OrderEventRecoveryResult {
+        val order = orderFinder.findForRecovery(orderId)
+        val recoveredOutbox = orderEventOutboxFactory.create(order)
+
+        if (orderEventOutboxRepository.findByEventId(recoveredOutbox.eventId) != null) {
+            return OrderEventRecoveryResult(orderId, recoveredOutbox.eventId, OrderEventRecoveryResult.Outcome.ALREADY_PRESENT)
+        }
+
+        orderEventOutboxRepository.save(recoveredOutbox)
+
+        return OrderEventRecoveryResult(orderId, recoveredOutbox.eventId, OrderEventRecoveryResult.Outcome.ADDED)
+    }
+
     /** Locks up to [batchSize] due rows and starts an attempt on each. The commit ends the lock, and the lease then protects the rows. */
     fun claimDueOutboxes(batchSize: Int): List<OrderEventOutbox> {
         val claimedAt = clock.instant()

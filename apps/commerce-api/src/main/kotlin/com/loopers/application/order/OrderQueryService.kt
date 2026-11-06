@@ -62,4 +62,8 @@ class OrderQueryService(
     override fun findForPg(orderId: Long): Order {
         return orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
     }
+
+    override fun findForRecovery(orderId: Long): Order {
+        return orderRepository.findWithLineItemsById(orderId) ?: throw CoreException(ErrorType.ORDER_NOT_FOUND)
+    }
 }
