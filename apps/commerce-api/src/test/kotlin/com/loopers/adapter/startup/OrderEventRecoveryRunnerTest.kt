@@ -22,6 +22,8 @@ import com.loopers.testcontainers.MySqlTestContainersConfig
 import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
@@ -29,10 +31,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.slf4j.LoggerFactory
+import org.springframework.boot.DefaultApplicationArguments
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.context.logging.LoggingApplicationListener
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.mock.env.MockEnvironment
 import org.springframework.test.context.TestPropertySource
 import org.wiremock.spring.InjectWireMock
 import java.time.Duration
@@ -54,7 +58,7 @@ class OrderEventRecoveryRunnerTest(
         private val PUBLISH_WAIT: Duration = Duration.ofSeconds(10)
 
         /** No order has this ID: the tables are emptied after every scene and IDs start at 1. */
-        private const val MISSING_ORDER_ID = 999_999L
+        private const val NONEXISTENT_ORDER_ID = 999_999L
     }
 
     /** Where TX B's row goes missing ([confirmAnOrderLeavingNoRow]). Unstubbed, it is the real repository. */
@@ -114,6 +118,20 @@ class OrderEventRecoveryRunnerTest(
         assertNoRowAndNoRecovery(missingOrder)
     }
 
+    /**
+     * The two scenes above can't tell no call from a call with no IDs, which would add nothing and log nothing too. The restarted
+     * context has no double of the port, so this one runs the runner by itself over an environment where the property is empty.
+     */
+    @Test
+    fun `with the property empty, the runner doesn't call the port`() {
+        val recoverer = mockk<OrderEventRecoverer>()
+        val environment = MockEnvironment().withProperty("order-events.recovery.order-ids", "")
+
+        OrderEventRecoveryRunner(recoverer, environment).run(DefaultApplicationArguments())
+
+        verify(exactly = 0) { recoverer.recover(any()) }
+    }
+
     @Test
     fun `with order IDs set, startup adds each order's row and the relay publishes it`() {
         val firstOrder = confirmAnOrderLeavingNoRow()
@@ -147,10 +165,10 @@ class OrderEventRecoveryRunnerTest(
      */
     @Test
     fun `a refusal at startup fails the start with the refusal`() {
-        val refusal = assertThrows<RuntimeException> { orderEventRecoverer.recover(listOf(MISSING_ORDER_ID)) }
+        val refusal = checkNotNull(runCatching { orderEventRecoverer.recover(listOf(NONEXISTENT_ORDER_ID)) }.exceptionOrNull())
 
         val exception = assertThrows<RuntimeException> {
-            started("--order-events.recovery.order-ids=$MISSING_ORDER_ID") { }
+            started("--order-events.recovery.order-ids=$NONEXISTENT_ORDER_ID") { }
         }
 
         assertThat(exception).isInstanceOf(refusal::class.java).hasMessage(refusal.message)
