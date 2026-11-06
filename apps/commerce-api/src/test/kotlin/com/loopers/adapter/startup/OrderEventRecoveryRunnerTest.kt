@@ -5,7 +5,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
-import com.loopers.CommerceApiApplication
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.provided.OrderEventRecoverer
 import com.loopers.application.order.required.OrderEventOutboxRepository
@@ -16,10 +15,8 @@ import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
 import com.loopers.support.linesAt
+import com.loopers.support.restartedCommerceApi
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
-import com.loopers.testcontainers.KafkaTestContainersConfig
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.every
 import io.mockk.mockk
@@ -32,8 +29,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.slf4j.LoggerFactory
 import org.springframework.boot.DefaultApplicationArguments
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.boot.context.logging.LoggingApplicationListener
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.mock.env.MockEnvironment
@@ -203,30 +198,9 @@ class OrderEventRecoveryRunnerTest(
         return preparedOrder
     }
 
-    /**
-     * Starts the app again on this JVM's containers with [args], as a person restarts it, and closes it after [block]. Like
-     * [com.loopers.application.order.provided.OrderPaymentIntegrationTest]'s restart, it leaves out `LoggingApplicationListener`,
-     * so closing it doesn't reset the logging this class's context set up. This class's spy is not in it.
-     */
+    /** The app restarted on the same containers and test PG ([restartedCommerceApi]) with [args]. This class's spy is not in it. */
     private fun started(vararg args: String, block: (ConfigurableApplicationContext) -> Unit) {
-        val application = SpringApplicationBuilder(
-            CommerceApiApplication::class.java,
-            MySqlTestContainersConfig::class.java,
-            RedisTestContainersConfig::class.java,
-            KafkaTestContainersConfig::class.java,
-        )
-            .profiles("test")
-            .build()
-        application.setListeners(application.listeners.filterNot { it is LoggingApplicationListener })
-
-        application.run(
-            "--pg.base-url=${server.baseUrl()}",
-            "--spring.jpa.hibernate.ddl-auto=none",
-            "--server.port=0",
-            "--management.server.port=0",
-            "--order-events.topic=$TOPIC",
-            *args,
-        ).use(block)
+        restartedCommerceApi(server.baseUrl(), "--order-events.topic=$TOPIC", *args, block = block)
     }
 }
 

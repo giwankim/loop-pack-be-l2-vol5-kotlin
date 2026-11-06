@@ -159,7 +159,14 @@ class TestPg(
     fun createdTransactionKeys(): List<String> {
         return server.allServeEvents
             .filter { it.request.method.value() == "POST" && it.request.url == PAYMENTS_PATH && it.response.status == 202 }
-            .map { CREATED_TRANSACTION_KEY.find(it.response.bodyAsString)!!.groupValues[1] }
+            .map { event ->
+                val body = event.response.bodyAsString
+                val match = checkNotNull(CREATED_TRANSACTION_KEY.find(body)) {
+                    "A 202 to a create carried no transaction key: $body"
+                }
+
+                match.groupValues[1]
+            }
     }
 
     /** PG가 받은 모든 요청 수. 메서드와 경로가 무엇이든, 맞는 스텁이 없던 요청까지 센다. */

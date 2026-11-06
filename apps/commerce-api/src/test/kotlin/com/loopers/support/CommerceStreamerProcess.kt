@@ -1,5 +1,6 @@
 package com.loopers.support
 
+import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import org.apache.kafka.clients.admin.Admin
 import org.apache.kafka.clients.admin.AdminClientConfig
 import org.apache.kafka.clients.admin.OffsetSpec
@@ -9,6 +10,8 @@ import org.apache.kafka.common.TopicPartition
 import org.awaitility.Awaitility.await
 import org.awaitility.core.ConditionTimeoutException
 import org.awaitility.core.TerminalFailureException
+import org.springframework.boot.kafka.autoconfigure.KafkaProperties
+import org.springframework.core.env.Environment
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -334,6 +337,26 @@ class CommerceStreamerProcess private constructor(
         val group: String,
         val partitions: Int,
     ) {
+        companion object {
+            /** The context's MySQL, broker, topic and partitions read from its [environment] and properties, with the class's [group]. */
+            fun of(
+                environment: Environment,
+                kafkaProperties: KafkaProperties,
+                orderEventsProperties: OrderEventsProperties,
+                group: String,
+            ): Settings {
+                return Settings(
+                    jdbcUrl = environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url"),
+                    username = environment.getRequiredProperty("datasource.mysql-jpa.main.username"),
+                    password = environment.getRequiredProperty("datasource.mysql-jpa.main.password"),
+                    bootstrapServers = kafkaProperties.bootstrapServers,
+                    topic = orderEventsProperties.topic,
+                    group = group,
+                    partitions = orderEventsProperties.partitions,
+                )
+            }
+        }
+
         /** [bootstrapServers] as one setting's value. */
         val brokers: String
             get() = bootstrapServers.joinToString(",")

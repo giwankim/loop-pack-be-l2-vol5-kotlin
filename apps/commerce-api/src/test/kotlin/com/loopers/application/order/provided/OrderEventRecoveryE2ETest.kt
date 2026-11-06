@@ -5,7 +5,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
-import com.loopers.CommerceApiApplication
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.order.required.OrderEventPublisher
@@ -21,11 +20,8 @@ import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
-import com.loopers.support.linesAt
+import com.loopers.support.restartedCommerceApi
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
-import com.loopers.testcontainers.KafkaTestContainersConfig
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.mockk.every
@@ -36,10 +32,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.boot.context.logging.LoggingApplicationListener
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
-import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.core.env.Environment
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.support.TransactionSynchronization
@@ -61,9 +54,9 @@ private val log = KotlinLogging.logger {}
  * and the real commerce-streamer records it. So both orders are confirmed with no row, and only B has its purchase activity.
  *
  * The app then starts again on the same containers with `order-events.recovery.order-ids` set to A and B and the relay on, without
- * the spy ([started], `OrderPaymentIntegrationTest.restarted()`'s precedent). 누락 복구 adds both rows, the relay publishes them, the
- * streamer records A's purchase activity and finds B's already recorded. A third start with the same IDs finds both rows already
- * present and changes nothing. The containers are this JVM's Testcontainers, which the design takes as the assignment's new isolated
+ * the spy ([restartedCommerceApi], `OrderPaymentIntegrationTest.restarted()`'s precedent). 누락 복구 adds both rows, the relay publishes them, the
+ * streamer records A's purchase activity and finds B's already recorded. A third start with the same IDs and the relay on finds both rows
+ * already present, and while it runs for [SECOND_START_HOLD] nothing changes. The containers are this JVM's Testcontainers, which the design takes as the assignment's new isolated
  * run. This class's own context stays up throughout, with its relay off as under `test`, so it publishes nothing.
  *
  * The scene is one `@Test`, so no cleanup runs between its steps, and no step deletes a row, inserts a `SUCCESS`, writes a `status`
@@ -93,8 +86,8 @@ class OrderEventRecoveryE2ETest(
         /** The restarted relay ticks within a second. The rest is room for a slow machine. */
         private val PUBLISH_WAIT: Duration = Duration.ofSeconds(10)
 
-        /** A `datetime(6)` column in `Instant`'s form. The columns hold UTC (`jpa.yml`'s `NORMALIZE_UTC`). */
-        private const val STORED_UTC_TIME = "date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ')"
+        /** How long the second start runs with its relay on: two of the relay's 1 s ticks, so a round that would send again has run. */
+        private val SECOND_START_HOLD: Duration = Duration.ofSeconds(2)
     }
 
     /** Where TX B's row goes missing in this class's context ([confirmAsWeek6]). The restarted contexts have the real repository. */
@@ -165,6 +158,7 @@ class OrderEventRecoveryE2ETest(
         val reproducedState = recoveryState(orderA, orderB, productA, productB)
         val creates = testPg.createCount()
         val pgTransactions = testPg.createdTransactionKeys()
+        val payments = listOf(orderA, orderB).map { inNewTransaction { paymentFinder.findByOrder(it.id) } }
         assertThat(confirmedA.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(confirmedB.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(stocks(productA, productB)).isEqualTo(listOf(stockBefore[0] - 2, stockBefore[1] - 1))
@@ -173,11 +167,12 @@ class OrderEventRecoveryE2ETest(
         assertThat(week6Lines.single()).startsWith(
             "Recorded the order confirmed event. eventId=${eventIdOf(orderB)}, orderId=${orderB.id}, ",
         ).endsWith("result=RECORDED")
-        assertThat(storedActivities()).containsExactly(
+        assertThat(storedPurchaseActivities()).containsExactly(
             "order ${orderB.id} product ${productB.id} quantity 1 confirmed_at $B_CONFIRMED_AT",
         )
         assertThat(creates).isEqualTo(2)
-        assertThat(pgTransactions).hasSize(2)
+        assertThat(payments.map { testPg.createCount(it.pgOrderId) }).containsExactly(1, 1)
+        assertThat(pgTransactions).containsExactlyInAnyOrderElementsOf(payments.map { it.transactionKey })
         assertThat(testPg.lookupCount()).isZero()
 
         log.info {
@@ -187,15 +182,16 @@ class OrderEventRecoveryE2ETest(
                 "PG creates C=$creates, PG transactions T=${pgTransactions.size}, PG lookups ${testPg.lookupCount()}; " +
                 "stock ${stockBefore.joinToString("/")} -> ${stocks(productA, productB).joinToString("/")}; " +
                 "outbox rows ${storedRows().size}; deliveries ${week6Lines.size} (${week6Lines.single()}); " +
-                "purchase_activity [${storedActivities().joinToString("; ")}]"
+                "purchase_activity [${storedPurchaseActivities().joinToString("; ")}]"
         }
 
         val recoveryArgs = arrayOf(
+            "--order-events.topic=$TOPIC",
             "--order-events.recovery.order-ids=${orderA.id},${orderB.id}",
             "--order-events.relay.enabled=true",
         )
         val firstStartLines = recoveryLinesDuring {
-            started(*recoveryArgs) {
+            restartedCommerceApi(server.baseUrl(), *recoveryArgs) {
                 await().atMost(PUBLISH_WAIT).until { storedRows().count { it.status == OrderEventOutboxStatus.PUBLISHED } == 2 }
             }
         }
@@ -203,7 +199,7 @@ class OrderEventRecoveryE2ETest(
         val recoveredRecords = orderEvents.publishedRecords(expected = 2)
         val recoveredLines = streamer.awaitRecordedLines(expected = 3) { rowsLine() }.drop(1)
         val rowsAfterRecovery = storedRows()
-        val activitiesAfterRecovery = storedActivities()
+        val activitiesAfterRecovery = storedPurchaseActivities()
         assertThat(firstStartLines).containsExactly(
             "Ran 누락 복구 for the order confirmed event. orderId=${orderA.id}, eventId=${eventIdOf(orderA)}, result=ADDED",
             "Ran 누락 복구 for the order confirmed event. orderId=${orderB.id}, eventId=${eventIdOf(orderB)}, result=ADDED",
@@ -224,6 +220,7 @@ class OrderEventRecoveryE2ETest(
         )
         assertThat(recoveryState(orderA, orderB, productA, productB)).isEqualTo(reproducedState)
         assertThat(testPg.createCount()).isEqualTo(creates)
+        assertThat(payments.map { testPg.createCount(it.pgOrderId) }).containsExactly(1, 1)
         assertThat(testPg.createdTransactionKeys()).containsExactlyInAnyOrderElementsOf(pgTransactions)
         assertThat(testPg.lookupCount()).isZero()
         assertThat(testPg.unmatchedRequests()).isEmpty()
@@ -239,7 +236,13 @@ class OrderEventRecoveryE2ETest(
         }
 
         val requestsBeforeTheSecondStart = testPg.requestCount()
-        val secondStartLines = recoveryLinesDuring { started(*recoveryArgs) { } }
+        val secondStartLines = recoveryLinesDuring {
+            restartedCommerceApi(server.baseUrl(), *recoveryArgs) {
+                await().during(SECOND_START_HOLD).atMost(SECOND_START_HOLD.plus(PUBLISH_WAIT)).until {
+                    storedRows().map { describeWhole(it) } == rowsAfterRecovery.map { describeWhole(it) }
+                }
+            }
+        }
 
         val recordsAfterTheSecondStart = orderEvents.publishedRecords(expected = 0)
         assertThat(secondStartLines).containsExactly(
@@ -249,14 +252,15 @@ class OrderEventRecoveryE2ETest(
         assertThat(storedRows().map { describeWhole(it) }).isEqualTo(rowsAfterRecovery.map { describeWhole(it) })
         assertThat(recordsAfterTheSecondStart).isEmpty()
         assertThat(streamer.recordedLines()).hasSize(3)
-        assertThat(storedActivities()).isEqualTo(activitiesAfterRecovery)
+        assertThat(storedPurchaseActivities()).isEqualTo(activitiesAfterRecovery)
         assertThat(recoveryState(orderA, orderB, productA, productB)).isEqualTo(reproducedState)
         assertThat(testPg.requestCount()).isEqualTo(requestsBeforeTheSecondStart)
 
         log.info {
             "누락 복구, the second start with the same IDs: ${secondStartLines.joinToString("; ")}; " +
-                "rows ${storedRows().size}, unchanged; records ${recordsAfterTheSecondStart.size}; " +
-                "deliveries ${streamer.recordedLines().size}; purchase_activity ${storedActivities().size}, unchanged; " +
+                "rows ${storedRows().size}, unchanged while it ran ${SECOND_START_HOLD.toSeconds()} s with the relay on; " +
+                "records ${recordsAfterTheSecondStart.size}; " +
+                "deliveries ${streamer.recordedLines().size}; purchase_activity ${storedPurchaseActivities().size}, unchanged; " +
                 "PG requests ${testPg.requestCount() - requestsBeforeTheSecondStart} more"
         }
     }
@@ -289,15 +293,7 @@ class OrderEventRecoveryE2ETest(
 
     /** Starts the streamer on the context's MySQL and broker, with the class's topic and group, and keeps it for [terminateTheStreamer]. */
     private fun startTheStreamer(): CommerceStreamerProcess {
-        val settings = CommerceStreamerProcess.Settings(
-            jdbcUrl = environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url"),
-            username = environment.getRequiredProperty("datasource.mysql-jpa.main.username"),
-            password = environment.getRequiredProperty("datasource.mysql-jpa.main.password"),
-            bootstrapServers = kafkaProperties.bootstrapServers,
-            topic = orderEventsProperties.topic,
-            group = GROUP,
-            partitions = orderEventsProperties.partitions,
-        )
+        val settings = CommerceStreamerProcess.Settings.of(environment, kafkaProperties, orderEventsProperties, GROUP)
 
         return CommerceStreamerProcess.start(settings).also { streamer = it }
     }
@@ -362,25 +358,9 @@ class OrderEventRecoveryE2ETest(
         }
     }
 
-    /** The streamer's purchase activities as committed, one line each. */
-    private fun storedActivities(): List<String> {
-        return nativeStrings(
-            "select concat('order ', order_id, ' product ', product_id, ' quantity ', quantity, " +
-                "' confirmed_at ', $STORED_UTC_TIME) from purchase_activity order by id",
-        )
-    }
-
-    /**
-     * Each row as the one string [sql] selects, read in a new transaction. The streamer's tables have no entity in commerce-api, so
-     * their rows are read this way, with times formatted by MySQL as stored: a JDBC read would shift them into the test JVM's zone.
-     */
-    private fun nativeStrings(sql: String): List<String> {
-        return inNewTransaction { entityManager.createNativeQuery(sql).resultList.map { it.toString() } }
-    }
-
     /** The rows a wait prints when it runs out: the outbox rows and the purchase activities. */
     private fun rowsLine(): String {
-        return "rows [${storedRows().joinToString("; ") { describe(it) }}]; purchase_activity ${storedActivities()}"
+        return "rows [${storedRows().joinToString("; ") { describe(it) }}]; purchase_activity ${storedPurchaseActivities()}"
     }
 
     private fun describe(outbox: OrderEventOutbox): String {
@@ -397,33 +377,5 @@ class OrderEventRecoveryE2ETest(
 
     private fun describe(record: ConsumerRecord<String, String>): String {
         return "key ${record.key()} partition ${record.partition()} offset ${record.offset()}"
-    }
-
-    /**
-     * Starts the app again on this JVM's containers with [args], as a person restarts it, and closes it after [block]. Like
-     * [OrderPaymentIntegrationTest]'s restart, it leaves out `LoggingApplicationListener`, so closing it doesn't reset the logging
-     * this class's context set up, and it overrides `ddl-auto` with `none`, so the tables keep what this run left. This class's spy is
-     * not in it. Its banner is off: printed after a step's INFO line, `scripts/scene-lines` would read it as that line's continuation.
-     */
-    private fun started(vararg args: String, block: (ConfigurableApplicationContext) -> Unit) {
-        val application = SpringApplicationBuilder(
-            CommerceApiApplication::class.java,
-            MySqlTestContainersConfig::class.java,
-            RedisTestContainersConfig::class.java,
-            KafkaTestContainersConfig::class.java,
-        )
-            .profiles("test")
-            .build()
-        application.setListeners(application.listeners.filterNot { it is LoggingApplicationListener })
-
-        application.run(
-            "--pg.base-url=${server.baseUrl()}",
-            "--spring.jpa.hibernate.ddl-auto=none",
-            "--server.port=0",
-            "--management.server.port=0",
-            "--spring.main.banner-mode=off",
-            "--order-events.topic=$TOPIC",
-            *args,
-        ).use(block)
     }
 }

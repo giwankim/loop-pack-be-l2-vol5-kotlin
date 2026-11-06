@@ -59,6 +59,9 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
          */
         @JvmStatic
         protected val LOCK_WAIT_PROBE: Duration = Duration.ofSeconds(1)
+
+        /** A `datetime(6)` `confirmed_at` column in `Instant`'s form. The columns hold UTC (`jpa.yml`'s `NORMALIZE_UTC`). */
+        protected const val STORED_UTC_TIME = "date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ')"
     }
 
     @Autowired
@@ -149,6 +152,22 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     /** The outbox row of [orderId]'s event, read in a new transaction, so only what committed answers. */
     protected fun committedOrderEventOutbox(orderId: Long = order.id): OrderEventOutbox {
         return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId")!! }
+    }
+
+    /** The purchase activities the real commerce-streamer committed, one line each, in ID order (order-outbox design 14.4). */
+    protected fun storedPurchaseActivities(): List<String> {
+        return nativeStrings(
+            "select concat('order ', order_id, ' product ', product_id, ' quantity ', quantity, " +
+                "' confirmed_at ', $STORED_UTC_TIME) from purchase_activity order by id",
+        )
+    }
+
+    /**
+     * Each row as the one string [sql] selects, read in a new transaction. The streamer's tables have no entity in commerce-api, so
+     * their rows are read this way, with times formatted by MySQL as stored: a JDBC read would shift them into the test JVM's zone.
+     */
+    protected fun nativeStrings(sql: String): List<String> {
+        return inNewTransaction { entityManager.createNativeQuery(sql).resultList.map { it.toString() } }
     }
 
     /** [block]을 다른 스레드에서 부르고 곧바로 돌아온다. 그 스레드에는 트랜잭션이 없으므로 [block]이 부른 포트가 저마다 커밋한다. */

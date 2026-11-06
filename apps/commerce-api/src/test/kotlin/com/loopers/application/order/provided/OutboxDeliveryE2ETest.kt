@@ -77,9 +77,6 @@ class OutboxDeliveryE2ETest(
 
         private const val STOCK = 10
         private const val POINTS = 10_000L
-
-        /** A `datetime(6)` column in `Instant`'s form. The columns hold UTC (`jpa.yml`'s `NORMALIZE_UTC`). */
-        private const val STORED_UTC_TIME = "date_format(confirmed_at, '%Y-%m-%dT%H:%i:%s.%fZ')"
     }
 
     /** Where the republish scene stops the relay (`stopRelayAfterBrokerAckBeforeMarkingPublished`). Unstubbed, it is the real service. */
@@ -133,7 +130,7 @@ class OutboxDeliveryE2ETest(
         val confirmedOrder = inNewTransaction { orderFinder.find(user.id, order.id) }
         val waitingOutbox = committedOrderEventOutbox()
         val recordsBeforeTheRelay = orderEvents.publishedRecords(expected = 0)
-        val activitiesBeforeTheRelay = storedActivities()
+        val activitiesBeforeTheRelay = storedPurchaseActivities()
         assertThat(confirmedOrder.status).isEqualTo(OrderStatus.CONFIRMED)
         assertThat(waitingOutbox.status).isEqualTo(OrderEventOutboxStatus.PENDING)
         assertThat(waitingOutbox.attemptCount).isZero()
@@ -152,7 +149,7 @@ class OutboxDeliveryE2ETest(
         val publishedRecord = recordsAfterTheRelay.single()
         val deliveryLine = streamer.awaitRecordedLines(expected = 1) { rowsLine() }.single()
         val publishedOutbox = committedOrderEventOutbox()
-        val activities = storedActivities()
+        val activities = storedPurchaseActivities()
         val confirmations = storedConfirmations()
         val eventId = "order-confirmed:v1:${order.id}"
         assertThat(publishedOutbox.status).isEqualTo(OrderEventOutboxStatus.PUBLISHED)
@@ -212,7 +209,7 @@ class OutboxDeliveryE2ETest(
         val payment = inNewTransaction { paymentFinder.findByOrder(order.id) }
         val publishedOutbox = committedOrderEventOutbox()
         val confirmations = storedConfirmations()
-        val activities = storedActivities()
+        val activities = storedPurchaseActivities()
         val stocks = stocksOf(shirt, socks)
         val balance = inNewTransaction { pointAccountFinder.findByUser(user.id).balance.amount }
         val eventId = "order-confirmed:v1:${order.id}"
@@ -279,15 +276,7 @@ class OutboxDeliveryE2ETest(
 
     /** Starts the streamer on the context's MySQL and broker, with the class's topic and group, and keeps it for [terminateTheStreamer]. */
     private fun startTheStreamer(): CommerceStreamerProcess {
-        val settings = CommerceStreamerProcess.Settings(
-            jdbcUrl = environment.getRequiredProperty("datasource.mysql-jpa.main.jdbc-url"),
-            username = environment.getRequiredProperty("datasource.mysql-jpa.main.username"),
-            password = environment.getRequiredProperty("datasource.mysql-jpa.main.password"),
-            bootstrapServers = kafkaProperties.bootstrapServers,
-            topic = orderEventsProperties.topic,
-            group = GROUP,
-            partitions = orderEventsProperties.partitions,
-        )
+        val settings = CommerceStreamerProcess.Settings.of(environment, kafkaProperties, orderEventsProperties, GROUP)
 
         return CommerceStreamerProcess.start(settings).also { streamer = it }
     }
@@ -323,26 +312,10 @@ class OutboxDeliveryE2ETest(
         )
     }
 
-    /** The streamer's purchase activities as committed, one line each. */
-    private fun storedActivities(): List<String> {
-        return nativeStrings(
-            "select concat('order ', order_id, ' product ', product_id, ' quantity ', quantity, " +
-                "' confirmed_at ', $STORED_UTC_TIME) from purchase_activity order by id",
-        )
-    }
-
-    /**
-     * Each row as the one string [sql] selects, read in a new transaction. The streamer's tables have no entity in commerce-api, so
-     * their rows are read this way, with times formatted by MySQL as stored: a JDBC read would shift them into the test JVM's zone.
-     */
-    private fun nativeStrings(sql: String): List<String> {
-        return inNewTransaction { entityManager.createNativeQuery(sql).resultList.map { it.toString() } }
-    }
-
     /** The rows a wait prints when it runs out: the outbox row and the streamer's two tables. */
     private fun rowsLine(): String {
         return "row ${describe(committedOrderEventOutbox())}; processed_order_confirmation ${storedConfirmations()}; " +
-            "purchase_activity ${storedActivities()}"
+            "purchase_activity ${storedPurchaseActivities()}"
     }
 
     private fun describe(outbox: OrderEventOutbox): String {
