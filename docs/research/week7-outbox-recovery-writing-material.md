@@ -19,6 +19,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 | [210](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/210) | the decisions, before the code | [Issue 210](#issue-210-record-step-3s-decisions) |
 | [214](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/214) | the real streamer in commerce-api's tests | [Issue 214](#issue-214-the-real-streamer-consumes-in-commerce-apis-tests) |
 | [211](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/211) | 누락 복구's happy paths through a provided port | [Issue 211](#issue-211-누락-복구-adds-a-missing-outbox-row-and-the-relay-publishes-it) |
+| [212](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/212) | 누락 복구's refusals | [Issue 212](#issue-212-누락-복구-refuses-rather-than-guesses) |
 
 The sections keep the order the tickets land in.
 
@@ -142,3 +143,46 @@ Closed 2026-11-06 by `f0593bf`, `204ed37` and `b2e6e24` on `feat/outbox-recovery
 | the `findByEventId` check disabled, so recovery always adds | the three second-recovery scenes, the log scene and the no-PG scene (each recovers an order that already has its row) |
 
 **Final check:** `scripts/final-check` on the rebased tree (`a63c863`, clean, which holds `b2e6e24`'s code; this commit changes only this section). ktlint passed. commerce-streamer: 18 classes, 67 tests, 0 failures, 0 errors, 0 skipped (57 s). commerce-api: 93 classes, 1041 tests, 0 failures, 0 errors, 0 skipped (4 min 19 s), issue 214's 92 and 1034 plus this class and its 7. Before the rebase, the same code passed on `a5507d5` with 91 classes and 1038 tests. `HexagonalArchitectureTest` passed unchanged: the new classes sit in `application.order`. The runner, and its place in the adapter layer, is issue 213's.
+
+## Issue 212: 누락 복구 refuses rather than guesses
+
+Closed 2026-11-06 by `9ff71eb` and `54a24d0` on `feat/outbox-recovery`. 누락 복구 now refuses rather than guesses: an order whose facts don't fit, or a row of its event ID that isn't the row recovery builds, ends the run with a refusal, and nothing is written for that order. The runner that turns a refusal into a failed start is still issue 213's.
+
+**The refusals.** They are four subclasses of the sealed `OrderEventRecoveryRefusedException`, one per refusing row of ADR 0036 rule 3's table:
+
+| Refusal | When | Message |
+| --- | --- | --- |
+| `OrderNotFound` | no order has the ID (`findForRecovery` throws it, not `ORDER_NOT_FOUND`) | `Refused 누락 복구: order 404 doesn't exist.` |
+| `OrderNotConfirmed` | `confirmedAt` is null: draft, payment pending, payment failed | `… order N has no confirmation time.` |
+| `OrderNotPaidThroughPg` | confirmed, but not through the PG | `… order N wasn't paid through the PG.` |
+| `OutboxRowDiffers` | the row of the event ID differs in one or more of the six event columns | `… the outbox row of event order-confirmed:v1:N differs in payload.` |
+
+The order checks run before the row is built, so `OrderConfirmedEvent.from`'s `requireNotNull` is never what refuses. `OrderEventRecovery` logs each refusal at WARN once its transaction has rolled back (`<the message> orderId=N`) and rethrows, so the list stops there. The sealed supertype is a deliberate difference from the PG's exceptions (ADR 0023 rule 2): whoever runs recovery handles all four alike.
+
+**Which row is compared.** The one `findByEventId` finds. The lookup and the unique key share the column's collation (`utf8mb4_general_ci`), so the row compared is exactly the row a new insert would collide with. That is how `event_id` can differ at all: a row whose event ID differs only in case is found, and Kotlin's exact comparison refuses it. Under a binary collation such a row would be neither found nor collided with, and recovery would add a second row, consistently. The comparison is `OrderEventOutbox.eventColumnsDifferingFrom`, which names every differing column in table order, the payload compared as the exact string. State columns are not compared.
+
+**How the differing row is reached without the test writing it.** `OrderEventRecovererTest` spies `OrderEventOutboxFactory`. For one confirmation the spy answers TX B's `create` with the real row rebuilt with one column changed, and the real TX B saves that. Recovery's `create` is the original call. The six changes: event ID upper-cased, order ID + 1000, event type `OrderCancelled`, schema version + 1, message key + `-other`, and the payload with a space after each comma (the same JSON, so only an exact-string comparison refuses it). The point-confirmed order is the one state no code path makes now, so it is an `update orders` through `JdbcTemplate`, as the order API tests do. No scene writes an outbox row.
+
+**What the scenes show** (`OrderEventRecovererTest`, 12 new tests on top of issue 211's 7):
+
+- A missing order, a draft, a PG order whose payment failed, and a point-confirmed order are each refused with their own type and message, and the outbox stays empty.
+- For each of the six columns (one parameterized test), the refusal's message names the event ID and the column, and neither it nor the single WARN line contains the stored payload or `"items"`. The row keeps its ID, state, attempts and times.
+- `[first, draft, last]`: the draft is refused. The first order's row is there in a new transaction, the last has none, and only the first logged an INFO line. Once the draft is confirmed, the same list gives `ALREADY_PRESENT`, `ADDED`, `ADDED`: the first row keeps its ID and the table has 3 rows.
+- Two recoveries of one order through `runConcurrently` end with one row and one `ADDED`. The other either finds the row (`ALREADY_PRESENT`) or fails on the unique key. `tally` counts that failure as the expected `DataIntegrityViolationException` and anything else as a technical error, which must be 0. A throwaway probe confirmed `DataIntegrityViolationException` is the exact type a duplicate event ID raises here (not `DuplicateKeyException`). The first run of the scene took the collision branch, so that path has been observed and not only allowed.
+
+**What the review changed** (two parallel reviewers, standards and spec; the spec reviewer found no gap):
+
+- The service's private guards were `ensure*`, which CODING_STANDARDS.md keeps for an entity's own guard. They are `refuseUnrecoverableOrder` and `refuseDifferingRow`.
+- The six-column comparison moved from the service to `OrderEventOutbox.eventColumnsDifferingFrom`, beside the columns (Feature Envy).
+- The refusal's KDoc said "caller" (CONTEXT.md's Avoid list) and "like the PG's exceptions" of a sealed type. It now says "request" and why the supertype is sealed.
+- The test helper's parameter is `draftOrder`, no longer a shadow of the base's `order` field.
+- Kept: the test's per-column `if` cascade that builds the differing row. It is test data, and a shared enum would tie the test to the code under test. `OrderEventRecoveryResult.Outcome.ALREADY_PRESENT` keeps its name. Its KDoc now says "the same row, equal in all six event columns", which is what issue 211's note asked the name to say.
+
+**Red check, a local edit run and reverted, not committed:**
+
+| Edit | What went red |
+| --- | --- |
+| the order checks disabled | the point scene (got a row), and the draft, failed-payment and rerun scenes (`IllegalArgumentException` from `OrderConfirmedEvent.from` instead of the refusal) |
+| before the comparison existed | all six differing-row runs returned `ALREADY_PRESENT`, including `event_id`, which showed the case-insensitive lookup finds the row |
+
+**Final check:** `scripts/final-check --app commerce-api` on `54a24d0`'s code (the run preceded its commit; this commit changes only this section). ktlint passed. commerce-api: 93 classes, 1053 tests, 0 failures, 0 errors, 0 skipped (4 min 47 s), issue 211's 1041 plus this ticket's 12. commerce-streamer was not rerun: nothing under it changed.
