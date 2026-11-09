@@ -14,6 +14,14 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Closing a spec
+
+Before closing a spec: `docs/agents/spec-closing.md`.
+
 ## Scripts
 
 Each script in `scripts/` documents itself at its top. A step's final check, with the commit, timings and test counts a design doc records: `scripts/final-check`. The lines a test scene logged, for a writing material's recorded run: `scripts/scene-lines`.
+
+## CI
+
+CI is deliberately left out of this learning project. The guardrails are `.githooks` and `scripts/final-check`.

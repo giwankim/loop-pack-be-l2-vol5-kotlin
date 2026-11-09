@@ -13,10 +13,10 @@ private val log = KotlinLogging.logger {}
 
 /**
  * The consumed case handed to week 7's outbox (purchase activity design 8). It starts from the order of step 1's unpublished
- * case, which `OrderEventPublishGapTest` in commerce-api confirms without a record reaching the broker: order 1, confirmed at
- * `2026-10-27T01:02:03.123456Z`, two of product 1 and one of product 2. The scene publishes the record commerce-api's relay
- * would have published for it ([VALUE], items in ascending product ID as order-events design 2 writes them, keyed by the
- * order ID), and the streamer records it.
+ * case, which commerce-api's `OrderEventPublishGapTest` confirmed without a record reaching the broker: order 1, confirmed at
+ * `2026-10-27T01:02:03.123456Z`, two of product 1 and one of product 2. That test and week 6's relay remain only at the `week6`
+ * revision (ADR 0034). The scene publishes the record that relay would have published for it ([VALUE], items in ascending
+ * product ID as order-events design 2 writes them, keyed by the order ID), and the streamer records it.
  *
  * The scene logs what it observed: where the broker put the record, the value, the group's commit, the listener's line and
  * the two tables' rows. Run it with
@@ -38,9 +38,10 @@ class OrderEventConsumedCaseTest : BaseConsumerTest() {
         private val CONFIRMED_AT: Instant = Instant.parse("2026-10-27T01:02:03.123456Z")
 
         /**
-         * The value of step 1's order confirmed event, as commerce-api's relay writes it. commerce-api's
-         * `OrderEventPublishingTest` publishes the same order at the same instant and pins this form: these fields and no
-         * others, the items in ascending product ID, the order ID as the key and no headers.
+         * The value of step 1's order confirmed event, as week 6's relay wrote it. commerce-api's `OrderEventPublishingTest`, at
+         * the `week6` revision, published the same order at the same instant and pinned this form: these fields and no others,
+         * the items in ascending product ID, the order ID as the key and no headers. commerce-api has no test pinning it until
+         * week 7's relay brings the test of the record's bytes (order outbox design 10).
          */
         private val VALUE = orderEventValue(
             EVENT_ID,

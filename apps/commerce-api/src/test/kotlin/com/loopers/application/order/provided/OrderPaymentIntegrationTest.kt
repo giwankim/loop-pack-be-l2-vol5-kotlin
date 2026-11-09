@@ -5,7 +5,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
-import com.loopers.CommerceApiApplication
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.order.OrderPaymentSagaSteps
 import com.loopers.application.payment.PaymentModifyService
@@ -40,10 +39,8 @@ import com.loopers.support.failTxBOnceAfterItsWrites
 import com.loopers.support.pauseTheFirstTxBHoldingTheOrder
 import com.loopers.support.productDeletedAt
 import com.loopers.support.productStock
+import com.loopers.support.restartedCommerceApi
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
-import com.loopers.testcontainers.KafkaTestContainersConfig
-import com.loopers.testcontainers.MySqlTestContainersConfig
-import com.loopers.testcontainers.RedisTestContainersConfig
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
@@ -62,8 +59,6 @@ import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.slf4j.LoggerFactory
 import org.springframework.aop.support.AopUtils
-import org.springframework.boot.builder.SpringApplicationBuilder
-import org.springframework.boot.context.logging.LoggingApplicationListener
 import org.springframework.boot.actuate.endpoint.SecurityContext
 import org.springframework.boot.health.actuate.endpoint.CompositeHealthDescriptor
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint
@@ -1817,33 +1812,9 @@ class OrderPaymentIntegrationTest(
         }
     }
 
-    /**
-     * 같은 MySQL, Redis, Kafka와 첫 컨텍스트의 테스트 PG 위에 commerce-api를 하나 더 띄워 [block]에 넘기고, 끝나면 닫는다. 재시작한 프로세스다.
-     * 운영의 애플리케이션 클래스와 test 프로필, 기반과 같은 Testcontainers 설정으로 뜨고, 컨테이너는 정적이라 같은 DB, Redis, broker다. 그 설정이
-     * `DynamicPropertyRegistrar` 빈으로 넣는 접속 정보는 테스트 프레임워크 밖에서도 `spring-boot-testcontainers`의 자동 설정이 들인다.
-     * 덮는 값은 명령줄 인자로 넘긴다. builder의 `properties`는 기본 속성이라 프로필의 설정 파일에 진다. test 프로필의 `ddl-auto: create`는
-     * 표를 다시 만들어 첫 컨텍스트가 남긴 결제를 지우므로 `none`으로 덮는다. 운영의 재시작도 스키마를 다시 만들지 않는다. `pg.base-url`은
-     * 첫 컨텍스트의 `pg.base-url`에 들어간 테스트 PG 서버의 주소라 그 스텁과 요청 기록이 그대로 남는다. 서블릿과 관리 서버는 빈 포트에 띄운다. 로깅은 JVM에 하나라 첫
-     * 컨텍스트가 맡으므로 `LoggingApplicationListener`를 뺀다. 그대로 두면 두 번째 컨텍스트가 닫히며 logback을 초기화 전으로 표시하고,
-     * 뒤에 뜨는 테스트 컨텍스트가 logback을 다시 설정한다. 첫 컨텍스트의 spy와 PG 주문 번호 생성기는 두 번째 컨텍스트에 없다.
-     */
+    /** The app restarted on the same containers and test PG ([restartedCommerceApi]), handed to [block] and closed after it. */
     private fun restarted(block: (ConfigurableApplicationContext) -> Unit) {
-        val application = SpringApplicationBuilder(
-            CommerceApiApplication::class.java,
-            MySqlTestContainersConfig::class.java,
-            RedisTestContainersConfig::class.java,
-            KafkaTestContainersConfig::class.java,
-        )
-            .profiles("test")
-            .build()
-        application.setListeners(application.listeners.filterNot { it is LoggingApplicationListener })
-
-        application.run(
-            "--pg.base-url=${server.baseUrl()}",
-            "--spring.jpa.hibernate.ddl-auto=none",
-            "--server.port=0",
-            "--management.server.port=0",
-        ).use(block)
+        restartedCommerceApi(server.baseUrl(), block = block)
     }
 
     /** [stopBeforeSendingTheCreate]가 생성을 보내기 전에 던지는, 멈춘 프로세스. */

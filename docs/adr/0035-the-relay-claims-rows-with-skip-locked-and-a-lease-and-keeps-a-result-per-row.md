@@ -1,0 +1,60 @@
+---
+status: accepted
+date: 2026-11-04
+---
+
+# 중계는 행을 SKIP LOCKED와 리스로 가져가 행마다 결과를 남기고, 한도까지 실패한 행은 BLOCKED로 둔다
+
+7주차 과제는 단일 중계가 재시도 시간이 된 `PENDING`을 작은 묶음으로 안정된 순서에서 찾아, 주문 확정 트랜잭션 밖에서 보내고, producer future의 성공을 확인한 뒤 별도 트랜잭션에서 `PUBLISHED`로 바꾸라고 한다. 실패와 timeout은 같은 행을 재시도 대상으로 둔다. 무제한 future와 tick 중첩은 막고, 메모리 flag로 여러 프로세스의 소유권을 해결했다고 말하지 말라고 한다. 영구 오류는 원인과 eventId를 드러내야 하고, 별도 `BLOCKED`를 두면 미해결로 남기고 같은 행을 재개할 길을 두어야 한다. 미발행·격리 행은 자동 삭제하지 않는다. 재시도 횟수의 한도는 과제에 없다.
+
+[ADR 0034](./0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md)는 행을 남기는 쪽을 정했고, 읽는 쪽을 2단계로 넘겼다. 이 ADR이 그 읽는 쪽이다. 수치의 출처는 [중계 측정 기록](../research/week7-outbox-relay-probe.md)이다.
+
+1. **한 회차.** 차례가 된 행을 20개까지 한 트랜잭션에서 가져가며 행마다 시도를 시작한다. 트랜잭션 없이 가져간 행을 모두 보내고, future가 모두 끝나기를 기다린다. 행마다 자기 트랜잭션에서 결과를 남긴다. 가져온 행이 20개보다 적을 때까지 되풀이하고 1 s 쉰다. 다 비울 때까지 읽으므로 묶음의 크기가 처리량을 막지 않는다. 한 묶음씩 1 s를 쉬면 약 19 rows/s에 묶인다.
+2. **가져가기는 `FOR UPDATE SKIP LOCKED`이고, 보내는 동안은 리스가 지킨다.** 잠금은 가져가는 트랜잭션이 끝나면 풀리고, 발행은 그 뒤에 일어난다. 그래서 잠금만으로는 행을 지키지 못한다. 시도를 시작하면 `next_attempt_at`이 60 s 뒤로 밀려 그동안 차례가 아니다. 이것이 리스다. 프로세스가 죽으면 리스가 저절로 끝나고 행이 다시 차례가 되므로 따로 복구할 코드가 없다. 비교하는 시각은 DB의 `now()`가 아니라 `Clock` 빈의 것이다.
+3. **쓰기는 시도 앞과 뒤에 하나씩이다.** 시도 시작은 `attempt_count + 1`과 리스다. 발행은 `status = PUBLISHED`와 `published_at`이다. 실패는 `last_error`와 `next_attempt_at = 실패 + 간격`이다. 시도를 앞에 남기므로 발행 중에 멈춰도 시도 수가 사실이고, broker 확인 뒤 저장이 실패해도 곧바로 다시 차례가 되지 않는다. 쓰기가 하나 느는 값은 행마다 커밋 하나(p50 0.94 ms)다.
+4. **결과는 행마다다.** `send()`는 record마다 future를 돌려주므로 한 묶음의 19개가 확인되고 1개가 실패할 수 있다(측정했다). 다시 만들 수 없는 행, `send()`가 던진 예외, future의 실패는 모두 그 행의 실패다. 나머지 행에는 영향이 없다. 가져간 행은 모두 실제로 보내므로 `attempt_count`가 사실이다. 주문마다 이벤트가 하나이므로 행 사이의 차례는 지킬 것이 없다. (2026-11-04, [issue 201](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/201): 실패 문구는 근본 원인의 타입과 메시지이되, 사슬에 Jackson의 예외가 있으면 그 타입과 JSON 경로만 적는다. 그 메시지들은 거절한 값을 인용하므로 그대로 적으면 payload의 조각이 남는다. 설계 13.3절.)
+5. **기다림은 `delivery.timeout.ms` 하나다.** 로컬 대기 시간을 따로 두지 않는다. future는 그 시간 안에 끝나므로(10 s, 30 s, 120 s로 재어 2 ms 안에 끝났다) 두 값을 맞출 필요가 없고, 로컬에서 포기한 뒤 늦게 성공하는 길도 생기지 않는다. 포기했다가 늦게 확인된 것은 측정에서 실제로 보았다.
+6. **`kafka.yml`에 두 줄을 더하고 Kotlin에서 덮어쓰지 않는다.** producer의 `delivery.timeout.ms: 21000`과 `max.block.ms: 1000`이다. (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: broker가 재시작하는 동안 `max.block.ms`의 1 s가 실패를 낼 수 있다. 재 보고 받아들였고, broker가 하나인 구성에만 필요한 설정은 더하지 않는다. [주문 아웃박스 설계](../design/order-outbox.md) 13.10절이다.)
+   - `delivery.timeout.ms`는 broker가 말이 없을 때 시도를 실패로 치기까지의 시간이다. 재시작을 넘겨야 한다. `kill -9` 재시작의 준비가 약 16 s였고, 그 사이의 send는 약 15–16 s에 확인됐다. 21 s는 `linger.ms + request.timeout.ms`(20,005 ms)보다 커야 한다는 Kafka의 규칙 안에서 가장 가까운 값이다.
+   - `max.block.ms`는 짧아도 된다. 이 시간 안에 막힌 send는 받아들여지지 않았으므로 일찍 실패해도 중복이 생기지 않는다. 메타데이터가 없으면 `send()`마다 이만큼 막히므로, 기본 60 s면 한 묶음이 20분까지 멈춘다. 건강한 첫 send는 16–22 ms 막혔다.
+   - `retries: 3`, `request.timeout.ms: 20000`, `linger.ms`는 그대로다. 재시작은 재시도 수를 쓰지 않아 `retries=3`으로도 모두 확인됐다. broker가 곧바로 돌려주는 오류는 약 2.6 s에 중계의 재시도로 넘어오는데, 보이고 해가 없다. 묶음으로 보내므로 `linger.ms`의 차이는 작다(480 대 538 rows/s).
+7. **실패는 간격을 두고, 20번째 시도의 실패는 `BLOCKED`다.** 간격은 5 s에서 두 배씩, 최대 5분이다. 오류를 나누지 않는다. 모든 실패가 같은 한도를 쓰므로 어댑터의 답은 성공 아니면 실패 문구이고, 잘못 나눠 멈출 일이 없다. 전면 장애에서 행 하나는 약 77분(간격의 합 4,215 s + 20 × 21 s)을 스스로 넘긴다. 한도와 간격의 크기는 요구에서 나온 것이 아니라 판단이다.
+8. **재개는 문서의 SQL 하나다.** `BLOCKED`를 `PENDING`으로 되돌리고 `next_attempt_at`을 지금으로 둔다. API도 전용 메서드도 없다. `attempt_count`는 실제 시도의 수이므로 두고, 그래서 재개한 행은 다시 실패하면 곧바로 `BLOCKED`로 돌아간다. 자동 정리는 없다.
+9. **상태의 규칙은 엔티티에 있고 상태마다 다르게 답한다.** `startPublishAttempt`는 `PENDING`이 아니면 던진다(`ensurePending`). 쿼리가 이미 거른 값이므로 닿으면 코드의 잘못이다. `markPublished`는 어느 상태에서든 받는다. broker에 record가 있다는 사실은 거절할 수 없다. `markFailed`는 `PENDING`이 아니면 아무것도 하지 않는다. 리스를 넘긴 중계에서만 닿는 길이고, 던지면 그것 때문에 회차가 끝난다. 결과를 남길 때는 트랜잭션 안에서 행을 잠그고 다시 읽는다. 분리된 복사본을 저장하면 늦은 결과가 새 상태를 덮어쓸 수 있다. (2026-11-05, [명세 198](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/198)의 닫는 검토: 잠그고 다시 읽어도 `PENDING` 행에 닿은 늦은 실패는 가려지지 않는다. 받아들인 한계다. [주문 아웃박스 설계](../design/order-outbox.md) 13.10절이다.)
+10. **인덱스 `(status, next_attempt_at, id)`는 빠른 조회가 아니라 올바른 동작을 위한 것이다.** InnoDB는 훑은 행을 잠근다. 인덱스가 없으면 첫 가져가기가 훑은 행을 모두 잠가 둘째가 0행을 받았다. 있으면 1–20과 21–40으로 겹치지 않았다. 이름은 `IDX_ORDER_EVENT_OUTBOX_ON_STATUS_AND_NEXT_ATTEMPT_AT_AND_ID`다. 지우면 조회가 느려지는 것이 아니라 동시의 가져가기가 굶는다. (2026-11-04, [issue 204](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/204): 인덱스는 필요조건이고 충분조건이 아니다. 위의 측정은 2,000행에서 한 것이다. 이 쿼리와 이 표에서 MySQL은 150행까지 표를 훑고 200행부터 인덱스를 썼으며, 45행에서는 통계에 따라 filesort를 골랐고 그때 인덱스가 있어도 둘째가 0행을 받았다. 둘째의 가져가기가 일찍 끝날 뿐이고 단일 중계에는 둘째 가져가기가 없으므로 그대로 둔다. [중계 측정 기록](../research/week7-outbox-relay-probe.md#plan-by-table-size)에 있다.)
+11. **트랜잭션은 annotation으로만 선언한다.** `OrderEventRelay`는 `Propagation.NEVER`로 차례만 잇고, `OrderEventOutboxModifyService`가 짧은 트랜잭션을 맡는다. 한 클래스의 자기 호출은 프록시를 지나지 않으므로 빈이 둘이고, 그래서 뒤쪽 메서드가 public이다. 사가가 아니다. 보상이 없고 애그리거트를 건너지 않으므로 그 이름을 빌리지 않는다.
+12. **공용 `KafkaTemplate<Any, Any>`를 쓴다.** 덮어쓸 설정이 없으면 전용 빈을 둘 까닭이 없다. 6주차의 중계가 쓰던 빈이고 같은 직렬화기라 bytes가 같다. 잃는 것은 템플릿의 컴파일 타입뿐이고, 행에서 다시 만드는 `OrderConfirmedMessage`는 여전히 타입이 있다. record의 bytes는 테스트가 못 박는다.
+13. **켜는 것은 설정이다.** `order-events.relay.enabled`는 기본 꺼짐, `local`에서 켜짐, `test`에서 꺼짐이고, 한 인스턴스에서만 켠다. 트리거는 새 `adapter.scheduling` 층의 `fixedDelay`이므로 tick이 겹치지 않는다. 조율은 DB에 있으므로 둘째 인스턴스가 켜져도 리스가 살아 있는 동안 같은 행을 두 번 보내지 않지만(두 중계로 3,000행을 돌려 모두 한 번씩 시도했다), 지원하는 구성은 하나다. 이것을 소유권이라고 부르지 않는다.
+14. **이름은 `OrderEventOutbox`로 둔다.** 행 하나를 아웃박스라 부르는 부정확함은 KDoc 한 줄로 푼다. 지역 변수는 수식어와 명사(`claimedOutboxes`, `outbox`, `publishResults`)이고, 필드와 ID 파라미터는 전체 이름이다.
+
+## 고르지 않은 것
+
+- **`@Version`으로 이긴 쪽만 보낸다.** 시도 시작을 낙관적 잠금으로 두면 트랜잭션 빈 없이 된다. 올바르지만 두 중계가 같은 쪽을 두고 부딪혀 나눠 갖지 못한다. `SKIP LOCKED`의 두 중계는 1,106 rows/s로 한 중계의 두 배쯤이었다. [ADR 0018](./0018-pessimistic-row-locks-in-one-global-order.md)이 `@Version`을 고르지 않은 까닭(지는 쪽이 실패한 주문이 된다)은 여기에 해당하지 않는다. 고르지 않은 까닭이 다르다.
+- **하나씩 보내고 기다린다.** 가장 단순하고 과제의 "직렬"에 가장 가깝다. 그러나 `linger.ms` 기본값 5 ms가 send마다 그대로 기다림이 되어(ack p50 8.42 ms 대 0.35 ms) 설정을 덮어써야 하고, 장애에서 행마다 시간을 쓴다. 묶음이면 20개가 함께 한 번의 `delivery.timeout.ms`로 끝난다. 20개로 묶은 것은 과제가 막는 무제한 future가 아니다.
+- **첫 실패에서 회차를 끝낸다.** 하나씩 보낼 때의 규칙이다. 행마다 결과를 남기면 필요 없다.
+- **묶음을 통째로 성공시키거나 실패시킨다.** 일괄 저장이라 6,057 rows/s로 가장 빠르다. 그러나 하나만 실패해도 성공한 행을 다시 보내거나 나누는 코드가 따로 필요하다. 필요한 처리량이 수백 rows/s를 넘기 전까지는 고르지 않는다.
+- **`TransactionTemplate`.** 빈 하나로 끝나지만 트랜잭션의 시작과 커밋이 업무 코드에 섞인다. 주 코드에 쓰는 곳도 없다.
+- **`request.timeout.ms`를 줄이고 전용 producer를 둔다.** 처음에는 그렇게 설계했다. 값 몇 개를 위해 빈과 설정이 는다.
+- **재시도 가능 여부로 오류를 나눠 곧바로 `BLOCKED`로 둔다.** `RetriableException`으로 나눌 수는 있다. 그러나 한도가 있으면 영구 오류는 어차피 멈추고, 분류는 설정 오류 하나로 모든 행을 멈출 수 있다. 이 페이로드 크기에서 `RecordTooLarge`는 일어나지 않는다.
+- **로컬 전용 재개 엔드포인트와 그것을 위한 JVM 잠금.** 과제는 작은 진입점이나 테스트 도구로 충분하다고 한다. 재개는 SQL로 되고, 재개가 없으면 잠금이 할 일이 없다. JVM 잠금은 여러 중계로 넓혀지지도 않는다.
+- **`EXPLAIN`을 단언하는 테스트.** 열린 가져가기 둘이 겹치지 않는 장면이 인덱스가 없으면 깨진다. 동작을 보는 쪽을 고른다. `EXPLAIN`의 출력은 측정 기록에 있다.
+- **`OrderEventOutboxRecord`.** [namastack-outbox](https://github.com/namastack/namastack-outbox)의 `OutboxRecord`에 가깝고 표와 행의 구분이 정확하다. 그러나 이 저장소에서 record는 이미 Kafka의 record와 구매 활동을 기록하는 일을 뜻하고, 이름이 길어지며, 표 이름까지 맞추면 인덱스 이름이 66자로 MySQL의 64자를 넘는다.
+
+## 대가
+
+- 단일 중계는 설정이지 소유권이 아니다. `application.yml`의 기본 프로필이 `local`이므로 프로필을 잊은 배포는 중계를 켠다.
+- 리스를 넘긴 중계는 같은 이벤트를 또 보낼 수 있다. 발행은 최소 한 번이고, 받는 쪽의 멱등성이 받는다. `PUBLISHED`는 broker의 확인이지 소비 완료가 아니다.
+- 약 77분을 넘는 장애의 행은 `BLOCKED`로 남아 사람이 SQL을 돌릴 때까지 기다린다. 전면 장애에서 `BLOCKED`는 행의 잘못을 뜻하지 않는다.
+- 메타데이터를 잃으면 `send()`가 막힌다. 측정의 한 실행이 `Topic not present in metadata`로 실패했는데, 그 까닭은 밝히지 못했다. `docker start`가 `send()` 뒤에 돌도록 짠 탓으로 보이고, 고친 6번은 모두 확인됐다.
+- 시간의 수치는 노트북의 Docker에서 거의 빈 로그로 잰 것이다. 재시작은 실제 로그에서 더 걸릴 수 있다. 처리량은 맨 SQL의 값이라 Hibernate의 비용이 들어 있지 않다. (2026-11-04, [issue 206](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/206): 실제 jar에서 약 336 rows/s였다. [주문 아웃박스 설계](../design/order-outbox.md) 13.11절에 앱을 멈출 때의 측정과 함께 있다.)
+- Hibernate가 lock timeout 힌트로 `SKIP LOCKED`를 내보내는지는 이 ADR을 쓰는 때에 확인하지 못했다. 설계가 기대는 가정이고, 첫 코드 티켓이 확인한다. (2026-11-04, [issue 200](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/200): 확인했다. Hibernate 7.4는 힌트 값 -2로 `… limit ? for update of oeo1_0 skip locked`를 내보낸다. 맨 SQL과 달리 별칭을 적지만 표가 하나라 잠그는 행은 같다. `OrderEventOutboxRepositoryTest`가 이 문장을 본다.)
+
+## 다시 볼 조건
+
+- broker가 여럿이 되면 `request.timeout.ms`를 `replica.lag.time.max.ms`와 견주고(Kafka의 문서가 그보다 크라고 한다), 재시작을 다시 재 `delivery.timeout.ms`를 본다.
+- 지속해서 수백 rows/s가 넘게 필요하면 일괄 저장을 본다. 여러 중계를 지원하려면 소유권과 리스를 넘긴 쓰기를 다시 본다.
+- 전면 장애로 `BLOCKED`가 쌓이는 일이 실제로 생기면 한도를 늘리거나 재시도할 수 있는 실패를 세지 않는 쪽을 본다.
+
+## 바꾸는 결정
+
+[ADR 0034](./0034-order-confirmed-is-left-in-an-outbox-row-by-tx-b.md) 규칙 9의 전용 템플릿을 공용 템플릿으로 바꾼다. 행에서 메시지를 다시 만들어 보내는 것과 규칙 9의 나머지는 그대로다. 그 ADR에 날짜 메모를 단다.

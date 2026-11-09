@@ -1,5 +1,6 @@
 package com.loopers.support
 
+import com.loopers.application.order.OrderEventOutboxModifyService
 import com.loopers.application.order.OrderPaymentSagaSteps
 import com.loopers.application.payment.PaymentModifyService
 import com.loopers.application.payment.PgTransactionService
@@ -48,4 +49,15 @@ fun OrderPaymentSagaSteps.failTxBOnceAfterItsWrites(entityManager: EntityManager
         entityManager.flush()
         throw DataAccessResourceFailureException("The database failed before TX B committed.")
     } andThenAnswer { callOriginal() }
+}
+
+/**
+ * Stops a relay round between the broker's ack and saving `PUBLISHED` (order-outbox design 13.9): the first `markPublished` throws
+ * and later calls are the real ones. The relay doesn't catch the failure, so it leaves the round the way a database failure in that
+ * transaction would (design 13.5). The receiver is a `@MockkSpyBean` field, a CGLIB proxy, so the stub goes on the spy it wraps.
+ */
+fun OrderEventOutboxModifyService.stopRelayAfterBrokerAckBeforeMarkingPublished() {
+    val target = AopTestUtils.getUltimateTargetObject<OrderEventOutboxModifyService>(this)
+    val failure = DataAccessResourceFailureException("The relay stopped after the broker's ack, before saving PUBLISHED.")
+    every { target.markPublished(any()) } throws failure andThenAnswer { callOriginal() }
 }

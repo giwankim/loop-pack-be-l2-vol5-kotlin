@@ -30,8 +30,11 @@ class TopicReader(
 
         /**
          * How long a scene reads on after the records it expects, so that a record it should not have published has time to
-         * arrive. Such a record would follow a commit the call has already returned from, after one hand-off to a virtual
-         * thread and one round trip to the broker in the same machine.
+         * arrive. The relay's 1 s polling doesn't bear on it: scenes run a round by hand, and the round has awaited its sends when it
+         * returns. In the one scene with the scheduler on, the row is already `PUBLISHED`, so no later tick can send it. So this is
+         * a margin over a fetch, which took 2 ms at the median and 20 ms at most, and over a send a bug left unawaited. It stays at
+         * 1 s because too short a wait fails silently on a busy machine: a scene expecting no record would pass. It costs about
+         * 22 s across the relay's scenes (order-outbox design 13.11).
          */
         private val QUIET_WAIT: Duration = Duration.ofSeconds(1)
     }
@@ -48,9 +51,10 @@ class TopicReader(
     }
 
     /**
-     * Every record published on the topic since it was opened, which a scene that is right has exactly [expected] of. Waits up
-     * to [RECORD_WAIT] for that many, since the relay publishes after the call returned, then reads on for [QUIET_WAIT] so that
-     * a record the scene should not publish has time to arrive. A scene that expects none waits only for the quiet period.
+     * Every record published on the topic since the last read, or since it was opened, which a scene that is right has exactly
+     * [expected] of. Waits up to [RECORD_WAIT] for that many, since a record can arrive after the call returned, then reads on for
+     * [QUIET_WAIT] so that a record the scene should not publish has time to arrive. A scene that expects none waits only for the
+     * quiet period.
      */
     fun publishedRecords(expected: Int): List<ConsumerRecord<String, String>> {
         val awaited = if (expected == 0) emptyList() else KafkaTestUtils.getRecords(consumer, RECORD_WAIT, expected).toList()
