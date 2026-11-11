@@ -100,3 +100,52 @@ A two-axis review ran on the code before the final check.
 - **Spec:** no missing requirement, no scope creep beyond the 403 test above, nothing implemented wrongly.
 - **Standards:** no hard violation. Two KDoc drifts were fixed in `6cca7409`: `CouponIssueService` still said a holder is answered only from an exhausted campaign, and the suspension's KDoc cited ADR 0018 rule 1 as a whole, though the code saves explicitly (catalog design 5.37) rather than by dirty checking as that rule also says.
 - **Left as they are:** the inline guard (above), a fourth exception handler in `ApiControllerAdvice` shaped like the three before it, the suspended scene in `CouponApiTest` that mirrors the exhausted one, and the stored `issuable` against the answered `suspended`, which issue 220 already recorded.
+
+## Issue 223: a customer lists their own coupons
+
+Implemented as `a0f06b8d`, on top of issue 222. `scripts/final-check --app commerce-api` on a clean tree whose code is `a0f06b8d`'s (the commit of this document before this paragraph), started 2026-11-11T08:19:10Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 105 classes, 1139 tests (5 min 2 s), 0 failures, 0 errors, 0 skipped**. Issue 222 ended at 104 classes and 1128 tests, so this ticket adds 1 class (`CouponFinderTest`, 3 tests) and 8 tests in `CouponApiTest`. Only this document changed after `a0f06b8d`.
+
+The work started before issue 222 landed and passed the same check then, at 105 classes and 1123 tests on top of issue 221. It was rebased onto issue 222. The only code conflict was the two new helpers side by side in `BaseApplicationServiceTest`. After the rebase, the list gained the suspended-campaign test below.
+
+### Acceptance criteria
+
+- [x] **A user with coupons from several campaigns gets them newest first; coupons with the same issue time come in descending ID order.** `CouponApiTest` sets two coupons to the same `issued_at` in SQL and dates the last-issued coupon earliest, so an order by ID alone fails. Swapping the query for `findAllByUserIdOrderByIdDesc` was tried and the test failed.
+- [x] **Paging through the list returns every coupon once, with the slice's has-next flag right on the last page.** `CouponApiTest` pages three coupons by two: the IDs joined across pages equal the issued IDs newest first, and `hasNext` reads `true, false, false`.
+- [x] **Another user's coupons never appear, and a user with none gets an empty slice.** `CouponApiTest`. A `userId` in the query changes nothing.
+- [x] **A request without a requester answers 401.** `CouponApiTest`.
+- [x] **The list still returns a coupon after its campaign is exhausted.** `CouponApiTest`, with a quota of 1 and a second user's 409 as the proof that the campaign is exhausted. A second test does the same after `suspendCouponCampaign` (story 6's "an ended event does not take back what I hold").
+- [x] **The index is declared on the entity, and the list query's plan uses it without a sort step.** Issue 221 already declared `IDX_COUPON_ON_USER_ID_AND_ISSUED_AT_AND_ID (user_id, issued_at DESC, id DESC)`. `CouponFinderTest` explains the statement the port sent, bound to the same values, and asserts the index name and no `Sort`. Narrowing the index to `user_id` alone was tried and the test failed. The two plans, page 1 of size 2 over three coupons:
+
+  ```
+  -- the declared index
+  -> Limit/Offset: 3/2 row(s)  (cost=0.56 rows=0)
+      -> Filter: (c1_0.deleted_at is null)  (cost=0.56 rows=0.6)
+          -> Index lookup on c1_0 using IDX_COUPON_ON_USER_ID_AND_ISSUED_AT_AND_ID (user_id=1)  (cost=0.56 rows=3)
+
+  -- the index narrowed to user_id
+  -> Limit/Offset: 3/2 row(s)  (cost=0.56 rows=1)
+      -> Sort: c1_0.issued_at DESC, c1_0.id DESC, limit input to 5 row(s) per chunk  (cost=0.56 rows=3)
+          -> Filter: (c1_0.deleted_at is null)  (cost=0.56 rows=3)
+              -> Index lookup on c1_0 using IDX_COUPON_ON_USER_ID_AND_ISSUED_AT_AND_ID (user_id=1)  (cost=0.56 rows=3)
+  ```
+
+  The narrowed index kept its name in that run, so the index name alone tells the two apart only together with the missing `Sort`.
+- [x] **The query does not join the campaign table (seen through the SQL capture).** `CouponFinderTest`: the list is exactly one statement, `... from coupon c1_0 where (c1_0.deleted_at is null) and c1_0.user_id=? order by c1_0.issued_at desc,c1_0.id desc limit ?,?`, with no `coupon_campaign`, no join and no count query.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### Decisions made while implementing
+
+- **The list is a derived Spring Data query, `findAllByUserIdOrderByIssuedAtDescIdDesc(userId, pageable): Slice<Coupon>`.** The filter is always the requester, so nothing needs QueryDSL. The order and the filter are fixed, which is the case `BrandRepository`'s derived `Slice` query covers. A `Slice` reads `size + 1` rows and counts nothing.
+- **`CouponFinder.findAll` returns `Slice<Coupon>`, the aggregate,** and the web adapter maps it to `CouponResponse` (ADR 0014). The response already existed for issuing, so the list item and the issue answer are the same shape.
+- **`CouponListRequest` copies `LikeListRequest`'s bounds and messages** (page 0 or more, size 1 to 100, defaults 0 and 20). The ticket says the paging parameters match the like and order lists, and catalog design 5.17 keeps a Request per list.
+- **`prepareCoupon` is on `BaseApplicationServiceTest` and goes through `CouponIssuer`.** The issuer refuses a surrounding transaction, so only bases that leave the test transaction can call it, and its KDoc says so. Issue 224's concurrency test can use it, and `CouponFinder` for its "another user's list does not show it" check.
+- **`explainTree` moved to `com.loopers.support`.** `ProductQueryPerformanceApiTest` had it privately, and the coupon plan test is its second user.
+- **The OpenAPI text says an exhausted or suspended campaign's coupons are listed, and a test pins each.** The ticket names only exhaustion. The list reads no campaign, so suspension cannot hide a coupon either, and the test makes that a promise rather than an accident.
+
+### Review
+
+A two-axis review ran on the code before the final check.
+
+- **Spec:** no missing requirement and nothing implemented wrongly. It asked who owns the parent spec's "another user's list does not show it" for a same-user concurrent issue. Issue 224 lists it. The page and size 400 tests were noted as beyond the ticket's words but within "match the like and order lists".
+- **Standards:** six findings, all fixed in `a0f06b8d`. Tests called `CouponIssuer` to prepare data instead of a `prepareCoupon` (`CODING_STANDARDS.md` fixture rule). One test read the `couponCampaign` field after preparing three campaigns. One read a coupon ID through `JsonNode` instead of `extractingPath`. The paging test asserted single-response fields through `JsonNode`. A three-body test named its bodies off the naming scheme, so it was split in two. `explainTree` was duplicated.
