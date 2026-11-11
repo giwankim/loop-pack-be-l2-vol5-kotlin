@@ -97,4 +97,46 @@ class CouponCampaignTest {
 
         assertThat(campaign.issuedCount).isEqualTo(1)
     }
+
+    @Test
+    fun `suspending makes the campaign not issuable and keeps the issued count`() {
+        val campaign = createCouponCampaign(totalQuota = 3)
+        campaign.issue()
+
+        campaign.suspend()
+
+        assertThat(campaign.issuable).isFalse()
+        assertThat(campaign.issuedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `suspending a suspended campaign changes nothing`() {
+        val campaign = createCouponCampaign()
+        campaign.suspend()
+
+        campaign.suspend()
+
+        assertThat(campaign.issuable).isFalse()
+        assertThat(campaign.issuedCount).isZero()
+    }
+
+    @Test
+    fun `issuing from a suspended campaign throws CouponCampaignSuspendedException and keeps the issued count`() {
+        val campaign = createCouponCampaign(totalQuota = 3)
+        campaign.issue()
+        campaign.suspend()
+
+        assertThrows<CouponCampaignSuspendedException> { campaign.issue() }
+
+        assertThat(campaign.issuedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `a campaign both suspended and exhausted throws CouponCampaignSuspendedException`() {
+        val campaign = createCouponCampaign(totalQuota = 1)
+        campaign.issue()
+        campaign.suspend()
+
+        assertThrows<CouponCampaignSuspendedException> { campaign.issue() }
+    }
 }

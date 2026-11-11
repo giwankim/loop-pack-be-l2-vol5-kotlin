@@ -82,6 +82,25 @@ class CouponApiTest(
     }
 
     @Test
+    fun `a suspended campaign answers 409 COUPON_CAMPAIGN_SUSPENDED and its holder still gets the coupon with 200`() {
+        val holder = prepareUser()
+        val latecomer = prepareUser()
+        val campaign = prepareCouponCampaign()
+        val first = requestIssue(campaign.id, holder.id)
+        suspendCouponCampaign(campaign)
+
+        val body = assertThat(requestIssue(campaign.id, latecomer.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("COUPON_CAMPAIGN_SUSPENDED")
+
+        val repeat = requestIssue(campaign.id, holder.id)
+        assertThat(repeat).hasStatusOk()
+        assertThat(repeat.response.contentAsString).isEqualTo(first.response.contentAsString)
+        assertThat(entityManager.countCoupons()).isOne()
+        assertThat(entityManager.couponCampaignIssuedCount(campaign.id)).isOne()
+    }
+
+    @Test
     fun `an unknown campaign answers 404 COUPON_CAMPAIGN_NOT_FOUND`() {
         val customer = prepareUser()
 

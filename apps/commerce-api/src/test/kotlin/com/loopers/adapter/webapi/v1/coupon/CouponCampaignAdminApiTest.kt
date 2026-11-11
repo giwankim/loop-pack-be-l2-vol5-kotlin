@@ -1,5 +1,7 @@
 package com.loopers.adapter.webapi.v1.coupon
 
+import com.loopers.domain.coupon.CouponCampaign
+import com.loopers.support.isEqualToLong
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -82,6 +84,56 @@ class CouponCampaignAdminApiTest : BaseWebApiAdapterTest() {
         assertThat(requestPostCampaign(principal = null)).hasStatus(HttpStatus.FORBIDDEN)
 
         assertThat(countCampaigns()).isZero()
+    }
+
+    @Test
+    fun `admin suspends a campaign and gets it back marked suspended`() {
+        val campaign = prepareCouponCampaign(name = "신규 가입 쿠폰", discountAmount = 3_000, totalQuota = 5)
+
+        val body = assertThat(requestSuspend(campaign.id)).hasStatusOk().bodyJson()
+
+        body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
+        body.extractingPath("$.data.id").isEqualToLong(campaign.id)
+        body.extractingPath("$.data.name").isEqualTo("신규 가입 쿠폰")
+        body.extractingPath("$.data.discountAmount").isEqualTo(3_000)
+        body.extractingPath("$.data.totalQuota").isEqualTo(5)
+        body.extractingPath("$.data.issuedCount").isEqualTo(0)
+        body.extractingPath("$.data.suspended").isEqualTo(true)
+    }
+
+    @Test
+    fun `suspending a suspended campaign answers 200 with the same body`() {
+        val campaign = prepareCouponCampaign()
+        val first = requestSuspend(campaign.id)
+
+        val again = requestSuspend(campaign.id)
+
+        assertThat(again).hasStatusOk()
+        assertThat(again.response.contentAsString).isEqualTo(first.response.contentAsString)
+    }
+
+    @Test
+    fun `suspending an unknown campaign returns 404 COUPON_CAMPAIGN_NOT_FOUND`() {
+        val body = assertThat(requestSuspend(999L)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+
+        body.extractingPath("$.meta.errorCode").isEqualTo("COUPON_CAMPAIGN_NOT_FOUND")
+    }
+
+    @Test
+    fun `suspending as a user returns 403 and leaves the campaign issuable`() {
+        val campaign = prepareCouponCampaign()
+
+        assertThat(requestSuspend(campaign.id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
+
+        entityManager.clear()
+        assertThat(entityManager.find(CouponCampaign::class.java, campaign.id).issuable).isTrue()
+    }
+
+    private fun requestSuspend(campaignId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult {
+        return mvc.post().uri("$ENDPOINT/$campaignId/suspend")
+            .apply { principal?.let { with(it) } }
+            .with(csrf())
+            .exchange()
     }
 
     private fun requestPostCampaign(

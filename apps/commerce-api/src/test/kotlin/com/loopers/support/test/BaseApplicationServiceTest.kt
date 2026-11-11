@@ -269,6 +269,10 @@ abstract class BaseApplicationServiceTest {
         return couponCampaignRegister.register(request).also { couponCampaign = it }
     }
 
+    protected fun suspendCouponCampaign(campaign: CouponCampaign = this.couponCampaign) {
+        couponCampaignRegister.suspend(campaign.id)
+    }
+
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRegister.delete(brand.id)
     }

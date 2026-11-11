@@ -6,6 +6,7 @@ import com.loopers.application.coupon.provided.CouponCampaignRegister
 import com.loopers.support.stereotype.WebApiAdapter
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -22,6 +23,15 @@ class CouponCampaignAdminApi(
         @RequestBody @Valid request: CouponCampaignAdminRegisterRequest,
     ): ApiResponse<CouponCampaignAdminResponse> {
         val campaign = couponCampaignRegister.register(request)
+
+        return ApiResponse.success(CouponCampaignAdminResponse.from(campaign))
+    }
+
+    @PostMapping("/{campaignId}/suspend")
+    override fun suspend(
+        @PathVariable("campaignId") campaignId: Long,
+    ): ApiResponse<CouponCampaignAdminResponse> {
+        val campaign = couponCampaignRegister.suspend(campaignId)
 
         return ApiResponse.success(CouponCampaignAdminResponse.from(campaign))
     }

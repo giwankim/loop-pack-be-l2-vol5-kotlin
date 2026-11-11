@@ -63,13 +63,25 @@ class CouponCampaign(
         }
     }
 
-    /** Raises [issuedCount] by one. An exhausted campaign refuses and keeps its count. The caller holds the campaign's row lock. */
+    /**
+     * Raises [issuedCount] by one. A suspended campaign refuses first, then an exhausted one, and either keeps its count. The caller holds
+     * the campaign's row lock.
+     */
     fun issue() {
+        if (!issuable) {
+            throw CouponCampaignSuspendedException()
+        }
+
         if (issuedCount >= totalQuota) {
             throw CouponCampaignExhaustedException()
         }
 
         issuedCount += 1
+    }
+
+    /** Stops issuing for good. Suspending a suspended campaign changes nothing, and no method resumes one. Issued coupons are kept. */
+    fun suspend() {
+        issuable = false
     }
 
     companion object {

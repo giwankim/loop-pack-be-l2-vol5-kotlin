@@ -15,4 +15,13 @@ interface CouponCampaignAdminApiSpec {
     fun register(
         request: CouponCampaignAdminRegisterRequest,
     ): ApiResponse<CouponCampaignAdminResponse>
+
+    @Operation(
+        summary = "쿠폰 캠페인 발급 중지",
+        description = "쿠폰 캠페인의 발급을 중지하고 그 쿠폰 캠페인을 돌려줍니다. 되돌릴 수 없고, 이미 발급 중지면 바꾸는 것 없이 200입니다. " +
+            "이미 발급된 쿠폰은 그대로입니다. 쿠폰 캠페인이 없으면 404 COUPON_CAMPAIGN_NOT_FOUND입니다.",
+    )
+    fun suspend(
+        campaignId: Long,
+    ): ApiResponse<CouponCampaignAdminResponse>
 }

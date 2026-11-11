@@ -3,6 +3,7 @@ package com.loopers.application.coupon.provided
 import com.loopers.domain.coupon.Coupon
 import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
+import com.loopers.domain.coupon.CouponCampaignSuspendedException
 import com.loopers.domain.shared.Money
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestClock
@@ -71,6 +72,38 @@ class CouponIssueIntegrationTest(
         assertThrows<CouponCampaignExhaustedException> { couponIssuer.issue(latecomer.id, campaign.id) }
 
         val repeat = couponIssuer.issue(holder.id, campaign.id)
+        assertThat(repeat.newlyIssued).isFalse()
+        assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
+        assertThat(countCoupons()).isOne()
+        assertThat(issuedCount(campaign)).isOne()
+    }
+
+    @Test
+    fun `a suspended campaign refuses a new user and keeps the coupons issued before the suspension`() {
+        val holder = prepareUser()
+        val latecomer = prepareUser()
+        val campaign = prepareCouponCampaign(totalQuota = 5)
+        val first = couponIssuer.issue(holder.id, campaign.id)
+        suspendCouponCampaign(campaign)
+
+        assertThrows<CouponCampaignSuspendedException> { couponIssuer.issue(latecomer.id, campaign.id) }
+
+        val kept = inNewTransaction { entityManager.find(Coupon::class.java, first.coupon.id) }
+        assertThat(kept.userId).isEqualTo(holder.id)
+        assertThat(kept.issuedAt).isEqualTo(first.coupon.issuedAt)
+        assertThat(countCoupons()).isOne()
+        assertThat(issuedCount(campaign)).isOne()
+    }
+
+    @Test
+    fun `a suspended campaign still answers its holder with the same coupon`() {
+        val holder = prepareUser()
+        val campaign = prepareCouponCampaign()
+        val first = couponIssuer.issue(holder.id, campaign.id)
+        suspendCouponCampaign(campaign)
+
+        val repeat = couponIssuer.issue(holder.id, campaign.id)
+
         assertThat(repeat.newlyIssued).isFalse()
         assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
         assertThat(countCoupons()).isOne()

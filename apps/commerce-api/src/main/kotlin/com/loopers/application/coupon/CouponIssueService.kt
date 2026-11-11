@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Propagation
  * transaction, as `OrderPaymentSaga` does (ADR 0028 rule 2).
  *
  * 1. Outside any transaction, read the requester's coupon. A holder is answered here and locks nothing, so a repeat request never waits
- *    in the campaign's queue, and still gets its coupon from an exhausted campaign.
+ *    in the campaign's queue, and still gets its coupon from an exhausted or suspended campaign.
  * 2. Otherwise [CouponIssueSteps] runs the issuing transaction.
  *
  * A surrounding transaction would also be wrong, not only slow: this read would fix the REPEATABLE READ snapshot before the lock is
