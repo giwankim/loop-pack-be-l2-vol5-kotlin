@@ -3,6 +3,7 @@ package com.loopers.support.test
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.coupon.provided.CouponCampaignRegister
+import com.loopers.application.coupon.provided.CouponIssuer
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderConfirmer
@@ -16,6 +17,7 @@ import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
+import com.loopers.domain.coupon.Coupon
 import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.coupon.createCouponCampaignAdminRegisterRequest
 import com.loopers.domain.like.Like
@@ -132,6 +134,9 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var couponCampaignRegister: CouponCampaignRegister
 
+    @Autowired
+    private lateinit var couponIssuer: CouponIssuer
+
     /** `@EnableTestPg`가 가져온 컨텍스트에만 있다. 테스트 PG를 쓰지 않는 컨텍스트에서는 비어 있다. */
     @Autowired
     private lateinit var pgOrderIdGenerators: ObjectProvider<TestPgOrderIdGenerator>
@@ -166,6 +171,9 @@ abstract class BaseApplicationServiceTest {
 
     /** The last prepared coupon campaign. */
     protected lateinit var couponCampaign: CouponCampaign
+
+    /** The last prepared coupon. */
+    protected lateinit var coupon: Coupon
 
     /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
     @BeforeEach
@@ -267,6 +275,17 @@ abstract class BaseApplicationServiceTest {
         )
 
         return couponCampaignRegister.register(request).also { couponCampaign = it }
+    }
+
+    /**
+     * Issues [user] a coupon of [campaign] through [CouponIssuer]. The issuer refuses a surrounding transaction, so only a class that
+     * leaves the test transaction can call this: a `BaseCommittingApplicationServiceTest` or a web test marked `NOT_SUPPORTED`.
+     */
+    protected fun prepareCoupon(
+        campaign: CouponCampaign = prepareCouponCampaign(),
+        user: User = prepareUser(),
+    ): Coupon {
+        return couponIssuer.issue(user.id, campaign.id).coupon.also { coupon = it }
     }
 
     protected fun suspendCouponCampaign(campaign: CouponCampaign = this.couponCampaign) {

@@ -1,6 +1,8 @@
 package com.loopers.adapter.webapi.v1.coupon
 
 import com.loopers.adapter.webapi.ApiResponse
+import com.loopers.adapter.webapi.PageResponse
+import com.loopers.application.coupon.provided.CouponListRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.ResponseEntity
@@ -17,4 +19,16 @@ interface CouponApiSpec {
         userId: Long,
         campaignId: Long,
     ): ResponseEntity<ApiResponse<CouponResponse>>
+
+    @Operation(
+        summary = "내 쿠폰 목록 조회",
+        description = "요청자의 쿠폰을 한 조각씩 조회합니다. 최근에 발급된 쿠폰이 앞서고, 발급 시각이 같으면 쿠폰 ID가 큰 쿠폰이 앞섭니다. " +
+            "쿠폰 캠페인의 이름과 할인액은 발급 당시의 것이며, 소진되거나 발급이 중지된 쿠폰 캠페인의 쿠폰도 나옵니다. " +
+            "page는 0 이상, size는 1 이상 100 이하이며, 주지 않으면 page=0, size=20입니다. " +
+            "총 개수 대신 다음 조각의 존재(hasNext)를 줍니다. 헤더가 없거나 그 사용자가 없으면 401입니다.",
+    )
+    fun getCoupons(
+        userId: Long,
+        request: CouponListRequest,
+    ): ApiResponse<PageResponse<CouponResponse>>
 }
