@@ -37,6 +37,8 @@ Implemented as `1c221626`. `scripts/final-check --app commerce-api` on `1c221626
 
 The first final check on the same commit failed: 30 failures, all of `ProductRepositoryTest`, whose context could not start with `Too many connections`. The second run, with no change, passed while `Threads_connected` was sampled every 3 s. The sampled peak was 147 of MySQL's default 151. Every distinct test context keeps its own Hikari pool, so the suite sits at the limit. This ticket adds no context: `CouponIssueIntegrationTest` has the same configuration as `ProductCacheTest`. Issue 224's spy on the coupon repository will add one.
 
+> 2026-11-11 `dd888459` raised the test MySQL's `max_connections` to 300 in `MySqlTestContainersConfig`, which commerce-streamer's tests share. The limit opens no connections. `scripts/final-check --app commerce-api` with the change, started 2026-11-11T07:40:15Z, passed with the same counts, 104 classes and 1113 tests (5 min 0 s). That run's tree still had the change uncommitted on top of `519a207c`. Sampled every 3 s, the limit read 300 and the peak was 149 connections. The MySQL container used 529 MiB with nothing connected and 824 MiB at that peak.
+
 ### Acceptance criteria
 
 - [x] **The first issue answers 201 with the coupon; one coupon row exists and the campaign's issued count is 1.** `CouponApiTest` for the answer, `CouponIssueIntegrationTest` for the committed rows.
