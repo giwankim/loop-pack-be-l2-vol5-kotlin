@@ -75,4 +75,26 @@ class CouponCampaignTest {
 
         assertThat(campaign.totalQuota).isEqualTo(1)
     }
+
+    @Test
+    fun `issuing raises the issued count by one each time up to the total quota`() {
+        val campaign = createCouponCampaign(totalQuota = 3)
+
+        val counts = List(3) {
+            campaign.issue()
+            campaign.issuedCount
+        }
+
+        assertThat(counts).containsExactly(1, 2, 3)
+    }
+
+    @Test
+    fun `issuing from an exhausted campaign throws CouponCampaignExhaustedException and keeps the issued count`() {
+        val campaign = createCouponCampaign(totalQuota = 1)
+        campaign.issue()
+
+        assertThrows<CouponCampaignExhaustedException> { campaign.issue() }
+
+        assertThat(campaign.issuedCount).isEqualTo(1)
+    }
 }

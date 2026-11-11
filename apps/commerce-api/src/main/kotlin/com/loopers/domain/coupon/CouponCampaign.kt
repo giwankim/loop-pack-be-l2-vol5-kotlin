@@ -63,6 +63,15 @@ class CouponCampaign(
         }
     }
 
+    /** Raises [issuedCount] by one. An exhausted campaign refuses and keeps its count. The caller holds the campaign's row lock. */
+    fun issue() {
+        if (issuedCount >= totalQuota) {
+            throw CouponCampaignExhaustedException()
+        }
+
+        issuedCount += 1
+    }
+
     companion object {
         const val NAME_MAX_LENGTH = 100
         const val MIN_DISCOUNT_AMOUNT = 1L

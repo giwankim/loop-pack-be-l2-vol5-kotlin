@@ -2,6 +2,7 @@ package com.loopers.support.test
 
 import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.brand.provided.BrandRegister
+import com.loopers.application.coupon.provided.CouponCampaignRegister
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderConfirmer
@@ -15,6 +16,8 @@ import com.loopers.application.product.required.ProductRepository
 import com.loopers.application.user.required.UserRepository
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrandAdminRegisterRequest
+import com.loopers.domain.coupon.CouponCampaign
+import com.loopers.domain.coupon.createCouponCampaignAdminRegisterRequest
 import com.loopers.domain.like.Like
 import com.loopers.domain.like.createLikeRequest
 import com.loopers.domain.order.Order
@@ -54,7 +57,7 @@ import java.util.UUID
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소,
  * 캐시 writer를 spy하는 `@MockkSpyBean` 필드,
  * 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
- * 주문을 확정해 PG를 부르는 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`뿐이다(ADR 0012).
+ * 주문을 확정해 PG를 부르거나 고정하는 시계가 필요한 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`뿐이다(ADR 0012).
  *
  * Every context here needs the Kafka broker, not only the tests that read it: the application declares its order events topic,
  * and in the test profile the admin fails the context when it has no broker. [KafkaTestContainersConfig] starts the broker once
@@ -126,6 +129,9 @@ abstract class BaseApplicationServiceTest {
     @Autowired
     private lateinit var orderRepository: OrderRepository
 
+    @Autowired
+    private lateinit var couponCampaignRegister: CouponCampaignRegister
+
     /** `@EnableTestPg`가 가져온 컨텍스트에만 있다. 테스트 PG를 쓰지 않는 컨텍스트에서는 비어 있다. */
     @Autowired
     private lateinit var pgOrderIdGenerators: ObjectProvider<TestPgOrderIdGenerator>
@@ -157,6 +163,9 @@ abstract class BaseApplicationServiceTest {
 
     /** 마지막으로 준비한 주문. */
     protected lateinit var order: Order
+
+    /** The last prepared coupon campaign. */
+    protected lateinit var couponCampaign: CouponCampaign
 
     /** 앞 테스트가 연 브레이커와 옮긴 시계가 컨텍스트를 나눠 쓰는 이 테스트에 남지 않게 한다. */
     @BeforeEach
@@ -244,6 +253,20 @@ abstract class BaseApplicationServiceTest {
      */
     protected fun startPaymentWithoutPayment(order: Order = this.order) {
         orderRepository.save(order.apply { startPayment() })
+    }
+
+    protected fun prepareCouponCampaign(
+        name: String? = null,
+        discountAmount: Long? = null,
+        totalQuota: Int? = null,
+    ): CouponCampaign {
+        val request = createCouponCampaignAdminRegisterRequest(
+            name = name,
+            discountAmount = discountAmount,
+            totalQuota = totalQuota,
+        )
+
+        return couponCampaignRegister.register(request).also { couponCampaign = it }
     }
 
     protected fun deleteBrand(brand: Brand = this.brand) {

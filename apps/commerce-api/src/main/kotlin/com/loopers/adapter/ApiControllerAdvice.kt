@@ -1,6 +1,7 @@
 package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
+import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
@@ -39,6 +40,12 @@ class ApiControllerAdvice {
     fun handleOrderAlreadyConfirmed(e: OrderAlreadyConfirmedException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.ORDER_ALREADY_CONFIRMED)
+    }
+
+    @ExceptionHandler
+    fun handleCouponCampaignExhausted(e: CouponCampaignExhaustedException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_CAMPAIGN_EXHAUSTED)
     }
 
     /**

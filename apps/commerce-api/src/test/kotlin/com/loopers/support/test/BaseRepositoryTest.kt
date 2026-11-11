@@ -1,6 +1,8 @@
 package com.loopers.support.test
 
 import com.loopers.application.brand.required.BrandRepository
+import com.loopers.application.coupon.required.CouponCampaignRepository
+import com.loopers.application.coupon.required.CouponRepository
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.order.required.OrderRepository
@@ -11,6 +13,10 @@ import com.loopers.application.user.required.UserRepository
 import com.loopers.config.jpa.DataSourceConfig
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.brand.createBrand
+import com.loopers.domain.coupon.Coupon
+import com.loopers.domain.coupon.CouponCampaign
+import com.loopers.domain.coupon.createCoupon
+import com.loopers.domain.coupon.createCouponCampaign
 import com.loopers.domain.like.Like
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderEventOutbox
@@ -77,6 +83,12 @@ abstract class BaseRepositoryTest {
     @Autowired
     private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
 
+    @Autowired
+    private lateinit var couponCampaignRepository: CouponCampaignRepository
+
+    @Autowired
+    private lateinit var couponRepository: CouponRepository
+
     /** 마지막으로 준비한 브랜드. */
     protected lateinit var brand: Brand
 
@@ -100,6 +112,12 @@ abstract class BaseRepositoryTest {
 
     /** The last prepared outbox row. */
     protected lateinit var orderEventOutbox: OrderEventOutbox
+
+    /** The last prepared coupon campaign. */
+    protected lateinit var couponCampaign: CouponCampaign
+
+    /** The last prepared coupon. */
+    protected lateinit var coupon: Coupon
 
     protected fun prepareBrand(name: String? = null): Brand {
         return brandRepository.save(createBrand(name = name)).also { brand = it }
@@ -165,6 +183,17 @@ abstract class BaseRepositoryTest {
         return orderEventOutboxRepository.save(row).also { orderEventOutbox = it }
     }
 
+    protected fun prepareCouponCampaign(): CouponCampaign {
+        return couponCampaignRepository.save(createCouponCampaign()).also { couponCampaign = it }
+    }
+
+    protected fun prepareCoupon(
+        campaign: CouponCampaign = prepareCouponCampaign(),
+        user: User = prepareUser(),
+    ): Coupon {
+        return couponRepository.save(createCoupon(campaignId = campaign.id, userId = user.id)).also { coupon = it }
+    }
+
     /** 삭제 시각을 찍어 명시적으로 저장한다. 변경 감지에 기대지 않는다. */
     protected fun deleteBrand(brand: Brand = this.brand) {
         brandRepository.save(brand.apply { delete() })
@@ -210,6 +239,16 @@ abstract class BaseRepositoryTest {
     /** The same as [deleteUser]. Nothing deletes outbox rows either. */
     protected fun deleteOrderEventOutbox(row: OrderEventOutbox = this.orderEventOutbox) {
         orderEventOutboxRepository.save(row.apply { delete() })
+    }
+
+    /** The same as [deleteUser]. Nothing deletes a campaign in this step. */
+    protected fun deleteCouponCampaign(campaign: CouponCampaign = this.couponCampaign) {
+        couponCampaignRepository.save(campaign.apply { delete() })
+    }
+
+    /** The same as [deleteUser]. Nothing deletes a coupon in this step. */
+    protected fun deleteCoupon(coupon: Coupon = this.coupon) {
+        couponRepository.save(coupon.apply { delete() })
     }
 
     /** Starts an attempt on the row and saves it explicitly, without relying on dirty checking. */
