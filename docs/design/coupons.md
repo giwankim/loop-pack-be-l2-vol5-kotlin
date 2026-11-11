@@ -152,6 +152,9 @@ Same-user scene: 2 threads: coupon IDs [1, 1], newly issued [false, true]; coupo
 scripts/final-check --app commerce-api
 ```
 
+- 끝의 확인은 2026-11-11 `8e251c66`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`로 돌렸다(08:45:33Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 105개 클래스, 1143개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 16 s). 티켓 223이 끝난 105개 클래스, 1139개 테스트에서 `CouponIssueIntegrationTest`의 장면 넷이 더해졌다. `8e251c66` 뒤로는 문서만 바뀌었다. 이 실행의 보고서에서 읽은 8.1절의 두 줄도 위와 같다.
+- 같은 커밋의 바로 앞 실행은 1143개 가운데 하나가 실패했다. `PointApiTest`의 첫 테스트가 `@BeforeEach`에서 Redis를 비우다 `RedisConnectionFailureException`(Lettuce의 연결 한도 100 ms 안에 `Cannot determine topology`)으로 끝났고, 그 클래스의 나머지 11개는 통과했다. 쿠폰은 Redis를 쓰지 않는다. 고치지 않고 다시 돌린 위 실행이 통과했다.
+
 ## 9. 다음 단계로 넘기는 것
 
 - 다음 단계는 이른 조회와 발급 트랜잭션 사이에서 처리 자리를 얻고, 트랜잭션이 끝난 뒤 놓는다(3.1절). 소진, 발급 중지, 중복은 발급 트랜잭션만 정하므로 처리 자리는 발급 한도를 알 필요가 없다.

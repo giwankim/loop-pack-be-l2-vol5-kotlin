@@ -149,3 +149,39 @@ A two-axis review ran on the code before the final check.
 
 - **Spec:** no missing requirement and nothing implemented wrongly. It asked who owns the parent spec's "another user's list does not show it" for a same-user concurrent issue. Issue 224 lists it. The page and size 400 tests were noted as beyond the ticket's words but within "match the like and order lists".
 - **Standards:** six findings, all fixed in `a0f06b8d`. Tests called `CouponIssuer` to prepare data instead of a `prepareCoupon` (`CODING_STANDARDS.md` fixture rule). One test read the `couponCampaign` field after preparing three campaigns. One read a coupon ID through `JsonNode` instead of `extractingPath`. The paging test asserted single-response fields through `JsonNode`. A three-body test named its bodies off the naming scheme, so it was split in two. `explainTree` was duplicated.
+
+## Issue 224: the quota and the one-coupon rule hold under contention, and the design is written down
+
+Implemented as `abe63641` (the scenes) and `8e251c66` (`docs/design/coupons.md` and the ADR 0018 note). `scripts/final-check --app commerce-api` on `8e251c66`, a clean tree, started 2026-11-11T08:45:33Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 105 classes, 1143 tests (5 min 16 s), 0 failures, 0 errors, 0 skipped**. Issue 223 ended at 105 classes and 1139 tests, so this ticket adds no class and 4 tests. Only documents changed after `8e251c66`.
+
+The run before it on the same commit had one failure out of 1143, outside the coupon slice: `PointApiTest`'s first test failed in `@BeforeEach` while emptying Redis, with `RedisConnectionFailureException` (Lettuce's `Cannot determine topology` within its 100 ms connect timeout). The class's other 11 tests passed. Nothing was changed, and the next run passed. Coupons don't use Redis. The design doc's 8.3 records both runs.
+
+No production code changed. No scene showed the issuing transaction to be wrong.
+
+### Acceptance criteria
+
+- [x] **8 different users issue from a campaign with a total quota of 5 on 8 threads: 5 issued, 3 `COUPON_CAMPAIGN_EXHAUSTED`, 5 coupon rows, issued count 5.** `CouponIssueIntegrationTest`, through `runConcurrently` and `tally`. The expected rejections are `users − quota`, and the rows and the count are compared with the successes as well as with the quota. The recorded run's line: `Quota scene: 8 users, total quota 5: issued 5, exhausted 3, technical errors 0; coupon rows 5, issued count 5`.
+- [x] **One user issues on two threads at once: both get the same coupon ID, one coupon row, issued count 1, and another user's list does not show it.** Same class, with the list read through `CouponFinder`. `Same-user scene: 2 threads: coupon IDs [1, 1], newly issued [false, true]; coupon rows 1, issued count 1`.
+- [x] **With the coupon repository's `save` made to throw (springmockk spy), the issue fails, the issued count is unchanged and no coupon row exists; issuing again without the spy gives one coupon and issued count 1.** The stub flushes before it throws, so the captured SQL holds one `update coupon_campaign` and no coupon insert: MySQL had the raised count and only the rollback took it back.
+- [x] **An issue that waits on a held campaign lock past the timeout answers 409 `CONCURRENT_REQUEST` and issues nothing.** At the port: another user's issue pauses inside its issuing transaction (a spy on `CouponIssueSteps`), and the waiting issue throws `PessimisticLockingFailureException` after 3 s, leaving no coupon of its own. `ApiControllerAdvice` maps that exception to 409 `CONCURRENT_REQUEST` for every writer, as `LockFailureApiTest` pins. No HTTP scene was added for issuing (below).
+- [x] **Red check: reading the campaign without `FOR UPDATE` turns the 8-users scene red.** Run twice, never committed: 5 issued and 3 technical errors, then 4 and 4, all MySQL deadlocks (1213), not exhaustions.
+- [x] **Red check: dropping the coupon re-check inside the transaction turns the two-threads scene red.** One success and one `Duplicate entry '1-1' for key 'coupon.UK_COUPON_ON_CAMPAIGN_ID_AND_USER_ID'`. Every other scene stayed green.
+- [x] **`docs/design/coupons.md` exists and `scripts/check-doc-notes` accepts the ADR 0018 note.** The note sits under rule 3, after the ADR 0020 note.
+- [x] **`scripts/final-check` passes, and its commit, timings and test counts are recorded in the design doc.** 8.3.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### Decisions made while implementing
+
+- **Without `FOR UPDATE` the quota did not overrun: it deadlocked.** Each unlocked transaction inserts its coupon first (an `IDENTITY` insert goes out at `save`), and the foreign key `coupon → coupon_campaign` share-locks the campaign row. Then the count's UPDATE at the commit's flush needs the exclusive lock and waits on the others' share locks. The design doc calls it an accident of the foreign key, not a guard: an issue that commits before another inserts still loses an update.
+- **The lock scene's holder is a real issue, paused through a spy on the issuing step,** as `CODING_STANDARDS.md` asks when a Service step holds the lock. A side effect showed up in the second red run: the scene stays green without `FOR UPDATE`, because the paused holder already holds the foreign key's share lock and the unlocked waiter blocks on its own commit-time UPDATE. That scene proves the 409 path, not the lock. The two scenes the red checks name do prove the lock.
+- **The 409 is proven at the port, not over HTTP.** The ticket asks for port scenes so they stay valid when the next branch puts a processing slot in front of the API. The advice's mapping is one handler for one exception type, already pinned by `LockFailureApiTest`.
+- **The scenes log one INFO line each after their assertions,** so this document copies a recorded run's lines (`scripts/scene-lines`).
+
+### Review
+
+A two-axis review ran on the code before the final check.
+
+- **Spec:** no missing requirement or scope creep. It found the rollback scene's text wrong: `save` of the managed campaign sends no SQL, so nothing had reached MySQL when the stub threw. It also found the design doc's connection-limit sentence backwards (`dd888459` came before this ticket). Both were fixed. The 409 being proven at the port was raised and kept (above).
+- **Standards:** the rollback stub didn't flush as the mid-failure rule asks, the quota scene compared counts only with literals, the quota KDoc presented the deadlock as the mechanism, the lock holder bypassed the Service step, and the log lines re-read the committed state. All were fixed before `abe63641`.
+- **Left as they are:** `customer` as a local name, which `CONTEXT.md` lists under Avoid but the repo already uses 18 times, and `outcomes.total` missing from the same-user scene, which the `Outcomes` equality already implies.
