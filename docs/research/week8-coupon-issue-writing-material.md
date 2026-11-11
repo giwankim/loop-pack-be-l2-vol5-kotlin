@@ -69,3 +69,34 @@ A two-axis review ran on the code before the final check.
 - **Spec:** no missing requirement and nothing implemented wrongly. It noted that the `NEVER` sentence on `ApplicationService` named only PG services, which is fixed in `1c221626`.
 - **Standards:** five findings, all fixed in `1c221626` or by the rule's wording. `save`'s result was discarded while the entity was still read, a `Long` was asserted with `toInt()` instead of `isEqualToLong`, a single-use request sat in a local, the fixture needed the real constructor and the contract's constructor check, and `@EnableTestPg` was outside the rule's list.
 - **Left as they are:** the two-line duplicate between the early read and the re-check, which the spec requires in both places, building the coupon in the steps bean rather than on the campaign, since the ticket fixes what `campaign.issue()` does, the whole-body comparison in `CouponApiTest`, which is the plainest proof of "the same body", and the English word "holder", which the ticket itself uses.
+
+## Issue 222: an admin suspends a coupon campaign's issuing
+
+Implemented as `6cca7409`. `scripts/final-check --app commerce-api` on `6cca7409`, a clean tree, started 2026-11-11T08:00:06Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 104 classes, 1128 tests (5 min 27 s), 0 failures, 0 errors, 0 skipped**. Issue 221 ended at 104 classes and 1113 tests, so this ticket adds no class and 15 tests. Only this document changed after `6cca7409`.
+
+### Acceptance criteria
+
+- [x] **Suspending answers 200 with the campaign marked suspended; suspending again answers 200 and changes nothing.** `CouponCampaignAdminApiTest` for the answer and the identical second body, `CouponCampaignRegisterTest` for the committed `issuable` and issued count after a second suspension, `CouponCampaignTest` for `suspend()` itself.
+- [x] **Suspending an unknown campaign answers 404 `COUPON_CAMPAIGN_NOT_FOUND`.** Both the HTTP and the port test.
+- [x] **After suspension, a new user's issue answers 409 `COUPON_CAMPAIGN_SUSPENDED`; no coupon row is added and the issued count is unchanged.** `CouponApiTest` for the 409, `CouponIssueIntegrationTest` for the committed rows.
+- [x] **After suspension, a holder's repeat request answers 200 with the same coupon ID.** Both classes. `CouponApiTest` compares the whole body with the first answer.
+- [x] **A campaign that is both suspended and exhausted answers `COUPON_CAMPAIGN_SUSPENDED` (domain test).** `CouponCampaignTest`.
+- [x] **Coupons issued before the suspension are unchanged.** `CouponIssueIntegrationTest` reads the earlier coupon back in a new transaction with its user and issue time.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### Decisions made while implementing
+
+- **`suspend` is a method on `CouponCampaignRegister`, not a port of its own.** That port is already "the admin's writes to a coupon campaign", as `BrandRegister` holds register, update and delete.
+- **Suspension reads through `CouponCampaignFinder.findForUpdate`, and a test pins the lock.** `CouponCampaignRegisterTest` captures the SQL and finds one `FOR UPDATE`, on `coupon_campaign`. Without the lock, a suspension saved from a stale read could write back an old issued count over an issue that committed in between.
+- **The suspended check is inline in `issue()`, beside the exhausted one,** not an `ensureIssuable()` guard. The two checks are the method's whole rule and their order is the point, so they read best together.
+- **`suspendCouponCampaign` joins the `prepare*` helpers of `BaseApplicationServiceTest`,** next to `deleteBrand`, and goes through the port.
+- **A user's suspension answers 403 and changes nothing.** The spec doesn't list it. It mirrors registration's 403 test and pins that the new path is under the admin security.
+
+### Review
+
+A two-axis review ran on the code before the final check.
+
+- **Spec:** no missing requirement, no scope creep beyond the 403 test above, nothing implemented wrongly.
+- **Standards:** no hard violation. Two KDoc drifts were fixed in `6cca7409`: `CouponIssueService` still said a holder is answered only from an exhausted campaign, and the suspension's KDoc cited ADR 0018 rule 1 as a whole, though the code saves explicitly (catalog design 5.37) rather than by dirty checking as that rule also says.
+- **Left as they are:** the inline guard (above), a fourth exception handler in `ApiControllerAdvice` shaped like the three before it, the suspended scene in `CouponApiTest` that mirrors the exhausted one, and the stored `issuable` against the answered `suspended`, which issue 220 already recorded.
