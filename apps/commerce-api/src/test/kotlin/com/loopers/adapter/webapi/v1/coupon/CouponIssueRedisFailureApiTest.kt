@@ -4,6 +4,7 @@ import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.application.coupon.CouponIssueSteps
 import com.loopers.application.coupon.provided.CouponIssueAdmissionOpener
 import com.loopers.config.redis.RedisConfig
+import com.loopers.support.CONFIGURED_COUPON_ISSUE_INSTANCE_ID
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.awaitCommandSucceeds
 import com.loopers.support.captureSql
@@ -47,7 +48,7 @@ private val log = KotlinLogging.logger {}
  */
 @Import(StoppableRedisTestContainersConfig::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class CouponIssueRedisFailureTest(
+class CouponIssueRedisFailureApiTest(
     private val databaseCleanUp: DatabaseCleanUp,
     private val couponIssueAdmissionOpener: CouponIssueAdmissionOpener,
     private val stoppableRedis: StoppableRedis,
@@ -59,9 +60,6 @@ class CouponIssueRedisFailureTest(
          * reads the database, so this is generous; the scene does not assert the timeout itself.
          */
         private val REFUSAL_BOUND: Duration = Duration.ofSeconds(2)
-
-        /** The test profile's `coupon-issue.instance-id`, which every token of this context starts with. */
-        private const val INSTANCE_ID = "localhost"
     }
 
     /** Where a scene stops Redis inside an issue. Unstubbed, it is the real issuing transaction. */
@@ -99,9 +97,9 @@ class CouponIssueRedisFailureTest(
         stoppableRedis.stop()
 
         val captured = captureSql { assertAdmissionClosed(requestIssue(campaign.id, newcomer.id)) }
-        val repeatBody = assertThat(requestIssue(campaign.id, held.userId)).hasStatusOk().bodyJson()
-        val listBody = assertThat(requestList(held.userId)).hasStatusOk().bodyJson()
-        val newcomerListBody = assertThat(requestList(newcomer.id)).hasStatusOk().bodyJson()
+        val body = assertThat(requestIssue(campaign.id, held.userId)).hasStatusOk().bodyJson()
+        val list = assertThat(requestList(held.userId)).hasStatusOk().bodyJson()
+        val newcomerList = assertThat(requestList(newcomer.id)).hasStatusOk().bodyJson()
 
         val locks = captured.statements.filter { it.contains("for update", ignoreCase = true) }
         val couponRows = entityManager.countCoupons()
@@ -109,9 +107,9 @@ class CouponIssueRedisFailureTest(
         assertThat(locks).isEmpty()
         assertThat(couponRows).isOne()
         assertThat(issuedCount).isOne()
-        repeatBody.extractingPath("$.data.couponId").isEqualToLong(held.id)
-        listBody.extractingPath("$.data.items[0].couponId").isEqualToLong(held.id)
-        newcomerListBody.extractingPath("$.data.items").asArray().isEmpty()
+        body.extractingPath("$.data.couponId").isEqualToLong(held.id)
+        list.extractingPath("$.data.items[0].couponId").isEqualToLong(held.id)
+        newcomerList.extractingPath("$.data.items").asArray().isEmpty()
         log.info {
             "Stopped Redis: new user 503 COUPON_ISSUE_ADMISSION_CLOSED with ${locks.size} FOR UPDATE; holder 200 with the same " +
                 "coupon, list 200; coupon rows $couponRows (the holder's), issued count $issuedCount"
@@ -185,7 +183,7 @@ class CouponIssueRedisFailureTest(
         val afterStart = prepareUser()
         couponIssueSteps.stopRedisDuringTheIssueOf(stopping.id, stoppableRedis)
 
-        val issueBody = assertThat(requestIssue(campaign.id, stopping.id)).hasStatus(HttpStatus.CREATED).bodyJson()
+        val body = assertThat(requestIssue(campaign.id, stopping.id)).hasStatus(HttpStatus.CREATED).bodyJson()
         val couponRows = entityManager.countCoupons()
         val issuedCount = entityManager.couponCampaignIssuedCount(campaign.id)
         stoppableRedis.start()
@@ -196,16 +194,46 @@ class CouponIssueRedisFailureTest(
         val afterOpening = masterRedisTemplate.heldCouponIssueSlotTokens()
         val issued = requestIssue(campaign.id, afterStart.id)
 
-        issueBody.extractingPath("$.data.campaignId").isEqualToLong(campaign.id)
+        body.extractingPath("$.data.campaignId").isEqualToLong(campaign.id)
         assertThat(couponRows).isOne()
         assertThat(issuedCount).isOne()
-        assertThat(leftover).singleElement().satisfies({ assertThat(it).startsWith("$INSTANCE_ID:") })
+        assertThat(leftover).singleElement().satisfies({ assertThat(it).startsWith("$CONFIGURED_COUPON_ISSUE_INSTANCE_ID:") })
         assertAdmissionClosed(refused)
         assertThat(afterOpening).isEmpty()
         assertThat(issued).hasStatus(HttpStatus.CREATED)
         log.info {
             "Release failed: 201 with coupon rows $couponRows, issued count $issuedCount; after the start ${leftover.size} " +
                 "token left in the Set and the next user 503; after the opening ${afterOpening.size} tokens and the next user 201"
+        }
+    }
+
+    /**
+     * A business rejection is not replaced by a server error: the issuing transaction refuses as exhausted, the release after it
+     * fails on a stopped Redis, and the request still answers the 409 (spec 231's story 6). The next user's 503 shows that the
+     * release did fail and closed admission.
+     */
+    @Test
+    fun `with Redis stopped during the issue an exhausted campaign still answers 409, and admission is closed`() {
+        val campaign = prepareCouponCampaign(totalQuota = 1)
+        prepareCoupon(campaign)
+        val latecomer = prepareUser()
+        val afterStart = prepareUser()
+        couponIssueSteps.stopRedisDuringTheIssueOf(latecomer.id, stoppableRedis)
+
+        val error = assertThat(requestIssue(campaign.id, latecomer.id)).hasStatus(HttpStatus.CONFLICT).bodyJson()
+        stoppableRedis.start()
+        masterRedisTemplate.awaitCommandSucceeds()
+        val refused = requestIssue(campaign.id, afterStart.id)
+
+        error.extractingPath("$.meta.errorCode").isEqualTo("COUPON_CAMPAIGN_EXHAUSTED")
+        assertAdmissionClosed(refused)
+        val couponRows = entityManager.countCoupons()
+        val issuedCount = entityManager.couponCampaignIssuedCount(campaign.id)
+        assertThat(couponRows).isOne()
+        assertThat(issuedCount).isOne()
+        log.info {
+            "Release failed after a rejection: 409 COUPON_CAMPAIGN_EXHAUSTED, and the next user 503 after the start; " +
+                "coupon rows $couponRows (the holder's), issued count $issuedCount"
         }
     }
 

@@ -2,6 +2,9 @@ package com.loopers.support
 
 import org.springframework.data.redis.core.RedisTemplate
 
+/** `application.yml`'s `coupon-issue.instance-id` in the `local, test` block, which every token of a test context starts with. */
+const val CONFIGURED_COUPON_ISSUE_INSTANCE_ID = "localhost"
+
 /** The adapter keeps its key private, so the tests spell it out. */
 private const val COUPON_ISSUE_SLOTS_KEY = "coupon-issue:slots"
 

@@ -76,17 +76,17 @@ class CouponIssueAdmissionApiTest(
         val issueBody = assertThat(requestIssue(campaign.id, losing.id)).hasStatus(HttpStatus.CREATED).bodyJson()
         issueBody.extractingPath("$.data.campaignId").isEqualToLong(campaign.id)
 
-        val closedBody = assertThat(requestIssue(campaign.id, prepareUser().id))
+        val error = assertThat(requestIssue(campaign.id, prepareUser().id))
             .hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
             .bodyJson()
-        closedBody.extractingPath("$.meta.errorCode").isEqualTo("COUPON_ISSUE_ADMISSION_CLOSED")
+        error.extractingPath("$.meta.errorCode").isEqualTo("COUPON_ISSUE_ADMISSION_CLOSED")
         assertThat(entityManager.countCoupons()).isEqualTo(3L)
         assertThat(entityManager.couponCampaignIssuedCount(campaign.id)).isEqualTo(3)
 
-        val repeatBody = assertThat(requestIssue(campaign.id, held.userId)).hasStatusOk().bodyJson()
-        repeatBody.extractingPath("$.data.couponId").isEqualToLong(held.id)
-        val listBody = assertThat(requestList(held.userId)).hasStatusOk().bodyJson()
-        listBody.extractingPath("$.data.items[0].couponId").isEqualToLong(held.id)
+        val secondIssueBody = assertThat(requestIssue(campaign.id, held.userId)).hasStatusOk().bodyJson()
+        secondIssueBody.extractingPath("$.data.couponId").isEqualToLong(held.id)
+        val list = assertThat(requestList(held.userId)).hasStatusOk().bodyJson()
+        list.extractingPath("$.data.items[0].couponId").isEqualToLong(held.id)
     }
 
     private fun requestIssue(campaignId: Long, userId: Long): MvcTestResult {

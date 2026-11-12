@@ -58,6 +58,9 @@ class CouponIssueAdmission(
      * The order of checks matters together with [admit]'s count: an issue counts itself running before it reads the state, and this
      * reads the count before it removes anything. So an issue either is counted here and refuses the opening, or reads the state only
      * after it was set, which is after the tokens were removed.
+     *
+     * This does not exclude another opening: it assumes one caller at a time, which the startup's single call is. Two overlapping
+     * openings could remove the token of an issue admitted between them (`docs/design/coupons.md` 11.7).
      */
     override fun open() {
         if (open.get()) {

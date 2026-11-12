@@ -21,8 +21,8 @@ import org.springframework.mock.env.MockEnvironment
 
 /**
  * The runner by itself, over an environment the scene sets. Every context of the suite runs it with `application.yml`'s `true`, and
- * `CouponIssueAdmissionClosedApiTest` starts one with `false`; what neither shows is a missing property and a failing opening. The
- * opening failing for a stopped Redis at startup is `CouponIssueRedisFailureTest`'s.
+ * `CouponIssueAdmissionApiTest` starts one with `false`; what neither shows is a missing property and a failing opening. No scene
+ * starts a context with Redis stopped: the failing opening here is the opener throwing (`docs/design/coupons.md` 11.10).
  */
 class CouponIssueAdmissionStartupRunnerTest {
     private val opener = mockk<CouponIssueAdmissionOpener>()

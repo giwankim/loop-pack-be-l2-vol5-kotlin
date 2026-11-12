@@ -8,6 +8,7 @@ import com.loopers.application.coupon.CouponIssueAdmissionClosedException
 import com.loopers.application.coupon.CouponIssueSteps
 import com.loopers.config.redis.RedisConfig
 import com.loopers.domain.coupon.CouponCampaign
+import com.loopers.support.CONFIGURED_COUPON_ISSUE_INSTANCE_ID
 import com.loopers.support.addCouponIssueSlotToken
 import com.loopers.support.captureSql
 import com.loopers.support.heldCouponIssueSlotTokens
@@ -28,7 +29,7 @@ import org.springframework.data.redis.core.RedisTemplate
 /**
  * Closing and opening the coupon issue admission through the provided ports, on a working Redis and MySQL. Admission is closed by
  * something a test can cause on a working Redis: a held token removed from the Set while its issue runs, so that the issue's release
- * removes nothing (spec 231). The scenes of a stopped or paused Redis are `CouponIssueRedisFailureTest`'s.
+ * removes nothing (spec 231). The scenes of a stopped or paused Redis are `CouponIssueRedisFailureApiTest`'s.
  *
  * The context opened admission at startup, and every scene opens it again in cleanup, so a closing scene never reaches the next test.
  * Closing is prepared through [CouponIssuer] on purpose: admission closes only on a real issue's release, and the class has no other
@@ -115,7 +116,7 @@ class CouponIssueAdmissionClosingTest(
     fun `opening removes this instance's leftover tokens, keeps another instance's, and the next new user is issued`() {
         val campaign = prepareCouponCampaign()
         closeAdmission(campaign)
-        masterRedisTemplate.addCouponIssueSlotToken("$INSTANCE_ID:left-over")
+        masterRedisTemplate.addCouponIssueSlotToken("$CONFIGURED_COUPON_ISSUE_INSTANCE_ID:left-over")
         masterRedisTemplate.addCouponIssueSlotToken("$OTHER_INSTANCE_ID:live")
 
         couponIssueAdmissionOpener.open()
@@ -131,9 +132,6 @@ class CouponIssueAdmissionClosingTest(
         couponIssuer.issue(losing.id, campaign.id)
     }
 }
-
-/** The test profile's `coupon-issue.instance-id`. */
-private const val INSTANCE_ID = "localhost"
 
 /** A name no instance of this context has, standing for another instance sharing the Set. */
 private const val OTHER_INSTANCE_ID = "other-instance"

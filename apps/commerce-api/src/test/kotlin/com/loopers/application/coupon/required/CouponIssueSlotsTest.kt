@@ -3,6 +3,7 @@ package com.loopers.application.coupon.required
 import com.loopers.adapter.persistence.coupon.CouponIssueProperties
 import com.loopers.adapter.persistence.coupon.RedisCouponIssueSlots
 import com.loopers.config.redis.RedisConfig
+import com.loopers.support.CONFIGURED_COUPON_ISSUE_INSTANCE_ID
 import com.loopers.support.addCouponIssueSlotToken
 import com.loopers.support.couponIssueSlotsTimeToLive
 import com.loopers.support.heldCouponIssueSlotTokens
@@ -32,9 +33,6 @@ class CouponIssueSlotsTest(
 
         /** `application.yml`'s `coupon-issue.slot-capacity`, the same in every profile. */
         private const val CONFIGURED_CAPACITY = 10
-
-        /** `application.yml`'s `coupon-issue.instance-id` in the `local, test` block. */
-        private const val CONFIGURED_INSTANCE_ID = "localhost"
 
         /** Redis' `TTL` answer for a key that exists without an expiry. */
         private const val NO_EXPIRY = -1L
@@ -162,7 +160,7 @@ class CouponIssueSlotsTest(
 
         val overflow = couponIssueSlots.acquire()
 
-        assertThat(tokens).doesNotContainNull().allSatisfy { assertThat(it).startsWith("$CONFIGURED_INSTANCE_ID:") }
+        assertThat(tokens).doesNotContainNull().allSatisfy { assertThat(it).startsWith("$CONFIGURED_COUPON_ISSUE_INSTANCE_ID:") }
         assertThat(overflow).isNull()
         assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }
