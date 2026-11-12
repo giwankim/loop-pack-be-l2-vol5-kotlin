@@ -21,7 +21,7 @@ Implemented as `93448ede`, on top of `27113cba`, which adds the coupon terms to 
 
 - **A name has at most 100 characters.** The spec names only the blank check. `Brand` and `Product` both cap at 100, and without a cap a long name would fail at the column as a 500 instead of a 400. So this is a fourth refusal the spec did not list.
 - **`@SQLRestriction("deleted_at is null")` is on the entity though nothing deletes a campaign in this step.** ADR 0016 makes it the default for a root. ADR 0016 also asks for a repository test that a deleted row is a missing one. This ticket's repository has only `save`, so that test belongs with the first read port, in issue 221.
-- **`issuable` is stored and `suspended` is answered.** The spec names both. `CouponCampaignAdminResponse` is the one place that translates them.
+- **`issuable` is stored and `suspended` is answered.** The spec names both. `CouponCampaignAdminResponse` is the one place that translates them. *Changed in the spec 219 review (2026-11-11):* an exhausted campaign also read `issuable = true`, so the field became `suspended` and the translation went away.
 
 ### Review
 

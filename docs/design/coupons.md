@@ -36,7 +36,7 @@
 
 `coupon` 슬라이스에 애그리거트 루트 둘을 둔다. 둘 다 `BaseEntity`를 상속하고 논리 삭제를 지원하지만, 이 단계에서 지우는 길은 없다.
 
-- **`CouponCampaign`**: 이름, 할인액(`Money`), 발급 한도(`totalQuota`), 발급 수(`issuedCount`), 발급 가능 여부(`issuable`). 등록 때 발급 수는 0이고 발급 가능하다. 이름은 비어 있지 않고 100자 이하, 할인액은 1원 이상, 발급 한도는 1 이상이다. 엔티티가 직접 검사하고, 요청 DTO는 Bean Validation으로도 검사한다.
+- **`CouponCampaign`**: 이름, 할인액(`Money`), 발급 한도(`totalQuota`), 발급 수(`issuedCount`), 발급 중지 여부(`suspended`). 등록 때 발급 수는 0이고 발급 중지가 아니다. 스펙은 이 값을 발급 가능 여부(`issuable`)로 적었지만, 소진된 쿠폰 캠페인도 `issuable = true`로 읽혀서 `CONTEXT.md`의 발급 중지를 그대로 이름으로 삼았다. 이름은 비어 있지 않고 100자 이하, 할인액은 1원 이상, 발급 한도는 1 이상이다. 엔티티가 직접 검사하고, 요청 DTO는 Bean Validation으로도 검사한다.
   - `issue()`: 발급 중지면 `COUPON_CAMPAIGN_SUSPENDED`, 소진이면 `COUPON_CAMPAIGN_EXHAUSTED`로 거절한다. 이 차례다. 통과하면 발급 수를 1 늘린다. 발급 한도의 규칙은 여기 한 곳에 있다. 재고가 `Product`에 있는 것과 같다.
   - `suspend()`: 발급을 멈춘다. 이미 멈췄으면 그대로다. 되돌리는 메서드는 없다.
 - **`Coupon`**: 쿠폰 캠페인 식별자, 사용자 식별자, 발급 시각(`Clock`), 발급 당시 쿠폰 캠페인의 이름과 할인액. 발급 뒤 바뀌지 않는다. 그래서 목록은 쿠폰 캠페인을 읽지 않는다.
@@ -74,12 +74,12 @@
 
 - 쿠폰 캠페인 행은 발급 트랜잭션의 첫 읽기에서 잠긴다(ADR 0018 규칙 1, 2). 같은 쿠폰 캠페인의 발급은 그 행에서 하나씩 지나가고, 저마다 앞선 쪽이 커밋한 발급 수를 읽는다.
 - 발급 중지도 쿠폰 캠페인을 잠가 읽는다. 낡은 읽기로 저장한 발급 중지가 그 사이 커밋된 발급 수를 덮지 않게 한다.
-- 이 잠금은 다른 잠긴 행과 한 트랜잭션에 들지 않는다. 발급 트랜잭션이 넣는 쿠폰 행은 새 행이고, 발급 중지는 쿠폰 캠페인 하나만 바꾼다. 그래서 전역 잠금 순서(ADR 0018 규칙 3)에 새 자리를 만들지 않는다.
+- 이 잠금은 다른 배타 잠금과 한 트랜잭션에 들지 않는다. 발급 트랜잭션이 넣는 쿠폰 행은 새 행이고, 발급 중지는 쿠폰 캠페인 하나만 바꾼다. 쿠폰 INSERT의 외래 키 검사가 요청자의 `users` 행에 공유 잠금을 걸지만, `users` 행을 배타로 잠그는 경로가 없어 순서에 들지 않는다. 그래서 전역 잠금 순서(ADR 0018 규칙 3)에 새 자리를 만들지 않는다.
 - 잠금 대기가 3초를 넘으면 `PessimisticLockingFailureException`이 오고, 기존의 409 `CONCURRENT_REQUEST`가 된다(ADR 0018 규칙 7, 8). 아무것도 발급되지 않았으므로 다시 보내도 된다.
 
 ## 4. 발급 중지
 
-`POST /api-admin/v1/coupon-campaigns/{campaignId}/suspend`는 한 방향이다. 이미 발급 중지인 쿠폰 캠페인에 다시 보내면 200이고 바뀌는 것이 없다. 발급 중지 전에 발급된 쿠폰은 남는다. 저장은 `issuable`이고, 관리자 응답은 그것을 `suspended`로 옮긴다.
+`POST /api-admin/v1/coupon-campaigns/{campaignId}/suspend`는 한 방향이다. 이미 발급 중지인 쿠폰 캠페인에 다시 보내면 200이고 바뀌는 것이 없다. 발급 중지 전에 발급된 쿠폰은 남는다. 저장하는 값과 관리자 응답의 필드가 모두 `suspended`다.
 
 ## 5. API와 오류
 
@@ -91,7 +91,7 @@
 | `POST /api-admin/v1/coupon-campaigns/{campaignId}/suspend` | 발급 중지. 200과 쿠폰 캠페인 |
 
 - `CouponResponse`: `couponId`, `campaignId`, `campaignName`, `discountAmount`, `issuedAt`.
-- 관리자 응답(`CouponCampaignAdminResponse`): 식별자, 이름, 할인액, 발급 한도, 발급 수, 발급 중지 여부.
+- 관리자 응답(`CouponCampaignAdminResponse`): 식별자(`campaignId`, 고객 응답의 이름과 같다), 이름, 할인액, 발급 한도, 발급 수, 발급 중지 여부.
 - 요청자는 기존 헤더 resolver로 받고 다시 확인하지 않는다(ADR 0015). 요청의 어떤 필드도 다른 사용자를 가리키지 못한다.
 
 | 경우 | status | code |
