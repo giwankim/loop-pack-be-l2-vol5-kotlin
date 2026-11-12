@@ -1,6 +1,7 @@
 package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
+import com.loopers.application.coupon.CouponIssueCapacityExceededException
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.coupon.CouponCampaignSuspendedException
 import com.loopers.domain.order.OrderAlreadyConfirmedException
@@ -53,6 +54,13 @@ class ApiControllerAdvice {
     fun handleCouponCampaignSuspended(e: CouponCampaignSuspendedException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.COUPON_CAMPAIGN_SUSPENDED)
+    }
+
+    /** Full slots are load, not a fault, and a burst answers many of them, so the log line carries no stack trace. */
+    @ExceptionHandler
+    fun handleCouponIssueCapacityExceeded(e: CouponIssueCapacityExceededException): ResponseEntity<ApiResponse<*>> {
+        log.warn { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_ISSUE_CAPACITY_EXCEEDED)
     }
 
     /**

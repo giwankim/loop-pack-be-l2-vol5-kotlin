@@ -2,8 +2,8 @@ package com.loopers.application.coupon.provided
 
 import com.loopers.application.coupon.CouponIssueSteps
 import com.loopers.application.coupon.required.CouponRepository
+import com.loopers.config.redis.RedisConfig
 import com.loopers.domain.coupon.Coupon
-import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.coupon.CouponCampaignSuspendedException
 import com.loopers.domain.shared.Money
@@ -11,10 +11,9 @@ import com.loopers.support.EnableTestPg
 import com.loopers.support.Pause
 import com.loopers.support.TestClock
 import com.loopers.support.captureSql
-import com.loopers.support.countCoupons
-import com.loopers.support.couponCampaignIssuedCount
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.heldCouponIssueSlotTokens
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -22,9 +21,10 @@ import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.dao.PessimisticLockingFailureException
-import org.springframework.data.domain.Slice
+import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import java.time.Instant
@@ -36,17 +36,19 @@ private val log = KotlinLogging.logger {}
  * `--tests '*CouponIssueIntegrationTest'` finds this class.
  *
  * The contention scenes release their calls together through a start gate and count the outcomes as successes, business rejections and
- * technical errors (spec 219 stories 4, 10, 33 and 34). They call the port, not HTTP, so they stay valid when a later step puts a
- * processing slot in front of the API. The rollback scene is a controlled injection: a spy makes the coupon's `save` throw after a flush. The lock scene pauses
- * one issue inside its transaction through a spy on the issuing step.
+ * technical errors (spec 219 stories 4, 10, 33 and 34). They call the port, and step 2's processing slots sit inside the port, so
+ * every scene passes through the slots at the default capacity of 10, so all 8 threads acquire a slot. The rollback scene is a
+ * controlled injection: a spy makes the coupon's `save` throw after a flush. The lock scene pauses one issue inside its transaction
+ * through a spy on the issuing step. Both check that the failed issue gave its slot back (spec 226 story 14): the rollback scene
+ * finds the Set empty after the failure, and the lock scene finds only the paused holder's token after the waiter's lock failure.
  *
  * `@EnableTestPg` is here only because it is what puts the pinnable [TestClock] in the context. Nothing in this class calls the PG.
  */
 @EnableTestPg
 class CouponIssueIntegrationTest(
     private val couponIssuer: CouponIssuer,
-    private val couponFinder: CouponFinder,
     private val clock: TestClock,
+    @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private val masterRedisTemplate: RedisTemplate<String, String>,
 ) : BaseCommittingApplicationServiceTest() {
     /** Where the rollback scene throws. Unstubbed, it is the real repository. */
     @MockkSpyBean
@@ -73,8 +75,8 @@ class CouponIssueIntegrationTest(
         assertThat(found.campaignName).isEqualTo("신규 가입 쿠폰")
         assertThat(found.discountAmount).isEqualTo(Money(3_000))
         assertThat(found.issuedAt).isEqualTo(Instant.parse("2026-11-11T01:02:03.123456Z"))
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -87,8 +89,8 @@ class CouponIssueIntegrationTest(
 
         assertThat(repeat.newlyIssued).isFalse()
         assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -103,8 +105,8 @@ class CouponIssueIntegrationTest(
         val repeat = couponIssuer.issue(holder.id, campaign.id)
         assertThat(repeat.newlyIssued).isFalse()
         assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -120,8 +122,8 @@ class CouponIssueIntegrationTest(
         val kept = inNewTransaction { entityManager.find(Coupon::class.java, first.coupon.id) }
         assertThat(kept.userId).isEqualTo(holder.id)
         assertThat(kept.issuedAt).isEqualTo(first.coupon.issuedAt)
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -135,8 +137,8 @@ class CouponIssueIntegrationTest(
 
         assertThat(repeat.newlyIssued).isFalse()
         assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -146,7 +148,7 @@ class CouponIssueIntegrationTest(
         val exception = assertThrows<CoreException> { couponIssuer.issue(customer.id, 999L) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND)
-        assertThat(countCoupons()).isZero()
+        assertThat(committedCouponCount()).isZero()
     }
 
     /** The first issue is the control: it shows that the filter would see a lock if a repeat sent one. */
@@ -171,8 +173,8 @@ class CouponIssueIntegrationTest(
             assertThrows<IllegalTransactionStateException> { couponIssuer.issue(customer.id, campaign.id) }
         }
 
-        assertThat(countCoupons()).isZero()
-        assertThat(issuedCount(campaign)).isZero()
+        assertThat(committedCouponCount()).isZero()
+        assertThat(committedIssuedCount(campaign)).isZero()
     }
 
     /**
@@ -194,8 +196,8 @@ class CouponIssueIntegrationTest(
         assertThat(outcomes).isEqualTo(expected)
         assertThat(outcomes.total).isEqualTo(customers.size)
         assertThat(results.mapNotNull { it.getOrNull() }).allSatisfy { assertThat(it.newlyIssued).isTrue() }
-        val couponRows = countCoupons()
-        val committedCount = issuedCount(campaign)
+        val couponRows = committedCouponCount()
+        val committedCount = committedIssuedCount(campaign)
         assertThat(couponRows).isEqualTo(outcomes.successes.toLong())
         assertThat(committedCount).isEqualTo(outcomes.successes)
         assertThat(committedCount).isEqualTo(totalQuota)
@@ -225,12 +227,12 @@ class CouponIssueIntegrationTest(
         val newlyIssued = answers.map { it.newlyIssued }
         assertThat(couponIds.distinct()).hasSize(1)
         assertThat(newlyIssued.count { it }).isOne()
-        val couponRows = countCoupons()
-        val committedCount = issuedCount(campaign)
+        val couponRows = committedCouponCount()
+        val committedCount = committedIssuedCount(campaign)
         assertThat(couponRows).isOne()
         assertThat(committedCount).isOne()
-        assertThat(couponsOf(customer.id).content.map { it.id }).containsExactly(couponIds.first())
-        assertThat(couponsOf(stranger.id).content).isEmpty()
+        assertThat(committedCouponsOf(customer.id).content.map { it.id }).containsExactly(couponIds.first())
+        assertThat(committedCouponsOf(stranger.id).content).isEmpty()
         log.info {
             "Same-user scene: 2 threads: coupon IDs $couponIds, newly issued $newlyIssued; " +
                 "coupon rows $couponRows, issued count $committedCount"
@@ -258,14 +260,15 @@ class CouponIssueIntegrationTest(
 
         assertThat(captured.statements.filter { it.startsWith("update coupon_campaign") }).hasSize(1)
         assertThat(captured.statements.filter { it.startsWith("insert into coupon ") }).isEmpty()
-        assertThat(countCoupons()).isZero()
-        assertThat(issuedCount(campaign)).isZero()
+        assertThat(committedCouponCount()).isZero()
+        assertThat(committedIssuedCount(campaign)).isZero()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
 
         val retried = couponIssuer.issue(customer.id, campaign.id)
 
         assertThat(retried.newlyIssued).isTrue()
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     /**
@@ -285,12 +288,13 @@ class CouponIssueIntegrationTest(
         pause.awaitHeld()
 
         assertThrows<PessimisticLockingFailureException> { couponIssuer.issue(waiter.id, campaign.id) }
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).hasSize(1)
 
         pause.release()
         assertThat(holding.await().newlyIssued).isTrue()
-        assertThat(couponsOf(waiter.id).content).isEmpty()
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponsOf(waiter.id).content).isEmpty()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     /** [userId]'s issuing transaction pauses after its writes, with the campaign still locked. Other users' issues are not stubbed. */
@@ -301,19 +305,7 @@ class CouponIssueIntegrationTest(
         }
     }
 
-    private fun couponsOf(userId: Long): Slice<Coupon> {
-        return inNewTransaction { couponFinder.findAll(userId, CouponListRequest()) }
-    }
-
     private fun lockingReads(statements: List<String>): List<String> {
         return statements.filter { it.contains("for update", ignoreCase = true) }
-    }
-
-    private fun countCoupons(): Long {
-        return inNewTransaction { entityManager.countCoupons() }
-    }
-
-    private fun issuedCount(campaign: CouponCampaign): Int {
-        return inNewTransaction { entityManager.couponCampaignIssuedCount(campaign.id) }
     }
 }

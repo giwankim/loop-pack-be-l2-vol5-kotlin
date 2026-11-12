@@ -1,14 +1,18 @@
 package com.loopers.adapter.webapi.v1.coupon
 
 import com.loopers.adapter.webapi.UserIdHeader
+import com.loopers.config.redis.RedisConfig
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.countCoupons
 import com.loopers.support.couponCampaignIssuedCount
+import com.loopers.support.heldCouponIssueSlotTokens
 import com.loopers.support.isEqualToLong
 import com.loopers.support.test.BaseWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -25,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional
 class CouponApiTest(
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
+    @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private val masterRedisTemplate: RedisTemplate<String, String>,
 ) : BaseWebApiAdapterTest() {
     companion object {
         private const val CAMPAIGNS = "/api/v1/coupon-campaigns"
@@ -50,6 +55,46 @@ class CouponApiTest(
         body.extractingPath("$.data.issuedAt").isNotNull()
         assertThat(entityManager.countCoupons()).isOne()
         assertThat(entityManager.couponCampaignIssuedCount(campaign.id)).isOne()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
+    }
+
+    @Test
+    fun `with every slot taken an issue answers 429 COUPON_ISSUE_CAPACITY_EXCEEDED and issues nothing`() {
+        val customer = prepareUser()
+        val campaign = prepareCouponCampaign()
+        takeEveryCouponIssueSlot()
+
+        val body = assertThat(requestIssue(campaign.id, customer.id)).hasStatus(HttpStatus.TOO_MANY_REQUESTS).bodyJson()
+
+        body.extractingPath("$.meta.result").isEqualTo("FAIL")
+        body.extractingPath("$.meta.errorCode").isEqualTo("COUPON_ISSUE_CAPACITY_EXCEEDED")
+        assertThat(entityManager.countCoupons()).isZero()
+        assertThat(entityManager.couponCampaignIssuedCount(campaign.id)).isZero()
+    }
+
+    @Test
+    fun `with every slot taken a holder's repeat request still answers 200 with the same body`() {
+        val holder = prepareUser()
+        val campaign = prepareCouponCampaign()
+        val first = requestIssue(campaign.id, holder.id)
+        takeEveryCouponIssueSlot()
+
+        val repeat = requestIssue(campaign.id, holder.id)
+
+        assertThat(repeat).hasStatusOk()
+        assertThat(repeat.response.contentAsString).isEqualTo(first.response.contentAsString)
+    }
+
+    @Test
+    fun `with every slot taken the coupon list still answers`() {
+        val holder = prepareUser()
+        val issued = prepareCoupon(user = holder).id
+        takeEveryCouponIssueSlot()
+
+        val body = assertThat(requestList(holder.id)).hasStatusOk().bodyJson()
+
+        body.extractingPath("$.data.items.length()").isEqualTo(1)
+        body.extractingPath("$.data.items[0].couponId").isEqualToLong(issued)
     }
 
     @Test

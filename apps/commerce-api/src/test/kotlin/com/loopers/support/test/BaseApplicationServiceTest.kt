@@ -4,6 +4,7 @@ import com.loopers.adapter.integration.pg.LocalPgGateway
 import com.loopers.application.brand.provided.BrandRegister
 import com.loopers.application.coupon.provided.CouponCampaignRegister
 import com.loopers.application.coupon.provided.CouponIssuer
+import com.loopers.application.coupon.required.CouponIssueSlots
 import com.loopers.application.like.provided.Liker
 import com.loopers.application.like.required.LikeRepository
 import com.loopers.application.order.provided.OrderConfirmer
@@ -136,6 +137,9 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var couponIssuer: CouponIssuer
+
+    @Autowired
+    private lateinit var couponIssueSlots: CouponIssueSlots
 
     /** `@EnableTestPg`가 가져온 컨텍스트에만 있다. 테스트 PG를 쓰지 않는 컨텍스트에서는 비어 있다. */
     @Autowired
@@ -286,6 +290,21 @@ abstract class BaseApplicationServiceTest {
         user: User = prepareUser(),
     ): Coupon {
         return couponIssuer.issue(user.id, campaign.id).coupon.also { coupon = it }
+    }
+
+    /**
+     * Takes every processing slot through [CouponIssueSlots], acquiring until it answers `null`, so a scene holds whatever the context's
+     * capacity is. The tokens are no issue in flight. Redis is flushed after the test, which empties the Set.
+     */
+    protected fun takeEveryCouponIssueSlot(): List<String> {
+        val tokens = generateSequence { couponIssueSlots.acquire() }.toList()
+        check(tokens.isNotEmpty()) { "No processing slot was free to take." }
+
+        return tokens
+    }
+
+    protected fun releaseCouponIssueSlot(token: String) {
+        couponIssueSlots.release(token)
     }
 
     protected fun suspendCouponCampaign(campaign: CouponCampaign = this.couponCampaign) {

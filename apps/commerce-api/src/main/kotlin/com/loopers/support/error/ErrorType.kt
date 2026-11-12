@@ -50,8 +50,16 @@ enum class ErrorType(val status: HttpStatus, val code: String, val message: Stri
     PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "결제를 찾을 수 없습니다."),
     PG_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PG_UNAVAILABLE", "PG에 결제를 조회할 수 없습니다. 잠시 뒤 다시 보내 주세요."),
 
-    /** Coupons. A customer has to tell these refusals apart, so each has its own code. */
+    /**
+     * Coupons. A customer has to tell these refusals apart, so each has its own code. Full processing slots are a 429, the one refusal
+     * that sending the request again may get past. It carries no `Retry-After`: nothing knows when a slot will be free.
+     */
     COUPON_CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "COUPON_CAMPAIGN_NOT_FOUND", "쿠폰 캠페인을 찾을 수 없습니다."),
     COUPON_CAMPAIGN_SUSPENDED(HttpStatus.CONFLICT, "COUPON_CAMPAIGN_SUSPENDED", "쿠폰 캠페인의 발급이 중지되었습니다."),
     COUPON_CAMPAIGN_EXHAUSTED(HttpStatus.CONFLICT, "COUPON_CAMPAIGN_EXHAUSTED", "쿠폰 캠페인의 발급 한도가 소진되었습니다."),
+    COUPON_ISSUE_CAPACITY_EXCEEDED(
+        HttpStatus.TOO_MANY_REQUESTS,
+        "COUPON_ISSUE_CAPACITY_EXCEEDED",
+        "쿠폰 발급을 처리할 자리가 없습니다. 잠시 뒤 다시 시도해 주세요.",
+    ),
 }
