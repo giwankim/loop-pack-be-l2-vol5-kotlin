@@ -1,7 +1,6 @@
 package com.loopers.application.coupon.provided
 
 import com.loopers.application.coupon.CouponIssueCapacityExceededException
-import com.loopers.application.coupon.required.CouponIssueSlots
 import com.loopers.config.redis.RedisConfig
 import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
@@ -21,12 +20,11 @@ import org.springframework.data.redis.core.RedisTemplate
 
 /**
  * Issuing through the provided port with the processing slots in front of the issuing transaction, on real Redis and MySQL at the
- * configured capacity. Every scene is sequential: a taken slot is a token the test acquired through [CouponIssueSlots], not an issue
- * in flight. Redis is flushed after each test.
+ * configured capacity. Every scene is sequential: a taken slot is a token the base acquired through the slots port, not an issue in
+ * flight. Redis is flushed after each test.
  */
 class CouponIssueAdmissionTest(
     private val couponIssuer: CouponIssuer,
-    private val couponIssueSlots: CouponIssueSlots,
     @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private val masterRedisTemplate: RedisTemplate<String, String>,
 ) : BaseCommittingApplicationServiceTest() {
     @Test
@@ -37,14 +35,14 @@ class CouponIssueAdmissionTest(
         val result = couponIssuer.issue(customer.id, campaign.id)
 
         assertThat(result.newlyIssued).isTrue()
-        assertThat(heldTokens()).isEmpty()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
     }
 
     @Test
     fun `with every slot taken a user without a coupon is refused, and nothing is issued`() {
         val customer = prepareUser()
         val campaign = prepareCouponCampaign()
-        takeEverySlot()
+        takeEveryCouponIssueSlot()
 
         val captured = captureSql {
             assertThrows<CouponIssueCapacityExceededException> { couponIssuer.issue(customer.id, campaign.id) }
@@ -60,7 +58,7 @@ class CouponIssueAdmissionTest(
         val holder = prepareUser()
         val campaign = prepareCouponCampaign()
         val first = couponIssuer.issue(holder.id, campaign.id)
-        takeEverySlot()
+        takeEveryCouponIssueSlot()
 
         val repeat = couponIssuer.issue(holder.id, campaign.id)
 
@@ -73,16 +71,16 @@ class CouponIssueAdmissionTest(
     fun `after a slot is released the refused user's retry is issued`() {
         val customer = prepareUser()
         val campaign = prepareCouponCampaign()
-        val tokens = takeEverySlot()
+        val tokens = takeEveryCouponIssueSlot()
         assertThrows<CouponIssueCapacityExceededException> { couponIssuer.issue(customer.id, campaign.id) }
 
-        couponIssueSlots.release(tokens.first())
+        releaseCouponIssueSlot(tokens.first())
         val retried = couponIssuer.issue(customer.id, campaign.id)
 
         assertThat(retried.newlyIssued).isTrue()
         assertThat(countCoupons()).isOne()
         assertThat(issuedCount(campaign)).isOne()
-        assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens.drop(1))
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens.drop(1))
     }
 
     @Test
@@ -92,7 +90,7 @@ class CouponIssueAdmissionTest(
 
         assertThrows<CouponCampaignExhaustedException> { couponIssuer.issue(prepareUser().id, campaign.id) }
 
-        assertThat(heldTokens()).isEmpty()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
         assertThat(issuedCount(campaign)).isOne()
     }
 
@@ -103,7 +101,7 @@ class CouponIssueAdmissionTest(
 
         assertThrows<CouponCampaignSuspendedException> { couponIssuer.issue(prepareUser().id, campaign.id) }
 
-        assertThat(heldTokens()).isEmpty()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
         assertThat(issuedCount(campaign)).isZero()
     }
 
@@ -112,19 +110,7 @@ class CouponIssueAdmissionTest(
         val exception = assertThrows<CoreException> { couponIssuer.issue(prepareUser().id, 999L) }
 
         assertThat(exception.errorType).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND)
-        assertThat(heldTokens()).isEmpty()
-    }
-
-    /** Acquires until the port answers `null`, so the scene holds whatever the configured capacity is. */
-    private fun takeEverySlot(): List<String> {
-        val tokens = generateSequence { couponIssueSlots.acquire() }.toList()
-        assertThat(tokens).isNotEmpty()
-
-        return tokens
-    }
-
-    private fun heldTokens(): Set<String> {
-        return masterRedisTemplate.heldCouponIssueSlotTokens()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
     }
 
     private fun countCoupons(): Long {

@@ -56,6 +56,7 @@ class ApiControllerAdvice {
         return failureResponse(errorType = ErrorType.COUPON_CAMPAIGN_SUSPENDED)
     }
 
+    /** Full slots are load, not a fault, and a burst answers many of them, so the log line carries no stack trace. */
     @ExceptionHandler
     fun handleCouponIssueCapacityExceeded(e: CouponIssueCapacityExceededException): ResponseEntity<ApiResponse<*>> {
         log.warn { "${e::class.simpleName} : ${e.message}" }

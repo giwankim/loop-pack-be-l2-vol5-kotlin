@@ -1,7 +1,6 @@
 package com.loopers.adapter.webapi.v1.coupon
 
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.coupon.required.CouponIssueSlots
 import com.loopers.config.redis.RedisConfig
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.countCoupons
@@ -30,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional
 class CouponApiTest(
     private val databaseCleanUp: DatabaseCleanUp,
     private val jdbc: JdbcTemplate,
-    private val couponIssueSlots: CouponIssueSlots,
     @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private val masterRedisTemplate: RedisTemplate<String, String>,
 ) : BaseWebApiAdapterTest() {
     companion object {
@@ -64,7 +62,7 @@ class CouponApiTest(
     fun `with every slot taken an issue answers 429 COUPON_ISSUE_CAPACITY_EXCEEDED and issues nothing`() {
         val customer = prepareUser()
         val campaign = prepareCouponCampaign()
-        takeEverySlot()
+        takeEveryCouponIssueSlot()
 
         val body = assertThat(requestIssue(campaign.id, customer.id)).hasStatus(HttpStatus.TOO_MANY_REQUESTS).bodyJson()
 
@@ -79,7 +77,7 @@ class CouponApiTest(
         val holder = prepareUser()
         val campaign = prepareCouponCampaign()
         val first = requestIssue(campaign.id, holder.id)
-        takeEverySlot()
+        takeEveryCouponIssueSlot()
 
         val repeat = requestIssue(campaign.id, holder.id)
 
@@ -91,7 +89,7 @@ class CouponApiTest(
     fun `with every slot taken the coupon list still answers`() {
         val holder = prepareUser()
         val issued = prepareCoupon(user = holder).id
-        takeEverySlot()
+        takeEveryCouponIssueSlot()
 
         val body = assertThat(requestList(holder.id)).hasStatusOk().bodyJson()
 
@@ -304,12 +302,6 @@ class CouponApiTest(
             body.extractingPath("$.meta.errorCode").isEqualTo("Bad Request")
             body.extractingPath("$.meta.message").asString().contains(message)
         }
-    }
-
-    /** Acquires through the port until it answers `null`, whatever the configured capacity is. */
-    private fun takeEverySlot() {
-        val tokens = generateSequence { couponIssueSlots.acquire() }.toList()
-        assertThat(tokens).isNotEmpty()
     }
 
     private fun requestList(userId: Long?, vararg query: Pair<String, String>): MvcTestResult {

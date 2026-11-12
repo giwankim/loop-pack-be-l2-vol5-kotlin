@@ -42,7 +42,7 @@ class CouponIssueSlotsTest(
 
         assertThat(tokens).doesNotContainNull()
         assertThat(overflow).isNull()
-        assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens)
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }
 
     @Test
@@ -53,7 +53,7 @@ class CouponIssueSlotsTest(
         val next = slots.acquire()
 
         assertThat(next).isNotNull()
-        assertThat(heldTokens()).containsExactlyInAnyOrder(next, tokens[1], tokens[2])
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrder(next, tokens[1], tokens[2])
     }
 
     @Test
@@ -73,7 +73,7 @@ class CouponIssueSlotsTest(
         slots.release(tokens.first())
         slots.release(tokens.first())
 
-        assertThat(heldTokens()).containsExactlyInAnyOrder(tokens[1], tokens[2])
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrder(tokens[1], tokens[2])
     }
 
     @Test
@@ -82,7 +82,7 @@ class CouponIssueSlotsTest(
 
         slots.release(UUID.randomUUID().toString())
 
-        assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens)
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }
 
     @Test
@@ -95,7 +95,7 @@ class CouponIssueSlotsTest(
         assertThat(outcomes.total).isEqualTo(THREADS)
         val tokens = results.mapNotNull { it.getOrThrow() }
         assertThat(tokens).hasSize(CAPACITY).doesNotHaveDuplicates()
-        assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens)
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }
 
     @Test
@@ -106,10 +106,6 @@ class CouponIssueSlotsTest(
 
         assertThat(tokens).doesNotContainNull()
         assertThat(overflow).isNull()
-        assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens)
-    }
-
-    private fun heldTokens(): Set<String> {
-        return masterRedisTemplate.heldCouponIssueSlotTokens()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }
 }
