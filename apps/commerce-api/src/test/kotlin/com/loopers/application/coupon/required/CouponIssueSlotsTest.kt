@@ -3,6 +3,7 @@ package com.loopers.application.coupon.required
 import com.loopers.adapter.persistence.coupon.CouponIssueProperties
 import com.loopers.adapter.persistence.coupon.RedisCouponIssueSlots
 import com.loopers.config.redis.RedisConfig
+import com.loopers.support.heldCouponIssueSlotTokens
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -29,7 +30,6 @@ class CouponIssueSlotsTest(
 
         /** `application.yml`'s `coupon-issue.slot-capacity`, the same in every profile. */
         private const val CONFIGURED_CAPACITY = 10
-        private const val SLOTS_KEY = "coupon-issue:slots"
     }
 
     private val slots = RedisCouponIssueSlots(masterRedisTemplate, CouponIssueProperties(slotCapacity = CAPACITY))
@@ -110,6 +110,6 @@ class CouponIssueSlotsTest(
     }
 
     private fun heldTokens(): Set<String> {
-        return masterRedisTemplate.opsForSet().members(SLOTS_KEY).orEmpty()
+        return masterRedisTemplate.heldCouponIssueSlotTokens()
     }
 }
