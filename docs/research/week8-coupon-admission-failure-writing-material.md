@@ -108,6 +108,8 @@ A two-axis review ran on the uncommitted tree before `b8e67853`, and its fixes a
 
 ## Issue 234: a real Redis outage closes admission, and the rule is written down
 
+Recorded from [issue 234's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/234#issuecomment-6825196956).
+
 Implemented as `51c3939f` (the scenes) and `28c3aca1` (ADR 0037 and design section 11). `scripts/final-check --app commerce-api` on `28c3aca1`, a clean tree, started 2026-11-12T13:28:05Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 113 classes, 1186 tests (5 min 59 s), 0 failures, 0 errors, 0 skipped**. Issue 233 ended at 112 classes and 1182 tests, so this ticket adds 1 class and 4 tests: `CouponIssueRedisFailureTest`, which starts one Spring context of its own (the `StoppableRedis` one). No production code changed.
 
 ### Acceptance criteria
