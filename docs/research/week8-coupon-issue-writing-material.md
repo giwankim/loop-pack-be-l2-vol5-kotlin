@@ -185,3 +185,142 @@ A two-axis review ran on the code before the final check.
 - **Spec:** no missing requirement or scope creep. It found the rollback scene's text wrong: `save` of the managed campaign sends no SQL, so nothing had reached MySQL when the stub threw. It also found the design doc's connection-limit sentence backwards (`dd888459` came before this ticket). Both were fixed. The 409 being proven at the port was raised and kept (above).
 - **Standards:** the rollback stub didn't flush as the mid-failure rule asks, the quota scene compared counts only with literals, the quota KDoc presented the deadlock as the mechanism, the lock holder bypassed the Service step, and the log lines re-read the committed state. All were fixed before `abe63641`.
 - **Left as they are:** `customer` as a local name, which `CONTEXT.md` lists under Avoid but the repo already uses 18 times, and `outcomes.total` missing from the same-user scene, which the `Outcomes` equality already implies.
+
+## Spec 219: the closing review
+
+Recorded 2026-11-12 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219#issuecomment-6812046213) of [spec 219](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219). The text is the comment's, with its blob URLs and its headings one level down.
+
+Step 1 of week 8 is built, and its closing review is done. `scripts/final-check --app commerce-api` on `6bbe944e`, a clean tree, started 2026-11-12T01:27:40Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 105 classes, 1143 tests (4 min 58 s), 0 failures, 0 errors, 0 skipped**. Week 7 ended at 95 classes and 1062 tests, so this step adds 10 classes and 81 tests. Only documents changed after `6bbe944e`.
+
+Tickets 220–224 are closed, each with its own comment. [Design 1.2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/design/coupons.md#12-1단계가-만든-것) lists what each one built.
+
+### Where the implementation differs
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| `CouponCampaign` stores 발급 가능 여부 (`issuable`) | It stores `suspended`, `CONTEXT.md`'s 발급 중지. An exhausted campaign also read `issuable = true`, and the admin response had to negate it | This review (design 2) |
+| A name is not blank | It is also at most 100 characters, like `Brand` and `Product`. Without the cap a long name fails at the column as a 500 | Issue 220 |
+| A unique key on `(campaign_id, user_id)` | Also foreign keys from `coupon` to `coupon_campaign` and `users`, as ADR 0015 asks of every scalar reference | Issue 221 |
+| The campaign lock joins no transaction that locks another row | It joins no other *exclusive* lock. The coupon insert's foreign key check share-locks the requester's `users` row. Nothing locks `users` exclusively, so the lock order still needs no new position | This review ([design 3.3](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/design/coupons.md#33-잠금), [ADR 0018](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/adr/0018-pessimistic-row-locks-in-one-global-order.md) rule 3's note) |
+
+**Additions the spec didn't ask for:**
+
+- A user's suspension answers 403. The list answers 400 for a bad page or size, and it still lists a coupon whose campaign is exhausted or suspended. Each has a test.
+- The test MySQL's `max_connections` is 300 (`dd888459`). The suite peaked at 147 of the default 151 connections, and issue 224's spy added a test context.
+- `explainTree` moved to `com.loopers.support` for its second user, and `CODING_STANDARDS.md` now allows `@EnableTestPg` on a scene that needs a pinnable `TestClock`.
+
+**Settled while building:**
+
+- Without `FOR UPDATE` the quota didn't overrun in either red run: it deadlocked (MySQL 1213), because the coupon's foreign key share-locks the campaign row before the count's UPDATE. The design calls that an accident, not a guard ([design 8.2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/design/coupons.md#82-붉은-확인)).
+- The 409 `CONCURRENT_REQUEST` after the 3 s wait is proven at the port, so it stays valid when step 2 puts a processing slot in front of the API. `LockFailureApiTest` already pins the HTTP mapping.
+
+### The closing review
+
+A two-axis review of `week8...feat/coupon-issue` (14 commits, 54 files), with one reviewer on the standards and one on this spec. Neither found a hard violation or a missing requirement. Standards reported 2 soft breaches and 2 smells worth deciding, Spec reported 1 overstatement in the docs and 1 minor naming difference. Each was checked against the code and decided one by one.
+
+#### What changed
+
+`de9a3bdb` and `6bbe944e`:
+
+- **`issuable` → `suspended`** on `CouponCampaign`, so `issue()` reads `if (suspended)` and `CouponCampaignAdminResponse` maps the field without a `!`. Design 2 records the departure from the spec, and issue 220's section of the writing material gets a dated note.
+- **The admin response's `id` is now `campaignId`**, matching the customer's `CouponResponse`. This changes the admin API's JSON. Its two assertions and design 5 changed with it.
+- **`@PathVariable("…")` is spelled out** in `CouponApi` and in three handlers of `OrderApi`, like every other controller.
+- **Design 3.3 and ADR 0018's note** now say "다른 배타 잠금" and name the shared lock on `users`.
+
+#### Left as they were
+
+- **`campaignId` rather than `couponCampaignId` as the parameter name.** The property, the query method and the URL all use the short form already.
+- **`MIN_TOTAL_QUOTA = 1L` compared with an `Int`.** It is a `Long` because `@Min` takes one.
+- **The holder check written twice**, before the lock and under it. The spec asks for both.
+- **The two new `ApiControllerAdvice` handlers** shaped like the existing ones, and the `longValueExact()` mapping in both responses.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/research/week8-coupon-issue-writing-material.md#spec-219-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/coupon-issue` into `week8`, in the shape of week 7's PRs, written after the spec's closing review. The PR's copy links these documents with blob URLs and carries the spec's closing comment.
+
+Title: `feat(commerce-api): issue coupons from a coupon campaign up to its quota, one per customer`
+
+````markdown
+## Summary
+
+Week 8 step 1. A coupon campaign issues coupons until its quota runs out, and a customer holds at most one per campaign, guarded by the database alone. Redis's processing slots (step 2) and its failure boundary (step 3) come later and sit in front of this.
+
+- **Spec:** issue 219, with tickets 220–224, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219#issuecomment-6812046213)
+- **Decision:** a dated note on [ADR 0018](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/adr/0018-pessimistic-row-locks-in-one-global-order.md) rule 3. No new ADR
+- **Design:** [`docs/design/coupons.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/design/coupons.md). 3 is issuing, 6 what wasn't chosen, 8 the scenes, red checks and final check
+- **Writing material:** [`docs/research/week8-coupon-issue-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-issue/docs/research/week8-coupon-issue-writing-material.md), which holds every ticket's closing comment
+
+```text
+POST /api/v1/coupon-campaigns/{campaignId}/issues
+  CouponIssueService.issue                # Propagation.NEVER
+    early read of the requester's coupon  # found: 200, nothing locked
+    CouponIssueSteps.issue                # own TX
+      CouponCampaignFinder.findForUpdate  # first statement; 404, or 409 CONCURRENT_REQUEST after 3 s
+      re-read the requester's coupon      # found under the lock: 200
+      campaign.issue()                    # 409 SUSPENDED, then 409 EXHAUSTED; else issued count + 1
+      save campaign, save coupon          # 201, committed together
+GET  /api/v1/coupons                              # own coupons, issuedAt DESC, couponId DESC, Slice
+POST /api-admin/v1/coupon-campaigns               # register
+POST /api-admin/v1/coupon-campaigns/{campaignId}/suspend  # one way, repeatable, locks the row
+```
+
+The early read lets a customer who already holds a coupon skip the campaign row's queue, and step 2 will take a processing slot between the two steps.
+
+## Review Points
+
+#### 1. Is a row lock the right guard for the quota?
+
+Every issue for one campaign queues on its row. A conditional `UPDATE … where issued_count < total_quota` would be cheaper, but it moves the quota rule out of `CouponCampaign` into SQL, and the order of suspended before exhausted with it, the same reason stock isn't done that way (ADR 0018). Step 2 bounds how many requests reach the queue at once.
+
+**In practice, at what contention would you give up the rule's single home for the conditional UPDATE?**
+
+#### 2. Is a re-check under the lock enough for duplicates?
+
+The unique key on `(campaign_id, user_id)` stays, but no code catches its violation: under the lock, the second of a customer's two requests reads the coupon the first committed. The red check shows the key catching it when the re-check is removed, as a 500.
+
+**Would you still write the catch-and-find recovery path as a second line of defence?**
+
+#### 3. Is a deadlock-free red run a fair proof of `FOR UPDATE`?
+
+Without `FOR UPDATE` the quota scene didn't overrun: the coupon's foreign key share-locks the campaign row, and the count's UPDATE deadlocked instead. The scene still went red, but through technical errors rather than a sixth coupon. The design calls the foreign key an accident, since a transaction that commits before another inserts still loses an update.
+
+**Would you want a scene that shows the overrun itself, or is the deadlock evidence enough?**
+
+## Evidence
+
+**Before:** on `week8`, there are no coupons.
+
+**After:** `CouponIssueIntegrationTest`'s scenes on real MySQL, from the final check's run (`scripts/scene-lines`):
+
+```text
+Quota scene: 8 users, total quota 5: issued 5, exhausted 3, technical errors 0; coupon rows 5, issued count 5
+Same-user scene: 2 threads: coupon IDs [1, 1], newly issued [true, false]; coupon rows 1, issued count 1
+```
+
+The rollback scene fails the coupon insert after the count's UPDATE has reached MySQL, and leaves 0 coupons and issued count 0. The lock scene answers `PessimisticLockingFailureException` after 3 s and issues nothing.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| Campaign read without `FOR UPDATE` | Quota scene red twice: 5 issued with 3 deadlocks, then 4 with 4 |
+| Re-check under the lock removed | Same-user scene red: `Duplicate entry '1-1' for key 'coupon.UK_COUPON_ON_CAMPAIGN_ID_AND_USER_ID'` |
+
+`scripts/final-check --app commerce-api` on `6bbe944e`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 105 (95 before) | 1143 (1062 before) | 0 |
+
+## Merge Danger
+
+**Door:** two-way
+
+Two new tables, `coupon_campaign` and `coupon`, created from the entities like every other table. A revert leaves them behind, unused.
+
+**Blast Radius:** coupons only
+
+- **New endpoints only.** Orders, payments, the outbox and commerce-streamer are unchanged. `OrderApi` only spells out its `@PathVariable` names.
+- **Test infrastructure.** The test MySQL's `max_connections` is 300, shared with commerce-streamer's tests.
+- **Out of scope:** using a coupon, applying its discount to an order, admin reads of campaigns, and Redis.
+````
