@@ -403,6 +403,10 @@ Restarted Redis: 503 during the outage, still 503 after the start with Redis ans
 scripts/final-check --app commerce-api
 ```
 
+- 끝의 확인은 2026-11-12 `28c3aca1`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`로 돌렸다(13:28:05Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 113개 클래스, 1186개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 59 s).
+- 2단계가 끝난 109개 클래스, 1164개 테스트에서 티켓 232가 10개 테스트를, 233이 3개 클래스와 8개 테스트를, 234가 `CouponIssueRedisFailureTest`의 1개 클래스와 4개 테스트를 더했다. `HexagonalArchitectureTest`는 규칙을 바꾸지 않고 통과했다.
+- 그 실행의 보고서에서 읽은 11.8절의 줄도 같고, 걸린 Redis 앞의 거절만 129 ms였다(`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueRedisFailureTest`).
+
 ### 11.10 3단계 뒤에 남은 것
 
 - 여러 인스턴스가 함께 닫히고 열리는 것, Redis나 DB에 두는 수용 상태. 지금은 인스턴스마다다(11.7절).

@@ -105,3 +105,65 @@ A two-axis review ran on the uncommitted tree before `b8e67853`, and its fixes a
   - The test's `INSTANCE_ID = "localhost"` repeats `CouponIssueSlotsTest`'s constant.
   - A third class repeats the `ListAppender` setup.
   - The real-outage scenes (stopped or paused Redis, a release failing mid-transaction, Redis down at startup) are issue 234's.
+
+## Issue 234: a real Redis outage closes admission, and the rule is written down
+
+Implemented as `51c3939f` (the scenes) and `28c3aca1` (ADR 0037 and design section 11). `scripts/final-check --app commerce-api` on `28c3aca1`, a clean tree, started 2026-11-12T13:28:05Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 113 classes, 1186 tests (5 min 59 s), 0 failures, 0 errors, 0 skipped**. Issue 233 ended at 112 classes and 1182 tests, so this ticket adds 1 class and 4 tests: `CouponIssueRedisFailureTest`, which starts one Spring context of its own (the `StoppableRedis` one). No production code changed.
+
+### Acceptance criteria
+
+- [x] **Redis stopped, a new user issues: 503 `COUPON_ISSUE_ADMISSION_CLOSED`, no coupon row, issued count 0, no `FOR UPDATE`.** The first scene. The newcomer's list is empty; the only row and the issued count of 1 are the holder's, prepared before the stop.
+- [x] **In the same outage a holder's repeat answers 200 with the same coupon, and the coupon list answers.** The same scene.
+- [x] **Redis started again: a new user still gets 503; after the opening, 201.**
+- [x] **Redis paused: a new user gets 503 within the command timeout, and admission is still closed after unpausing.** Asserted against a 2 s bound, as the repo's Redis failure tests assert time. The recorded refusal took 123–129 ms (100 ms command timeout plus the early lookup). `RedisTimeoutTest` owns the 100 ms value itself.
+- [x] **Redis stopped during the issuing transaction: 201, coupon row 1, issued count 1; after the start the token is still in the Set and the next user gets 503; after the opening the Set is empty and the next user gets 201.** The token survives because `StoppableRedis` saves an RDB on SIGTERM.
+- [x] **Both red checks are recorded in the design doc with what failed.** Design 11.8.
+- [x] **The scene lines are readable with `scripts/scene-lines CouponIssueRedisFailureTest`.** Each scene logs one INFO line after its assertions.
+- [x] **ADR 0037 and the design doc section are written, in Korean, with the limits stated.** Design 11.7 has the five limits from spec 231.
+- [x] **`scripts/final-check --app commerce-api` passes on a clean tree, and its commit, timings and test counts are in the design doc.** Design 11.9.
+- [x] **The closing comment is appended to this document.**
+
+### Recorded run
+
+From the final check's reports (`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueRedisFailureTest`):
+
+```
+Release failed: 201 with coupon rows 1, issued count 1; after the start 1 token left in the Set and the next user 503; after the opening 0 tokens and the next user 201
+Stopped Redis: new user 503 COUPON_ISSUE_ADMISSION_CLOSED with 0 FOR UPDATE; holder 200 with the same coupon, list 200; coupon rows 1 (the holder's), issued count 1
+Paused Redis: new user 503 in 129 ms (bound 2000 ms), still 503 after unpausing; coupon rows 0, issued count 0
+Restarted Redis: 503 during the outage, still 503 after the start with Redis answering, 201 after the opening; coupon rows 1, issued count 1
+```
+
+### Red checks
+
+Uncommitted edits to `CouponIssueAdmission`, run against `CouponIssueRedisFailureTest` and reverted (2026-11-12):
+
+| Mutation | Red scenes |
+| --- | --- |
+| A failed acquire does not close admission (the `close` call removed from `acquire`'s `catch`) | 2: the restarted-Redis scene and the paused scene, both `expected: 503 but was: 201`. The spec expected only the first; the unpause plays the same part as the restart |
+| `open()` without its cleanup (`releaseOwnTokens()` removed) | 1: the release-failed scene at the empty Set, `Expecting empty but was: ["localhost:6097fd84-…"]` |
+
+### Decisions made while implementing
+
+- **The class extends `BaseWebApiAdapterTest`, not the week 4 context.** It needs MockMvc and its own spy, so it could not share `ProductCacheRedisFailureTest`'s context, which spec 231 allowed for ("나눠 쓸 수 있으면").
+- **Each scene opens admission before it starts, as well as in cleanup.** A new context's first handshake is bound by the 100 ms command timeout, so the startup's opening can fail and leave the first scene closed. That is the "Redis down at startup" behaviour, but it is not the scene under test.
+- **The spy that stops Redis lives in `support/CouponIssueSpies.kt`** as `stopRedisDuringTheIssueOf`. The review then folded all three stubs there into one private `beforeTheIssueOf(userId) { … }`.
+- **The two scenes of spec 231's seam-2 table that need no outage stay where issue 233 put them.** The vanished token is in `CouponIssueAdmissionApiTest` (HTTP), and the latch-held opening is in `CouponIssueAdmissionClosingTest` (port). Design 11.8 says so.
+- **Design 11.2 corrects a reason from issue 233's notes.** `CouponIssueAdmission` is `NEVER` because under `REQUIRED` the issuing transaction would join `admit`'s and commit after the release, so a free slot would no longer mean the database work is over (9.2). The early read sits outside `admit` either way.
+
+### Review
+
+A two-axis review ran on the uncommitted tree before `51c3939f`, and its fixes are in that commit.
+
+- **Spec:** nothing missing. Fixed:
+  - every 503 now asserts `COUPON_ISSUE_ADMISSION_CLOSED`;
+  - the stopped scene checks that the newcomer's own list is empty;
+  - cleanup empties the tables before reopening, so a failed opening leaves no rows behind;
+  - design 11.8 now says where the two moved scenes are, and that the pause bound is 2 s rather than the timeout.
+- **Standards:** no hard violation. Fixed: the triplicated spy stub, and two dated notes in `CODING_STANDARDS.md` naming this class's base and constructor dependencies.
+- **Left as they are:**
+  - `open()` runs both before each scene and in cleanup, because the spec asks for cleanup to open again.
+  - "안전한 분산 세마포어가 아니다" uses an Avoid-list word as a contrast, as spec 231 itself does.
+  - `CONTEXT.md` says opening "사람이 시켜야 한다", while a restart opens unattended. ADR 0037 records that as a cost, and the glossary is left to its owner.
+  - Each scene reads the coupon-rows / issued-count pair, as the earlier coupon tests do.
+  - Redis down at startup is not run over HTTP (design 11.10).
