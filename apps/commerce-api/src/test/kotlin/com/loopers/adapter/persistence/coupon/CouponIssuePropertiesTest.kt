@@ -33,6 +33,7 @@ class CouponIssuePropertiesTest {
     fun `a negative capacity fails the context at startup`() {
         contextRunner.withPropertyValues("coupon-issue.slot-capacity=-1").run { context ->
             assertThat(context).hasFailed()
+            assertThat(context.startupFailure).rootCause().hasMessageContaining("coupon-issue.slot-capacity must be 1 or more")
         }
     }
 

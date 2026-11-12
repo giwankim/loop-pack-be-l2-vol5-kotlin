@@ -24,6 +24,9 @@ class CouponIssueSlotsTest(
     companion object {
         private const val CAPACITY = 3
 
+        /** A full slot is a `null`, not an exception, so every one of these calls is a success to [tally]. */
+        private const val THREADS = 8
+
         /** `application.yml`'s `coupon-issue.slot-capacity`, the same in every profile. */
         private const val CONFIGURED_CAPACITY = 10
         private const val SLOTS_KEY = "coupon-issue:slots"
@@ -84,9 +87,13 @@ class CouponIssueSlotsTest(
 
     @Test
     fun `eight threads acquiring at once against a capacity of three get exactly three tokens`() {
-        val results = runConcurrently(List(8) { { slots.acquire() } })
+        val results = runConcurrently(List(THREADS) { { slots.acquire() } })
 
-        val tokens = results.map { it.getOrThrow() }.filterNotNull()
+        val outcomes = tally(results)
+        assertThat(outcomes.successes).isEqualTo(THREADS)
+        assertThat(outcomes.technicalErrors).isZero()
+        assertThat(outcomes.total).isEqualTo(THREADS)
+        val tokens = results.mapNotNull { it.getOrThrow() }
         assertThat(tokens).hasSize(CAPACITY).doesNotHaveDuplicates()
         assertThat(heldTokens()).containsExactlyInAnyOrderElementsOf(tokens)
     }

@@ -7,9 +7,9 @@ package com.loopers.application.coupon.required
  * Running out of slots is a plain result, `null`; an exception means only that the store behind the slots failed.
  */
 interface CouponIssueSlots {
-    /** Takes a free slot and returns the token that holds it, minted for this call alone, or `null` when every slot is taken. Never waits. */
+    /** Acquires an empty slot and returns the token that holds it, minted for this call alone, or `null` when every slot is taken. Never waits. */
     fun acquire(): String?
 
-    /** Frees the slot [token] holds. Releasing a token twice, or one that was never acquired, frees no other slot. */
+    /** Releases the slot [token] holds. Releasing a token twice, or one that was never acquired, releases no other token's slot. */
     fun release(token: String)
 }
