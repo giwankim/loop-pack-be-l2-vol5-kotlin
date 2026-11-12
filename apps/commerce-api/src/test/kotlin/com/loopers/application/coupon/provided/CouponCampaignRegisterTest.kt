@@ -27,7 +27,7 @@ class CouponCampaignRegisterTest(
         assertThat(found.discountAmount).isEqualTo(Money(request.discountAmount))
         assertThat(found.totalQuota).isEqualTo(request.totalQuota)
         assertThat(found.issuedCount).isZero()
-        assertThat(found.issuable).isTrue()
+        assertThat(found.suspended).isFalse()
     }
 
     @Test
@@ -41,15 +41,15 @@ class CouponCampaignRegisterTest(
     }
 
     @Test
-    fun `suspending commits the campaign as not issuable and answers with it`() {
+    fun `suspending commits the campaign as suspended and answers with it`() {
         val campaign = prepareCouponCampaign()
 
         val suspended = couponCampaignRegister.suspend(campaign.id)
 
         val found = inNewTransaction { entityManager.find(CouponCampaign::class.java, campaign.id) }
         assertThat(suspended.id).isEqualTo(campaign.id)
-        assertThat(suspended.issuable).isFalse()
-        assertThat(found.issuable).isFalse()
+        assertThat(suspended.suspended).isTrue()
+        assertThat(found.suspended).isTrue()
     }
 
     @Test
@@ -60,8 +60,8 @@ class CouponCampaignRegisterTest(
         val again = couponCampaignRegister.suspend(campaign.id)
 
         val found = inNewTransaction { entityManager.find(CouponCampaign::class.java, campaign.id) }
-        assertThat(again.issuable).isFalse()
-        assertThat(found.issuable).isFalse()
+        assertThat(again.suspended).isTrue()
+        assertThat(found.suspended).isTrue()
         assertThat(found.issuedCount).isZero()
     }
 

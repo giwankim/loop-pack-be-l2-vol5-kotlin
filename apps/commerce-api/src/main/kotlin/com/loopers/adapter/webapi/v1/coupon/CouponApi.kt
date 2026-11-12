@@ -27,7 +27,7 @@ class CouponApi(
     @PostMapping("/coupon-campaigns/{campaignId}/issues")
     override fun issue(
         @RequesterId userId: Long,
-        @PathVariable campaignId: Long,
+        @PathVariable("campaignId") campaignId: Long,
     ): ResponseEntity<ApiResponse<CouponResponse>> {
         val result = couponIssuer.issue(userId, campaignId)
         val status = if (result.newlyIssued) HttpStatus.CREATED else HttpStatus.OK

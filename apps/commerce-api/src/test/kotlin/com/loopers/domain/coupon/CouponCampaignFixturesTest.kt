@@ -15,14 +15,14 @@ class CouponCampaignFixturesTest {
     private val validator = Validation.buildDefaultValidatorFactory().validator
 
     @Test
-    fun `createCouponCampaign builds unsaved campaigns that have issued nothing and are issuable`() {
+    fun `createCouponCampaign builds unsaved campaigns that have issued nothing and are not suspended`() {
         val campaigns = List(SAMPLES) { createCouponCampaign() }
 
         assertThat(campaigns).allSatisfy { campaign ->
             assertThat(campaign.id).isZero()
             assertThat(campaign.deletedAt).isNull()
             assertThat(campaign.issuedCount).isZero()
-            assertThat(campaign.issuable).isTrue()
+            assertThat(campaign.suspended).isFalse()
             assertThat(campaign.totalQuota).isBetween(100, 1_000)
         }
     }

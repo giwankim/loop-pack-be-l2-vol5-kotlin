@@ -40,9 +40,9 @@ class CouponCampaign(
     var issuedCount: Int = 0
         protected set
 
-    /** False once issuing is suspended. */
+    /** True once issuing is suspended. Nothing clears it. */
     @Column(nullable = false)
-    var issuable: Boolean = true
+    var suspended: Boolean = false
         protected set
 
     init {
@@ -68,7 +68,7 @@ class CouponCampaign(
      * the campaign's row lock.
      */
     fun issue() {
-        if (!issuable) {
+        if (suspended) {
             throw CouponCampaignSuspendedException()
         }
 
@@ -81,7 +81,7 @@ class CouponCampaign(
 
     /** Stops issuing for good. Suspending a suspended campaign changes nothing, and no method resumes one. Issued coupons are kept. */
     fun suspend() {
-        issuable = false
+        suspended = true
     }
 
     companion object {

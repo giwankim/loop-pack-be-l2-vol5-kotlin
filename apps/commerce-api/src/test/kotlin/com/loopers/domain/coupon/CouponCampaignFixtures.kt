@@ -7,7 +7,7 @@ import org.instancio.kotlin.KInstancio
 import org.instancio.kotlin.KInstancio.gen
 import org.instancio.kotlin.KSelect.field
 
-/** An unsaved campaign that has issued nothing and is issuable. The quota stays away from 1, where a single issue would exhaust it. */
+/** An unsaved campaign that has issued nothing and is not suspended. The quota stays away from 1, where a single issue would exhaust it. */
 fun createCouponCampaign(
     name: String? = null,
     discountAmount: Money? = null,
@@ -19,7 +19,7 @@ fun createCouponCampaign(
         .set(field(CouponCampaign::discountAmount), discountAmount ?: Money(gen().longs().range(1, 1_000_000).get()))
         .set(field(CouponCampaign::totalQuota), totalQuota ?: gen().ints().range(100, 1_000).get())
         .set(field(CouponCampaign::issuedCount), 0)
-        .set(field(CouponCampaign::issuable), true)
+        .set(field(CouponCampaign::suspended), false)
         .create()
 }
 

@@ -27,7 +27,7 @@ class CouponCampaignAdminApiTest : BaseWebApiAdapterTest() {
 
         val body = assertThat(result).hasStatus(HttpStatus.CREATED).bodyJson()
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
-        body.extractingPath("$.data.id").asNumber()
+        body.extractingPath("$.data.campaignId").asNumber()
         body.extractingPath("$.data.name").isEqualTo("신규 가입 쿠폰")
         body.extractingPath("$.data.discountAmount").isEqualTo(3_000)
         body.extractingPath("$.data.totalQuota").isEqualTo(5)
@@ -93,7 +93,7 @@ class CouponCampaignAdminApiTest : BaseWebApiAdapterTest() {
         val body = assertThat(requestSuspend(campaign.id)).hasStatusOk().bodyJson()
 
         body.extractingPath("$.meta.result").isEqualTo("SUCCESS")
-        body.extractingPath("$.data.id").isEqualToLong(campaign.id)
+        body.extractingPath("$.data.campaignId").isEqualToLong(campaign.id)
         body.extractingPath("$.data.name").isEqualTo("신규 가입 쿠폰")
         body.extractingPath("$.data.discountAmount").isEqualTo(3_000)
         body.extractingPath("$.data.totalQuota").isEqualTo(5)
@@ -120,13 +120,13 @@ class CouponCampaignAdminApiTest : BaseWebApiAdapterTest() {
     }
 
     @Test
-    fun `suspending as a user returns 403 and leaves the campaign issuable`() {
+    fun `suspending as a user returns 403 and leaves the campaign not suspended`() {
         val campaign = prepareCouponCampaign()
 
         assertThat(requestSuspend(campaign.id, principal = USER)).hasStatus(HttpStatus.FORBIDDEN)
 
         entityManager.clear()
-        assertThat(entityManager.find(CouponCampaign::class.java, campaign.id).issuable).isTrue()
+        assertThat(entityManager.find(CouponCampaign::class.java, campaign.id).suspended).isFalse()
     }
 
     private fun requestSuspend(campaignId: Long, principal: RequestPostProcessor? = ADMIN): MvcTestResult {

@@ -13,14 +13,14 @@ class CouponCampaignTest {
     private val valid = createCouponCampaign()
 
     @Test
-    fun `a new campaign keeps what it was given, has issued nothing and is issuable`() {
+    fun `a new campaign keeps what it was given, has issued nothing and is not suspended`() {
         val campaign = CouponCampaign(name = valid.name, discountAmount = valid.discountAmount, totalQuota = valid.totalQuota)
 
         assertThat(campaign.name).isEqualTo(valid.name)
         assertThat(campaign.discountAmount).isEqualTo(valid.discountAmount)
         assertThat(campaign.totalQuota).isEqualTo(valid.totalQuota)
         assertThat(campaign.issuedCount).isZero()
-        assertThat(campaign.issuable).isTrue()
+        assertThat(campaign.suspended).isFalse()
     }
 
     @ParameterizedTest
@@ -99,13 +99,13 @@ class CouponCampaignTest {
     }
 
     @Test
-    fun `suspending makes the campaign not issuable and keeps the issued count`() {
+    fun `suspending marks the campaign suspended and keeps the issued count`() {
         val campaign = createCouponCampaign(totalQuota = 3)
         campaign.issue()
 
         campaign.suspend()
 
-        assertThat(campaign.issuable).isFalse()
+        assertThat(campaign.suspended).isTrue()
         assertThat(campaign.issuedCount).isEqualTo(1)
     }
 
@@ -116,7 +116,7 @@ class CouponCampaignTest {
 
         campaign.suspend()
 
-        assertThat(campaign.issuable).isFalse()
+        assertThat(campaign.suspended).isTrue()
         assertThat(campaign.issuedCount).isZero()
     }
 

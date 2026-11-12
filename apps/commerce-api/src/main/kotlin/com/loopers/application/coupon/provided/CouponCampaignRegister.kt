@@ -5,7 +5,7 @@ import jakarta.validation.Valid
 
 /** The admin's writes to a coupon campaign. */
 interface CouponCampaignRegister {
-    /** Stores a campaign that has issued nothing and is issuable. */
+    /** Stores a campaign that has issued nothing and is not suspended. */
     fun register(@Valid request: CouponCampaignAdminRegisterRequest): CouponCampaign
 
     /**

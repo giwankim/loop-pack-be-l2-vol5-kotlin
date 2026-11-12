@@ -3,7 +3,7 @@ package com.loopers.adapter.webapi.v1.coupon
 import com.loopers.domain.coupon.CouponCampaign
 
 data class CouponCampaignAdminResponse(
-    val id: Long,
+    val campaignId: Long,
     val name: String,
     val discountAmount: Long,
     val totalQuota: Int,
@@ -13,12 +13,12 @@ data class CouponCampaignAdminResponse(
     companion object {
         fun from(campaign: CouponCampaign): CouponCampaignAdminResponse {
             return CouponCampaignAdminResponse(
-                id = campaign.id,
+                campaignId = campaign.id,
                 name = campaign.name,
                 discountAmount = campaign.discountAmount.amount.longValueExact(),
                 totalQuota = campaign.totalQuota,
                 issuedCount = campaign.issuedCount,
-                suspended = !campaign.issuable,
+                suspended = campaign.suspended,
             )
         }
     }
