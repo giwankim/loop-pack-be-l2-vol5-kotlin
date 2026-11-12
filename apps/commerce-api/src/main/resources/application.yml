@@ -42,6 +42,11 @@ pg:
   connect-timeout: 500ms
   response-timeout: 1s
 
+# The coupon issue's processing slots: at most this many issues run at once across every campaign. Every profile uses it.
+# A starting point, not a measured value: a quarter of the 40-connection pool, and more than step 1's 8-thread scenes.
+coupon-issue:
+  slot-capacity: 10
+
 # PG 조회의 재시도와 서킷 브레이커(ADR 0030). 두 조회가 pg-lookup 하나를 나눠 쓰고, 생성은 감싸지 않는다. 재시도가 브레이커를 감싸므로
 # HTTP 시도 하나가 브레이커 표본 하나다. 값의 근거는 ADR 0030 규칙 6의 표에 있다. 조회 하나의 위 끝은 2 × (200 ms + 500 ms + 1 s) + 100 ms = 3.5 s다.
 resilience4j:
