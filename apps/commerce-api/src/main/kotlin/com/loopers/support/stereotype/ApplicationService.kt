@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional
  * 부르는 트랜잭션 단계의 빈(`OrderPaymentSagaSteps`)은 포트를 구현하지 않지만, 단계마다 선언한 트랜잭션이 걸리도록 이 표지를 단다(ADR 0028 규칙 2).
  * 읽기만 하는 Service는 [readOnly]를 켜서 클래스 전체를 `@Transactional(readOnly = true)`로 연다.
  * PG를 부르는 Service와 그것을 조율하는 Service는 [propagation]을 `NEVER`로 두어 트랜잭션 안에서 불리면 거절된다(ADR 0028 규칙 2).
+ * Issuing a coupon (`CouponIssueService`) uses `NEVER` too, because its early read has to stay outside the issuing transaction.
  * `@AliasFor`는 메서드에 붙는 annotation이라 `get:`으로 Kotlin이 만드는 속성 메서드에 단다.
  *
  * `@Service`를 담고 있어 kotlin-spring이 이 표지가 달린 클래스를 open으로 연다.
