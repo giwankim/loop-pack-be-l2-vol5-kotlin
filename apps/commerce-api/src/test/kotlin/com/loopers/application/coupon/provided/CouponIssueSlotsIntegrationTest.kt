@@ -3,19 +3,17 @@ package com.loopers.application.coupon.provided
 import com.loopers.application.coupon.CouponIssueCapacityExceededException
 import com.loopers.application.coupon.CouponIssueSteps
 import com.loopers.config.redis.RedisConfig
-import com.loopers.support.Pause
 import com.loopers.support.heldCouponIssueSlotTokens
+import com.loopers.support.pauseIssuing
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.test.context.TestPropertySource
-import org.springframework.test.util.AopTestUtils
 
 private val log = KotlinLogging.logger {}
 
@@ -45,7 +43,7 @@ class CouponIssueSlotsIntegrationTest(
         val campaign = prepareCouponCampaign()
         val heldUsers = List(CAPACITY) { prepareUser() }
         val latecomer = prepareUser()
-        val pauses = heldUsers.map { pauseIssuing(it.id) }
+        val pauses = heldUsers.map { couponIssueSteps.pauseIssuing(it.id) }
 
         val holding = heldUsers.map { user -> inAnotherThread { couponIssuer.issue(user.id, campaign.id) } }
         pauses.forEach { it.awaitHeld() }
@@ -75,17 +73,6 @@ class CouponIssueSlotsIntegrationTest(
                 "with ${CouponIssueCapacityExceededException::class.simpleName}, issued on retry after one finished; " +
                 "slots held at the end ${tokensAfter.size}, coupon rows $couponRows, issued count $committedCount"
         }
-    }
-
-    /** [userId]'s issue pauses at the start of the issuing step, holding its slot and no lock. Other users' issues are not stubbed. */
-    private fun pauseIssuing(userId: Long): Pause {
-        val pause = Pause()
-        val target = AopTestUtils.getUltimateTargetObject<CouponIssueSteps>(couponIssueSteps)
-        every { target.issueUnderLock(userId, any()) } answers {
-            pause.hold()
-            callOriginal()
-        }
-        return pause
     }
 }
 

@@ -1,8 +1,8 @@
 # 쿠폰 설계 — 발급 한도와 한 사용자 한 쿠폰
 
-8주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 "쿠폰" 절과 행위의 "발급하다", "발급을 중지하다", 그리고 "처리 자리", "수용량", "자리를 얻다", "자리를 놓다"를 따른다. 결정의 출처는 1단계가 [명세 219](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219), 2단계가 [명세 226](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226)이고, 두 단계 모두 새 ADR을 두지 않는다. 잠금은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 방식을 따르고 그 ADR에 날짜 메모를 달았다.
+8주차 과제의 설계 문서다. 용어는 [`CONTEXT.md`](../../CONTEXT.md)의 "쿠폰" 절과 행위의 "발급하다", "발급을 중지하다", 그리고 "처리 자리", "수용량", "자리를 얻다", "자리를 놓다", "발급 수용", "수용을 닫다", "수용을 열다"를 따른다. 결정의 출처는 1단계가 [명세 219](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219), 2단계가 [명세 226](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226), 3단계가 [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)이다. 앞의 두 단계는 새 ADR을 두지 않고, 3단계는 [ADR 0037](../adr/0037-coupon-issue-admission-starts-closed-and-never-reopens-by-itself.md)을 둔다. 잠금은 [ADR 0018](../adr/0018-pessimistic-row-locks-in-one-global-order.md)의 방식을 따르고 그 ADR에 날짜 메모를 달았다.
 
-상태: 2026-11-11 1단계(`feat/coupon-issue`)를 인터뷰하고, 같은 날 그 다섯 티켓을 구현한 뒤 이 문서를 썼다. 2026-11-12 2단계(`feat/coupon-admission`)를 인터뷰하고 그 세 티켓을 구현한 뒤 9절을 더하고 10절을 3단계에 맞게 고쳐 썼다. 장애 경계(3단계)는 그 인터뷰 뒤에 절을 더한다.
+상태: 2026-11-11 1단계(`feat/coupon-issue`)를 인터뷰하고, 같은 날 그 다섯 티켓을 구현한 뒤 이 문서를 썼다. 2026-11-12 2단계(`feat/coupon-admission`)를 인터뷰하고 그 세 티켓을 구현한 뒤 9절을 더하고 10절을 3단계에 맞게 고쳐 썼다. 같은 날 3단계(`feat/coupon-admission-failure`)를 인터뷰하고 그 세 티켓을 구현한 뒤 11절을 더하고, 9.7절과 10절에 날짜 메모를 달았다.
 
 ## 1. 근거와 범위
 
@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | 1 | 쿠폰 캠페인과 쿠폰. 등록, 발급, 발급 중지, 자기 쿠폰 목록. 발급 한도와 중복을 DB가 지킨다. | `feat/coupon-issue` | 인터뷰 끝남(2026-11-11). 구현 끝남(2026-11-11, 1.2절). [명세 219](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/219) |
 | 2 | 발급 서비스 안, 이른 조회와 발급 트랜잭션 사이의 처리 자리(Redis Set, Lua, 429). Redis가 정상일 때의 길만. | `feat/coupon-admission` | 인터뷰 끝남(2026-11-12). 구현 끝남(2026-11-12, 9.1절). [명세 226](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226) |
-| 3 | Redis 장애의 경계(503, 수용 닫힘과 재개). | `feat/coupon-admission-failure` | 인터뷰 전 |
+| 3 | Redis 장애의 경계. 발급 수용(닫힌 채 시작, 처리 자리를 믿을 수 없으면 닫힘, 다시 시작해야 열림), 503, 인스턴스 이름을 실은 토큰. | `feat/coupon-admission-failure` | 인터뷰 끝남(2026-11-12). 구현 끝남(2026-11-12, 11.1절). [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231) |
 
 셋은 모두 `week8`로 PR한다. DB 잠금 앞에 Redis 잠금을 더하는 실험(`feat/coupon-issue-redis-lock`)은 세 단계가 끝난 뒤 정할 선택지다(6절).
 
@@ -216,7 +216,7 @@ scripts/final-check --app commerce-api
 - **웹 인터셉터.** 과제의 차례(기존 쿠폰 조회 → 자리 얻기)는 DB 읽기 뒤에 자리를 얻는다. 인터셉터는 이른 조회를 한 번 더 해야 하고, 포트를 부르는 경합 장면은 처리 자리를 지나지 않게 된다.
 - **서버에서 기다리기.** 빈 자리가 날 때까지 기다리면 그동안 요청 스레드를 쥐고, 1단계의 문제(연결을 쥔 채 기다림)를 스레드로 옮길 뿐이다. 과제도 바로 거절하라고 한다. 대기열과 대기실도 같은 까닭으로 범위 밖이다.
 - **`Retry-After`.** 처리 자리가 언제 비는지 아는 것이 없어 값이 추측이 된다.
-- **TTL.** 키나 원소가 만료되면 죽은 실행의 토큰은 사라지지만, 오래 걸리는 살아 있는 실행의 토큰도 사라져 수용량을 넘겨 받아들인다. 만료는 죽은 실행과 느린 실행을 가리지 못한다. 남은 토큰의 정리는 3단계의 재개 규칙이 맡는다.
+- **TTL.** 키나 원소가 만료되면 죽은 실행의 토큰은 사라지지만, 오래 걸리는 살아 있는 실행의 토큰도 사라져 수용량을 넘겨 받아들인다. 만료는 죽은 실행과 느린 실행을 가리지 못한다. 남은 토큰의 정리는 3단계의 재개 규칙이 맡는다. (2026-11-12, 3단계: 재개라 부르지 않는다. 수용을 여는 `open()`이 지운다. 11.3절이다.)
 - **새 ADR.** 키의 배치는 상수 하나이고, 요청이 끝난 뒤 남는 데이터가 없어 되돌리기 쉽다.
 
 ### 9.7 대가
@@ -224,8 +224,8 @@ scripts/final-check --app commerce-api
 - 한 쿠폰 캠페인에 발급이 몰리면 처리 자리를 모두 채운다. 하나는 실행 중이고 나머지는 행 잠금을 기다린다. 그동안 다른 쿠폰 캠페인의 요청은 DB가 한가해도 429를 받는다.
 - 처리 자리가 묶는 것은 일하는 쪽이 아니라 연결을 쥐고 기다리는 쪽의 수다. 한 쿠폰 캠페인 안에서는 행 잠금이 실행을 이미 하나로 묶는다.
 - 처리 자리는 분산 세마포어가 아니다. 발급 한도를 모르고, 줄을 세우지 않고, TTL이 없고, Redis 장애를 아직 다루지 않는다.
-- 2단계와 3단계 사이에는 Redis가 내려가면 발급 API가 500으로 답한다. 자리를 얻는 호출이 던지면 발급 트랜잭션은 시작되지 않는다. 커밋 뒤 자리를 놓는 호출이 던져도 500이지만, 쿠폰은 이미 있고 다시 보낸 요청은 이른 조회로 200을 받는다. 발급 트랜잭션이 던진 뒤 자리를 놓는 호출까지 던지면 뒤의 예외가 업무 예외를 가린다.
-- 자리를 얻고 놓기 전에 JVM이 죽으면 그 토큰은 Set에 남아 자리 하나를 계속 차지한다.
+- 2단계와 3단계 사이에는 Redis가 내려가면 발급 API가 500으로 답한다. 자리를 얻는 호출이 던지면 발급 트랜잭션은 시작되지 않는다. 커밋 뒤 자리를 놓는 호출이 던져도 500이지만, 쿠폰은 이미 있고 다시 보낸 요청은 이른 조회로 200을 받는다. 발급 트랜잭션이 던진 뒤 자리를 놓는 호출까지 던지면 뒤의 예외가 업무 예외를 가린다. (2026-11-12, 3단계: 이제 500은 없다. 자리를 얻는 호출이 던지면 수용을 닫고 503 `COUPON_ISSUE_ADMISSION_CLOSED`로 답하고, 자리를 놓는 호출이 던지면 수용을 닫고 그 예외를 삼켜 요청은 발급 트랜잭션의 결과로 답한다. 업무 예외도 가려지지 않는다. 11.2절이다.)
+- 자리를 얻고 놓기 전에 JVM이 죽으면 그 토큰은 Set에 남아 자리 하나를 계속 차지한다. (2026-11-12, 3단계: 토큰은 여전히 남지만, 이제 인스턴스 이름을 싣고 다음 시작의 `open()`이 자기 이름의 토큰을 모두 지운다. 자리를 놓지 못한 토큰도 같다. 11.3절과 11.4절이다.)
 - 1단계의 경합 장면이 이제 Redis와, 8보다 큰 수용량에 기댄다.
 - 수용량 3의 장면이 자기 Spring 컨텍스트를 하나 더 띄운다(9.8절).
 
@@ -270,10 +270,163 @@ scripts/final-check --app commerce-api
 
 ## 10. 3단계로 넘기는 것
 
-3단계(`feat/coupon-admission-failure`)는 Redis 장애의 경계를 맡는다. 2단계가 남긴 것은 이렇다.
+3단계(`feat/coupon-admission-failure`)는 Redis 장애의 경계를 맡는다. 2단계가 남긴 것은 이렇다. (2026-11-12, 3단계가 끝났다. 각 항목에 어떻게 되었는지를 달았고, 3단계 뒤에 남은 것은 11.7절과 11.10절에 있다.)
 
-- **Redis 예외는 번역되지 않는다.** `acquire()`나 `release()`가 던지는 Spring `DataAccessException`은 서비스도 어댑터도 잡지 않고, 발급 API는 500으로 답한다. `acquire()`가 먼저이므로 그것이 던지면 발급 트랜잭션은 시작되지 않는다. `null`(빈 자리 없음)과 예외(Redis의 문제)를 포트에서 이미 나눴으므로, 503으로 옮기는 일은 한 곳(`CouponIssueService` 또는 어댑터)에 들어간다. 커밋 뒤의 `release()`가 던지는 경우와, 발급 트랜잭션의 예외를 `release()`의 예외가 가리는 경우(9.7절)도 그 규칙이 정한다.
-- **죽은 JVM은 토큰을 남긴다.** 자리를 얻고 놓기 전에 프로세스가 죽으면 그 토큰은 Set에 남고, 아무것도 지우지 않는다. TTL은 고르지 않았다(9.6절). 남은 토큰의 정리는 3단계의 재개 규칙이 정한다.
-- **수용을 닫는 것이 없다.** 지금은 Redis가 답하면 받아들이고 답하지 않으면 500이다. 수용 닫힘과 명시적 재개, 불확실한 응답의 처리, 실제 Redis 중단 테스트는 모두 3단계의 몫이다.
+- **Redis 예외는 번역되지 않는다.** `acquire()`나 `release()`가 던지는 Spring `DataAccessException`은 서비스도 어댑터도 잡지 않고, 발급 API는 500으로 답한다. `acquire()`가 먼저이므로 그것이 던지면 발급 트랜잭션은 시작되지 않는다. `null`(빈 자리 없음)과 예외(Redis의 문제)를 포트에서 이미 나눴으므로, 503으로 옮기는 일은 한 곳(`CouponIssueService` 또는 어댑터)에 들어간다. 커밋 뒤의 `release()`가 던지는 경우와, 발급 트랜잭션의 예외를 `release()`의 예외가 가리는 경우(9.7절)도 그 규칙이 정한다. (2026-11-12, 3단계: 그 한 곳은 서비스도 어댑터도 아닌 애플리케이션 계층의 `CouponIssueAdmission`이다. 어댑터는 얇은 번역으로 남는다. 11.2절이다.)
+- **죽은 JVM은 토큰을 남긴다.** 자리를 얻고 놓기 전에 프로세스가 죽으면 그 토큰은 Set에 남고, 아무것도 지우지 않는다. TTL은 고르지 않았다(9.6절). 남은 토큰의 정리는 3단계의 재개 규칙이 정한다. (2026-11-12, 3단계: 재개라 부르지 않는다. 수용을 여는 `open()`이 자기 인스턴스 이름의 토큰을 지운다. 11.3절이다.)
+- **수용을 닫는 것이 없다.** 지금은 Redis가 답하면 받아들이고 답하지 않으면 500이다. 수용 닫힘과 명시적 재개, 불확실한 응답의 처리, 실제 Redis 중단 테스트는 모두 3단계의 몫이다. (2026-11-12, 3단계: 11.2절, 11.3절, 11.8절이다. "명시적 재개"는 과제의 말이고, 여기서는 수용을 연다고 한다.)
 - 소진, 발급 중지, 중복은 여전히 발급 트랜잭션만 정한다. 3단계의 어떤 규칙도 처리 자리로 발급 한도를 대신하지 않는다. 자리를 놓는 일은 발급 수를 줄이지 않는다.
 - 자기 쿠폰 목록과 이른 조회는 DB만 쓴다. Redis가 내려가도 이미 받은 사용자는 200을 받는다.
+
+## 11. 3단계: 발급 수용
+
+2단계로 발급은 빈 처리 자리가 있을 때만 시작한다. 그러나 그 길은 Redis가 정상일 때만 맞았다(10절). 과제 4절은 수용 상태를 확인할 수 없으면 503으로 답하고 DB 발급을 시작하지 말고, 그 뒤에는 명시적으로 다시 열 때까지 받아들이지 말라고 한다. 3단계는 발급 앞에 발급 수용을 둔다. 결정과 고르지 않은 것은 [ADR 0037](../adr/0037-coupon-issue-admission-starts-closed-and-never-reopens-by-itself.md)에 있고, 이 절은 그것이 이 슬라이스에서 어떻게 생겼는지와 검증을 적는다.
+
+### 11.1 3단계가 만든 것
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [232](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/232) | 인스턴스 이름을 실은 토큰(`coupon-issue.instance-id`), `release(token)`의 답(지웠는지), `releaseOwnTokens()`. `CONTEXT.md`의 세 용어는 그 앞의 커밋 `3da0ee87`. |
+| [233](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/233) | `CouponIssueAdmission`, `CouponIssueAdmissionClosedException`과 503 `COUPON_ISSUE_ADMISSION_CLOSED`, provided 포트 `CouponIssueAdmissionOpener`, 시작할 때 여는 `CouponIssueAdmissionStartupRunner`. |
+| [234](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/234) | 실제 Redis를 멈추고 걸리게 하는 장면(`CouponIssueRedisFailureApiTest`, 11.8절), ADR 0037, 이 절. 운영 코드는 바뀌지 않았다. |
+
+티켓마다 구현 중에 정한 것은 [글감](../research/week8-coupon-admission-failure-writing-material.md)에 있다.
+
+### 11.2 발급 수용
+
+발급 서비스의 차례(9.2절)에서 2와 4가 `CouponIssueAdmission.admit { … }` 하나가 된다. 서비스는 포트를 부르지 않는다.
+
+1. 이른 조회. (그대로)
+2. `admit`이 이 발급을 실행 중으로 센다. 닫힘이면 포트를 부르지 않고 `CouponIssueAdmissionClosedException`을 던진다. 열림이면 자리를 얻는다.
+3. 발급 트랜잭션. (그대로)
+4. `admit`의 `finally`가 자리를 놓고, 그 시도가 끝난 뒤에 실행 중에서 뺀다.
+
+| 포트의 답 | 그 요청 | 수용 |
+| --- | --- | --- |
+| `acquire()`가 토큰 | 발급 트랜잭션 | 그대로 |
+| `acquire()`가 `null` | 429 `COUPON_ISSUE_CAPACITY_EXCEEDED` | 그대로 |
+| `acquire()`가 던짐(시간 한도, 연결 거절, 스크립트가 1도 0도 아닌 답) | 503. 발급 트랜잭션 없음 | 닫는다 |
+| `release()`가 `true` | 발급 트랜잭션의 결과 | 그대로 |
+| `release()`가 `false`(토큰이 이미 없었다) | 발급 트랜잭션의 결과 | 닫는다 |
+| `release()`가 던짐 | 발급 트랜잭션의 결과. 예외는 삼킨다 | 닫는다 |
+
+- 상태는 열림 여부(`AtomicBoolean`)와 실행 중인 발급의 수(`AtomicInteger`)이고, 프로세스 안에만 있다. 서버는 닫힌 채 시작한다.
+- 닫는 일은 `compareAndSet(true, false)`이라 열림에서 닫힘으로 바뀌는 한 번만 ERROR와 원인을 남긴다. 닫힌 동안의 503은 `ApiControllerAdvice`가 스택 트레이스 없이 WARN으로 남긴다.
+- 다른 요청이 수용을 닫아도 이미 자리를 쥔 발급은 끝까지 가고 저마다 자리를 놓는다. 그 놓기가 실패해도 이미 닫혔으므로 로그는 늘지 않는다.
+- `CouponIssueAdmission`은 `Propagation.NEVER`다. 스테레오타입의 기본 `REQUIRED`라면 발급 트랜잭션이 `admit`의 트랜잭션에 합류해, 커밋이 자리를 놓은 뒤로 밀린다. 그러면 빈 처리 자리가 DB 일이 끝났다는 뜻(9.2절)이 깨진다.
+
+### 11.3 수용을 열다
+
+`CouponIssueAdmissionOpener.open()`이 여는 유일한 길이다. 열린 수용에 부르면 아무것도 하지 않는다.
+
+1. 실행 중인 발급이 있으면 `CouponIssueAdmissionOpenRefusedException`으로 거절한다. 닫힌 채다.
+2. `releaseOwnTokens()`로 자기 이름의 토큰을 모두 지운다.
+3. 2가 던지면 닫힌 채로 두고 그 예외를 올린다.
+4. 연다.
+
+- 시작할 때의 열기: `coupon-issue.admission-open-on-startup`이 `true`이면 `CouponIssueAdmissionStartupRunner`(`adapter/startup`)가 애플리케이션이 뜬 뒤 한 번 부른다. 코드의 기본값은 `false`이고 `application.yml`은 모든 프로필에서 `true`다. 실패하면 ERROR를 남기고 닫힌 채로 뜬다. 누락 복구의 runner와 달리 기동을 실패시키지 않는다.
+- 관리자 API, JMX, Actuator 조작은 없다. 그래서 운영에서 한번 닫힌 인스턴스는 다시 시작해야 열린다.
+- 별도의 건강 확인은 없다. 2가 Redis에 닿는 유일한 확인이다.
+
+### 11.4 이름을 실은 토큰
+
+- 토큰은 `<instance-id>:<uuid>`다(9.3절의 UUID 토큰에 이름이 붙었다). 이름은 `coupon-issue.instance-id`(`CouponIssueProperties`)이고, 기본 블록은 `${HOSTNAME:}`, `local, test` 블록은 `localhost`다. 비었거나 `:`을 품으면 기동이 실패한다. `${HOSTNAME}`처럼 빈 기본값이 없으면 Spring이 풀지 못한 자리표시자를 글자 그대로 묶어, `HOSTNAME`이 없는 인스턴스가 모두 `${HOSTNAME}`이라는 이름을 나눠 가졌다.
+- `releaseOwnTokens()`는 Set의 원소를 읽어 `<instance-id>:`로 시작하는 것만 `SREM`한다. 끝의 `:`까지 맞추므로 `commerce-api-1`이 `commerce-api-1-canary`의 토큰을 지우지 않는다. 키를 지우지 않고 다른 키를 건드리지 않는다.
+- 키는 그대로 `coupon-issue:slots`이고, 스크립트, master 연결, 100 ms 명령 한도, TTL 없음도 2단계 그대로다.
+
+### 11.5 API와 오류
+
+| 경우 | status | code |
+| --- | --- | --- |
+| 발급 수용이 닫힘(닫은 그 요청과 그 뒤의 요청 모두) | 503 | `COUPON_ISSUE_ADMISSION_CLOSED` |
+
+- `Retry-After`는 없다. 메시지는 "지금은 쿠폰 발급을 받지 않습니다. 아무것도 발급하지 않았습니다."이고 나중의 발급을 약속하지 않는다.
+- 다른 답(201, 200, 404, 409 셋, 429)은 바뀌지 않는다. 429(지금 바쁘다)와 503(받지 않는다)은 다른 답이다. 이른 조회와 `GET /api/v1/coupons`는 발급 수용을 보지 않는다.
+
+### 11.6 고르지 않은 것
+
+ADR 0037의 "고르지 않은 것"에 있다. 차단기, TTL·heartbeat·임대 기한의 회수, Redis나 DB의 플래그, 관리자 API, 프로세스마다의 임의 이름, 재시도, 로컬 수나 대기열로 대신 받기다.
+
+### 11.7 한계와 대가
+
+이 처리 자리는 안전한 분산 세마포어가 아니다. 이 절보다 더 많은 안전을 읽지 않도록 한계를 적는다.
+
+- **상태가 인스턴스마다 있다.** 두 인스턴스는 따로 닫히고 따로 열린다. 한 인스턴스가 닫혀도 다른 인스턴스는 받아들인다.
+- **이름은 살아 있는 인스턴스끼리 겹치면 안 된다.** 이름을 나눈 두 인스턴스는 `open()`에서 서로의 토큰을 지우고, 수용량을 넘겨 받아들일 수 있다. 덜 받아들이는 쪽으로 틀리지 않는 유일한 경우이고, 배포가 그것을 막아야 한다.
+- **다시 시작할 때마다 이름이 바뀌면 아무것도 지워지지 않는다.** 앞선 프로세스의 토큰은 그 이름으로 남아 자리를 계속 차지한다.
+- **시간 한도를 넘긴 자리 얻기가 정리 뒤에 Redis에 닿으면 토큰 하나가 다시 남는다.** 덜 받아들이는 쪽의 오차이고, 다음 시작이 지운다.
+- **감지하지 못한 Redis 상태 손실은 알아채지 못한다.** 실행 중인 발급이 없을 때 Set이 비워지면(장애 전환, `FLUSHALL`) 놓을 토큰이 없어 아무것도 닫히지 않는다. 그 뒤의 Set은 비어 있으므로 받아들이는 수는 맞다.
+- **`open()`은 한 번에 하나만 부른다고 가정한다.** (2026-11-12, [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)의 닫는 검토) `open()`은 다른 `open()`을 막지 않는다. 둘이 겹치면 둘 다 확인을 지나고, 앞의 것이 연 뒤 자리를 얻은 발급의 토큰을 뒤의 것의 정리가 지울 수 있다. 그 발급 동안 수용량보다 하나 더 받아들이고, 그 발급이 자리를 놓을 때 지운 것이 없어 수용이 닫힌다. 지금 부르는 것은 시작할 때의 한 번뿐이라 겹치지 않는다. 실행 중인 앱에서 여는 길을 만들면 그때 `open()`끼리 막아야 한다.
+- **거절될 요청도 시작할 때의 열기를 막을 수 있다.** (2026-11-12, [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)의 닫는 검토) 발급은 수용 상태를 읽기 전에 자신을 실행 중으로 센다(11.2절). 그 순서가 토큰을 지킨다. 그래서 닫힌 수용에 곧 거절될 요청도 잠깐 실행 중으로 세어진다. 웹 서버는 runner보다 먼저 요청을 받으므로, 그 순간이 시작할 때의 `open()`과 겹치면 열기가 거절되고 그 인스턴스는 다시 시작할 때까지 닫힌 채다. 덜 받아들이는 쪽의 오차다. 이른 조회가 앞에 있으므로 쿠폰을 이미 가진 사용자의 요청은 세어지지 않는다.
+- 100 ms를 넘긴 명령 하나가 그 인스턴스의 새 발급을 다시 시작할 때까지 멈춘다. 과제가 말한 대가다.
+- 배포나 재시작 때 Redis가 내려가 있으면 그 인스턴스는 닫힌 채로 뜨고, 다시 시작해야 열린다. `application.yml`의 `true` 때문에 재시작은 아무도 확인하지 않아도 수용을 연다.
+- 발급 한도, 소진, 발급 중지, 중복은 여전히 발급 트랜잭션만 정한다. 자리를 놓지 못해도 쿠폰을 취소하거나 발급 수를 낮추지 않는다.
+
+### 11.8 검증
+
+이음매는 둘이다.
+
+- **Redis 어댑터**(`CouponIssueSlotsTest`, 티켓 232): 토큰이 인스턴스 이름으로 시작한다, `release`가 있던 토큰에 `true`이고 두 번째와 모르는 토큰에 `false`이며 다른 토큰은 남는다, 자기 이름의 토큰을 지워도 다른 이름(`-canary` 포함)의 토큰은 남는다, 자리를 얻은 뒤 키의 `TTL`이 -1이다. 이름이 비었거나 `:`을 품거나 `HOSTNAME`이 없으면 기동이 실패한다(`CouponIssuePropertiesTest`). 과제의 "TTL 시간 경과만으로 자동 반환되지 않는지"는 이 `TTL` 단언과 아래 넷째 장면으로 본다. 잠자는 테스트는 없다.
+- **작동하는 Redis에서 닫기**(티켓 233): `CouponIssueAdmissionClosingTest`는 provided 포트로, `CouponIssueAdmissionApiTest`는 닫힌 채 뜬 컨텍스트에서 HTTP로 본다. 쥔 토큰이 Set에서 사라진 발급은 201이고 다음 사용자는 503, 발급 하나를 latch로 붙잡은 채 `open()`은 거절되고 여전히 닫힘, `open()`이 자기 이름의 남은 토큰만 지움이 거기에 있다. `CouponIssueAdmissionStartupRunnerTest`는 속성이 없으면 열지 않고, 열기가 실패해도 던지지 않음을 본다.
+- **실제 Redis 장애**(`CouponIssueRedisFailureApiTest`, 티켓 234): HTTP로, 실제 MySQL 위에서, `StoppableRedisTestContainersConfig`의 자기 Redis를 멈추거나 걸리게 한다. 수용의 내부 상태는 읽지 않고 다음 요청의 답으로 본다. 발급 도중의 주입은 springmockk spy가 `CouponIssueSteps.issueUnderLock`의 시작에서 Redis를 멈추는 것이다(`CouponIssueSpies.kt`의 `stopRedisDuringTheIssueOf`). 장면마다 앞에서 연결이 서기를 기다리고 `open()`을 부르며, 정리에서 Redis를 되살리고 다시 `open()`을 부른다. 새 컨텍스트의 첫 연결은 명령 한도에 묶여 시작할 때의 열기가 실패할 수 있기 때문이다. 명세 231의 이음매 2 표 가운데 "쥔 토큰이 Set에서 사라짐"과 "latch로 붙잡은 채 `open()`"은 Redis를 멈추지 않아도 되므로 이 클래스가 아니라 티켓 233의 두 클래스에 있다(위). 앞의 것은 HTTP로, 뒤의 것은 provided 포트로 본다.
+
+| 장면 | 기대 |
+| --- | --- |
+| Redis를 멈추고 새 사용자가 발급, 쿠폰을 가진 사용자가 재요청하고 목록을 읽음 | 503 `COUPON_ISSUE_ADMISSION_CLOSED`, `FOR UPDATE` 없음, 쿠폰 행은 가진 사용자의 1, 발급 수 1. 가진 사용자는 같은 쿠폰으로 200, 목록 200 |
+| Redis를 멈춰 503을 받은 뒤 다시 띄우고 새 사용자가 발급 | Redis가 답해도 여전히 503, 쿠폰 행 0. `open()` 뒤 201 |
+| Redis를 걸리게 하고(pause) 새 사용자가 발급 | 2초 상한 안에 503. 푼 뒤에도 503, 쿠폰 행 0, 발급 수 0 |
+| 발급 트랜잭션 도중 Redis를 멈춰 자리를 놓지 못함 | 201, 쿠폰 행 1, 발급 수 1. 다시 띄우면 `localhost:` 토큰 하나가 Set에 남아 있고 다음 사용자는 503. `open()` 뒤 Set이 비고 다음 사용자는 201 |
+
+`StoppableRedis`는 멈출 때 RDB를 남기므로(`--shutdown-on-sigterm save`) 다시 띄운 Redis에 멈추기 전의 토큰이 남는다. 넷째 장면의 "토큰이 남아 있다"는 그 덕에 볼 수 있다. 1단계와 2단계의 장면은 단언을 바꾸지 않고 통과한다.
+
+한 실행이 남긴 줄(`scripts/scene-lines CouponIssueRedisFailureApiTest`, 2026-11-12):
+
+```
+Stopped Redis: new user 503 COUPON_ISSUE_ADMISSION_CLOSED with 0 FOR UPDATE; holder 200 with the same coupon, list 200; coupon rows 1 (the holder's), issued count 1
+Release failed: 201 with coupon rows 1, issued count 1; after the start 1 token left in the Set and the next user 503; after the opening 0 tokens and the next user 201
+Paused Redis: new user 503 in 128 ms (bound 2000 ms), still 503 after unpausing; coupon rows 0, issued count 0
+Restarted Redis: 503 during the outage, still 503 after the start with Redis answering, 201 after the opening; coupon rows 1, issued count 1
+```
+
+걸린 Redis 앞의 128 ms는 명령 한도 100 ms와 이른 조회의 DB 읽기다. 장면은 값을 재지 않고 상한만 단언한다. 그래서 "명령 한도 안에 503"은 2초 상한으로 본다. 한도가 아예 없으면(Lettuce 기본 60초) 붉고, 한도가 100 ms인지는 `RedisTimeoutTest`의 몫이다.
+
+**붉은 확인.** 커밋하지 않은 로컬 수정 둘을 따로 `CouponIssueRedisFailureApiTest`에 돌리고 되돌렸다(2026-11-12).
+
+| 수정 | 붉은 장면 |
+| --- | --- |
+| 자리를 얻는 호출이 실패해도 수용을 닫지 않는다(`acquire`의 `catch`에서 `close` 호출을 지움) | 2: "다시 띄운 뒤에도 503" 장면과 걸린 Redis 장면. 둘 다 `expected: 503 but was: 201`이다. 장애 동안의 요청은 여전히 503이지만 수용이 열린 채라, 다시 답하는 Redis 앞의 다음 요청이 발급되었다. 명세는 앞의 장면만 예상했다 |
+| `open()`의 정리를 뺀다(`releaseOwnTokens()` 호출을 지움) | 1: 자리를 놓지 못한 장면의 "Set이 비었다". `Expecting empty but was: ["localhost:6097fd84-…"]` |
+
+두 수정 모두 나머지 장면은 초록이었다.
+
+**닫는 검토가 더한 장면.** (2026-11-12, [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)의 닫는 검토) 명세의 story 6(자리를 놓지 못해도 소진, 발급 중지, 없음의 답은 그대로다)에는 장면이 없었다. 자리를 놓지 못한 장면은 모두 201로 끝났다. `CouponIssueRedisFailureApiTest`에 다섯째 장면을 더했다. 같은 검토에서 클래스 이름을 `CouponIssueRedisFailureTest`에서 바꿨다. HTTP 테스트의 이름 규칙(`CODING_STANDARDS.md`) 때문이고, 티켓 234의 닫는 댓글에는 앞의 이름이 남아 있다.
+
+| 장면 | 기대 |
+| --- | --- |
+| 소진된 캠페인에 발급하는 도중 Redis를 멈춰 자리를 놓지 못함 | 409 `COUPON_CAMPAIGN_EXHAUSTED`(500이 아니다), 쿠폰 행은 가진 사용자의 1, 발급 수 1. 다시 띄운 뒤 다음 사용자는 503 |
+
+```
+Release failed after a rejection: 409 COUPON_CAMPAIGN_EXHAUSTED, and the next user 503 after the start; coupon rows 1 (the holder's), issued count 1
+```
+
+붉은 확인: 자리를 놓는 호출의 예외를 삼키지 않고 올리는 커밋하지 않은 수정(`release`의 `catch`에서 `return`을 `throw exception`으로)을 이 클래스에 돌리고 되돌렸다. 이 장면(`expected: 409 but was: 500`)과 넷째 장면(`expected: 201 but was: 500`)이 붉었고 나머지 셋은 초록이었다. 발급 중지와 없음은 같은 `finally`를 지나므로 따로 돌리지 않았다.
+
+### 11.9 끝의 확인
+
+```
+scripts/final-check --app commerce-api
+```
+
+- 끝의 확인은 2026-11-12 `28c3aca1`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`로 돌렸다(13:28:05Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 113개 클래스, 1186개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 59 s).
+- 2단계가 끝난 109개 클래스, 1164개 테스트에서 티켓 232가 10개 테스트를, 233이 3개 클래스와 8개 테스트를, 234가 `CouponIssueRedisFailureApiTest`의 1개 클래스와 4개 테스트를 더했다. `HexagonalArchitectureTest`는 규칙을 바꾸지 않고 통과했다.
+- 그 실행의 보고서에서 읽은 11.8절의 줄도 같고, 걸린 Redis 앞의 거절만 129 ms였다(`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueRedisFailureApiTest`).
+- (2026-11-12, [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)의 닫는 검토) 닫는 검토의 수정 뒤 `073941d9`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`를 다시 돌렸다(14:20:51Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 113개 클래스, 1187개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 38 s). 더해진 1개 테스트는 11.8절의 다섯째 장면이다. 그 실행의 보고서에서 읽은 다섯 줄은 11.8절과 같고, 걸린 Redis 앞의 거절만 125 ms였다. 검토가 무엇을 바꾸고 무엇을 그대로 두었는지는 [닫는 댓글](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231#issuecomment-6826398433)에 있다.
+
+### 11.10 3단계 뒤에 남은 것
+
+- 여러 인스턴스가 함께 닫히고 열리는 것, Redis나 DB에 두는 수용 상태. 지금은 인스턴스마다다(11.7절).
+- 실행 중인 앱에서 수용을 다시 여는 길. 다시 시작만 연다.
+- 감지하지 못한 Redis 상태 손실과 자동 장애 전환에서의 안전.
+- Redis가 내려간 채로 기동하는 장면은 HTTP로 돌리지 않았다. 시작할 때의 열기가 실패해도 던지지 않는다는 것은 `CouponIssueAdmissionStartupRunnerTest`가 보고, 닫힌 채 뜬 인스턴스의 답은 `CouponIssueAdmissionApiTest`가 본다.
+- 스크립트가 1도 0도 아닌 답을 하는 경우(11.2절의 표)는 돌린 장면이 없다. `RedisCouponIssueSlots.acquire()`가 던지는 것은 코드로만 읽었다. 실제 Redis와 과제의 스크립트로는 그 답을 만들 수 없다. (2026-11-12, [명세 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)의 닫는 검토)
+- DB 잠금 앞에 Redis 잠금을 더하는 실험(`feat/coupon-issue-redis-lock`)은 1.1절대로 세 단계가 끝난 뒤의 선택이다.
