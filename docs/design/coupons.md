@@ -118,7 +118,7 @@
 
 ## 8. 검증
 
-이음매는 넷이다. provided 포트(`BaseCommittingApplicationServiceTest`), HTTP(`BaseWebApiAdapterTest`), 도메인 단위, 저장소. 경합 장면은 포트를 부른다. 2단계의 처리 자리는 API 앞이 아니라 그 포트 안(`CouponIssueService`)에 있으므로, 이 장면들은 이제 기본 수용량 10의 처리 자리를 지난다. 8개 스레드가 모두 자리를 얻으므로 결과는 바뀌지 않았고, 2단계 동안 `CouponIssueIntegrationTest`는 고치지 않았다(9.8절).
+이음매는 넷이다. provided 포트(`BaseCommittingApplicationServiceTest`), HTTP(`BaseWebApiAdapterTest`), 도메인 단위, 저장소. 경합 장면은 포트를 부른다. 2단계의 처리 자리는 API 앞이 아니라 그 포트 안(`CouponIssueService`)에 있으므로, 이 장면들은 이제 기본 수용량 10의 처리 자리를 지난다. 8개 스레드가 모두 자리를 얻으므로 결과는 바뀌지 않았고, 2단계 동안 `CouponIssueIntegrationTest`의 장면은 고치지 않았다. 티켓 229가 그 클래스의 KDoc을 이 사실에 맞게 고치고, 쿠폰 행·발급 수·쿠폰 목록을 새 트랜잭션에서 읽는 도우미를 `BaseCommittingApplicationServiceTest`로 옮겼을 뿐이다(9.8절).
 
 ### 8.1 경합 장면
 
@@ -237,7 +237,7 @@ scripts/final-check --app commerce-api
 - **provided 포트**: 차례대로 부르는 장면은 `CouponIssueAdmissionTest`(기본 컨텍스트, 수용량 10). 자리는 기반 클래스가 포트로 `null`이 나올 때까지 얻어 채운다. 빈 자리가 없으면 거절하고 `FOR UPDATE`가 나가지 않는다, 이미 받은 사용자는 그래도 쿠폰을 받는다, 자리 하나를 놓으면 다시 보낸 요청이 발급된다, 소진·발급 중지·없음으로 끝나도 Set이 비어 있다.
 - **HTTP**(`CouponApiTest`): 429와 code, 이미 받은 사용자의 200, 처리 자리가 찼을 때의 목록.
 
-과제 5절의 장면은 `CouponIssueSlotsIntegrationTest`가 실제 Redis와 실제 MySQL에서 수용량 3의 자기 컨텍스트로 돌린다(`@TestPropertySource`). 멈춤은 통제된 주입이다. springmockk spy가 `CouponIssueSteps.issueUnderLock`의 시작에서 세 사용자의 발급을 저마다의 latch로 붙잡는다. 자리를 얻은 뒤이고 SQL을 보내기 전이므로, 멈춘 발급은 자리를 쥐되 쿠폰 캠페인의 잠금은 쥐지 않는다. 그래서 세 발급이 같은 쿠폰 캠페인에서 서로를 기다리지 않고 함께 멈춘다. 1단계의 잠금 대기 장면은 쿠폰을 넣은 뒤 멈추므로 다른 발급이 그 잠금에서 3초 뒤 실패하는데, 이 장면에서는 그러면 안 된다.
+과제 5절의 장면은 `CouponIssueSlotsIntegrationTest`가 실제 Redis와 실제 MySQL에서 수용량 3의 자기 컨텍스트로 돌린다(`@TestPropertySource`). 멈춤은 통제된 주입이다. springmockk spy가 `CouponIssueSteps.issueUnderLock`의 시작에서 세 사용자의 발급을 저마다의 latch로 붙잡는다. 자리를 얻은 뒤이고 SQL을 보내기 전이다. 그 단계의 트랜잭션 프록시가 이미 트랜잭션을 열었으므로, 멈춘 발급은 자리와 연결 풀의 연결 하나를 쥐되 쿠폰 캠페인의 잠금은 쥐지 않는다. 그래서 세 발급이 같은 쿠폰 캠페인에서 서로를 기다리지 않고 함께 멈춘다. 1단계의 잠금 대기 장면은 쿠폰을 넣은 뒤 멈추므로 다른 발급이 그 잠금에서 3초 뒤 실패하는데, 이 장면에서는 그러면 안 된다.
 
 | 장면 | 결과 |
 | --- | --- |
@@ -252,7 +252,7 @@ scripts/final-check --app commerce-api
 Capacity scene: capacity 3: 3 issues held in their slots, the next user refused with CouponIssueCapacityExceededException, issued on retry after one finished; slots held at the end 0, coupon rows 4, issued count 4
 ```
 
-1단계의 `CouponIssueIntegrationTest`는 2단계 동안 diff가 없고, 기본 수용량 10의 처리 자리를 지나 그대로 통과한다(8절).
+1단계의 `CouponIssueIntegrationTest`는 장면을 고치지 않고 기본 수용량 10의 처리 자리를 지나 그대로 통과한다(8절).
 
 **붉은 확인.** 커밋하지 않은 로컬 수정으로 `CouponIssueService`의 `release`를 지우고 돌렸다(2026-11-12). 되돌렸다. 넷째의 재요청이 `CouponIssueCapacityExceededException`으로 붉다. 끝난 발급의 토큰이 Set에 남아 자리 셋이 계속 찼기 때문이다. 그 줄에서 테스트가 멈추므로, 재요청의 실패를 기록하고 이어 가도록 장면도 함께 고쳐 한 번 더 돌렸다. 재요청은 거절되었고, 끝에 Set에는 토큰 3이 남았으며(`Expecting empty but was: [...]` 세 UUID), 쿠폰 행은 3이었다. 티켓 228의 변이 확인(같은 수정에 그 티켓의 장면 6개가 붉음)은 차례대로 부르는 장면의 몫이고, 이 장면은 실행 중인 발급이 자리를 쥐는 동안에도 같은 것을 보인다.
 

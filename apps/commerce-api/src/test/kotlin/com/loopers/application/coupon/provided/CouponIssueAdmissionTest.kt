@@ -2,12 +2,9 @@ package com.loopers.application.coupon.provided
 
 import com.loopers.application.coupon.CouponIssueCapacityExceededException
 import com.loopers.config.redis.RedisConfig
-import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.coupon.CouponCampaignSuspendedException
 import com.loopers.support.captureSql
-import com.loopers.support.countCoupons
-import com.loopers.support.couponCampaignIssuedCount
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.heldCouponIssueSlotTokens
@@ -49,8 +46,8 @@ class CouponIssueAdmissionTest(
         }
 
         assertThat(captured.statements.filter { it.contains("for update", ignoreCase = true) }).isEmpty()
-        assertThat(countCoupons()).isZero()
-        assertThat(issuedCount(campaign)).isZero()
+        assertThat(committedCouponCount()).isZero()
+        assertThat(committedIssuedCount(campaign)).isZero()
     }
 
     @Test
@@ -64,7 +61,7 @@ class CouponIssueAdmissionTest(
 
         assertThat(repeat.newlyIssued).isFalse()
         assertThat(repeat.coupon.id).isEqualTo(first.coupon.id)
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -78,8 +75,8 @@ class CouponIssueAdmissionTest(
         val retried = couponIssuer.issue(customer.id, campaign.id)
 
         assertThat(retried.newlyIssued).isTrue()
-        assertThat(countCoupons()).isOne()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedCouponCount()).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
         assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).containsExactlyInAnyOrderElementsOf(tokens.drop(1))
     }
 
@@ -91,7 +88,7 @@ class CouponIssueAdmissionTest(
         assertThrows<CouponCampaignExhaustedException> { couponIssuer.issue(prepareUser().id, campaign.id) }
 
         assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
-        assertThat(issuedCount(campaign)).isOne()
+        assertThat(committedIssuedCount(campaign)).isOne()
     }
 
     @Test
@@ -102,7 +99,7 @@ class CouponIssueAdmissionTest(
         assertThrows<CouponCampaignSuspendedException> { couponIssuer.issue(prepareUser().id, campaign.id) }
 
         assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
-        assertThat(issuedCount(campaign)).isZero()
+        assertThat(committedIssuedCount(campaign)).isZero()
     }
 
     @Test
@@ -111,13 +108,5 @@ class CouponIssueAdmissionTest(
 
         assertThat(exception.errorType).isEqualTo(ErrorType.COUPON_CAMPAIGN_NOT_FOUND)
         assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
-    }
-
-    private fun countCoupons(): Long {
-        return inNewTransaction { entityManager.countCoupons() }
-    }
-
-    private fun issuedCount(campaign: CouponCampaign): Int {
-        return inNewTransaction { entityManager.couponCampaignIssuedCount(campaign.id) }
     }
 }
