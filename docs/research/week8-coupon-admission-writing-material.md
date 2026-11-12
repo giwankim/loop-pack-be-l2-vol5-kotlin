@@ -95,3 +95,44 @@ A two-axis review ran on `67b8011d` before the final check.
 - **Spec:** no missing requirement and no wrong implementation. It noted minor scope beyond "contract only" at the HTTP seam (the holder's 200 and the list), which Customer stories 5 and 6 ask for, and the new support helper. It also noted that a `release` that throws after a throwing `issueUnderLock` hides the business exception, which the spec accepts until `feat/coupon-admission-failure`.
 - **Standards:** fixed in `88337f1d`: the two test classes injected the slots port only to prepare, and the same prepare helper sat in both, against `CODING_STANDARDS.md`'s fixture rules. `takeEveryCouponIssueSlot()` and `releaseCouponIssueSlot()` now live in `BaseApplicationServiceTest`. Also fixed: the pass-through `heldTokens()` wrappers, and the log choice now has its comment.
 - **Left as they are:** `CouponIssueCapacityExceededException` sits in `application/coupon`, not `provided/` as the PG exceptions do, because the ticket and the spec place it there. Its message is written in both the exception and `ErrorType`, as the coupon campaign exceptions already do.
+
+## Issue 229: the capacity holds with issues in flight, and the design is written down
+
+Implemented as `fa02fc20` and the review fixes `f47653a8`. `scripts/final-check --app commerce-api` on `f47653a8`, a clean tree, started 2026-11-12T04:08:58Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 109 classes, 1164 tests (5 min 12 s), 0 failures, 0 errors, 0 skipped**. Issue 228 ended at 108 classes and 1163 tests, so this ticket adds 1 class (`CouponIssueSlotsIntegrationTest`, 1 test). That class starts one more Spring context, for its capacity of 3 and its spy. No production code changed, as planned: the scene passed against issue 228's service on the first run. Only documents changed after `f47653a8`.
+
+### Acceptance criteria
+
+- [x] **Three different users' issues are held inside `issueUnderLock`; the Set holds 3 tokens.** A springmockk spy on `CouponIssueSteps` (stubbed on the proxy's target) pauses each of the three users on their own `Pause` before `callOriginal()`. The slot is taken and no SQL has gone out, so no held issue holds the campaign's lock and the three do not queue behind one another on the same campaign.
+- [x] **A fourth user's issue is refused with `CouponIssueCapacityExceededException`; that user has no coupon row and the issued count shows no issue for them.** The fourth user's coupon list is empty and the issued count is 0.
+- [x] **One held issue is let through and finishes; the fourth user's retry is issued.**
+- [x] **After all held issues finish, the Set is empty, and coupon rows and the issued count both equal the number of issued users.** 4 and 4.
+- [x] **Red check, a local edit never committed: with the `release` removed from the service, the fourth user's retry is refused and the Set is not empty at the end.** The scene failed at the retry with `CouponIssueCapacityExceededException`. A second local variant that let the retry fail and carried on ended with 3 tokens in the Set (`Expecting empty but was: [...]`, three UUIDs) and 3 coupon rows. Both edits were reverted.
+- [x] **`docs/design/coupons.md` has the step 2 section, the corrected 8절 sentence and the updated 1.1 table, with the scene line from a real run.** Section 9 (9.1–9.9) and the handover to step 3 rewritten as section 10. The scene line in 9.8 also came out the same in the final check's reports.
+- [x] **`scripts/final-check` passes, and its commit, timings and test counts are recorded in the design doc.** 9.9.
+- [x] **`ktlintCheck` and `check` on commerce-api pass.** The run above.
+- [x] **The closing comment is appended to `docs/research/week8-coupon-admission-writing-material.md`.**
+
+The scene's line, from the final check's reports (`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueSlotsIntegrationTest`):
+
+```
+Capacity scene: capacity 3: 3 issues held in their slots, the next user refused with CouponIssueCapacityExceededException, issued on retry after one finished; slots held at the end 0, coupon rows 4, issued count 4
+```
+
+### Decisions made while implementing
+
+- **The pause sits before `callOriginal()`, not after it as in step 1's lock scene.** Pausing after the writes would leave the first held issue holding the campaign's `FOR UPDATE` lock. The other two would then wait on that lock and fail after 3 seconds instead of sitting in their slots. Pausing before the original keeps all three on one campaign without contention. The two stubs differ in that one line, so they stay local, not a shared spy extension.
+- **A held issue holds a pooled connection.** The stub is on the target behind `@ApplicationService`'s transactional proxy, so its transaction has begun. The ticket's "between the acquire and the DB transaction" is loose on this point; the design (9.8) and the class KDoc say it exactly.
+- **Everything is one test.** The refusal, the retry and the empty Set are the assignment's single §5 scene, and they share the held issues.
+- **The design keeps the sections' numbers and adds step 2 as section 9.** The old handover (section 9) is now section 10 and speaks to step 3. The 429 row also goes into 5절's error table, and 7절's queue bullet points at 9.7.
+
+### Review
+
+A two-axis review ran on `fa02fc20` before the final check.
+
+- **Spec:** no missing requirement, and no scope creep in code. It noted that the held issue's transaction is already open, which `f47653a8` now says in the KDoc and in 9.8. It counted the 5절 row and the 7절 bullet as harmless doc additions.
+- **Standards:** fixed in `f47653a8`:
+  - The capacity's `@TestPropertySource` was missing from `CODING_STANDARDS.md`'s closed list of annotations a subclass may add, which now has a dated note.
+  - Three coupon classes each kept private copies of the committed coupon count, issued count and coupon list reads. These are now `committedCouponCount()`, `committedIssuedCount()` and `committedCouponsOf()` in `BaseCommittingApplicationServiceTest`, beside its other `committed*` reads.
+  - `heldCustomers` is now `heldUsers` (`CONTEXT.md` avoids Customer).
+  - Step 1's `CouponIssueIntegrationTest` KDoc still said the slots would go "in front of the API". It now says they sit inside the port and its scenes pass through them at 10. Its scenes did not change.
+- **Left as they are:** the "명령 한도 100 ms" phrase in 9.3 (a Redis timeout, not 수용량). The other `customer` names in `CouponIssueIntegrationTest` are left too: they predate this branch, and no sweep was asked for.
