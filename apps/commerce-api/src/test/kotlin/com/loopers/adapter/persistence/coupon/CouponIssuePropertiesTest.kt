@@ -2,12 +2,19 @@ package com.loopers.adapter.persistence.coupon
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
+import org.springframework.mock.env.MockEnvironment
 
 /**
  * How the slot capacity and the instance name bind at startup. It needs no Redis, so it starts only the properties binding, the way the application's
  * `@ConfigurationPropertiesScan` registers it.
+ *
+ * The `HOSTNAME` scenes read the real `application.yml` under `prd` instead, in a `MockEnvironment`, which carries no OS environment
+ * variable unless the scene gives it one.
  */
 class CouponIssuePropertiesTest {
     private val contextRunner = ApplicationContextRunner()
@@ -60,6 +67,29 @@ class CouponIssuePropertiesTest {
             assertThat(context).hasFailed()
             assertThat(context.startupFailure).rootCause().hasMessageContaining("coupon-issue.instance-id must not contain ':'")
         }
+    }
+
+    @Test
+    fun `a deployed profile names the instance after HOSTNAME`() {
+        val properties = bindUnderPrd(MockEnvironment().withProperty("HOSTNAME", "api-7f9c"))
+
+        assertThat(properties.instanceId).isEqualTo("api-7f9c")
+    }
+
+    @Test
+    fun `a deployed profile without HOSTNAME fails to bind the instance name`() {
+        val environment = MockEnvironment()
+
+        assertThatThrownBy { bindUnderPrd(environment) }
+            .rootCause()
+            .hasMessageContaining("coupon-issue.instance-id must not be blank")
+    }
+
+    private fun bindUnderPrd(environment: MockEnvironment): CouponIssueProperties {
+        environment.setProperty("spring.profiles.active", "prd")
+        ConfigDataEnvironmentPostProcessor.applyTo(environment)
+
+        return Binder.get(environment).bindOrCreate("coupon-issue", CouponIssueProperties::class.java)
     }
 
     @EnableConfigurationProperties(CouponIssueProperties::class)
