@@ -1,6 +1,6 @@
 # Week 8 coupon admission failure: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from a closing comment: one per ticket of [spec 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)'s, then the spec's own.
+Material for the technical writing quest, not the write-up itself. Each section is recorded from a closing comment: one per ticket of [spec 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231), then the spec's own.
 
 ## Issue 232: slot tokens carry the instance's name, and a release reports what it removed
 
