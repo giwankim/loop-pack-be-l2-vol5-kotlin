@@ -294,7 +294,7 @@ abstract class BaseApplicationServiceTest {
 
     /**
      * Takes every processing slot through [CouponIssueSlots], acquiring until it answers `null`, so a scene holds whatever the context's
-     * capacity is. The tokens are no issue in flight. Redis is flushed after the test, which frees them.
+     * capacity is. The tokens are no issue in flight. Redis is flushed after the test, which empties the Set.
      */
     protected fun takeEveryCouponIssueSlot(): List<String> {
         val tokens = generateSequence { couponIssueSlots.acquire() }.toList()

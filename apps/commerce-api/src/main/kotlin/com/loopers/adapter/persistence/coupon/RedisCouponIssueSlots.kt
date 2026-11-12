@@ -13,7 +13,7 @@ import java.util.UUID
  * The processing slots as one Redis Set whose members are the tokens of the issues running now.
  *
  * - The key is a constant, not a property: every instance must count in the same Set, and a name per instance would let each
- *   admit its own capacity. It is not a cache key either, and nothing expires it or its members.
+ *   hand out its own capacity. It is not a cache key either, and nothing expires it or its members.
  * - [acquire] runs `redis/coupon-issue-slot-acquire.lua`, which checks the token's membership, the Set's size and adds the token
  *   in one step, so two calls cannot both take the last slot. The token is a UUID minted per call, unrelated to the user, the
  *   campaign or anything a request sends.
@@ -31,7 +31,7 @@ class RedisCouponIssueSlots(
         private const val SLOTS_KEY = "coupon-issue:slots"
 
         /** The script's answer when the token holds a slot, whether it was added now or was already a member. 0 means every slot is taken. */
-        private const val ADMITTED = 1L
+        private const val ACQUIRED = 1L
 
         private val ACQUIRE_SCRIPT = DefaultRedisScript<Long>().apply {
             setLocation(ClassPathResource("redis/coupon-issue-slot-acquire.lua"))
@@ -43,7 +43,7 @@ class RedisCouponIssueSlots(
         val token = UUID.randomUUID().toString()
         val answer = redisTemplate.execute(ACQUIRE_SCRIPT, listOf(SLOTS_KEY), properties.slotCapacity.toString(), token)
 
-        return if (answer == ADMITTED) token else null
+        return if (answer == ACQUIRED) token else null
     }
 
     override fun release(token: String) {

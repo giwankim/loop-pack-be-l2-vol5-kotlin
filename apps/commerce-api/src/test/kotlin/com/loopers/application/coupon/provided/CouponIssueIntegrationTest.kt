@@ -2,6 +2,7 @@ package com.loopers.application.coupon.provided
 
 import com.loopers.application.coupon.CouponIssueSteps
 import com.loopers.application.coupon.required.CouponRepository
+import com.loopers.config.redis.RedisConfig
 import com.loopers.domain.coupon.Coupon
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.coupon.CouponCampaignSuspendedException
@@ -12,6 +13,7 @@ import com.loopers.support.TestClock
 import com.loopers.support.captureSql
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
+import com.loopers.support.heldCouponIssueSlotTokens
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -19,8 +21,10 @@ import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.dao.PessimisticLockingFailureException
+import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.test.util.AopTestUtils
 import org.springframework.transaction.IllegalTransactionStateException
 import java.time.Instant
@@ -33,9 +37,10 @@ private val log = KotlinLogging.logger {}
  *
  * The contention scenes release their calls together through a start gate and count the outcomes as successes, business rejections and
  * technical errors (spec 219 stories 4, 10, 33 and 34). They call the port, and step 2's processing slots sit inside the port, so
- * every scene passes through the slots at the default capacity of 10, which admits all 8 threads. The rollback scene is a controlled
- * injection: a spy makes the coupon's `save` throw after a flush. The lock scene pauses one issue inside its transaction through a
- * spy on the issuing step.
+ * every scene passes through the slots at the default capacity of 10, so all 8 threads acquire a slot. The rollback scene is a
+ * controlled injection: a spy makes the coupon's `save` throw after a flush. The lock scene pauses one issue inside its transaction
+ * through a spy on the issuing step. Both check that the failed issue gave its slot back (spec 226 story 14): the rollback scene
+ * finds the Set empty after the failure, and the lock scene finds only the paused holder's token after the waiter's lock failure.
  *
  * `@EnableTestPg` is here only because it is what puts the pinnable [TestClock] in the context. Nothing in this class calls the PG.
  */
@@ -43,6 +48,7 @@ private val log = KotlinLogging.logger {}
 class CouponIssueIntegrationTest(
     private val couponIssuer: CouponIssuer,
     private val clock: TestClock,
+    @Qualifier(RedisConfig.REDIS_TEMPLATE_MASTER) private val masterRedisTemplate: RedisTemplate<String, String>,
 ) : BaseCommittingApplicationServiceTest() {
     /** Where the rollback scene throws. Unstubbed, it is the real repository. */
     @MockkSpyBean
@@ -256,6 +262,7 @@ class CouponIssueIntegrationTest(
         assertThat(captured.statements.filter { it.startsWith("insert into coupon ") }).isEmpty()
         assertThat(committedCouponCount()).isZero()
         assertThat(committedIssuedCount(campaign)).isZero()
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).isEmpty()
 
         val retried = couponIssuer.issue(customer.id, campaign.id)
 
@@ -281,6 +288,7 @@ class CouponIssueIntegrationTest(
         pause.awaitHeld()
 
         assertThrows<PessimisticLockingFailureException> { couponIssuer.issue(waiter.id, campaign.id) }
+        assertThat(masterRedisTemplate.heldCouponIssueSlotTokens()).hasSize(1)
 
         pause.release()
         assertThat(holding.await().newlyIssued).isTrue()

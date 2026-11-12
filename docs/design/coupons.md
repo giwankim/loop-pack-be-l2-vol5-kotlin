@@ -118,7 +118,7 @@
 
 ## 8. 검증
 
-이음매는 넷이다. provided 포트(`BaseCommittingApplicationServiceTest`), HTTP(`BaseWebApiAdapterTest`), 도메인 단위, 저장소. 경합 장면은 포트를 부른다. 2단계의 처리 자리는 API 앞이 아니라 그 포트 안(`CouponIssueService`)에 있으므로, 이 장면들은 이제 기본 수용량 10의 처리 자리를 지난다. 8개 스레드가 모두 자리를 얻으므로 결과는 바뀌지 않았고, 2단계 동안 `CouponIssueIntegrationTest`의 장면은 고치지 않았다. 티켓 229가 그 클래스의 KDoc을 이 사실에 맞게 고치고, 쿠폰 행·발급 수·쿠폰 목록을 새 트랜잭션에서 읽는 도우미를 `BaseCommittingApplicationServiceTest`로 옮겼을 뿐이다(9.8절).
+이음매는 넷이다. provided 포트(`BaseCommittingApplicationServiceTest`), HTTP(`BaseWebApiAdapterTest`), 도메인 단위, 저장소. 경합 장면은 포트를 부른다. 2단계의 처리 자리는 API 앞이 아니라 그 포트 안(`CouponIssueService`)에 있으므로, 이 장면들은 이제 기본 수용량 10의 처리 자리를 지난다. 8개 스레드가 모두 자리를 얻으므로 결과는 바뀌지 않았고, 2단계 동안 `CouponIssueIntegrationTest`의 장면은 고치지 않았다. 티켓 229가 그 클래스의 KDoc을 이 사실에 맞게 고치고, 쿠폰 행·발급 수·쿠폰 목록을 새 트랜잭션에서 읽는 도우미를 `BaseCommittingApplicationServiceTest`로 옮겼을 뿐이다. 명세 226의 닫는 검토(2026-11-12)가 두 장면에 처리 자리의 단언을 더했고, 기존 단언은 그대로다(9.8절).
 
 ### 8.1 경합 장면
 
@@ -191,7 +191,7 @@ scripts/final-check --app commerce-api
 
 - 처리 자리는 Redis Set 하나다. 키는 어댑터의 상수 `coupon-issue:slots`이고 설정 값이 아니다. 인스턴스마다 이름이 다르면 저마다 수용량까지 센다. 캐시 키도 아니다. 키에도 원소에도 TTL이 없다.
 - 원소는 어댑터가 `acquire()`마다 만드는 UUID 토큰이다. 요청, 사용자, 쿠폰 캠페인과 무관하므로 두 실행이 한 자리를 나누지 않고, 클라이언트가 보내는 무엇도 자리를 가리키지 못한다.
-- 자리를 얻는 일은 `resources/redis/coupon-issue-slot-acquire.lua` 하나가 한다. 과제 3절의 "Lua 수용 로직 예시" 그대로다. 토큰의 존재 확인(`SISMEMBER`), 크기 확인(`SCARD >= capacity`), 추가(`SADD`)를 한 번에 하므로 두 요청이 마지막 자리를 함께 얻지 못한다. `KEYS[1]`은 키, `ARGV[1]`은 수용량, `ARGV[2]`는 토큰이고, 1은 얻음, 0은 빈 자리 없음이다. 두 번의 왕복으로 나누면 8개 스레드가 모두 크기 0을 읽고 모두 들어왔다(티켓 227의 변이 확인, 세 번에 세 번).
+- 자리를 얻는 일은 `resources/redis/coupon-issue-slot-acquire.lua` 하나가 한다. 과제 3절의 "Lua 수용 로직 예시" 그대로다. 토큰의 존재 확인(`SISMEMBER`), 크기 확인(`SCARD >= capacity`), 추가(`SADD`)를 한 번에 하므로 두 요청이 마지막 자리를 함께 얻지 못한다. `KEYS[1]`은 키, `ARGV[1]`은 수용량, `ARGV[2]`는 토큰이고, 1은 얻음, 0은 빈 자리 없음이다. 두 번의 왕복으로 나누면 수용량 3에서 8개 스레드가 모두 크기 0을 읽고 모두 들어왔다(티켓 227의 변이 확인, 세 번에 세 번).
 - 자리를 놓는 일은 스크립트 없이 `SREM key token`이다. 그것만으로 원자적이고, 두 번 놓거나 모르는 토큰을 놓아도 다른 원소를 건드리지 않는다.
 - 두 명령 모두 `redisTemplateMaster`로 보낸다. 판단이 replica의 낡은 읽기에 기대지 않는다. 명령 한도는 `redis.yml`의 100 ms 그대로다.
 
@@ -246,13 +246,15 @@ scripts/final-check --app commerce-api
 | 멈춘 발급 하나를 풀어 끝낸 뒤 넷째가 다시 발급 | 둘 다 새 발급 |
 | 나머지 둘을 푼다 | 모두 새 발급. Set 비어 있음, 쿠폰 행 4, 발급 수 4 |
 
+수용량 3은 장면의 설정이다. 이 장면은 동작을 보이고 값을 재지 않는다. 운영의 수용량은 9.4절의 10이다.
+
 한 실행이 남긴 줄(`scripts/scene-lines CouponIssueSlotsIntegrationTest`):
 
 ```
 Capacity scene: capacity 3: 3 issues held in their slots, the next user refused with CouponIssueCapacityExceededException, issued on retry after one finished; slots held at the end 0, coupon rows 4, issued count 4
 ```
 
-1단계의 `CouponIssueIntegrationTest`는 장면을 고치지 않고 기본 수용량 10의 처리 자리를 지나 그대로 통과한다(8절).
+1단계의 `CouponIssueIntegrationTest`는 기존 단언을 바꾸지 않고 기본 수용량 10의 처리 자리를 지나 그대로 통과한다(8절). 명세 226의 닫는 검토(2026-11-12)가 그 가운데 두 장면에 이야기 14의 단언을 더했다. 되돌림 장면은 예기치 않은 예외 뒤 Set이 비었음을, 잠금 대기 장면은 기다린 발급의 잠금 실패 뒤 멈춘 발급의 토큰 하나만 남았음을 본다. 두 장면의 spy가 이미 있어 컨텍스트가 늘지 않는다. 커밋하지 않은 로컬 수정으로 `release`를 `finally`에서 빼 성공 뒤에만 부르게 하자 그 두 단언만 붉었다(`Expecting empty but was` 토큰 하나, `Expected size: 1 but was: 2`). 되돌렸다.
 
 **붉은 확인.** 커밋하지 않은 로컬 수정으로 `CouponIssueService`의 `release`를 지우고 돌렸다(2026-11-12). 되돌렸다. 넷째의 재요청이 `CouponIssueCapacityExceededException`으로 붉다. 끝난 발급의 토큰이 Set에 남아 자리 셋이 계속 찼기 때문이다. 그 줄에서 테스트가 멈추므로, 재요청의 실패를 기록하고 이어 가도록 장면도 함께 고쳐 한 번 더 돌렸다. 재요청은 거절되었고, 끝에 Set에는 토큰 3이 남았으며(`Expecting empty but was: [...]` 세 UUID), 쿠폰 행은 3이었다. 티켓 228의 변이 확인(같은 수정에 그 티켓의 장면 6개가 붉음)은 차례대로 부르는 장면의 몫이고, 이 장면은 실행 중인 발급이 자리를 쥐는 동안에도 같은 것을 보인다.
 

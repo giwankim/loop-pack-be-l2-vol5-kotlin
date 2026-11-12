@@ -24,8 +24,6 @@ class CouponIssueSlotsTest(
 ) : BaseCommittingApplicationServiceTest() {
     companion object {
         private const val CAPACITY = 3
-
-        /** A full slot is a `null`, not an exception, so every one of these calls is a success to [tally]. */
         private const val THREADS = 8
 
         /** `application.yml`'s `coupon-issue.slot-capacity`, the same in every profile. */
@@ -90,6 +88,7 @@ class CouponIssueSlotsTest(
         val results = runConcurrently(List(THREADS) { { slots.acquire() } })
 
         val outcomes = tally(results)
+        // A full slot is a null, not an exception, so every call is a success to tally.
         assertThat(outcomes.successes).isEqualTo(THREADS)
         assertThat(outcomes.technicalErrors).isZero()
         assertThat(outcomes.total).isEqualTo(THREADS)
@@ -99,7 +98,7 @@ class CouponIssueSlotsTest(
     }
 
     @Test
-    fun `the context's slots admit the configured capacity and refuse the next`() {
+    fun `the context's slots are acquired up to the configured capacity and refused after`() {
         val tokens = List(CONFIGURED_CAPACITY) { couponIssueSlots.acquire() }
 
         val overflow = couponIssueSlots.acquire()
