@@ -49,6 +49,8 @@ coupon-issue:
   # This instance's name in its slot tokens. Unique per running instance; blank or containing ':' fails the start.
   # The empty default makes a missing HOSTNAME blank: without it the literal "${HOSTNAME}" would bind and every such instance share it.
   instance-id: ${HOSTNAME:}
+  # Opens issue admission once at startup. Unset it is false and admission stays closed; once closed, only a restart opens it.
+  admission-open-on-startup: true
 
 # PG 조회의 재시도와 서킷 브레이커(ADR 0030). 두 조회가 pg-lookup 하나를 나눠 쓰고, 생성은 감싸지 않는다. 재시도가 브레이커를 감싸므로
 # HTTP 시도 하나가 브레이커 표본 하나다. 값의 근거는 ADR 0030 규칙 6의 표에 있다. 조회 하나의 위 끝은 2 × (200 ms + 500 ms + 1 s) + 100 ms = 3.5 s다.

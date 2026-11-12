@@ -19,3 +19,12 @@ fun RedisTemplate<String, String>.addCouponIssueSlotToken(token: String) {
 fun RedisTemplate<String, String>.couponIssueSlotsTimeToLive(): Long? {
     return getExpire(COUPON_ISSUE_SLOTS_KEY)
 }
+
+/** Removes [tokens] from the Set straight, the way a Redis that lost its state would, without going through the port under test. */
+fun RedisTemplate<String, String>.removeCouponIssueSlotTokens(tokens: Collection<String>) {
+    if (tokens.isEmpty()) {
+        return
+    }
+
+    opsForSet().remove(COUPON_ISSUE_SLOTS_KEY, *tokens.toTypedArray())
+}

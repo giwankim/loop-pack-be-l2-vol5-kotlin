@@ -15,7 +15,9 @@ interface CouponApiSpec {
             "쿠폰 캠페인이 없으면 404 COUPON_CAMPAIGN_NOT_FOUND, 발급이 중지되었으면 409 COUPON_CAMPAIGN_SUSPENDED, " +
             "발급 한도가 소진되었으면 409 COUPON_CAMPAIGN_EXHAUSTED입니다. 이미 가진 쿠폰은 발급 중지나 소진 뒤에도 200으로 돌려줍니다. " +
             "발급을 처리할 자리가 모두 찼으면 기다리지 않고 429 COUPON_ISSUE_CAPACITY_EXCEEDED로 답하며 아무것도 발급하지 않으니, 다시 보내도 됩니다. " +
-            "이미 가진 쿠폰은 자리가 찼어도 200으로 돌려줍니다.",
+            "이미 가진 쿠폰은 자리가 찼어도 200으로 돌려줍니다. " +
+            "서버가 발급을 받지 않는 동안에는 503 COUPON_ISSUE_ADMISSION_CLOSED로 답하며 아무것도 발급하지 않습니다. " +
+            "언제 다시 받을지는 알리지 않습니다. 이미 가진 쿠폰은 이때에도 200으로 돌려줍니다.",
     )
     fun issue(
         userId: Long,

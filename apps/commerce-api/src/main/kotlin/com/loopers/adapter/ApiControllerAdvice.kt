@@ -1,6 +1,7 @@
 package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
+import com.loopers.application.coupon.CouponIssueAdmissionClosedException
 import com.loopers.application.coupon.CouponIssueCapacityExceededException
 import com.loopers.domain.coupon.CouponCampaignExhaustedException
 import com.loopers.domain.coupon.CouponCampaignSuspendedException
@@ -61,6 +62,16 @@ class ApiControllerAdvice {
     fun handleCouponIssueCapacityExceeded(e: CouponIssueCapacityExceededException): ResponseEntity<ApiResponse<*>> {
         log.warn { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.COUPON_ISSUE_CAPACITY_EXCEEDED)
+    }
+
+    /**
+     * Closing admission was logged once, as an ERROR with its cause, where it closed. Every request refused after it answers here, so
+     * the line carries no stack trace and the log shows the closing, not the flood.
+     */
+    @ExceptionHandler
+    fun handleCouponIssueAdmissionClosed(e: CouponIssueAdmissionClosedException): ResponseEntity<ApiResponse<*>> {
+        log.warn { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_ISSUE_ADMISSION_CLOSED)
     }
 
     /**
