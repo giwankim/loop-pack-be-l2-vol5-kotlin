@@ -136,3 +136,142 @@ A two-axis review ran on `fa02fc20` before the final check.
   - `heldCustomers` is now `heldUsers` (`CONTEXT.md` avoids Customer).
   - Step 1's `CouponIssueIntegrationTest` KDoc still said the slots would go "in front of the API". It now says they sit inside the port and its scenes pass through them at 10. Its scenes did not change.
 - **Left as they are:** the "명령 한도 100 ms" phrase in 9.3 (a Redis timeout, not 수용량). The other `customer` names in `CouponIssueIntegrationTest` are left too: they predate this branch, and no sweep was asked for.
+
+## Spec 226: the closing review
+
+Recorded 2026-11-12 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226#issuecomment-6815705259) of [spec 226](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226). The text is the comment's, with its blob URLs and its headings one level down.
+
+Step 2 of week 8 is built, and its closing review is done. `scripts/final-check --app commerce-api` on `3f6e24d9`, a clean tree, started 2026-11-12T05:04:53Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 109 classes, 1164 tests (5 min 1 s), 0 failures, 0 errors, 0 skipped**. Step 1 ended at 105 classes and 1143 tests, so this step adds 4 classes and 21 tests. Only documents changed after `3f6e24d9`.
+
+Tickets 227–229 are closed, each with its own comment. [Design 9.1](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md#91-2단계가-만든-것) lists what each one built.
+
+### Where the implementation differs
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| The held-slots class `CouponIssueSlotsIntegrationTest` also covers the exhausted rejection's empty Set and the holder's repeat request | Those sequential scenes are `CouponIssueAdmissionTest`, on the plain committing base and the default context. The held-slots class keeps the assignment's one §5 scene in its own context at capacity 3 | Issue 228 |
+| A held issue is paused after the acquire and before the DB transaction | It is paused before `callOriginal()` but behind the transactional proxy, so its transaction has begun and it holds a pooled connection, though not the campaign's lock | Issue 229 ([design 9.8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md#98-검증)) |
+| Step 1's four scenes in `CouponIssueIntegrationTest` pass unchanged | Their assertions are unchanged. Issue 229 rewrote the class's KDoc and moved its committed reads to the base, and this review added two assertions on the slot Set (below) | Issue 229 and this review |
+
+**Additions the spec didn't ask for:**
+
+- `CouponApiTest` also covers the holder's 200 and the coupon list while every slot is taken, as Customer stories 5 and 6 ask.
+- The 429 is logged without its stack trace: full slots are load, not a fault ([design 9.5](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md#95-api와-오류)).
+- Test bases gained `takeEveryCouponIssueSlot()`, `releaseCouponIssueSlot()` and the `committed*` reads, and `support/CouponIssueSlotSet.kt` reads the Set. `CODING_STANDARDS.md` lists the new classes' bases and the capacity's `@TestPropertySource`.
+
+**Settled while building:**
+
+- With the check and the add as two round trips instead of the script, 8 threads against a capacity of 3 were all admitted, in 3 of 3 runs (issue 227). The capacity is the scene's setting, not a measured value.
+- The capacity of 10 is a starting point, not a measurement ([design 9.4](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md#94-수용량)).
+- Spec 226 has no 구현에서 확인할 것 section, so nothing is open under that rule.
+
+### The closing review
+
+A two-axis review of `week8...feat/coupon-admission` at `32ab1f2f` (10 commits, 24 files), with one reviewer on the standards and one on this spec. Neither found a hard violation or a defect in production code. Standards reported 7 judgement calls, Spec 5 findings and one 측정과 증거 gap. Each was checked against the code and decided one by one.
+
+#### What changed
+
+`3f6e24d9`:
+
+- **Story 14 now has scenes.** A release after a lock timeout and after an unexpected exception held only by reading the `finally`. Step 1's rollback and lock scenes already drive both paths through the port with their own spies, so each now also reads the Set: empty after the rollback, and only the paused holder's token after the waiter's lock failure. No context was added. With `release` moved out of the `finally` to after a success, exactly these two failed (`Expecting empty but was` one token, `Expected size: 1 but was: 2`) ([design 9.8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md#98-검증)).
+- **Capacity 3 is labelled as a setting.** Design 9.3's two-round-trip claim now says it ran at capacity 3, where at production's 10 eight threads would get in anyway. 9.8 says its scene shows behaviour and measures nothing.
+- **Slot actions use the port's verb.** `ADMITTED` is now `ACQUIRED`, and a KDoc, a test name and a class comment say acquire where they said admit. "Admission" stays as the step's name.
+- **A test KDoc no longer says the flush "frees" the slots** (`CONTEXT.md` avoids it for 자리를 놓다). It says the flush empties the Set.
+- **The race test's note on `tally`** moved from the `THREADS` constant to the assertion it explains.
+
+#### Left as they were
+
+- **The key `coupon-issue:slots` spelled in the test support.** The adapter keeps it private, and the tests' positive assertions would fail before an empty-Set check could pass against a drifted key.
+- **`CONFIGURED_CAPACITY = 10` as a literal.** It is the expected value, so a change to `application.yml` fails the test and sends the reader to design 9.4.
+- **Each class injecting the master template to read the Set.** `CODING_STANDARDS.md` takes assertion dependencies through the constructor.
+- **Story 18's master connection holds by inspection.** The test Redis is one node, as issue 227 recorded.
+
+#### A correction
+
+Issue 227's comment calls `CouponIssueSlotsIntegrationTest` "Issue 228's". It is issue 229's, as issue 228's body planned. That comment and its copy are left as posted.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/research/week8-coupon-admission-writing-material.md#spec-226-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/coupon-admission` into `week8`, in the shape of step 1's, written after the spec's closing review. The PR's copy links these documents with blob URLs and carries the spec's closing comment.
+
+Title: `feat(commerce-api): start a coupon issue only with a free processing slot in Redis, and answer 429 without one`
+
+````markdown
+## Summary
+
+Week 8 step 2. At most `capacity` issuing transactions run at once across every coupon campaign, counted in one Redis Set. Without a free slot the request is answered 429 at once and no DB work starts. Step 1's quota and one-coupon rules are unchanged, and Redis failures (step 3) come later.
+
+- **Spec:** issue 226, with tickets 227–229, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/226#issuecomment-6815705259)
+- **Decision:** none new. Design 9.6 says why the key needs no ADR
+- **Design:** [`docs/design/coupons.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/design/coupons.md). Section 9 is this step: 9.2 the order, 9.3 the Set and Lua, 9.6 what wasn't chosen, 9.7 the costs, 9.8 the scenes and red checks. Section 10 hands over to step 3
+- **Writing material:** [`docs/research/week8-coupon-admission-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission/docs/research/week8-coupon-admission-writing-material.md), which holds every ticket's closing comment
+
+```diff
+ POST /api/v1/coupon-campaigns/{campaignId}/issues
+   CouponIssueService.issue                    # Propagation.NEVER
+     early read of the requester's coupon      # found: 200, no slot taken
++    CouponIssueSlots.acquire()                # Lua: SISMEMBER, SCARD >= capacity, SADD on coupon-issue:slots
++                                              # null: 429 COUPON_ISSUE_CAPACITY_EXCEEDED, no FOR UPDATE
+     CouponIssueSteps.issueUnderLock           # own TX, step 1 unchanged
++    finally CouponIssueSlots.release(token)   # SREM of its own UUID token, after commit or rollback
+```
+
+The capacity is `coupon-issue.slot-capacity`, 10 in every profile and at least 1 at startup: a quarter of the pool of 40, and a starting point, not a measurement. The slots know nothing of the quota, and a release changes neither the issued count nor a coupon.
+
+## Review Points
+
+#### 1. Is one Set for every campaign the right bound?
+
+The assignment bounds the issuing path as a whole, so the slots protect the connection pool's share. The cost is that one hot campaign fills every slot, one running and the rest waiting on its row lock, and other campaigns' requests get 429 while the DB is idle (design 9.7).
+
+**Would you trade that for a per-campaign bound, given that the sum then grows with the number of campaigns?**
+
+#### 2. Is a Set with no TTL the right call?
+
+A JVM that dies between acquire and release leaves its token behind, holding a slot for good. A TTL would clear it but can't tell a dead execution from a slow one, so it would let in more than the capacity. Step 3's resume rule is to clean up instead (design 9.6, 10).
+
+**In practice, have you relied on expiry for a bound like this, and what did it let through?**
+
+#### 3. How would you size the capacity?
+
+10 was picked from the pool's share and the step 1 scenes' 8 threads, not under load.
+
+**What would you measure to choose it: pool wait time, the 429 rate, or the lock wait on one hot campaign?**
+
+## Evidence
+
+**Before:** on `week8`, nothing bounds how many issues run at once. Every issue for one campaign holds a connection while it queues on the row, and an overflow waits 3 s for a 409 `CONCURRENT_REQUEST`.
+
+**After:** `CouponIssueSlotsIntegrationTest` on real Redis and MySQL at capacity 3, a scene setting, holds three issues inside `issueUnderLock` (from the final check's run, `scripts/scene-lines`):
+
+```text
+Capacity scene: capacity 3: 3 issues held in their slots, the next user refused with CouponIssueCapacityExceededException, issued on retry after one finished; slots held at the end 0, coupon rows 4, issued count 4
+```
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| The check and the add as two round trips instead of the script | 8 threads at capacity 3: all 8 admitted, 3 runs of 3 |
+| `release` removed | The fourth user's retry refused, and the Set keeps 3 tokens |
+| `release` only after a success, not in the `finally` | The exhausted, suspended and not-found scenes, and the rollback and lock-timeout scenes, leave tokens behind |
+
+`scripts/final-check --app commerce-api` on `3f6e24d9`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 109 (105 before) | 1164 (1143 before) | 0 |
+
+## Merge Danger
+
+**Door:** two-way
+
+No schema change. The only new state is the Redis Set `coupon-issue:slots`, which is empty whenever no issue is running. A revert leaves at most a few stale tokens that nothing reads.
+
+**Blast Radius:** coupon issuing
+
+- **Issuing now needs Redis.** Until step 3, a Redis failure answers 500 instead of issuing. A failed acquire starts no transaction. A failed release after a commit is a 500, but the coupon exists and a retry gets 200 from the early read.
+- **Unchanged:** the coupon list, a holder's repeat request, orders, payments, the outbox and commerce-streamer.
+- **Tests:** step 1's contention scenes now pass through the slots at 10, and the capacity-3 scene starts one more Spring context.
+- **Out of scope:** 503 and closing or resuming the slots, waiting or queueing, per-campaign or per-user limits.
+````

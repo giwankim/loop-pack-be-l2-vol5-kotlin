@@ -264,8 +264,9 @@ Capacity scene: capacity 3: 3 issues held in their slots, the next user refused 
 scripts/final-check --app commerce-api
 ```
 
-- 끝의 확인은 2026-11-12 `f47653a8`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`로 돌렸다(04:08:58Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 109개 클래스, 1164개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 12 s). 1단계가 끝난 105개 클래스, 1143개 테스트에서 티켓 227이 2개 클래스와 10개 테스트를, 228이 1개 클래스와 10개 테스트를, 229가 `CouponIssueSlotsIntegrationTest`의 1개 클래스와 1개 테스트를 더했다.
-- 이 실행의 보고서에서 읽은 9.8절의 줄도 위와 같다(`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueSlotsIntegrationTest`). 8.1절의 두 줄도 같은 수로 나왔고, 같은 사용자 장면의 `newly issued`는 이번에 `[false, true]`였다.
+- 끝의 확인은 2026-11-12 `3f6e24d9`의 깨끗한 트리에서 `scripts/final-check --app commerce-api`로 돌렸다(05:04:53Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다. commerce-api는 109개 클래스, 1164개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 1 s). 명세 226의 닫는 검토가 고친 커밋이다. 9.8절의 단언 둘을 더했을 뿐 테스트는 늘지 않았다.
+- 앞의 확인은 2026-11-12 `f47653a8`의 깨끗한 트리에서 같은 수로 통과했다(04:08:58Z 시작, 5 min 12 s). 1단계가 끝난 105개 클래스, 1143개 테스트에서 티켓 227이 2개 클래스와 10개 테스트를, 228이 1개 클래스와 10개 테스트를, 229가 `CouponIssueSlotsIntegrationTest`의 1개 클래스와 1개 테스트를 더했다.
+- 두 실행의 보고서에서 읽은 9.8절의 줄도 위와 같다(`scripts/scene-lines --results build/final-check/commerce-api-test-results CouponIssueSlotsIntegrationTest`). 8.1절의 두 줄도 같은 수로 나왔고, 같은 사용자 장면의 `newly issued`는 `f47653a8`에서 `[false, true]`, `3f6e24d9`에서 `[true, false]`였다.
 
 ## 10. 3단계로 넘기는 것
 
