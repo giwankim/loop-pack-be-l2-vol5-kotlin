@@ -1,6 +1,6 @@
 # Week 8 coupon admission failure: writing material
 
-Material for the technical writing quest, not the write-up itself. Each section is recorded from one ticket of [spec 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)'s closing comments.
+Material for the technical writing quest, not the write-up itself. Each section is recorded from a closing comment: one per ticket of [spec 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231)'s, then the spec's own.
 
 ## Issue 232: slot tokens carry the instance's name, and a release reports what it removed
 
@@ -169,3 +169,153 @@ A two-axis review ran on the uncommitted tree before `51c3939f`, and its fixes a
   - `CONTEXT.md` says opening "사람이 시켜야 한다", while a restart opens unattended. ADR 0037 records that as a cost, and the glossary is left to its owner.
   - Each scene reads the coupon-rows / issued-count pair, as the earlier coupon tests do.
   - Redis down at startup is not run over HTTP (design 11.10).
+
+## Spec 231: the closing review
+
+Recorded 2026-11-12 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231#issuecomment-6826398433) of [spec 231](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231). The text is the comment's, with its blob URLs and its headings one level down.
+
+Step 3 of week 8 is built, and its closing review is done. `scripts/final-check --app commerce-api` on `073941d9`, a clean tree, started 2026-11-12T14:20:51Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 113 classes, 1187 tests (5 min 38 s), 0 failures, 0 errors, 0 skipped**. Step 2 ended at 109 classes and 1164 tests, so this step adds 4 classes and 23 tests. Only documents changed after `073941d9`.
+
+Tickets 232–234 are closed, each with its own comment. [Design 11.1](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/design/coupons.md#111-3단계가-만든-것) lists what each one built, and [ADR 0037](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/adr/0037-coupon-issue-admission-starts-closed-and-never-reopens-by-itself.md) holds the rule.
+
+### Where the implementation differs
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| Seven scenes in `CouponIssueRedisFailureTest` | Five scenes in `CouponIssueRedisFailureApiTest` (renamed in this review). The vanished token is in `CouponIssueAdmissionApiTest` over HTTP, and the latch-held `open()` is in `CouponIssueAdmissionClosingTest` at the port. Neither needs an outage | Issues 233 and 234 |
+| Redis stopped, a new user issues: no coupon row, issued count 0 | Coupon rows 1 and issued count 1, both the holder's, prepared before the stop. The newcomer's list is empty | Issue 234 |
+| Redis paused: 503 within the command timeout | Asserted against a 2 s bound, as the repo's Redis failure tests assert time. The recorded refusals took 125–129 ms. `RedisTimeoutTest` owns the 100 ms itself | Issue 234 |
+| The default block's instance name is `${HOSTNAME}` | `${HOSTNAME:}`. Spring binds an unresolved `${HOSTNAME}` as its literal text, so every instance without the variable would have shared one name | Issue 232's review |
+| `open()` in four steps | A fifth: opening an open admission does nothing | Issue 233 |
+| The first red check turns one scene red | Two: the paused scene too, since the unpause plays the same part as the restart | Issue 234 |
+
+**Not run:**
+
+- **Redis down at startup, over HTTP (story 22).** The runner test shows that a failing opening does not fail the start, and `CouponIssueAdmissionApiTest` shows the answers of an instance that started closed ([design 11.10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/design/coupons.md#1110-3단계-뒤에-남은-것)).
+- **The script answering neither 1 nor 0 (story 9).** Real Redis and the assignment's script cannot produce it, so `acquire()` throwing there holds by reading only.
+
+### The closing review
+
+A two-axis review of `week8...feat/coupon-admission-failure` at `01d07c2a` (10 commits, 29 files), with one reviewer on the standards and one on this spec. Neither found a defect in production behaviour. Standards reported 4 violations, all in tests and documents, and 5 judgement calls. Spec reported 3 partial requirements and 3 doubts. Each was checked against the code and decided one by one.
+
+#### What changed
+
+`073941d9`:
+
+- **Story 6 now has a scene.** Every release-failure scene ended in 201, so a business rejection surviving a failed release held only by reading the `finally`. The new scene stops Redis during the issue of an exhausted campaign and gets 409 `COUPON_CAMPAIGN_EXHAUSTED`, with the next user refused 503. With the release's exception rethrown instead of swallowed, this scene and the 201 scene both answered 500 ([design 11.8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/design/coupons.md#118-검증)).
+- **The Redis failure class is `CouponIssueRedisFailureApiTest`.** It was the only HTTP test not named `…ApiTest`. Issue 234's comment keeps the old name.
+- **A test comment claimed evidence that does not exist.** `CouponIssueAdmissionStartupRunnerTest`'s KDoc cited a class by a wrong name and a startup-outage scene that was never run. It now says so.
+- **Two limits of `open()` are written down** ([design 11.7](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/design/coupons.md#117-한계와-대가)):
+  - It does not exclude another `open()`. Two overlapping openings could remove the token of an issue admitted between them. Only the startup calls it, once.
+  - A request about to be refused counts as running for an instant. If it lands at the startup's opening, the opening is refused and the instance stays closed until a restart. This errs toward admitting less.
+- **Body variables follow the naming rule** in the two HTTP classes (`error`, `list`, `secondIssueBody`).
+- **The test profile's instance name is one constant** in `support/CouponIssueSlotSet.kt`, where three classes each spelled `localhost`.
+- **재개 in design 9.6 and 10** got dated notes: this step says 수용을 열다.
+
+#### Left as they were
+
+- **The `for update` filter repeated in three tests.** Three older tests filter the captured SQL the same way.
+- **The 503 message in both `ErrorType` and the exception.** It mirrors `CouponIssueCapacityExceededException`.
+- **The startup property read through `Environment`, and its name retyped in tests.** The startup adapter must not see the persistence adapter's properties class, and the retyped literal pins the name.
+- **`instanceId` beside "instance name" in prose.** The property is `coupon-issue.instance-id`, as the spec named it.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/research/week8-coupon-admission-failure-writing-material.md#spec-231-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/coupon-admission-failure` into `week8`, in the shape of step 2's, written after the spec's closing review.
+
+Title: `feat(commerce-api): start coupon issue admission closed, close it on a Redis failure with 503, and reopen only on restart`
+
+````markdown
+## Summary
+
+Week 8 step 3. A coupon issue admission now stands in front of step 2's processing slots. It starts closed, closes itself when the slots can no longer be trusted, answers 503 while closed, and never reopens by itself: a restart is what opens it. Step 1's quota rules and step 2's capacity are unchanged.
+
+- **Spec:** issue 231, with tickets 232–234, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/231#issuecomment-6826398433)
+- **Decision:** [ADR 0037](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/adr/0037-coupon-issue-admission-starts-closed-and-never-reopens-by-itself.md)
+- **Design:** [`docs/design/coupons.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/design/coupons.md). Section 11 is this step: 11.2 the admission, 11.3 opening, 11.4 named tokens, 11.7 the limits, 11.8 the scenes and red checks, 11.10 what is left
+- **Writing material:** [`docs/research/week8-coupon-admission-failure-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/coupon-admission-failure/docs/research/week8-coupon-admission-failure-writing-material.md), which holds every ticket's closing comment
+
+```diff
+ POST /api/v1/coupon-campaigns/{campaignId}/issues
+   CouponIssueService.issue                      # Propagation.NEVER
+     early read of the requester's coupon        # found: 200, admission not consulted
++    CouponIssueAdmission.admit {                # counts the issue as running, then reads open/closed
++                                                # closed: 503 COUPON_ISSUE_ADMISSION_CLOSED, no Redis call
+-    CouponIssueSlots.acquire()                  # threw: 500
++      CouponIssueSlots.acquire()                # threw: close admission, 503, no FOR UPDATE
+                                                 # null: 429 COUPON_ISSUE_CAPACITY_EXCEEDED, stays open
+       CouponIssueSteps.issueUnderLock           # own TX, step 1 unchanged
+-    finally CouponIssueSlots.release(token)     # threw: 500, hiding the transaction's answer
++      finally CouponIssueSlots.release(token)   # threw, or removed nothing: close admission,
++    }                                           # keep the transaction's answer (201, 409, 404)
+
++ at startup: CouponIssueAdmissionOpener.open()  # refused while an issue runs; SREM this instance's
++                                                # <instance-id>:* tokens; then open. Fails: stay closed, app still up
+```
+
+Tokens are now `<instance-id>:<uuid>`, with the name from `coupon-issue.instance-id` (`${HOSTNAME:}`; a blank name fails the start). Every error makes the instance admit less, never more. The one exception is two live instances sharing a name, which the deployment must prevent.
+
+## Review Points
+
+#### 1. Is a restart an acceptable way to open?
+
+Nothing in a running app calls `open()`. One Redis command over 100 ms closes that instance for new issues until it restarts, and a restart opens it with nobody checking (ADR 0037, 대가). An admin endpoint would have to prove that every issue of the process has ended, which a restart gets for free.
+
+**Would you accept a restart as the operator's "explicit resume", or does this need an endpoint?**
+
+#### 2. Is per-instance state enough?
+
+Open or closed lives in each process. Two instances close and open separately, so one keeps admitting while the other is closed, against the same Set (design 11.7). A shared flag in Redis is unusable when Redis is down, and one in the DB adds a read to every issue.
+
+**Where would you keep this state once there are several instances?**
+
+#### 3. Is closing on a single failed command too eager?
+
+There is no retry and no threshold: one timeout closes admission, because a timed-out acquire may have reached Redis and the Set no longer matches the running issues. A circuit breaker was not chosen, since a later `PONG` proves nothing about leftover tokens.
+
+**Is "any doubt closes it" the right reading of the assignment, or would you tolerate a few failures first?**
+
+## Evidence
+
+**Before:** on `week8`, a Redis failure during an issue answers 500, including after the coupon committed, and a leftover token holds a slot for good.
+
+**After:** `CouponIssueRedisFailureApiTest` over HTTP on real MySQL, stopping and pausing the Redis the app uses (from the final check's run, `scripts/scene-lines`):
+
+```text
+Stopped Redis: new user 503 COUPON_ISSUE_ADMISSION_CLOSED with 0 FOR UPDATE; holder 200 with the same coupon, list 200; coupon rows 1 (the holder's), issued count 1
+Restarted Redis: 503 during the outage, still 503 after the start with Redis answering, 201 after the opening; coupon rows 1, issued count 1
+Paused Redis: new user 503 in 125 ms (bound 2000 ms), still 503 after unpausing; coupon rows 0, issued count 0
+Release failed: 201 with coupon rows 1, issued count 1; after the start 1 token left in the Set and the next user 503; after the opening 0 tokens and the next user 201
+Release failed after a rejection: 409 COUPON_CAMPAIGN_EXHAUSTED, and the next user 503 after the start; coupon rows 1 (the holder's), issued count 1
+```
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| A failed acquire does not close admission | The restarted and paused scenes: `expected: 503 but was: 201` |
+| `open()` without its cleanup | The release-failed scene: the Set still holds `localhost:6097fd84-…` |
+| A failed release rethrown instead of swallowed | The two release-failed scenes: `expected: 201` and `expected: 409`, both `but was: 500` |
+
+`scripts/final-check --app commerce-api` on `073941d9`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 113 (109 before) | 1187 (1164 before) | 0 |
+
+Not run: Redis down at startup over HTTP, and the script answering neither 1 nor 0 (design 11.10).
+
+## Merge Danger
+
+**Door:** two-way
+
+No schema change. The new state is in memory, plus the instance name at the front of each token in `coupon-issue:slots`. A revert leaves at most a few named tokens that step 2's code treats as taken slots until the Set is cleared.
+
+**Blast Radius:** coupon issuing
+
+- **`HOSTNAME` is now required outside `local` and `test`.** Without it the app does not start.
+- **A Redis outage now stops new issues until a restart**, even after Redis is back. Holders' repeat requests, the coupon list, orders and payments keep answering.
+- **Two live instances must not share an instance name.** They would remove each other's tokens and admit past the capacity.
+- **Tests:** three more Spring contexts (the closing class, the closed-from-start class, and the stoppable Redis class).
+- **Out of scope:** an admin endpoint to open, state shared across instances, TTL or heartbeat reclaim, retries.
+````
