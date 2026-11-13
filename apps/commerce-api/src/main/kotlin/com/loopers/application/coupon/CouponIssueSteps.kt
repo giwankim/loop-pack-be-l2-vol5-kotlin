@@ -31,22 +31,24 @@ class CouponIssueSteps(
     fun issueUnderLock(userId: Long, campaignId: Long): CouponIssueResult {
         val campaign = couponCampaignFinder.findForUpdate(campaignId)
 
-        val existing = couponRepository.findByCampaignIdAndUserId(campaignId, userId)
-        if (existing != null) {
-            return CouponIssueResult(existing, newlyIssued = false)
+        val existingCoupon = couponRepository.findByCampaignIdAndUserId(campaignId, userId)
+        if (existingCoupon != null) {
+            return CouponIssueResult(existingCoupon, newlyIssued = false)
         }
 
         campaign.issue()
         val savedCampaign = couponCampaignRepository.save(campaign)
 
-        val coupon = Coupon(
-            campaignId = savedCampaign.id,
-            userId = userId,
-            campaignName = savedCampaign.name,
-            discountAmount = savedCampaign.discountAmount,
-            issuedAt = clock.instant(),
+        val coupon = couponRepository.save(
+            Coupon(
+                campaignId = savedCampaign.id,
+                userId = userId,
+                campaignName = savedCampaign.name,
+                discountAmount = savedCampaign.discountAmount,
+                issuedAt = clock.instant(),
+            ),
         )
 
-        return CouponIssueResult(couponRepository.save(coupon), newlyIssued = true)
+        return CouponIssueResult(coupon, newlyIssued = true)
     }
 }
