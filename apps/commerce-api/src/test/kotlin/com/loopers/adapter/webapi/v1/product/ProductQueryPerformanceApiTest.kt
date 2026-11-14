@@ -6,6 +6,7 @@ import com.loopers.support.ProductQuerySeed
 import com.loopers.support.RedisCleanUp
 import com.loopers.support.SeedProduct
 import com.loopers.support.captureSql
+import com.loopers.support.explainTree
 import com.loopers.support.test.BaseWebApiAdapterTest
 import com.loopers.support.withStatistics
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -328,7 +329,7 @@ class ProductQueryPerformanceApiTest(
         assertThat(captured.result).hasStatusOk()
         assertThat(captured.statements).hasSize(3)
 
-        return explainTree(captured.statements[1], pageBinds(brandId, page))
+        return jdbc.explainTree(captured.statements[1], pageBinds(brandId, page))
     }
 
     /** 페이지 쿼리의 바인드 값. 브랜드(있으면), offset, `size + 1`이다. */
@@ -373,7 +374,7 @@ class ProductQueryPerformanceApiTest(
         }!!
         val productLockRead = captured.statements.single { it.contains("from product") && it.contains(" for update") }
 
-        val plan = explainTree(productLockRead, listOf(BRAND_ID))
+        val plan = jdbc.explainTree(productLockRead, listOf(BRAND_ID))
 
         assertThat(plan).describedAs("EXPLAIN FORMAT=TREE of %s", productLockRead).doesNotContain("-> Sort")
         assertThat(activeBrandCount(BRAND_ID)).isEqualTo(1)
@@ -434,7 +435,7 @@ class ProductQueryPerformanceApiTest(
      * `EXPLAIN ANALYZE`는 문장을 실제로 실행해 행 수와 시간을 잰다.
      */
     private fun plans(label: String, sql: String, binds: List<Any>): String {
-        val tree = explainTree(sql, binds)
+        val tree = jdbc.explainTree(sql, binds)
         val analyze = jdbc.queryForObject("explain analyze $sql", String::class.java, *binds.toTypedArray())
 
         return """
@@ -445,13 +446,6 @@ class ProductQueryPerformanceApiTest(
             |-- EXPLAIN ANALYZE
             |$analyze
         """.trimMargin()
-    }
-
-    /** [sql]의 `EXPLAIN FORMAT=TREE`. 문장을 실행하지 않고 계획만 세운다. */
-    private fun explainTree(sql: String, binds: List<Any>): String {
-        check(sql.count { it == '?' } == binds.size) { "바인드 값 ${binds.size}개가 SQL의 자리 수와 다르다: $sql" }
-
-        return jdbc.queryForObject("explain format=tree $sql", String::class.java, *binds.toTypedArray())!!
     }
 
     private fun activeBrandCount(brandId: Long): Int {

@@ -1,6 +1,10 @@
 package com.loopers.adapter
 
 import com.loopers.adapter.webapi.ApiResponse
+import com.loopers.application.coupon.CouponIssueAdmissionClosedException
+import com.loopers.application.coupon.CouponIssueCapacityExceededException
+import com.loopers.domain.coupon.CouponCampaignExhaustedException
+import com.loopers.domain.coupon.CouponCampaignSuspendedException
 import com.loopers.domain.order.OrderAlreadyConfirmedException
 import com.loopers.domain.product.InsufficientStockException
 import com.loopers.domain.shared.RuleViolationException
@@ -39,6 +43,35 @@ class ApiControllerAdvice {
     fun handleOrderAlreadyConfirmed(e: OrderAlreadyConfirmedException): ResponseEntity<ApiResponse<*>> {
         log.warn(e) { "${e::class.simpleName} : ${e.message}" }
         return failureResponse(errorType = ErrorType.ORDER_ALREADY_CONFIRMED)
+    }
+
+    @ExceptionHandler
+    fun handleCouponCampaignExhausted(e: CouponCampaignExhaustedException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_CAMPAIGN_EXHAUSTED)
+    }
+
+    @ExceptionHandler
+    fun handleCouponCampaignSuspended(e: CouponCampaignSuspendedException): ResponseEntity<ApiResponse<*>> {
+        log.warn(e) { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_CAMPAIGN_SUSPENDED)
+    }
+
+    /** Full slots are load, not a fault, and a burst answers many of them, so the log line carries no stack trace. */
+    @ExceptionHandler
+    fun handleCouponIssueCapacityExceeded(e: CouponIssueCapacityExceededException): ResponseEntity<ApiResponse<*>> {
+        log.warn { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_ISSUE_CAPACITY_EXCEEDED)
+    }
+
+    /**
+     * Closing admission was logged once, as an ERROR with its cause, where it closed. Every request refused after it answers here, so
+     * the line carries no stack trace and the log shows the closing, not the flood.
+     */
+    @ExceptionHandler
+    fun handleCouponIssueAdmissionClosed(e: CouponIssueAdmissionClosedException): ResponseEntity<ApiResponse<*>> {
+        log.warn { "${e::class.simpleName} : ${e.message}" }
+        return failureResponse(errorType = ErrorType.COUPON_ISSUE_ADMISSION_CLOSED)
     }
 
     /**

@@ -61,7 +61,7 @@ class OrderApi(
     @GetMapping("/{orderId}")
     override fun find(
         @RequesterId userId: Long,
-        @PathVariable orderId: Long,
+        @PathVariable("orderId") orderId: Long,
     ): ApiResponse<OrderResponse> {
         val order = orderFinder.findInfo(userId, orderId)
 
@@ -72,7 +72,7 @@ class OrderApi(
     @PostMapping("/{orderId}/confirm")
     override fun confirm(
         @RequesterId userId: Long,
-        @PathVariable orderId: Long,
+        @PathVariable("orderId") orderId: Long,
         @IdempotencyKey idempotencyKey: String,
         @RequestBody @Valid request: OrderConfirmRequest,
     ): ResponseEntity<ApiResponse<OrderResponse>> {
@@ -85,7 +85,7 @@ class OrderApi(
     @PostMapping("/{orderId}/payment/reconcile")
     override fun reconcile(
         @RequesterId userId: Long,
-        @PathVariable orderId: Long,
+        @PathVariable("orderId") orderId: Long,
     ): ResponseEntity<ApiResponse<OrderResponse>> {
         val order = orderConfirmer.reconcile(userId, orderId)
 

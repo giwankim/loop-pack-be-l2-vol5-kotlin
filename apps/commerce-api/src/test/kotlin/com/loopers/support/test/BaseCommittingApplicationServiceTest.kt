@@ -1,19 +1,26 @@
 package com.loopers.support.test
 
+import com.loopers.application.coupon.provided.CouponFinder
+import com.loopers.application.coupon.provided.CouponListRequest
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.product.ProductListCacheKeyGenerator
 import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.required.ProductListRevisionRepository
+import com.loopers.domain.coupon.Coupon
+import com.loopers.domain.coupon.CouponCampaign
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderEventOutbox
 import com.loopers.domain.order.createOrderEventOutbox
 import com.loopers.domain.payment.Payment
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.TestPg
+import com.loopers.support.countCoupons
+import com.loopers.support.couponCampaignIssuedCount
 import org.junit.jupiter.api.AfterEach
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.data.domain.Slice
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Propagation
@@ -84,6 +91,9 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
 
     @Autowired
     private lateinit var orderEventOutboxRepository: OrderEventOutboxRepository
+
+    @Autowired
+    private lateinit var couponFinder: CouponFinder
 
     /**
      * The last row [prepareOrderEventOutboxWithoutOrder] saved. Rounds commit in other transactions, so read its state through
@@ -157,6 +167,21 @@ abstract class BaseCommittingApplicationServiceTest : BaseApplicationServiceTest
     /** The outbox row of [orderId]'s event if one committed, read in a new transaction. */
     protected fun committedOrderEventOutboxOrNull(orderId: Long): OrderEventOutbox? {
         return inNewTransaction { orderEventOutboxRepository.findByEventId("order-confirmed:v1:$orderId") }
+    }
+
+    /** The committed coupon rows of every campaign, counted in a new transaction. */
+    protected fun committedCouponCount(): Long {
+        return inNewTransaction { entityManager.countCoupons() }
+    }
+
+    /** [campaign]'s committed issued count, read in a new transaction. */
+    protected fun committedIssuedCount(campaign: CouponCampaign): Int {
+        return inNewTransaction { entityManager.couponCampaignIssuedCount(campaign.id) }
+    }
+
+    /** [userId]'s committed coupons, listed through [CouponFinder] in a new transaction. */
+    protected fun committedCouponsOf(userId: Long): Slice<Coupon> {
+        return inNewTransaction { couponFinder.findAll(userId, CouponListRequest()) }
     }
 
     /** The purchase activities the real commerce-streamer committed, one line each, in ID order (order-outbox design 14.4). */
