@@ -107,3 +107,45 @@ A two-axis review ran on the code before `468b5406`.
   - `@Sql` and `@TestPropertySource` on a base-class subclass: the probe creates its tables in `@BeforeEach` instead, but `@Sql` runs the one test-only file the spec asks for.
   - No `RankingPeriod` type for the week's start and end. Only one caller computes it now. Tickets 240 and 241 (boundary, validator) are where a second caller would earn it.
   - `canonicalLine` public: it is how the canonical text is pinned without a database.
+
+## Issue 243: a failed freeze leaves nothing, and a freeze blocks no purchase activity
+
+Implemented as `e4546f14`. `scripts/final-check --app commerce-batch` on `e4546f14`, a clean tree, started 2026-11-17T08:39:24Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 15 tests (16 s), 0 failures, 0 errors, 0 skipped**. Issue 239 ended at 5 classes and 12 tests, so this ticket adds 3 tests to `WeeklyRankingFreezeTest`. No production code changed. Only this document changed after `e4546f14`.
+
+### Acceptance criteria
+
+- [x] **A freeze that fails after the copy ends `FAILED`, and neither ranking table has a row for that `snapshotId`.** Scene `a freeze that fails after writing its inputs …`. The spy throws at `digestInputs`. That call is after `copyInputs` and before `insertFrozenSnapshot`, inside the step's transaction.
+- [x] **Running again with the same parameters is the same `JobInstance` and ends `COMPLETED` with the full snapshot.** Scene `rerunning a failed freeze …`. The first run is asserted `FAILED`, then the stub is cleared. The second run has the same job instance ID and a new execution ID, 4 inputs, and count 4 with the assignment's checksum.
+- [x] **During a freeze, another connection with a lock wait of one second inserts an activity confirmed inside the period being frozen, and the insert succeeds.** Scene `a purchase activity recorded from another connection …`. At the same seam, order 45 (product 7 × 4, `2026-08-20T12:00:00Z`) is inserted and committed on a new `DriverManager` connection with `SET SESSION innodb_lock_wait_timeout = 1`. The scene asserts the insert threw nothing and the row is in `purchase_activity`.
+- [x] **That activity is not among the snapshot inputs and is not in the snapshot's count or checksum.** Same scene. Order 45 is absent from the inputs, and the snapshot keeps count 4 and the assignment's checksum. The inputs assertion carries the proof. The count and checksum follow from it, because `digestInputs` reads only `weekly_ranking_snapshot_input`.
+- [x] **The late-insert scene fails when the freeze transaction's isolation is changed to REPEATABLE READ (checked once by hand).** I changed `ISOLATION_READ_COMMITTED` to `ISOLATION_REPEATABLE_READ` in `WeeklyRankingJobConfig`, then restored it. Only the late-insert scene failed, on `MySQLTransactionRollbackException: Lock wait timeout exceeded` after the one-second wait. The other six scenes passed. This matches spec 237's 확인한 사실 1: with the `confirmed_at` index, REPEATABLE READ takes S next-key locks on the period's range. I checked it before and after the review refactor.
+- [x] **`ktlintCheck` and `check` on commerce-batch pass, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+A second by-hand check, not asked for: with the step on a `ResourcelessTransactionManager`, both failure scenes failed. The failed run left its four inputs behind, and the rerun then ended `FAILED`. So the two scenes see the rollback, and they do not pass by construction.
+
+### What was built
+
+- **The seam:** `@MockkSpyBean WeeklyRankingSnapshotStore`, acting at `digestInputs(snapshotId)`. Issue 239 named this seam. The store has no `@Transactional`, so there is no CGLIB proxy, and the stub goes on the field directly. `CouponIssueSpies` needs `AopTestUtils` only because its bean has a proxy.
+- **Two intent helpers** following `CouponIssueSpies`:
+  - `failAfterTheInputsAreWritten(snapshotId)`
+  - `afterTheInputsAreWritten(snapshotId) { … }`, which runs the action, then `callOriginal()`
+- **`insertActivityFromAnotherConnection`**: a connection of its own from `DriverManager`, with the pool's URL and credentials. A pool connection keeps `innodb_lock_wait_timeout=3` from `jpa.yml` as a session variable, and a changed value would outlive the scene on the next borrower. The insert runs synchronously on the tasklet's thread. If the freeze held a lock on the range, the one-second wait would end it with 1205, not a hang.
+
+### Decisions made while implementing
+
+- **No thread for the late insert.** The freeze's transaction is open while the stub runs, so the insert meets any lock the copy took. The lock wait timeout ends the wait. A second thread would add a latch and show nothing more.
+- **The insert's outcome is captured, not thrown.** `runCatching` keeps a 1205 out of the tasklet, so the scene fails on the assertion `the late insert threw nothing` and not on a `FAILED` job whose cause sits in the log.
+- **`clearMocks` mid-test in the rerun scene.** springmockk resets the spy only after each test, and the rerun needs the real `digestInputs`.
+
+### Review
+
+A two-axis review ran on the code before `e4546f14`.
+
+- **Spec:** nothing missing and no scope creep. Fixed: the rerun scene now asserts the first run's `FAILED` as its precondition. Noted above: the count and checksum assertions in the late-insert scene follow from the inputs one.
+- **Standards:** no hard violation. Fixed before the commit:
+  - "the copy" in the new test name, stub message and KDoc is now "writing the inputs" (`CONTEXT.md` 고정하다 _Avoid_: 복사하다).
+  - The repeated `every { … digestInputs … }` stubs became the two intent helpers.
+  - The nullable `Result` with `!!` became a list read with `single()`.
+  - Fixed an over-indented `use` block, and moved `javax.sql.DataSource` after the `java.*` imports.
+- **Left as they are:** `insertActivityFromAnotherConnection` repeats `insertActivity`'s parameters, but the two share the SQL constant `INSERT_ACTIVITY_SQL`. `DriverManager` and a mid-test `clearMocks` are new to the repo, and both are explained where they are used.
