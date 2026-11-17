@@ -1,6 +1,9 @@
 package com.loopers.batch.job.weeklyranking.step
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
+import com.loopers.batch.job.weeklyranking.WeeklyRankingJobParametersValidator.Companion.PERIOD_START
+import com.loopers.batch.job.weeklyranking.WeeklyRankingJobParametersValidator.Companion.REVISION
+import com.loopers.batch.job.weeklyranking.WeeklyRankingJobParametersValidator.Companion.SNAPSHOT_ID
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.springframework.batch.core.configuration.annotation.StepScope
 import org.springframework.batch.core.scope.context.ChunkContext
@@ -32,9 +35,9 @@ private val log = KotlinLogging.logger {}
 @ConditionalOnProperty(name = ["spring.batch.job.name"], havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @Component
 class FreezeTasklet(
-    @param:Value("#{jobParameters['periodStart']}") private val periodStart: LocalDate,
-    @param:Value("#{jobParameters['snapshotId']}") private val snapshotId: String,
-    @param:Value("#{jobParameters['revision']}") private val revision: Long,
+    @param:Value("#{jobParameters['$PERIOD_START']}") private val periodStart: LocalDate,
+    @param:Value("#{jobParameters['$SNAPSHOT_ID']}") private val snapshotId: String,
+    @param:Value("#{jobParameters['$REVISION']}") private val revision: Long,
     private val snapshotStore: WeeklyRankingSnapshotStore,
     private val clock: Clock,
 ) : Tasklet {
@@ -51,7 +54,7 @@ class FreezeTasklet(
 
         snapshotStore.copyInputs(snapshotId, start, end)
         val totals = snapshotStore.digestInputs(snapshotId)
-        snapshotStore.insertFrozenSnapshot(snapshotId, periodStart, revision, frozenAt, totals)
+        snapshotStore.insertFrozenSnapshot(key, frozenAt, totals)
         log.info {
             "Froze period $periodStart revision $revision as $snapshotId: ${totals.count} inputs, checksum ${totals.checksum}"
         }

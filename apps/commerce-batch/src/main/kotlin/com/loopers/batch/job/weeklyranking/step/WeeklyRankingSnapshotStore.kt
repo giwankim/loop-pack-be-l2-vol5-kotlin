@@ -93,13 +93,7 @@ class WeeklyRankingSnapshotStore(
     }
 
     /** Stores the snapshot as `FROZEN`, the one state this step writes. */
-    fun insertFrozenSnapshot(
-        snapshotId: String,
-        periodStart: LocalDate,
-        revision: Long,
-        frozenAt: Instant,
-        totals: SnapshotInputTotals,
-    ) {
+    fun insertFrozenSnapshot(key: SnapshotKey, frozenAt: Instant, totals: SnapshotInputTotals) {
         jdbcClient
             .sql(
                 """
@@ -108,7 +102,7 @@ class WeeklyRankingSnapshotStore(
                 VALUES (?, ?, ?, 'FROZEN', ?, ?, ?)
                 """.trimIndent(),
             )
-            .params(snapshotId, periodStart, revision, JdbcUtcTimes.toJdbc(frozenAt), totals.count, totals.checksum)
+            .params(key.snapshotId, key.periodStart, key.revision, JdbcUtcTimes.toJdbc(frozenAt), totals.count, totals.checksum)
             .update()
     }
 }

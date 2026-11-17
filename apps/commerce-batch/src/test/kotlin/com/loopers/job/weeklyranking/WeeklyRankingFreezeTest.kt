@@ -335,6 +335,18 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     }
 
     @Test
+    fun `the database refuses a second snapshot row under the same snapshot ID`() {
+        // arrange
+        insertSnapshotRow(snapshotId = "2026-08-17-r1")
+
+        // act
+        val exception = assertThrows<DuplicateKeyException> { insertSnapshotRow(snapshotId = "2026-08-17-r1", revision = 2) }
+
+        // assert
+        assertThat(exception).hasMessageContaining("weekly_ranking_snapshot.PRIMARY")
+    }
+
+    @Test
     fun `running the schema script again on startup neither fails nor removes existing rows`() {
         // arrange
         insertAssignmentActivities()
@@ -375,6 +387,22 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(exception).hasMessage("snapshotId must not be blank")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a snapshotId longer than the column is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+        val tooLong = "r".repeat(101)
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> {
+            jobOperatorTestUtils.startJob(jobParameters(snapshotId = tooLong))
+        }
+
+        // assert
+        assertThat(exception).hasMessage("snapshotId must be at most 100 characters, but has 101")
         assertNothingExecutedOrFrozen()
     }
 
@@ -607,17 +635,17 @@ class WeeklyRankingFreezeTest @Autowired constructor(
             .list()
     }
 
-    /** Inserts a frozen snapshot row by SQL, past the freeze, for period 2026-08-17 revision 1. */
-    private fun insertSnapshotRow(snapshotId: String) {
+    /** Inserts a frozen snapshot row by SQL, past the freeze, for period 2026-08-17. */
+    private fun insertSnapshotRow(snapshotId: String, revision: Long = 1) {
         jdbcClient
             .sql(
                 """
                 INSERT INTO weekly_ranking_snapshot
                     (snapshot_id, period_start, revision, state, frozen_at, input_count, input_checksum)
-                VALUES (?, ?, 1, 'FROZEN', ?, 0, ?)
+                VALUES (?, ?, ?, 'FROZEN', ?, 0, ?)
                 """.trimIndent(),
             )
-            .params(snapshotId, LocalDate.parse("2026-08-17"), utc("2026-08-24T00:00:00"), EMPTY_CHECKSUM)
+            .params(snapshotId, LocalDate.parse("2026-08-17"), revision, utc("2026-08-24T00:00:00"), EMPTY_CHECKSUM)
             .update()
     }
 
