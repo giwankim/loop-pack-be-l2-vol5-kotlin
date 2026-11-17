@@ -189,3 +189,39 @@ A two-axis review ran on `842e431b` (then `9fb8fd46`, before the rebase).
   - Fixed: the ID, period and revision travelled as three parameters beside a type holding the same three. `findConflicting` and the exception take `SnapshotKey`, which moved out of the exception's file into its own.
   - Fixed: the tasklet KDoc said "before anything is copied", a word the glossary avoids for the freeze. It says "written".
   - Left as it is: the schema-key scene writes raw SQL inside a job test class. It is the backstop the job relies on, and it reads the same table.
+
+## Issue 240: period membership, the UTC week boundary, soft-deleted activities and the confirmed_at index
+
+Implemented as `f3245ab7`, rebased onto issues 243 and 242 (`d4c60157`). `scripts/final-check --app commerce-batch --app commerce-streamer` on `b5cbe254` (the code of `f3245ab7`), a clean tree, started 2026-11-17T08:52:51Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 22 tests (19 s), 0 failures, 0 errors, 0 skipped**; **commerce-streamer 18 classes, 68 tests (50 s), 0 failures, 0 errors, 0 skipped**. Issue 242 ended commerce-batch at 5 classes and 20 tests, so this ticket adds 2 tests there and 1 in commerce-streamer. Only this document changed after `f3245ab7`.
+
+### Acceptance criteria
+
+- [x] **An activity confirmed at `2026-08-17T00:00:00Z` is in the snapshot for `periodStart=2026-08-17`.** `WeeklyRankingFreezeTest`, boundary scene. It is the one snapshot input, with count 1 and the checksum `e02703d4…cd754e`, computed apart from the code with `printf '61\t7\t2\t2026-08-17T00:00:00.000000Z\n' | shasum -a 256`.
+- [x] **One microsecond before that, and one at `2026-08-24T00:00:00Z`, are not.** Same scene, orders 60 and 62.
+- [x] **The scenes fail if a timestamp is bound or read through the JVM's default zone.** The scene first asserts the default zone is Asia/Seoul. The build's test task sets `user.timezone`, but a run without it would otherwise pass without testing anything. It is a hard assertion, not an assumption, because an assumption would skip the scene. Both directions were shown red by changing the main code for one run and then restoring it:
+  - binding the period's `Instant`s straight to JDBC: the inputs became order 62 instead of 61, the nine-hour shift
+  - reading `confirmed_at` through `getTimestamp(…).toInstant()`: the checksum became `b75aefc5…`
+- [x] **A soft-deleted activity inside the period is not in the snapshot, its count or its checksum.** Soft-delete scene: the assignment's four inputs plus order 45, inserted and then soft-deleted by an `UPDATE`, both inside the week. The inputs, count 4 and the assignment checksum are unchanged. Removing `deleted_at IS NULL` for one run made order 45 appear.
+- [x] **The streamer's schema has the named index on `confirmed_at`, read by a test beside the existing named-key checks.** `PurchaseActivity` gains `IDX_PURCHASE_ACTIVITY_ON_CONFIRMED_AT`. `PurchaseActivityRepositoryTest` lists every non-unique index in `information_schema.statistics` and expects exactly that one on `confirmed_at`. It failed before the entity change.
+- [x] **The batch's test-only `purchase_activity` table carries the same index.** Already there from issue 239 (`sql/purchase-activity.sql`); unchanged.
+- [x] **`ktlintCheck` and `check` on commerce-batch and commerce-streamer pass, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### Decisions made while implementing
+
+- **No main code changed in commerce-batch.** Ticket 239 already wrote the half-open range, the UTC conversion and `deleted_at IS NULL`. This ticket pins them with scenes, and each scene was shown to fail against a broken copy of the code.
+- **The streamer's change is the index line and its import only.** A KDoc sentence about the contract was added and then removed at review, since the spec allows one line in another context.
+- **The soft-deleted activity is inserted, then soft-deleted by an `UPDATE`.** The first version gave `insertActivity` a nullable `deletedAt`, bound through `params(List)` because `JdbcClient.params(vararg Any)` does not take a nullable from Kotlin. Issue 243 landed first and shared the four-column insert between `insertActivity` and its other-connection insert. The rebase kept that insert as it is and added `softDeleteActivity`, which is also how a soft delete happens in the streamer.
+- **Still no `RankingPeriod` type.** The tasklet is still the only code that computes the week. Issue 241's validator only checks for a Monday, so it may not earn one either.
+
+### Review
+
+A two-axis review ran on the change before it was first committed, before the rebase.
+
+- **Spec:** nothing missing. It flagged the streamer KDoc sentence as a second change in another context; removed.
+- **Standards:** no hard violations. Fixed: the boundary scene's name ("Monday midnight UTC" rather than "Monday 00 00 UTC"), and the repository test's class KDoc now mentions the index. A comment now marks the zone assertion as the scene's premise.
+- **Left as they are:**
+  - an `assumeThat` for the zone premise: it would skip, and the ticket forbids skipped tests
+  - the claim that the `listOf` change was unneeded: it was needed to compile. The rebase later removed it anyway (above).
+  - the index query repeating the unique-key query's shape: two uses
+  - the unasserted quantities in the new scenes: commerce-batch has no fixtures, and the existing scenes write their rows the same way
