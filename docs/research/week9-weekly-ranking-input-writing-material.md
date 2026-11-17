@@ -262,3 +262,162 @@ The ticket was paused and spec 237 was grilled a second time before it was finis
 ### Review
 
 No two-axis review ran on this ticket. The design questions were settled in the second grilling of spec 237 before the code was finished.
+
+## Issue 244: ADR 0038, the weekly ranking design document and the final check
+
+Recorded from [issue 244's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/244#issuecomment-6949821515).
+
+Implemented as `c245c67c` (ADR 0038, the design document and the context map's third row), with spec 237's closing review on top: `a0da8f4e` (code) and `1f2d623f` (design notes and the final check). `scripts/final-check --app commerce-batch --app commerce-streamer` on `a0da8f4e`, a clean tree, started 2026-11-17T13:39:41Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 33 tests (18 s); commerce-streamer 18 classes, 68 tests (49 s); 0 failures, 0 errors, 0 skipped**. An earlier run on `bfc0e186`, before the review, passed with 31 batch tests. Only documents changed after `a0da8f4e`.
+
+### Acceptance criteria
+
+- [x] **ADR 0038 exists, states the four decisions and the options not taken, and names ADR 0013 and ADR 0016 where it differs.** [ADR 0038](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/adr/0038-weekly-ranking-tables-are-not-entities.md): no entities and no soft delete (differs from 0016), a startup script, JDBC through `JdbcClient` with UTC `LocalDateTime`, no ports (differs from 0013). Not chosen: entities with a `ddl-auto` override, Flyway (adopt at the first `ALTER` on kept data), a dependency on the streamer's entity.
+- [x] **The design document exists and carries the limits.** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/design/weekly-ranking.md) §8: one statement in one transaction, hand-applied tables outside `local` and `test`, "a finished freeze is not rerun" proven only in the scores branch, a completed `JobInstance` not continuable after steps are added, the orphan `JobInstance` of Batch 6.0.6, no throughput claim. It also has the four-branch table (§1.1), what each ticket built (§1.2), READ COMMITTED and the index with the lock table (§5.2), the time conversion (§5.3), the scenes and red checks (§9).
+- [x] **Every name matches the code; deviations from the spec have a dated note.** Design §10 lists them (probe restart by a second `startJob`, the `digestInputs` seam, the orphan `JobInstance`, the schema scene's stand-in for a second context, the context map row, the length refusal). Both reviewers checked the names and counts against the code.
+- [x] **`scripts/final-check` passes on commerce-batch and commerce-streamer with no zero-test task and no skipped test, and its output is in the design document.** The run above, design §9.3.
+- [x] **The repo's doc checks in `.githooks` pass.** `check-doc-notes` and `check-doc-links` on every commit. The notes check reports three in-place edits made at review (a count and two words), as `--warn-changed` allows.
+- [x] **The writing material holds every ticket's closing comment, a header and the PR body draft.** This comment, spec 237's and the draft PR body are appended to [the writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/research/week9-weekly-ranking-input-writing-material.md).
+
+### Decisions made while implementing
+
+- **`CONTEXT-MAP.md` gains the third table row.** Issue 238's commit added the third context's paragraph but not its row in the table.
+- **The run command in design §4 types `periodStart` and `revision`.** A parameter without a type is a `String`, which the validator refuses.
+- **READ COMMITTED and the index stay out of the ADR**, as the spec planned. The ADR is about where the tables live and how they are reached; the isolation level is the freeze's design.
+
+## Spec 237: the closing review
+
+Recorded 2026-11-17 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237#issuecomment-6949822058) of [spec 237](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237). The text is the comment's, with its blob URLs.
+
+Step 1 of week 9 is built, and its closing review is done. `scripts/final-check --app commerce-batch --app commerce-streamer` on `a0da8f4e`, a clean tree, started 2026-11-17T13:39:41Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 33 tests (18 s); commerce-streamer 18 classes, 68 tests (49 s); 0 failures, 0 errors, 0 skipped**. The template ended commerce-batch at 2 classes and 3 tests, and commerce-streamer at 18 classes and 67 tests, so this step adds 3 classes and 30 tests to the batch and 1 test to the streamer. Only documents changed after `a0da8f4e`.
+
+Tickets 238–244 are closed, each with its own comment. [Design 1.2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/design/weekly-ranking.md#12-1단계가-만든-것) lists what each one built, and [ADR 0038](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/adr/0038-weekly-ranking-tables-are-not-entities.md) holds the decision on the tables.
+
+### Where the implementation differs
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| Refuse bad parameters before a `JobInstance` exists (interview) | Refused before a `JobExecution` or a ranking row exists. Batch 6.0.6 leaves an instance with no execution (Spring Batch issue 5562, fixed in 6.1). The spec was edited after a second grilling (확인한 사실 6) | Issue 241 |
+| A `data_locks` test (interview) | A late insert from another connection during the freeze succeeds. The Testcontainers user cannot read `data_locks` (확인한 사실 5) | Writing the spec |
+| The probe restarts through `JobOperator.restart(JobExecution)` (확인한 사실 4) | A second `startJob` with the same parameters, the path the ranking job's rerun takes | Issue 238 |
+| A blank `snapshotId` is refused (story 3) | A `snapshotId` over 100 characters is refused too. Before, it passed the validator and failed the copy on `VARCHAR(100)`, leaving a `FAILED` execution | This review |
+| A second context start runs the schema script again (ticket 239) | The scene calls the startup's `ApplicationDataSourceScriptDatabaseInitializer.initializeDatabase()` again after a freeze | Issue 239 |
+| The context map's third row | Missing from issue 238's commit; added by issue 244 | Issue 244 |
+
+All of these are in [design 10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/design/weekly-ranking.md#10-명세와-다른-것).
+
+**Not proven here:** "a finished freeze is not rerun" ([design 8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/design/weekly-ranking.md#8-한계)). This step's job has no step after `freeze` to fail; the scores branch shows it.
+
+### The closing review
+
+A two-axis review of `week9...feat/weekly-ranking-input` at `c245c67c` (16 commits, 27 files), with one reviewer on the standards and one on this spec. Standards found no hard violation and 5 judgement calls. Spec found no blocking gap, 2 partial requirements, 1 extra and 1 doubtful implementation. Each was checked against the code and decided.
+
+#### What changed
+
+`a0da8f4e`:
+
+- **A `snapshotId` longer than its column is refused like a blank one.** The new scene was red first: the launch threw nothing and the run failed later in the copy.
+- **Story 21's primary key has a scene.** Only the `(period_start, revision)` unique key had one. A second row under the same `snapshot_id` is now refused with `weekly_ranking_snapshot.PRIMARY`. It passed at once: the key was already there.
+- **`insertFrozenSnapshot` takes the `SnapshotKey`** the tasklet already holds, as `findConflicting` does since issue 242's review.
+- **The tasklet's `@Value` expressions use the validator's parameter-name constants.** The tests keep the literal names, which pin the command line.
+
+`1f2d623f`: the design's assignment section numbers now say 과제, "원본" near 스냅샷 입력 became "읽는", and the length refusal, the primary-key scene and the schema scene's stand-in have dated notes.
+
+#### Left as they were
+
+- **The test's own UTC conversion** rather than `JdbcUtcTimes`: the test stays independent of the code it checks.
+- **`@ConditionalOnProperty` on three classes:** the template's demo job does the same.
+- **`emptyTables` also clears Batch metadata:** the refusal scenes rely on it to assert that no `JobExecution` exists.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/research/week9-weekly-ranking-input-writing-material.md#spec-237-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/weekly-ranking-input` into `week9`, in the shape of week 8 step 3's, written after the spec's closing review.
+
+Title: `feat(commerce-batch): freeze one ranking period's purchase activity into a snapshot in the weeklyRanking job, and show restart on Batch 6`
+
+````markdown
+## Summary
+
+Week 9 step 1. commerce-batch gets the `weeklyRanking` job and its first step, `freeze`. It copies one ranking period's purchase activity into snapshot inputs and records their count and checksum. A test-only probe shows that a failed chunk step restarts where it stopped on this repo's Spring Batch 6.0.6. Scores, publishing and the API are the next three branches.
+
+- **Spec:** issue 237, with tickets 238–244, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237#issuecomment-6949822058)
+- **Decision:** [ADR 0038](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/adr/0038-weekly-ranking-tables-are-not-entities.md): the ranking's tables are not entities (no `BaseEntity`, a `CREATE TABLE IF NOT EXISTS` script, `JdbcClient`, no ports)
+- **Design:** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/design/weekly-ranking.md): 5.2 READ COMMITTED and the index, 5.3 the time conversion, 6 the probe, 8 the limits, 9 the scenes and red checks
+- **Writing material:** [`docs/research/week9-weekly-ranking-input-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/docs/research/week9-weekly-ranking-input-writing-material.md), which holds every ticket's closing comment
+- **Glossary:** a third context, 주간 랭킹, in [`apps/commerce-batch/CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-input/apps/commerce-batch/CONTEXT.md); it meets 구매 활동 only at the `purchase_activity` table (`CONTEXT-MAP.md`)
+
+```text
+--job.name=weeklyRanking periodStart=2026-08-17,java.time.LocalDate snapshotId=… revision=1,java.lang.Long
+  WeeklyRankingJobParametersValidator      # missing/wrong type, not Monday, blank or > 100 chars, revision < 1:
+                                           # InvalidJobParametersException, no JobExecution, no ranking row
+  step freeze                              # tasklet, the app's transaction manager, READ COMMITTED, one TX
+    findConflicting(key)                   # same snapshotId, or same (periodStart, revision): FAILED, nothing written
+    INSERT … SELECT from purchase_activity # [Monday 00:00 UTC, +7 days), deleted_at IS NULL, one statement, no locks
+    digestInputs                           # stream back by (order_id, product_id): count + SHA-256 of the canonical text
+    INSERT snapshot FROZEN                 # inputs and snapshot commit together, or neither exists
+```
+
+The streamer changes by one line: a named index on `purchase_activity.confirmed_at`.
+
+## Review Points
+
+#### 1. Is one `INSERT … SELECT` in one transaction the right freeze?
+
+Every input comes from one consistent read, and nothing depends on the highest ID seen. The cost is one transaction as long as the week's copy (design 8). READ COMMITTED keeps it from blocking the streamer, which waits 3 s for a lock and then stops reading events (design 5.2).
+
+**Would you split the copy, and how would you keep one consistent read if you did?**
+
+#### 2. Are tables without entities, made by a startup script, acceptable?
+
+`ddl-auto: create` would empty an entity's table on every local start, so a restarted job would lose its first run's rows. Outside `local` and `test` the tables are applied by hand, like Batch's metadata. Flyway waits for the first `ALTER` on kept data (ADR 0038).
+
+**Is "hand-applied, like the metadata" enough until then?**
+
+#### 3. Is the orphan `JobInstance` of a refused launch acceptable?
+
+Batch 6.0.6 creates the instance before it validates (Spring Batch issue 5562, fixed in 6.1, which comes with Boot 4.2). A refused launch leaves an instance with no execution; relaunching the same bad values gives `IllegalStateException`. It never blocks a valid run (design 8).
+
+**Would you wrap `JobOperator.start` until the upgrade, or leave it?**
+
+## Evidence
+
+**Before:** commerce-batch is the template: a demo job on `ResourcelessTransactionManager`, no ranking table.
+
+**After:** `WeeklyRankingFreezeTest` (25 scenes), `SnapshotInputDigestTest` (3) and `BatchRestartProbeTest` (2), on real MySQL with the JVM in Asia/Seoul:
+
+- The assignment's four inputs freeze to 4 snapshot inputs, count 4, checksum `d07eff39…4720b`, computed apart from the code with `shasum`.
+- Monday 00:00 UTC is in the period; one microsecond earlier and the next Monday are not.
+- A freeze failing after its inputs are written leaves no row; the rerun is the same `JobInstance` and completes.
+- An activity inserted from another connection mid-freeze, with a 1 s lock wait, succeeds and is not in the snapshot.
+- The probe fails at product 9 with `purchaseProductProbe.read.count` = 2 stored, and the restart writes only 9.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| Step isolation REPEATABLE READ | The mid-freeze insert: `Lock wait timeout exceeded` after 1 s |
+| Step on `ResourcelessTransactionManager` | The failed freeze leaves its 4 inputs; the rerun ends `FAILED` |
+| Period `Instant`s bound straight to JDBC | The boundary scene takes order 62 instead of 61: nine hours off |
+| Reader with `.saveState(false)` | No stored read count; the restart writes 7 and 8 again |
+
+`scripts/final-check --app commerce-batch --app commerce-streamer` on `a0da8f4e`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-batch | 5 (2 before) | 33 (3 before) | 0 |
+| commerce-streamer | 18 | 68 (67 before) | 0 |
+
+Not shown here: that a finished freeze is not rerun (no step after it can fail yet; the scores branch shows it), and throughput.
+
+## Merge Danger
+
+**Door:** two-way
+
+No entity and no migration. The ranking's two tables are created only in `local` and `test`; a revert leaves them unused. The streamer's new index is created by `ddl-auto` in `local` and `test` and must be applied by hand elsewhere, like the tables.
+
+**Blast Radius:** commerce-batch, plus one index on the streamer's table
+
+- **Outside `local` and `test`**, `sql/weekly-ranking-schema.sql` and the `confirmed_at` index must be applied before the first run.
+- **A launch must type its parameters** (`,java.time.LocalDate`, `,java.lang.Long`); untyped ones are refused.
+- **The demo job is unchanged** (issue 236 removes it).
+- **Out of scope:** scores, publishing, the API, the late-purchase revision, Flyway, throughput.
+````
