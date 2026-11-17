@@ -30,6 +30,7 @@ class WeeklyRankingJobConfig {
     @Bean(JOB_NAME)
     fun weeklyRankingJob(jobRepository: JobRepository, jobListener: JobListener, freezeStep: Step): Job {
         return JobBuilder(JOB_NAME, jobRepository)
+            .validator(WeeklyRankingJobParametersValidator())
             .start(freezeStep)
             .listener(jobListener)
             .build()

@@ -17,8 +17,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.batch.core.BatchStatus
 import org.springframework.batch.core.job.Job
+import org.springframework.batch.core.job.parameters.InvalidJobParametersException
 import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
+import org.springframework.batch.core.launch.JobInstanceAlreadyCompleteException
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.jdbc.autoconfigure.ApplicationDataSourceScriptDatabaseInitializer
@@ -347,6 +349,157 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         assertThat(snapshotInputs("2026-08-17-r1")).hasSize(4)
     }
 
+    @Test
+    fun `a periodStart that is not a Monday is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+        val tuesday = jobParameters(periodStart = LocalDate.parse("2026-08-18"), snapshotId = "2026-08-18-r1")
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> { jobOperatorTestUtils.startJob(tuesday) }
+
+        // assert
+        assertThat(exception).hasMessage("periodStart must be a Monday, but 2026-08-18 is a TUESDAY")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a blank snapshotId is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> {
+            jobOperatorTestUtils.startJob(jobParameters(snapshotId = "  "))
+        }
+
+        // assert
+        assertThat(exception).hasMessage("snapshotId must not be blank")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a revision below 1 is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> {
+            jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r0", revision = 0))
+        }
+
+        // assert
+        assertThat(exception).hasMessage("revision must be at least 1, but was 0")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a launch without periodStart is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+        val withoutPeriodStart = JobParametersBuilder()
+            .addString("snapshotId", "2026-08-17-r1")
+            .addLong("revision", 1)
+            .toJobParameters()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> { jobOperatorTestUtils.startJob(withoutPeriodStart) }
+
+        // assert
+        assertThat(exception).hasMessageContaining("periodStart is missing")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a launch without snapshotId is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+        val withoutSnapshotId = JobParametersBuilder()
+            .addLocalDate("periodStart", LocalDate.parse("2026-08-17"))
+            .addLong("revision", 1)
+            .toJobParameters()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> { jobOperatorTestUtils.startJob(withoutSnapshotId) }
+
+        // assert
+        assertThat(exception).hasMessageContaining("snapshotId is missing")
+        assertNothingExecutedOrFrozen()
+    }
+
+    @Test
+    fun `a launch without revision is refused before anything is frozen`() {
+        // arrange
+        insertAssignmentActivities()
+        val withoutRevision = JobParametersBuilder()
+            .addLocalDate("periodStart", LocalDate.parse("2026-08-17"))
+            .addString("snapshotId", "2026-08-17-r1")
+            .toJobParameters()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> { jobOperatorTestUtils.startJob(withoutRevision) }
+
+        // assert
+        assertThat(exception).hasMessageContaining("revision is missing")
+        assertNothingExecutedOrFrozen()
+    }
+
+    /** What a command line gives when the operator leaves the type off: `periodStart=2026-08-17` is a `String`. */
+    @Test
+    fun `a periodStart given as a String is refused with the spelling that makes it a LocalDate`() {
+        // arrange
+        insertAssignmentActivities()
+        val stringPeriodStart = JobParametersBuilder()
+            .addString("periodStart", "2026-08-17")
+            .addString("snapshotId", "2026-08-17-r1")
+            .addLong("revision", 1)
+            .toJobParameters()
+
+        // act
+        val exception = assertThrows<InvalidJobParametersException> { jobOperatorTestUtils.startJob(stringPeriodStart) }
+
+        // assert
+        assertThat(exception).hasMessageContaining("periodStart=2026-08-17,java.time.LocalDate")
+        assertNothingExecutedOrFrozen()
+    }
+
+    /** The context's clock stands at 2026-08-24, a week before this period starts. No check reads it. */
+    @Test
+    fun `a periodStart in the future is accepted and freezes an empty snapshot`() {
+        // arrange
+        insertAssignmentActivities()
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(
+            jobParameters(periodStart = LocalDate.parse("2026-08-31"), snapshotId = "2026-08-31-r1"),
+        )
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(snapshots().single())
+            .extracting(StoredSnapshot::periodStart, StoredSnapshot::inputCount)
+            .containsExactly(LocalDate.parse("2026-08-31"), 0L)
+    }
+
+    @Test
+    fun `launching a completed run again with the same three values is refused and leaves the snapshot as it was`() {
+        // arrange
+        insertAssignmentActivities()
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        val snapshotsBefore = snapshots()
+        val inputsBefore = snapshotInputs("2026-08-17-r1")
+
+        // act
+        assertThrows<JobInstanceAlreadyCompleteException> {
+            jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        }
+
+        // assert
+        assertThat(snapshots()).isEqualTo(snapshotsBefore)
+        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jobExecutionCount()).isEqualTo(1)
+    }
+
     private fun jobParameters(
         periodStart: LocalDate = LocalDate.parse("2026-08-17"),
         snapshotId: String,
@@ -357,6 +510,21 @@ class WeeklyRankingFreezeTest @Autowired constructor(
             .addString("snapshotId", snapshotId)
             .addLong("revision", revision)
             .toJobParameters()
+    }
+
+    /**
+     * A refused launch starts no job execution and leaves no row in either ranking table. The job instance is left out on
+     * purpose: Batch 6.0.6 creates it before it validates, and Batch 6.1 does not (spec 237, 확인한 사실 6).
+     */
+    private fun assertNothingExecutedOrFrozen() {
+        assertThat(jobExecutionCount()).isZero()
+        assertThat(snapshots()).isEmpty()
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM weekly_ranking_snapshot_input").query(Long::class.java).single())
+            .isZero()
+    }
+
+    private fun jobExecutionCount(): Long {
+        return jdbcClient.sql("SELECT COUNT(*) FROM BATCH_JOB_EXECUTION").query(Long::class.java).single()
     }
 
     /** The assignment's section 6 orders, inserted in reverse key order so the freeze's own order shows. */
