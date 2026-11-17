@@ -30,6 +30,10 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/weekly-ranking-schema.sql # the weekly ranking's tables, created only if missing
 
 ---
 spring:
