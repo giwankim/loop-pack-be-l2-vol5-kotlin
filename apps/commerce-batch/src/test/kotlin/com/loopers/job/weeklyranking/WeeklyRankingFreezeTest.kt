@@ -34,6 +34,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.util.TimeZone
 import javax.sql.DataSource
 
 /**
@@ -102,6 +103,49 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     inputChecksum = ASSIGNMENT_CHECKSUM,
                 ),
             )
+    }
+
+    /**
+     * A ranking period is a UTC week, start included and end excluded. Bound or read through the JVM's zone, Asia/Seoul, the
+     * period would move nine hours later: the Monday 00:00 activity would fall out and the next Monday's would come in.
+     */
+    @Test
+    fun `an activity at Monday midnight UTC is in the period, and ones a microsecond earlier or at the next Monday are not`() {
+        // arrange: the scene's premise, asserted rather than assumed so a UTC-zone run fails instead of skipping
+        assertThat(TimeZone.getDefault().id).isEqualTo("Asia/Seoul")
+        insertActivity(orderId = 60, productId = 7, quantity = 1, confirmedAt = utc("2026-08-16T23:59:59.999999"))
+        insertActivity(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00"))
+        insertActivity(orderId = 62, productId = 7, quantity = 3, confirmedAt = utc("2026-08-24T00:00:00"))
+
+        // act
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+
+        // assert
+        assertThat(snapshotInputs("2026-08-17-r1"))
+            .containsExactly(
+                StoredSnapshotInput(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00")),
+            )
+        assertThat(snapshots().single())
+            .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
+            .containsExactly(1L, BOUNDARY_CHECKSUM)
+    }
+
+    /** The deleted activity sits inside the week, so only `deleted_at` keeps it out. */
+    @Test
+    fun `a soft-deleted activity in the period is in neither the snapshot inputs nor their count and checksum`() {
+        // arrange
+        insertAssignmentActivities()
+        insertActivity(orderId = 45, productId = 7, quantity = 4, confirmedAt = utc("2026-08-20T12:00:00"))
+        softDeleteActivity(orderId = 45, productId = 7, deletedAt = utc("2026-08-21T12:00:00"))
+
+        // act
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+
+        // assert
+        assertThat(snapshotInputs("2026-08-17-r1").map { it.orderId }).containsExactly(42, 42, 43, 44)
+        assertThat(snapshots().single())
+            .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
+            .containsExactly(4L, ASSIGNMENT_CHECKSUM)
     }
 
     @Test
@@ -334,6 +378,13 @@ class WeeklyRankingFreezeTest @Autowired constructor(
             .update()
     }
 
+    /** Soft-deletes the activity of [orderId] and [productId] at [deletedAt], a UTC wall time, as the streamer would. */
+    private fun softDeleteActivity(orderId: Long, productId: Long, deletedAt: LocalDateTime) {
+        jdbcClient.sql("UPDATE purchase_activity SET deleted_at = ? WHERE order_id = ? AND product_id = ?")
+            .params(deletedAt, orderId, productId)
+            .update()
+    }
+
     /**
      * Inserts a purchase activity as the streamer would, on a connection of its own outside the pool and the freeze's
      * transaction, committed at once. It waits at most one second for a row lock, so a freeze that locked the period's range
@@ -475,5 +526,8 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         private const val INSERT_ACTIVITY_SQL =
             "INSERT INTO purchase_activity (order_id, product_id, quantity, confirmed_at) VALUES (?, ?, ?, ?)"
+
+        /** `printf '61\t7\t2\t2026-08-17T00:00:00.000000Z\n' | shasum -a 256`: the boundary scene's one input. */
+        const val BOUNDARY_CHECKSUM = "e02703d4c639b8e8eb6fff68f502505ae1bbbdf5f11cdca9f1a49a4949cd754e"
     }
 }
