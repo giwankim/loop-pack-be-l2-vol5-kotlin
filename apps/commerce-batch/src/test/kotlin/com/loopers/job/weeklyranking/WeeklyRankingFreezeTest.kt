@@ -11,8 +11,10 @@ import com.zaxxer.hikari.HikariDataSource
 import io.mockk.clearMocks
 import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.tuple
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.batch.core.BatchStatus
 import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.parameters.JobParameters
@@ -23,6 +25,7 @@ import org.springframework.boot.jdbc.autoconfigure.ApplicationDataSourceScriptDa
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.jdbc.Sql
 import java.sql.DriverManager
@@ -184,6 +187,86 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     }
 
     @Test
+    fun `a freeze under an existing snapshot ID for another period fails and leaves the existing snapshot as it was`() {
+        // arrange
+        insertAssignmentActivities()
+        insertActivity(orderId = 60, productId = 7, quantity = 4, confirmedAt = utc("2026-08-25T10:00:00"))
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        val snapshotsBefore = snapshots()
+        val inputsBefore = snapshotInputs("2026-08-17-r1")
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(
+            jobParameters(periodStart = LocalDate.parse("2026-08-24"), snapshotId = "2026-08-17-r1"),
+        )
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(jobExecution.stepExecutions.single().exitStatus.exitDescription)
+            .contains(
+                "Freeze of snapshot 2026-08-17-r1 (period 2026-08-24, revision 1) " +
+                    "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
+            )
+        assertThat(snapshots()).isEqualTo(snapshotsBefore)
+        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+    }
+
+    @Test
+    fun `a freeze of an already frozen period and revision under a new snapshot ID fails and writes nothing`() {
+        // arrange
+        insertAssignmentActivities()
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        val snapshotsBefore = snapshots()
+        val inputsBefore = snapshotInputs("2026-08-17-r1")
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1-again"))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(jobExecution.stepExecutions.single().exitStatus.exitDescription)
+            .contains(
+                "Freeze of snapshot 2026-08-17-r1-again (period 2026-08-17, revision 1) " +
+                    "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
+            )
+        assertThat(snapshots()).isEqualTo(snapshotsBefore)
+        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(snapshotInputs("2026-08-17-r1-again")).isEmpty()
+    }
+
+    @Test
+    fun `a new revision of a frozen period freezes normally under a new snapshot ID`() {
+        // arrange
+        insertAssignmentActivities()
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r2", revision = 2))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(snapshots())
+            .extracting(StoredSnapshot::snapshotId, StoredSnapshot::revision, StoredSnapshot::inputChecksum)
+            .containsExactly(
+                tuple("2026-08-17-r1", 1L, ASSIGNMENT_CHECKSUM),
+                tuple("2026-08-17-r2", 2L, ASSIGNMENT_CHECKSUM),
+            )
+        assertThat(snapshotInputs("2026-08-17-r2")).hasSize(4)
+    }
+
+    @Test
+    fun `the database refuses a second snapshot row for the same period and revision`() {
+        // arrange
+        insertSnapshotRow(snapshotId = "2026-08-17-r1")
+
+        // act
+        val exception = assertThrows<DuplicateKeyException> { insertSnapshotRow(snapshotId = "2026-08-17-r1-again") }
+
+        // assert
+        assertThat(exception).hasMessageContaining("UK_WEEKLY_RANKING_SNAPSHOT_ON_PERIOD_START_AND_REVISION")
+    }
+
+    @Test
     fun `running the schema script again on startup neither fails nor removes existing rows`() {
         // arrange
         insertAssignmentActivities()
@@ -281,6 +364,20 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                 resultSet.getLong("order_id")
             }
             .list()
+    }
+
+    /** Inserts a frozen snapshot row by SQL, past the freeze, for period 2026-08-17 revision 1. */
+    private fun insertSnapshotRow(snapshotId: String) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO weekly_ranking_snapshot
+                    (snapshot_id, period_start, revision, state, frozen_at, input_count, input_checksum)
+                VALUES (?, ?, 1, 'FROZEN', ?, 0, ?)
+                """.trimIndent(),
+            )
+            .params(snapshotId, LocalDate.parse("2026-08-17"), utc("2026-08-24T00:00:00"), EMPTY_CHECKSUM)
+            .update()
     }
 
     /** A UTC wall time, as the tables hold it. */
