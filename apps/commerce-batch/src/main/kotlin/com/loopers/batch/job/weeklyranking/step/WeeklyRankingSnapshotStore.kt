@@ -19,10 +19,10 @@ class WeeklyRankingSnapshotStore(
     private val jdbcClient: JdbcClient,
 ) {
     /**
-     * The snapshots that hold [snapshotId], or [periodStart] and [revision]: at most two, one per unique key. The read takes no
+     * The snapshots that hold [key]'s snapshot ID, or its period and revision: at most two, one per unique key. The read takes no
      * lock. Two freezes racing past it are still refused by the keys themselves, when the later one writes its snapshot.
      */
-    fun findConflicting(snapshotId: String, periodStart: LocalDate, revision: Long): List<SnapshotKey> {
+    fun findConflicting(key: SnapshotKey): List<SnapshotKey> {
         return jdbcClient
             .sql(
                 """
@@ -32,7 +32,7 @@ class WeeklyRankingSnapshotStore(
                 ORDER BY snapshot_id
                 """.trimIndent(),
             )
-            .params(snapshotId, periodStart, revision)
+            .params(key.snapshotId, key.periodStart, key.revision)
             .query { resultSet, _ ->
                 SnapshotKey(
                     snapshotId = resultSet.getString("snapshot_id"),

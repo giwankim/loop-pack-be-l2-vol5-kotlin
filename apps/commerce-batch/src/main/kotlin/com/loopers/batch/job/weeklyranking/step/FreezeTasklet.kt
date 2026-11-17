@@ -22,7 +22,7 @@ private val log = KotlinLogging.logger {}
  * Freezes one ranking period's purchase activity into a snapshot (`CONTEXT.md` 고정하다). The step runs it in one transaction,
  * so the inputs and the snapshot commit together, and a freeze that fails partway leaves neither.
  *
- * A snapshot that already holds the snapshot ID, or the period and revision, refuses the freeze before anything is copied
+ * A snapshot that already holds the snapshot ID, or the period and revision, refuses the freeze before anything is written
  * (`CONTEXT.md` 충돌). The table's primary and unique keys refuse the same rows, should the check be passed.
  *
  * The frozen-at time is read once, before the copy, and cut to the microseconds the column keeps. The period is a UTC week
@@ -39,9 +39,10 @@ class FreezeTasklet(
     private val clock: Clock,
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
-        val conflicting = snapshotStore.findConflicting(snapshotId, periodStart, revision)
+        val key = SnapshotKey(snapshotId, periodStart, revision)
+        val conflicting = snapshotStore.findConflicting(key)
         if (conflicting.isNotEmpty()) {
-            throw SnapshotConflictException(snapshotId, periodStart, revision, conflicting)
+            throw SnapshotConflictException(key, conflicting)
         }
 
         val frozenAt = clock.instant().truncatedTo(ChronoUnit.MICROS)

@@ -212,6 +212,28 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     }
 
     @Test
+    fun `a freeze under an existing snapshot ID for another revision of the same period fails and writes nothing`() {
+        // arrange
+        insertAssignmentActivities()
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        val snapshotsBefore = snapshots()
+        val inputsBefore = snapshotInputs("2026-08-17-r1")
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 2))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(jobExecution.stepExecutions.single().exitStatus.exitDescription)
+            .contains(
+                "Freeze of snapshot 2026-08-17-r1 (period 2026-08-17, revision 2) " +
+                    "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
+            )
+        assertThat(snapshots()).isEqualTo(snapshotsBefore)
+        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+    }
+
+    @Test
     fun `a freeze of an already frozen period and revision under a new snapshot ID fails and writes nothing`() {
         // arrange
         insertAssignmentActivities()
