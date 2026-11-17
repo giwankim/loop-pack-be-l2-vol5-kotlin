@@ -16,7 +16,7 @@ import java.time.Instant
 /**
  * Checks that the [PurchaseActivityRepository] Spring Data builds keeps its contract on a real MySQL. The unique key and the
  * quantity CHECK are what the database keeps, so they are checked here: by a save or an update that breaks each, and by name
- * in `information_schema`. The base is the service base, for the reason in
+ * in `information_schema`. The `confirmed_at` index the weekly ranking reads by is checked there by name too. The base is the service base, for the reason in
  * [ProcessedOrderConfirmationRepositoryTest].
  */
 class PurchaseActivityRepositoryTest(
@@ -122,5 +122,22 @@ class PurchaseActivityRepositoryTest(
             "CK_PURCHASE_ACTIVITY_ON_QUANTITY_POSITIVE:CHECK",
         )
         assertThat(uniqueKeys).containsExactly("UK_PURCHASE_ACTIVITY_ON_ORDER_ID_AND_PRODUCT_ID:order_id,product_id")
+    }
+
+    /**
+     * The weekly ranking reads one week of activities by their confirmation time, and `CONTEXT-MAP.md` puts this index in the
+     * contract. Every non-unique index is listed, so a second one or an extra column would show.
+     */
+    @Test
+    fun `the confirmation time has a single-column index in the database under its name`() {
+        val indexes = entityManager
+            .createNativeQuery(
+                "select concat(index_name, ':', group_concat(column_name order by seq_in_index)) " +
+                    "from information_schema.statistics where table_schema = database() and table_name = 'purchase_activity' " +
+                    "and non_unique = 1 group by index_name",
+            )
+            .resultList
+
+        assertThat(indexes).containsExactly("IDX_PURCHASE_ACTIVITY_ON_CONFIRMED_AT:confirmed_at")
     }
 }

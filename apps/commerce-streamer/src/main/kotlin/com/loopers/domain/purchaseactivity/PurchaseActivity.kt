@@ -4,6 +4,7 @@ import com.loopers.domain.BaseEntity
 import jakarta.persistence.CheckConstraint
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.SQLRestriction
@@ -31,6 +32,7 @@ import java.time.temporal.ChronoUnit
     uniqueConstraints = [
         UniqueConstraint(name = "UK_PURCHASE_ACTIVITY_ON_ORDER_ID_AND_PRODUCT_ID", columnNames = ["order_id", "product_id"]),
     ],
+    indexes = [Index(name = "IDX_PURCHASE_ACTIVITY_ON_CONFIRMED_AT", columnList = "confirmed_at")],
     check = [CheckConstraint(name = "CK_PURCHASE_ACTIVITY_ON_QUANTITY_POSITIVE", constraint = "quantity > 0")],
 )
 @SQLRestriction("deleted_at is null")
