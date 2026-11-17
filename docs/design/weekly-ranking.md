@@ -6,7 +6,7 @@
 
 ## 1. 근거와 범위
 
-- 과제: 9주차 실습 "중단된 배치를 이어서 같은 랭킹 만들기". 1단계의 몫은 2절(입력 고정)과 3절(job의 배선과 재시작 probe)이다.
+- 과제: 9주차 실습 "중단된 배치를 이어서 같은 랭킹 만들기". 1단계의 몫은 과제 2절(입력 고정)과 과제 3절(job의 배선과 재시작 probe)이다.
 - 6주차와 7주차로 확정된 주문의 구매 활동이 `purchase_activity`에 쌓인다. 주간 랭킹은 그것을 읽어 commerce-batch에서 만든다. 주문, 결제, 아웃박스, 구매 활동의 기록은 바뀌지 않는다. 스트리머에서 바뀐 것은 인덱스 한 줄이다(2절).
 - 데모 job(`DemoJobConfig`, `DemoTasklet`, `DemoJobE2ETest`)은 그대로 둔다. `spring.batch.job.name=demoJob`일 때만 올라오므로 `weeklyRanking`의 실행에는 없다. 지우는 일은 [issue 236](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/236)이다.
 
@@ -69,7 +69,7 @@
     periodStart=2026-08-17,java.time.LocalDate snapshotId=2026-08-17-r1 revision=1,java.lang.Long
   ```
 
-- `WeeklyRankingJobParametersValidator`가 실행이 생기기 전에 거절한다. 빠진 매개변수, 형이 다른 매개변수, 월요일이 아닌 `periodStart`, 빈 `snapshotId`, 1보다 작은 `revision`이다. 거절은 `JobExecution`도 랭킹의 행도 남기지 않는다. 다만 Batch 6.0.6에서는 실행 없는 `JobInstance`가 남는다(8절).
+- `WeeklyRankingJobParametersValidator`가 실행이 생기기 전에 거절한다. 빠진 매개변수, 형이 다른 매개변수, 월요일이 아닌 `periodStart`, 빈 `snapshotId`, 1보다 작은 `revision`이다. (2026-11-17 명세 237의 닫는 검토: 100자를 넘는 `snapshotId`도 거절한다. 전에는 검증을 지나 옮겨 담기가 `VARCHAR(100)`에서 실패해, 거절이 아니라 `FAILED` 실행을 남겼다.) 거절은 `JobExecution`도 랭킹의 행도 남기지 않는다. 다만 Batch 6.0.6에서는 실행 없는 `JobInstance`가 남는다(8절).
 - 형은 엄격하게 본다. 매개변수의 형은 job 인스턴스를 식별하는 값의 일부여서, `String`으로 받은 날짜를 너그럽게 읽으면 같은 주가 다른 `JobInstance`가 된다. 운영자가 저지를 실수는 `,java.time.LocalDate`를 빠뜨리는 것이라, 거절하는 말에 바른 꼴을 적는다: `periodStart must be a LocalDate, but was a String. Give it as periodStart=2026-08-17,java.time.LocalDate`.
 - 랭킹 기간이 끝났는지는 보지 않는다. 시계를 읽는 검사가 되고, 끝나기 전에 고정한 것은 뒤 차수로 바로잡는다. 앞날의 `periodStart`는 빈 스냅샷으로 고정된다.
 - step은 애플리케이션의 트랜잭션 매니저(JPA의 것)를 쓴다. step의 쓰기와 그 메타데이터가 함께 커밋된다. `ResourcelessTransactionManager`는 랭킹 job의 어디에도 없다(데모 job에만 있다).
@@ -91,9 +91,9 @@ tasklet step 하나, 트랜잭션 하나다. 그 트랜잭션의 격리 수준�
 
 ### 5.2 READ COMMITTED와 인덱스
 
-옮겨 담기는 `purchase_activity`를 읽는 `INSERT … SELECT`다. MySQL은 REPEATABLE READ에서 이 문장의 원본 행에 공유 next-key 잠금을 건다. 명세 237의 "확인한 사실" 1이 MySQL 8.4의 일회용 컨테이너에서 같은 꼴의 표로 잰 결과다. 옮겨 담는 트랜잭션을 열어 둔 채, 다른 연결이 잠금 대기 1초로 한 줄을 넣었다.
+옮겨 담기는 `purchase_activity`를 읽는 `INSERT … SELECT`다. MySQL은 REPEATABLE READ에서 이 문장이 읽는 행에 공유 next-key 잠금을 건다. 명세 237의 "확인한 사실" 1이 MySQL 8.4의 일회용 컨테이너에서 같은 꼴의 표로 잰 결과다. 옮겨 담는 트랜잭션을 열어 둔 채, 다른 연결이 잠금 대기 1초로 한 줄을 넣었다.
 
-| `confirmed_at` 인덱스 | 격리 수준 | 원본 표의 잠금 | 그 랭킹 기간의 늦은 행 넣기 | 다음 주의 행 넣기 |
+| `confirmed_at` 인덱스 | 격리 수준 | 읽는 표의 잠금 | 그 랭킹 기간의 늦은 행 넣기 | 다음 주의 행 넣기 |
 | --- | --- | --- | --- | --- |
 | 없음 | REPEATABLE READ | 기본 키의 모든 행에 S next-key | 막힘 | 막힘 |
 | 없음 | READ COMMITTED | 없음 | 됨 | 됨 |
@@ -168,7 +168,7 @@ job 테스트는 `BaseBatchJobTest`([ADR 0012](../adr/0012-tests-inherit-setup-f
 | 이음매 | 클래스 | 장면 |
 | --- | --- | --- |
 | 체크섬(DB 없음) | `SnapshotInputDigestTest` | 과제 6절의 네 입력의 정규 텍스트와 체크섬, 빈 입력, 소수 여섯 자리. 3개 |
-| `weeklyRanking` job | `WeeklyRankingFreezeTest` | 23개. 아래 |
+| `weeklyRanking` job | `WeeklyRankingFreezeTest` | 25개. 아래 |
 | 재시작 probe | `BatchRestartProbeTest` | 첫 실행의 실패와 저장된 읽은 수, 같은 인스턴스의 재시작. 2개 |
 | 스트리머의 인덱스 | `PurchaseActivityRepositoryTest` | `confirmed_at`의 단일 컬럼 인덱스가 이름대로 있다. 1개 |
 
@@ -179,8 +179,8 @@ job 테스트는 `BaseBatchJobTest`([ADR 0012](../adr/0012-tests-inherit-setup-f
 - **실패와 늦은 구매(243):** 이음매는 `WeeklyRankingSnapshotStore.digestInputs`다. 옮겨 담기와 스냅샷 쓰기 사이의 하나뿐인 호출이고, springmockk의 `@MockkSpyBean`이 그 자리에서 실패시키거나 다른 연결의 넣기를 실행한다.
   - 입력을 쓴 뒤 실패한 고정은 `FAILED`이고 두 표에 그 `snapshotId`의 행이 없다. 같은 매개변수로 다시 실행하면 같은 `JobInstance`, 새 실행으로 `COMPLETED`다.
   - 고정 도중 다른 연결이 잠금 대기 1초로 그 랭킹 기간의 구매 활동(주문 45)을 넣는다. 넣기는 성공하고, 그 행은 스냅샷 입력에 없으며 개수 4와 과제의 체크섬은 그대로다.
-- **충돌(242):** 같은 `snapshotId`와 다른 랭킹 기간, 같은 `snapshotId`와 같은 랭킹 기간의 다른 차수, 같은 랭킹 기간·차수와 다른 `snapshotId`. 셋 다 `FAILED`이고, exit description이 충돌을 말하며, 있던 스냅샷과 그 입력이 그대로이고 새 행이 없다. 새 `snapshotId`의 새 차수는 그대로 고정된다. SQL로 같은 `(period_start, revision)`의 둘째 행을 넣으면 DB가 그 유일 키의 이름으로 거절한다.
-- **매개변수(241):** 화요일의 `periodStart`, 빈 `snapshotId`, `revision` 0, 빠진 매개변수 셋, `String`으로 준 `periodStart`는 `InvalidJobParametersException`이고 `JobExecution`과 두 표의 행이 없다. 앞날의 `periodStart`는 받아들인다. 끝난 실행을 같은 세 값으로 다시 실행하면 `JobInstanceAlreadyCompleteException`이고 두 표는 그대로다.
+- **충돌(242):** 같은 `snapshotId`와 다른 랭킹 기간, 같은 `snapshotId`와 같은 랭킹 기간의 다른 차수, 같은 랭킹 기간·차수와 다른 `snapshotId`. 셋 다 `FAILED`이고, exit description이 충돌을 말하며, 있던 스냅샷과 그 입력이 그대로이고 새 행이 없다. 새 `snapshotId`의 새 차수는 그대로 고정된다. SQL로 같은 `(period_start, revision)`의 둘째 행을 넣으면 DB가 그 유일 키의 이름으로 거절한다. (2026-11-17 명세 237의 닫는 검토: 같은 `snapshot_id`의 둘째 행을 기본 키가 거절하는 장면을 더했다. 이야기 21의 두 키가 모두 테스트에 있다.)
+- **매개변수(241):** 화요일의 `periodStart`, 빈 `snapshotId`, `revision` 0, 빠진 매개변수 셋, `String`으로 준 `periodStart`(2026-11-17 닫는 검토 뒤로는 100자를 넘는 `snapshotId`도)는 `InvalidJobParametersException`이고 `JobExecution`과 두 표의 행이 없다. 앞날의 `periodStart`는 받아들인다. 끝난 실행을 같은 세 값으로 다시 실행하면 `JobInstanceAlreadyCompleteException`이고 두 표는 그대로다.
 
 ### 9.2 붉은 확인
 
@@ -208,6 +208,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 - commerce-batch는 5개 클래스, 31개 테스트, 실패 0, 오류 0, 건너뜀 0이다(25 s). 템플릿은 2개 클래스, 3개 테스트(`CommerceBatchApplicationTest`, `DemoJobE2ETest`)였으므로 이 단계가 3개 클래스와 28개 테스트를 더했다.
 - commerce-streamer는 18개 클래스, 68개 테스트, 실패 0, 오류 0, 건너뜀 0이다(53 s). 이 단계가 인덱스 장면 1개를 더했다.
 - `bfc0e186`의 코드는 `25c38bd7`의 것이고, 그 뒤로는 문서만 바뀌었다.
+- (2026-11-17 명세 237의 닫는 검토) 검토의 고침(`a0da8f4e`)이 운영 코드를 바꿨으므로 그 깨끗한 트리에서 다시 돌렸다(13:39:41Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했다(1 s). commerce-batch는 5개 클래스, 33개 테스트, 실패 0, 오류 0, 건너뜀 0이다(18 s). 위의 31개에 100자를 넘는 `snapshotId`의 거절과 `snapshot_id` 기본 키의 장면이 더해졌다. commerce-streamer는 18개 클래스, 68개 테스트, 실패 0, 오류 0, 건너뜀 0이다(49 s). 이것이 1단계의 끝의 확인이다. 위의 `bfc0e186`의 실행은 앞의 확인이다. `a0da8f4e` 뒤로는 문서만 바뀌었다.
 
 ## 10. 명세와 다른 것
 
@@ -221,6 +222,8 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 | 실패와 늦은 구매의 이음매는 구현에서 정한다 | `WeeklyRankingSnapshotStore.digestInputs` | 239, 243 |
 | 같은 세 값의 스냅샷은 이 단계의 job에서 일어나지 않는다 | Batch가 먼저 거절한다. `findConflicting`은 그것도 충돌로 보고, 예외를 두지 않는다 | 242 |
 | `CONTEXT-MAP.md`의 셋째 줄 | 238의 커밋은 셋째 맥락의 문단만 더하고 표의 줄을 빠뜨렸다. 244가 더했다 | 244 |
+| 테스트 컨텍스트를 같은 DB에 두 번 띄워도 스키마 스크립트가 실패하지 않는다(티켓 239) | 둘째 컨텍스트를 띄우지 않고, 시작 때 `spring.sql.init`이 부르는 빈 `ApplicationDataSourceScriptDatabaseInitializer`의 `initializeDatabase()`를 고정 뒤에 다시 부른다. 같은 스크립트가 같은 길로 돈다(2026-11-17 닫는 검토에서 이 표에 더했다) | 239 |
+| 빈 `snapshotId`와 1보다 작은 `revision`을 거절한다(이야기 3) | 100자를 넘는 `snapshotId`도 거절한다(4절의 메모) | 2026-11-17 닫는 검토 |
 
 ## 11. 2단계로 넘기는 것
 
