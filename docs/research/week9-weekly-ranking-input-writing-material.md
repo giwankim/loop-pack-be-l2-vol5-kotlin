@@ -225,3 +225,40 @@ A two-axis review ran on the change before it was first committed, before the re
   - the claim that the `listOf` change was unneeded: it was needed to compile. The rebase later removed it anyway (above).
   - the index query repeating the unique-key query's shape: two uses
   - the unasserted quantities in the new scenes: commerce-batch has no fixtures, and the existing scenes write their rows the same way
+
+## Issue 241: bad job parameters are refused before anything is frozen
+
+Implemented as `25c38bd7`, on top of issue 240 (`bbbba3ac`). `scripts/final-check --app commerce-batch` on `25c38bd7`, a clean tree, started 2026-11-17T12:48:40Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 31 tests (18 s), 0 failures, 0 errors, 0 skipped**. Issue 240 ended commerce-batch at 5 classes and 22 tests, so this ticket adds 9. Only this document changed after `25c38bd7`.
+
+The ticket was paused and spec 237 was grilled a second time before it was finished. Its first title and second criterion said a refusal leaves no `JobInstance`. That cannot hold on Batch 6.0.6 with a validator alone (below), so the spec and the ticket were reworded first.
+
+### Acceptance criteria
+
+- [x] **A Tuesday `periodStart`, a blank `snapshotId`, `revision` 0 and each missing parameter raise `InvalidJobParametersException`.** Six scenes in `WeeklyRankingFreezeTest`, one per refusal. Each asserts the message: `periodStart must be a Monday, but 2026-08-18 is a TUESDAY`, `snapshotId must not be blank`, `revision must be at least 1, but was 0`, and `… is missing` for each of the three.
+- [x] **After each refusal there is no `JobExecution` and no row in the two ranking tables.** `assertNothingExecutedOrFrozen` in each refusal scene: `BATCH_JOB_EXECUTION`, `weekly_ranking_snapshot` and `weekly_ranking_snapshot_input` are empty. The assignment's four activities are inserted first, so an accepted launch would have frozen them.
+- [x] **A `periodStart` given as a `String` raises `InvalidJobParametersException`, and its message shows the expected spelling.** The message is `periodStart must be a LocalDate, but was a String. Give it as periodStart=2026-08-17,java.time.LocalDate`. This scene was red first, against a validator that only named the two types.
+- [x] **A completed run launched again with the same three values raises `JobInstanceAlreadyCompleteException`, and the snapshot and its inputs are unchanged.** One scene. It also reads one job execution, the first run's.
+- [x] **A `periodStart` in the future is accepted.** The context's clock stands at 2026-08-24 and the scene freezes `periodStart=2026-08-31`: `COMPLETED`, count 0.
+- [x] **`ktlintCheck` and `check` on commerce-batch pass, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### What was built
+
+- **`WeeklyRankingJobParametersValidator`**: a `JobParametersValidator` set on the job by `JobBuilder.validator(…)`. It reads each of the three parameters by name, refuses a missing one or one of another type, then checks the Monday, the blank and the revision. It reads no clock.
+- **Nine scenes** in `WeeklyRankingFreezeTest`, flat and separately named.
+
+### Decisions made while implementing
+
+- **Batch 6.0.6 creates the job instance before it validates, and that is accepted.** `TaskExecutorJobLauncher.createJobExecution` commits `jobRepository.createJobInstance(…)` in its own transaction and only then calls the job's validator. The comment above that call still says "before creating anything". The first run of the Tuesday scene raised the right exception and left job instance 1 with no execution. Relaunching the same parameters then fails with `IllegalStateException` ("Cannot find any job execution for job instance"), not with the validator's message.
+  - It is [Spring Batch issue 5562](https://github.com/spring-projects/spring-batch/issues/5562), fixed by commit `4dcf68f7b` on 2026-10-02. The fix adds a method to `JobRepository`, so it is in 6.1.0-RC1 and not on the 6.0.x branch. It reaches this repository with Boot 4.2, which was at RC2 on 2026-11-17 while Initializr's default was 4.1.2.
+  - An instance of this kind exists only for parameters that are refused every time, so it never stands in the way of a valid run.
+  - Not chosen: wrapping `JobOperator.start` through a `BeanPostProcessor` so the validator runs first, deleting the instance after a refusal, and moving to Boot 4.2.0-RC2. The first two are code that exists only until the upgrade, and the third goes past Initializr.
+  - Spec 237 records this as 확인한 사실 6. Story 2 now says "refused before anything is frozen … leaves no snapshot and no job execution behind".
+- **The scenes do not pin the instance.** They assert what `weeklyRanking` owns: the exception, no job execution, no ranking row. They pass on 6.0.6 and will pass on 6.1. Pinning the leftover instance would make the Boot upgrade fail on behaviour this repository neither wants nor controls, and no later branch relies on it.
+- **Types are checked strictly.** A parameter's type is part of what identifies a job instance, so a `String` date read leniently would be another instance for the same week, against story 4. The mistake an operator will make is leaving `,java.time.LocalDate` off the command line, so the refusal shows that spelling with the value they gave.
+- **The validator is a plain class, not a bean.** It has no collaborators, and the job config creates it where it sets it.
+- **Still no `RankingPeriod` type.** The validator asks one question of the date, `dayOfWeek`, and the tasklet remains the only code that computes the week.
+
+### Review
+
+No two-axis review ran on this ticket. The design questions were settled in the second grilling of spec 237 before the code was finished.
