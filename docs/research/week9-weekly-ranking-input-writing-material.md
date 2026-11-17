@@ -149,3 +149,43 @@ A two-axis review ran on the code before `e4546f14`.
   - The nullable `Result` with `!!` became a list read with `single()`.
   - Fixed an over-indented `use` block, and moved `javax.sql.DataSource` after the `java.*` imports.
 - **Left as they are:** `insertActivityFromAnotherConnection` repeats `insertActivity`'s parameters, but the two share the SQL constant `INSERT_ACTIVITY_SQL`. `DriverManager` and a mid-test `clearMocks` are new to the repo, and both are explained where they are used.
+
+## Issue 242: a conflicting freeze fails and overwrites nothing
+
+Implemented as `842e431b`, with review fixes in `dbcbb0b5`, rebased onto issue 243's `87d7acf3`. `scripts/final-check --app commerce-batch` on `20fe0be2` (the code of `dbcbb0b5`), a clean tree, started 2026-11-17T08:49:44Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 5 classes, 20 tests (38 s), 0 failures, 0 errors, 0 skipped**. Issue 243 ended at 15 tests, so this ticket adds 5 scenes to `WeeklyRankingFreezeTest`. Only this document changed after `dbcbb0b5`.
+
+### Acceptance criteria
+
+- [x] **With a snapshot frozen, a run with the same `snapshotId` and another `periodStart` ends `FAILED`.** `a freeze under an existing snapshot ID for another period …`. A purchase in the refused run's week (2026-08-24) is present, so a wrongly copied input would show under the existing ID.
+- [x] **With a snapshot frozen, a run with the same `periodStart` and `revision` and another `snapshotId` ends `FAILED`.** `a freeze of an already frozen period and revision under a new snapshot ID …`.
+- [x] **After each, the existing snapshot row and its inputs are unchanged and no row carries the refused run's values.** Each scene compares the whole snapshot table and the existing inputs with what they were before the refused run, and the second also finds no inputs under the refused ID.
+- [x] **The failure names the conflict in the step's exit description.** Batch writes the exception's stack trace there, and its first line is `SnapshotConflictException: Freeze of snapshot <id> (period …, revision …) conflicts with snapshot <id> (period …, revision …)`. The class name and the message both set it apart from a key violation or a lock timeout.
+- [x] **Inserting a second snapshot row by SQL with the same `(period_start, revision)` is refused by the database.** `DuplicateKeyException` naming `UK_WEEKLY_RANKING_SNAPSHOT_ON_PERIOD_START_AND_REVISION`. The key itself was already in the schema script from issue 239.
+- [x] **A new revision of the same period under a new `snapshotId` freezes normally.** Revision 2 completes beside revision 1, with the same checksum, since the input did not move.
+- [x] **`ktlintCheck` and `check` on commerce-batch pass, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### What was built
+
+- **`FreezeTasklet`**: before reading the clock or copying, it asks the store for conflicting snapshots and throws `SnapshotConflictException` when there are any. Nothing has been written at that point, so the rollback has nothing to undo.
+- **`WeeklyRankingSnapshotStore.findConflicting`**: one unlocked read, `WHERE snapshot_id = ? OR (period_start = ? AND revision = ?)`. It returns at most two rows, one per key.
+- **`SnapshotKey`**: the snapshot ID, period start and revision as one value. It is both the refused freeze and each conflicting snapshot, and spells one in the message.
+- **`SnapshotConflictException`**: one sentence per conflicting snapshot, joined by `; `.
+
+### Decisions made while implementing
+
+- **The red came from the exit description, not the status.** Before the check, both conflicts already ended `FAILED`: the copy ran, then the snapshot insert hit the primary or unique key and the step's transaction rolled back. So the keys were already a working backstop, and what the ticket adds is a refusal before any write that tells the operator which snapshot is in the way.
+- **The check takes no lock.** Two freezes that race past it are still refused by the keys when the later one inserts its snapshot, and its copied inputs roll back with it. A locking read would add a gap lock on the unique key for a race the keys already settle.
+- **An exact match (same ID, period and revision) is also reported as a conflict.** Batch refuses that run first, since its job instance is complete. The check does not make an exception for it.
+
+### Review
+
+A two-axis review ran on `842e431b` (then `9fb8fd46`, before the rebase).
+
+- **Spec:** no missing AC and no scope creep. It confirmed the exit-description assertion against Batch 6.0.6's `AbstractStep` (the stack trace's first line holds the message, within the 2500 characters the metadata keeps).
+  - Fixed: story 6 says "another period **or revision**", and only the period case had a scene. `a freeze under an existing snapshot ID for another revision of the same period …` was added.
+  - Left as it is: no scene for the primary key refusing a second `snapshot_id` row. It is an ordinary primary key, and the AC names only the unique key.
+- **Standards:** no hard violation.
+  - Fixed: the ID, period and revision travelled as three parameters beside a type holding the same three. `findConflicting` and the exception take `SnapshotKey`, which moved out of the exception's file into its own.
+  - Fixed: the tasklet KDoc said "before anything is copied", a word the glossary avoids for the freeze. It says "written".
+  - Left as it is: the schema-key scene writes raw SQL inside a job test class. It is the backstop the job relies on, and it reads the same table.
