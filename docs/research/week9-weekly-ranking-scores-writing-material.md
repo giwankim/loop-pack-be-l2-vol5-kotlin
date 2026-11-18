@@ -86,6 +86,8 @@ I ran a two-axis review on the diff before committing it. Neither axis found a h
 
 ## Issue 249: continue a failed score run from the product it stopped at
 
+Recorded 2026-11-18 from [issue 249's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/249#issuecomment-6973810797). The text below is the comment's.
+
 Implemented as `fda30058`, a test class only; no production code changed. `scripts/final-check --app commerce-batch` on `fda30058`, a clean tree, started 2026-11-18T08:37:08Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 7 classes, 45 tests (19 s), 0 failures, 0 errors, 0 skipped**. Issue 248 ended at 6 classes and 39 tests, so this ticket adds 1 class and 6 tests. Only this document changed after `fda30058`.
 
 ### Acceptance criteria
