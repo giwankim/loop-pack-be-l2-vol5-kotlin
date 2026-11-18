@@ -7,7 +7,10 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
-/** What the weekly ranking's job tests share: the job's three identifying parameters, and purchase activities by SQL. */
+/**
+ * What the weekly ranking's job tests share: the job's three identifying parameters, purchase activities by SQL,
+ * and the snapshot inputs and scores a run stored.
+ */
 object WeeklyRankingJobs {
     const val INSERT_ACTIVITY_SQL =
         "INSERT INTO purchase_activity (order_id, product_id, quantity, confirmed_at) VALUES (?, ?, ?, ?)"
@@ -42,4 +45,43 @@ object WeeklyRankingJobs {
             )
         }
     }
+
+    /** The inputs the freeze stored for [snapshotId], in key order. */
+    fun JdbcClient.snapshotInputs(snapshotId: String): List<StoredSnapshotInput> {
+        return sql(
+            """
+            SELECT order_id, product_id, quantity, confirmed_at FROM weekly_ranking_snapshot_input
+            WHERE snapshot_id = ? ORDER BY order_id, product_id
+            """.trimIndent(),
+        )
+            .param(snapshotId)
+            .query { resultSet, _ ->
+                StoredSnapshotInput(
+                    orderId = resultSet.getLong("order_id"),
+                    productId = resultSet.getLong("product_id"),
+                    quantity = resultSet.getInt("quantity"),
+                    confirmedAt = resultSet.getObject("confirmed_at", LocalDateTime::class.java),
+                )
+            }
+            .list()
+    }
+
+    /** The scores the score step stored for [snapshotId], in product order. */
+    fun JdbcClient.scores(snapshotId: String): List<StoredScore> {
+        return sql("SELECT product_id, score FROM weekly_ranking_score WHERE snapshot_id = ? ORDER BY product_id")
+            .param(snapshotId)
+            .query { resultSet, _ ->
+                StoredScore(productId = resultSet.getLong("product_id"), score = resultSet.getLong("score"))
+            }
+            .list()
+    }
+
+    data class StoredSnapshotInput(
+        val orderId: Long,
+        val productId: Long,
+        val quantity: Int,
+        val confirmedAt: LocalDateTime,
+    )
+
+    data class StoredScore(val productId: Long, val score: Long)
 }

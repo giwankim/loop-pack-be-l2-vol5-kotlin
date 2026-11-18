@@ -3,9 +3,12 @@ package com.loopers.job.weeklyranking
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
 import com.loopers.batch.job.weeklyranking.step.ScoreProductReader
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingScoreStore
+import com.loopers.support.WeeklyRankingJobs.StoredScore
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
 import com.loopers.support.WeeklyRankingJobs.jobParameters
+import com.loopers.support.WeeklyRankingJobs.scores
+import com.loopers.support.WeeklyRankingJobs.snapshotInputs
 import com.loopers.support.test.BaseBatchJobTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.clearMocks
@@ -80,7 +83,8 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
-        assertThat(scores()).containsExactly(StoredScore(productId = 7, score = 5), StoredScore(productId = 8, score = 1))
+        assertThat(jdbcClient.scores(SNAPSHOT_ID))
+            .containsExactly(StoredScore(productId = 7, score = 5), StoredScore(productId = 8, score = 1))
         assertThat(storedReadCount(jobExecution)).isEqualTo(2)
         assertThat(jdbcClient.sql("SELECT state FROM weekly_ranking_snapshot").query(String::class.java).list())
             .containsExactly("FROZEN")
@@ -101,7 +105,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
         assertThat(jobExecution.jobInstance.id).isEqualTo(failedExecution.jobInstance.id)
         assertThat(jobExecution.id).isNotEqualTo(failedExecution.id)
-        assertThat(scores())
+        assertThat(jdbcClient.scores(SNAPSHOT_ID))
             .containsExactly(
                 StoredScore(productId = 7, score = 5),
                 StoredScore(productId = 8, score = 1),
@@ -126,7 +130,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         failSummingProduct(SNAPSHOT_ID, productId = 9)
         val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
         val snapshotAfterFirstRun = snapshot()
-        val inputsAfterFirstRun = snapshotInputs()
+        val inputsAfterFirstRun = jdbcClient.snapshotInputs(SNAPSHOT_ID)
         prepareRestart()
 
         // act
@@ -139,7 +143,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         ).isEqualTo(1)
         assertThat(snapshot()).isEqualTo(snapshotAfterFirstRun)
         assertThat(snapshotAfterFirstRun.frozenAt).isEqualTo(LocalDateTime.ofInstant(FIRST_RUN_INSTANT, ZoneOffset.UTC))
-        assertThat(snapshotInputs()).isEqualTo(inputsAfterFirstRun)
+        assertThat(jdbcClient.snapshotInputs(SNAPSHOT_ID)).isEqualTo(inputsAfterFirstRun)
     }
 
     /** The failure is inside the first chunk, so its rollback takes product 7's score and the reader's position with it. */
@@ -154,7 +158,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
-        assertThat(scores()).isEmpty()
+        assertThat(jdbcClient.scores(SNAPSHOT_ID)).isEmpty()
         assertThat(storedReadCount(jobExecution)).isNull()
     }
 
@@ -174,7 +178,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         assertThat(jobExecution.stepExecutions.single { it.stepName == WeeklyRankingJobConfig.SCORE_STEP_NAME })
             .extracting(StepExecution::getReadCount, StepExecution::getWriteCount)
             .containsExactly(3L, 3L)
-        assertThat(scores())
+        assertThat(jdbcClient.scores(SNAPSHOT_ID))
             .containsExactly(
                 StoredScore(productId = 7, score = 5),
                 StoredScore(productId = 8, score = 1),
@@ -198,7 +202,8 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
-        assertThat(scores()).containsExactly(StoredScore(productId = 7, score = 5), StoredScore(productId = 8, score = 1))
+        assertThat(jdbcClient.scores(SNAPSHOT_ID))
+            .containsExactly(StoredScore(productId = 7, score = 5), StoredScore(productId = 8, score = 1))
         assertThat(storedReadCount(jobExecution)).isEqualTo(2)
     }
 
@@ -244,15 +249,6 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         return if (executionContext.containsKey(key)) executionContext.getInt(key) else null
     }
 
-    private fun scores(): List<StoredScore> {
-        return jdbcClient.sql("SELECT product_id, score FROM weekly_ranking_score WHERE snapshot_id = ? ORDER BY product_id")
-            .param(SNAPSHOT_ID)
-            .query { resultSet, _ ->
-                StoredScore(productId = resultSet.getLong("product_id"), score = resultSet.getLong("score"))
-            }
-            .list()
-    }
-
     private fun snapshot(): StoredSnapshot {
         return jdbcClient.sql("SELECT frozen_at, input_count, input_checksum FROM weekly_ranking_snapshot WHERE snapshot_id = ?")
             .param(SNAPSHOT_ID)
@@ -266,36 +262,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
             .single()
     }
 
-    private fun snapshotInputs(): List<StoredSnapshotInput> {
-        return jdbcClient
-            .sql(
-                """
-                SELECT order_id, product_id, quantity, confirmed_at FROM weekly_ranking_snapshot_input
-                WHERE snapshot_id = ? ORDER BY order_id, product_id
-                """.trimIndent(),
-            )
-            .param(SNAPSHOT_ID)
-            .query { resultSet, _ ->
-                StoredSnapshotInput(
-                    orderId = resultSet.getLong("order_id"),
-                    productId = resultSet.getLong("product_id"),
-                    quantity = resultSet.getInt("quantity"),
-                    confirmedAt = resultSet.getObject("confirmed_at", LocalDateTime::class.java),
-                )
-            }
-            .list()
-    }
-
     private data class StoredSnapshot(val frozenAt: LocalDateTime, val inputCount: Long, val inputChecksum: String)
-
-    private data class StoredSnapshotInput(
-        val orderId: Long,
-        val productId: Long,
-        val quantity: Int,
-        val confirmedAt: LocalDateTime,
-    )
-
-    private data class StoredScore(val productId: Long, val score: Long)
 
     /** A clock a scene sets and moves. Only the instant is read: the freeze reads `clock.instant()`. */
     class MovableClock(

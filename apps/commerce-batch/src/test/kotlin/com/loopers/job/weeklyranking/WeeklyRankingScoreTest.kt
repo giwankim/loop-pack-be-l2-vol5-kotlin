@@ -1,9 +1,11 @@
 package com.loopers.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
+import com.loopers.support.WeeklyRankingJobs.StoredScore
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
 import com.loopers.support.WeeklyRankingJobs.jobParameters
+import com.loopers.support.WeeklyRankingJobs.scores
 import com.loopers.support.test.BaseBatchJobTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.tuple
@@ -89,7 +91,7 @@ class WeeklyRankingScoreTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(scores("2026-08-17-r1"))
+        assertThat(jdbcClient.scores("2026-08-17-r1"))
             .containsExactly(
                 StoredScore(productId = 7, score = 5),
                 StoredScore(productId = 8, score = 1),
@@ -167,15 +169,4 @@ class WeeklyRankingScoreTest @Autowired constructor(
             }
             .list()
     }
-
-    private fun scores(snapshotId: String): List<StoredScore> {
-        return jdbcClient.sql("SELECT product_id, score FROM weekly_ranking_score WHERE snapshot_id = ? ORDER BY product_id")
-            .param(snapshotId)
-            .query { resultSet, _ ->
-                StoredScore(productId = resultSet.getLong("product_id"), score = resultSet.getLong("score"))
-            }
-            .list()
-    }
-
-    private data class StoredScore(val productId: Long, val score: Long)
 }

@@ -5,9 +5,11 @@ import com.loopers.batch.job.weeklyranking.step.WeeklyRankingSnapshotStore
 import com.loopers.support.WeeklyRankingInputs.ASSIGNMENT_CHECKSUM
 import com.loopers.support.WeeklyRankingInputs.EMPTY_CHECKSUM
 import com.loopers.support.WeeklyRankingJobs.INSERT_ACTIVITY_SQL
+import com.loopers.support.WeeklyRankingJobs.StoredSnapshotInput
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
 import com.loopers.support.WeeklyRankingJobs.jobParameters
+import com.loopers.support.WeeklyRankingJobs.snapshotInputs
 import com.loopers.support.test.BaseBatchJobTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import com.zaxxer.hikari.HikariDataSource
@@ -78,7 +80,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1"))
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1"))
             .containsExactly(
                 StoredSnapshotInput(orderId = 42, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00")),
                 StoredSnapshotInput(orderId = 42, productId = 8, quantity = 1, confirmedAt = utc("2026-08-17T00:00:00")),
@@ -126,7 +128,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
-        assertThat(snapshotInputs("2026-08-17-r1"))
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1"))
             .containsExactly(
                 StoredSnapshotInput(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00")),
             )
@@ -147,7 +149,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
-        assertThat(snapshotInputs("2026-08-17-r1").map { it.orderId }).containsExactly(42, 42, 43, 44)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1").map { it.orderId }).containsExactly(42, 42, 43, 44)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -163,7 +165,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEmpty()
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEmpty()
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(0L, EMPTY_CHECKSUM)
@@ -180,7 +182,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEmpty()
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEmpty()
         assertThat(snapshots()).isEmpty()
     }
 
@@ -200,7 +202,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
         assertThat(jobExecution.jobInstance.id).isEqualTo(failedExecution.jobInstance.id)
         assertThat(jobExecution.id).isNotEqualTo(failedExecution.id)
-        assertThat(snapshotInputs("2026-08-17-r1")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).hasSize(4)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -229,7 +231,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         assertThat(lateInserts.single().exceptionOrNull()).isNull()
         assertThat(activityOrderIds()).contains(45L)
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1").map(StoredSnapshotInput::orderId)).doesNotContain(45L)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1").map(StoredSnapshotInput::orderId)).doesNotContain(45L)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -242,7 +244,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jdbcClient.insertActivity(orderId = 60, productId = 7, quantity = 4, confirmedAt = utc("2026-08-25T10:00:00"))
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(
@@ -257,7 +259,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
     }
 
     @Test
@@ -266,7 +268,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 2))
@@ -279,7 +281,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
     }
 
     @Test
@@ -288,7 +290,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1-again"))
@@ -301,8 +303,8 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1-again")).isEmpty()
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1-again")).isEmpty()
     }
 
     @Test
@@ -322,7 +324,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                 tuple("2026-08-17-r1", 1L, ASSIGNMENT_CHECKSUM),
                 tuple("2026-08-17-r2", 2L, ASSIGNMENT_CHECKSUM),
             )
-        assertThat(snapshotInputs("2026-08-17-r2")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r2")).hasSize(4)
     }
 
     @Test
@@ -361,7 +363,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         // assert
         assertThat(ranScripts).isTrue()
         assertThat(snapshots()).hasSize(1)
-        assertThat(snapshotInputs("2026-08-17-r1")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).hasSize(4)
     }
 
     @Test
@@ -518,7 +520,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         assertThrows<JobInstanceAlreadyCompleteException> {
@@ -527,7 +529,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
         assertThat(jobExecutionCount()).isEqualTo(1)
     }
 
@@ -626,26 +628,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         return LocalDateTime.parse(text)
     }
 
-    private fun snapshotInputs(snapshotId: String): List<StoredSnapshotInput> {
-        return jdbcClient
-            .sql(
-                """
-                SELECT order_id, product_id, quantity, confirmed_at FROM weekly_ranking_snapshot_input
-                WHERE snapshot_id = ? ORDER BY order_id, product_id
-                """.trimIndent(),
-            )
-            .param(snapshotId)
-            .query { resultSet, _ ->
-                StoredSnapshotInput(
-                    orderId = resultSet.getLong("order_id"),
-                    productId = resultSet.getLong("product_id"),
-                    quantity = resultSet.getInt("quantity"),
-                    confirmedAt = resultSet.getObject("confirmed_at", LocalDateTime::class.java),
-                )
-            }
-            .list()
-    }
-
     private fun snapshots(): List<StoredSnapshot> {
         return jdbcClient.sql("SELECT * FROM weekly_ranking_snapshot ORDER BY snapshot_id")
             .query { resultSet, _ ->
@@ -661,13 +643,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
             }
             .list()
     }
-
-    private data class StoredSnapshotInput(
-        val orderId: Long,
-        val productId: Long,
-        val quantity: Int,
-        val confirmedAt: LocalDateTime,
-    )
 
     private data class StoredSnapshot(
         val snapshotId: String,
