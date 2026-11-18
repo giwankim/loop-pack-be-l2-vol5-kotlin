@@ -1,6 +1,10 @@
 package com.loopers.batch.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.step.FreezeTasklet
+import com.loopers.batch.job.weeklyranking.step.ProductScore
+import com.loopers.batch.job.weeklyranking.step.ScoreProcessor
+import com.loopers.batch.job.weeklyranking.step.ScoreProductReader
+import com.loopers.batch.job.weeklyranking.step.ScoreWriter
 import com.loopers.batch.listener.JobListener
 import com.loopers.batch.listener.StepMonitorListener
 import org.springframework.batch.core.job.Job
@@ -8,6 +12,7 @@ import org.springframework.batch.core.job.builder.JobBuilder
 import org.springframework.batch.core.repository.JobRepository
 import org.springframework.batch.core.step.Step
 import org.springframework.batch.core.step.builder.StepBuilder
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -18,20 +23,31 @@ import org.springframework.transaction.interceptor.DefaultTransactionAttribute
 /**
  * The weekly ranking job (`CONTEXT.md` 주간 랭킹). It is identified by three parameters an operator gives on the command line,
  * `periodStart` (`LocalDate`), `snapshotId` (`String`) and `revision` (`Long`), with no incrementer, run ID or clock value, so
- * a rerun with the same three is the same job instance. On this branch it ends after its one step, `freeze`.
+ * a rerun with the same three is the same job instance. It runs `freeze`, then `score`, and on this branch ends there. A
+ * rerun of a failed run skips a `freeze` that completed, so the snapshot stays as the first run froze it.
  *
- * The step runs on the application's transaction manager, so its writes and its metadata commit together. Its transaction is
- * READ COMMITTED: the copy's `INSERT … SELECT` then takes no locks on `purchase_activity`, and the streamer can record a
- * purchase while a freeze runs (spec 237, 확인한 사실 1).
+ * Both steps run on the application's transaction manager, so a step's writes and its metadata commit together. The
+ * freeze's transaction is READ COMMITTED: the copy's `INSERT … SELECT` then takes no locks on `purchase_activity`, and the
+ * streamer can record a purchase while a freeze runs (spec 237, 확인한 사실 1).
+ *
+ * `score` is a chunk step with no isolation override, no skip and no retry: it reads and writes only the frozen inputs and
+ * its own score table, and any failure fails the run. A chunk's scores and the reader's position commit together, so a
+ * rerun continues after the last committed product (spec 246).
  */
 @ConditionalOnProperty(name = ["spring.batch.job.name"], havingValue = WeeklyRankingJobConfig.JOB_NAME)
 @Configuration(proxyBeanMethods = false)
 class WeeklyRankingJobConfig {
     @Bean(JOB_NAME)
-    fun weeklyRankingJob(jobRepository: JobRepository, jobListener: JobListener, freezeStep: Step): Job {
+    fun weeklyRankingJob(
+        jobRepository: JobRepository,
+        jobListener: JobListener,
+        @Qualifier(FREEZE_STEP_NAME) freezeStep: Step,
+        @Qualifier(SCORE_STEP_NAME) scoreStep: Step,
+    ): Job {
         return JobBuilder(JOB_NAME, jobRepository)
             .validator(WeeklyRankingJobParametersValidator())
             .start(freezeStep)
+            .next(scoreStep)
             .listener(jobListener)
             .build()
     }
@@ -50,6 +66,26 @@ class WeeklyRankingJobConfig {
             .build()
     }
 
+    @Bean(SCORE_STEP_NAME)
+    fun scoreStep(
+        jobRepository: JobRepository,
+        transactionManager: PlatformTransactionManager,
+        properties: WeeklyRankingScoreProperties,
+        scoreProductReader: ScoreProductReader,
+        scoreProcessor: ScoreProcessor,
+        scoreWriter: ScoreWriter,
+        stepMonitorListener: StepMonitorListener,
+    ): Step {
+        return StepBuilder(SCORE_STEP_NAME, jobRepository)
+            .chunk<Long, ProductScore>(properties.chunkSize)
+            .transactionManager(transactionManager)
+            .reader(scoreProductReader)
+            .processor(scoreProcessor)
+            .writer(scoreWriter)
+            .listener(stepMonitorListener)
+            .build()
+    }
+
     private fun readCommitted(): DefaultTransactionAttribute {
         val attribute = DefaultTransactionAttribute()
         attribute.isolationLevel = TransactionDefinition.ISOLATION_READ_COMMITTED
@@ -60,5 +96,6 @@ class WeeklyRankingJobConfig {
     companion object {
         const val JOB_NAME = "weeklyRanking"
         const val FREEZE_STEP_NAME = "freeze"
+        const val SCORE_STEP_NAME = "score"
     }
 }

@@ -20,5 +20,16 @@ CREATE TABLE IF NOT EXISTS weekly_ranking_snapshot_input (
     product_id   BIGINT       NOT NULL,
     quantity     INT          NOT NULL,
     confirmed_at DATETIME(6)  NOT NULL,
-    PRIMARY KEY (snapshot_id, order_id, product_id)
+    PRIMARY KEY (snapshot_id, order_id, product_id),
+    -- The score step's product read and per-product sum, answered from the index alone (spec 246). The name shortens the
+    -- table to its glossary name, since the full one would pass MySQL's 64 characters. IF NOT EXISTS adds it to no table
+    -- that already exists: a local table from before it is dropped by hand.
+    INDEX IDX_SNAPSHOT_INPUT_ON_SNAPSHOT_ID_AND_PRODUCT_ID_AND_QUANTITY (snapshot_id, product_id, quantity)
+);
+
+CREATE TABLE IF NOT EXISTS weekly_ranking_score (
+    snapshot_id VARCHAR(100) NOT NULL,
+    product_id  BIGINT       NOT NULL,
+    score       BIGINT       NOT NULL,
+    PRIMARY KEY (snapshot_id, product_id)
 );

@@ -17,6 +17,10 @@ spring:
     jdbc:
       initialize-schema: never
 
+weekly-ranking:
+  score:
+    chunk-size: 100 # products per chunk; not measured
+
 management:
   health:
     defaults:
