@@ -4,6 +4,8 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 247: compute a score for every product of a frozen snapshot
 
+Recorded 2026-11-18 from [issue 247's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/247#issuecomment-6973120270). The text below is the comment's.
+
 Implemented as `855bb577`, on top of `dd663479`, which commits the 점수 entry of `apps/commerce-batch/CONTEXT.md`, and `85d0c137`, which adds the long-index-name rule to `CODING_STANDARDS.md`. `scripts/final-check --app commerce-batch` on `855bb577`, a clean tree, started 2026-11-18T08:13:39Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 6 classes, 39 tests (21 s), 0 failures, 0 errors, 0 skipped**. Spec 237 ended at 5 classes and 33 tests, so this ticket adds 1 class and 6 tests. Only this document changed after `855bb577`.
 
 ### Acceptance criteria
