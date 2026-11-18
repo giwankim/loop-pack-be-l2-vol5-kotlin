@@ -177,3 +177,142 @@ A two-axis review ran before the commit.
   - Fixed: the probe re-check was more detailed in the §11 note than in §12.3. The detail moved to §12.3.
   - Fixed: the freeze test's change is now described as also moving its helpers.
 - **Left as they are:** the short restatements in §12.5 and §12.10 of points made in §12.2 and §12.3 (the `JobInstance` limit, no `EXPLAIN`, the score count compared at publish). Each one is a pointer to its home section.
+
+## Spec 246: the closing review
+
+Recorded 2026-11-18 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246#issuecomment-6977981294) of [spec 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246). The text is the comment's, with its blob URLs.
+
+Step 2 of week 9 is built, and its closing review is done. `scripts/final-check --app commerce-batch` on `b63678a2`, a clean tree, started 2026-11-18T09:45:43Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 7 classes, 45 tests (22 s); 0 failures, 0 errors, 0 skipped**. Step 1 ended commerce-batch at 5 classes and 33 tests, so this step adds 2 classes and 12 tests. The review's two new checks are extra lines in existing tests, so the count did not move. This branch does not touch commerce-streamer, so it was not run. Only documents change after `b63678a2`.
+
+Tickets 247–250 are closed, each with its own comment. [Design 1.3](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md#13-2단계가-만든-것) lists what each one built, and [design 12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md#12-점수-2단계) holds the step. No ADR was added.
+
+### Where the implementation differs
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| On `ResourcelessTransactionManager`, "저장된 읽은 수나 chunk 안의 실패 장면이 붉다" (red check) | No sum-failure scene goes red: the failure always comes before the chunk's write, and Batch stores the metadata through its own repository either way. A scene failing after `saveScores` writes was added, and it goes red | Issue 249 |
+| With the reader's `saveState(false)`, the restart's read and write counts and the sum counts go red (red check) | The committed scenes stop at the read and write counts and never reach the sum counts. The sum counts going red was seen in a separate, uncommitted reorder of the assertions | Issue 250 |
+| Failures are made by a spy on "the method that sums one product's quantity" | The after-write scene uses the same spy bean's `saveScores`. The summing seam cannot show story 15 (a chunk's scores and read count commit together). Production code still has no failure switch | Issue 249 |
+| A chunk failure stores a read count that is absent or 0; which one is decided while implementing | Absent: the stored `score` step execution has no key in its `ExecutionContext` | Issue 249 |
+| A named secondary index (name not chosen) | The standard name came to 76 characters, past MySQL's 64. `CODING_STANDARDS.md` now shortens the table part to its glossary name only in that case | Issue 247 |
+
+All of these are in [design 12.9](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md#129-명세와-다른-것).
+
+**Now proven:** "a finished freeze is not rerun", which step 1 left to this branch. A restart after a score failure runs one `freeze` step execution in total, and leaves the snapshot and its inputs as the first run froze them, though the clock moved and a purchase was added between the runs.
+
+**Not proven here:** throughput at the default chunk size of 100, and whether the secondary index answers both queries from the index alone (no `EXPLAIN`). The assignment's "앞선 게시가 그대로다" and its seventh step need ranks and a publish pointer, so they are step 3's ([design 12.5](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md#125-한계)).
+
+### The closing review
+
+A two-axis review of `week9...feat/weekly-ranking-scores` at `83920dcd` (12 commits, 16 files), with one reviewer on the standards and one on this spec. Standards found 2 breaches of documented rules and 7 judgement calls. Spec found 2 partial requirements, 4 additions (all already in design 12.9) and 1 wrong sentence in the evidence. Each was checked against the code and decided.
+
+#### What changed
+
+- **`184ae7f9`: the readers the tests share live in `support`.** `scores` and `snapshotInputs`, with their row types, had two copies each, in the score, restart and freeze tests. They are now `JdbcClient` extensions in `WeeklyRankingJobs`, beside `insertActivity`.
+- **`5689ea90`: the design no longer calls the score upsert "덮어 쓰기".** The batch glossary lists 덮어쓰기 among the words to avoid for a conflict. The design now says "점수 바꾸기", after the test's *replaced*.
+- **`458cd90d`: `ProductScore` has its own file.** The processor, the writer and the job config share it, so it sits beside them like `SnapshotInput` rather than at the end of the store's file.
+- **`9a71527c`: story 19 counts product 9 too.** The restart scene now asserts it was summed twice: the first run's call that threw, and the restart's. Read and write counts cannot show a processor called again by a retry. An uncommitted change to "once" turned only that line red (`2 matching calls found, but needs exactly 1 calls`).
+- **`d7deb546`: the failing-freeze scene shows `score` did not run.** It asserts the job ran only the `freeze` step; before, only the conflict scenes' `single()` showed it. An uncommitted change expecting both steps turned only that line red (`["freeze"]`).
+- **Issue 249's closing comment is corrected.** Under the processor-summing mutation, the two failing scenes are the restart scenes that read the scores, not "both scenes whose restart completes": three restarts complete, and the one that checks there is no second freeze reads no scores. The committed copy matches.
+
+`b63678a2` adds dated notes for these to design 12.
+
+#### Left as they were
+
+- **The score-step lookup, the four-table `emptyTables` list and the `StepExecution` KDoc paragraph, each repeated.** A method returning a `StepExecution` would be taken for a step-context factory by `@SpringBatchTest`. The table list and the warning belong to each class.
+- **`MovableClock` beside commerce-api's `TestClock`.** Another module's test classpath cannot reach it, and the restart scenes need a fixed start, not a running clock.
+- **The literal parameter names in `WeeklyRankingJobs.jobParameters`.** They are what an operator types, and the tests pin them.
+- **The reader's bare `@Value`.** Its `snapshotId` is a plain constructor parameter, not a property, so `@param:` would choose nothing.
+- **The four additions:** the after-write scene, the long-index-name rule, the `chunkSize >= 1` check and `WeeklyRankingJobs`. Each is recorded in design 12.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/research/week9-weekly-ranking-scores-writing-material.md#spec-246-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/weekly-ranking-scores` into `week9`, in the shape of step 1's, written after the spec's closing review.
+
+Title: `feat(commerce-batch): score every product of a frozen snapshot in a chunk step, and continue a failed score run where it stopped`
+
+````markdown
+## Summary
+
+Week 9 step 2. The `weeklyRanking` job gets its second step, `score`. A chunk step reads the products of a frozen snapshot, sums each one's quantity from the snapshot inputs only, and stores the result as its score. A run that fails while scoring continues, with the same three values, from the product it stopped at, without freezing again. Ranks, publishing and the API are step 3's.
+
+- **Spec:** issue 246, with tickets 247–250, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246#issuecomment-6977981294)
+- **Design:** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md) section 12: 12.1 the step, 12.2 the table and index, 12.3 state and restart, 12.5 the limits, 12.6–12.7 the scenes and red checks, 12.9 what differs from the spec
+- **Writing material:** [`docs/research/week9-weekly-ranking-scores-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/research/week9-weekly-ranking-scores-writing-material.md), which holds every ticket's closing comment
+- **Glossary:** 점수 (score) in [`apps/commerce-batch/CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/apps/commerce-batch/CONTEXT.md). No ADR: the score table follows ADR 0038
+
+```text
+--job.name=weeklyRanking periodStart=… snapshotId=… revision=…   # unchanged from step 1
+  step freeze                              # unchanged; skipped on a restart because it is COMPLETED
+  step score                               # chunk(weekly-ranking.score.chunk-size, default 100), the app's TX manager,
+                                           # no skip, no retry
+    ScoreProductReader                     # JdbcCursorItemReader: SELECT DISTINCT product_id … WHERE snapshot_id = ?
+                                           # ORDER BY product_id; saves scoreProductReader.read.count
+    ScoreProcessor                         # one SUM(quantity) per product over the snapshot inputs, never purchase_activity
+    ScoreWriter                            # INSERT … AS computed ON DUPLICATE KEY UPDATE score = computed.score
+                                           # the chunk's scores and read count commit together
+```
+
+## Review Points
+
+#### 1. Is Batch metadata enough to say the scores are done?
+
+The snapshot stays `FROZEN`; there is no `SCORED` state. Writing one would sit outside the chunk's commit, leaving a gap where the scores and the state disagree. Step 3's publish will compare the score count with the snapshot's product count instead (design 12.3).
+
+**Would you rather have a state row, and where would you commit it?**
+
+#### 2. Is one query per product the right processor?
+
+It is the assignment's shape (section 4): reader, processor, writer each with one job. A `GROUP BY` reader would remove the per-product query but leave the processor empty. A chunk of 100 is 100 queries; throughput was not measured (design 12.4, 12.5).
+
+**Would you trade the assignment's shape for the `GROUP BY` reader?**
+
+#### 3. Is an index that local databases only get by dropping the table acceptable?
+
+The secondary index is inside `CREATE TABLE IF NOT EXISTS`, which does not touch an existing table, and MySQL has no `CREATE INDEX IF NOT EXISTS`. A local database with step 1's table drops it and starts again. No environment keeps ranking data yet, so ADR 0038's trigger for Flyway, the first `ALTER` on kept data, has not come (design 12.2).
+
+**Is dropping the local table acceptable until then?**
+
+## Evidence
+
+**Before:** step 1's job: `freeze` only, and "a finished freeze is not rerun" left unproven because no later step could fail.
+
+**After:** `WeeklyRankingScoreTest` (6 scenes) and `WeeklyRankingJobRestartTest` (6, chunk size 2) on real MySQL, with step 1's 25 freeze scenes still passing now that `score` runs after `freeze` (the failing-freeze scene also asserts that `score` did not run):
+
+- The assignment's week scores product 7 = 5, 8 = 1, 9 = 5; orders 42 and 43 sum into one score for product 7.
+- A wrong score stored beforehand is replaced, not added to. Two snapshots of one period keep their own scores.
+- A run failing before product 9 stores `scoreProductReader.read.count` = 2 with scores for 7 and 8. The restart is the same `JobInstance`, reads 1 and writes 1, and sums 7 and 8 once each across both runs.
+- The restart does not freeze again: one `freeze` step execution, the same snapshot and inputs, though the clock moved and order 45 was added between the runs.
+- A failure after product 9's score is written, before its chunk commits, leaves no score for 9 and a read count of 2.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| Writer adds to the stored score | The wrong-score scene: product 7 is 104 |
+| Sum without the `snapshot_id` condition | The two-snapshot scene: the second snapshot's scores include the first's inputs |
+| Reader with `setSaveState(false)` | Three restart scenes: no stored read count, and the restart reads 3 and writes 3 |
+| `score` step on `ResourcelessTransactionManager` | The after-write scene: product 9's score 5 stays in a failed run |
+| Processor sums from `purchase_activity` | The two restart scenes that read scores: product 9 is 9 |
+
+`scripts/final-check --app commerce-batch` on `b63678a2`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-batch | 7 (5 before) | 45 (33 before) | 0 |
+
+Not shown here: throughput at chunk size 100, and that the secondary index answers both queries from the index alone (no `EXPLAIN`).
+
+## Merge Danger
+
+**Door:** two-way
+
+No entity and no migration. `weekly_ranking_score` and the new index are created only in `local` and `test`; a revert leaves them unused.
+
+**Blast Radius:** commerce-batch
+
+- **Outside `local` and `test`**, the schema script's new table and index must be applied by hand before the first run, like step 1's tables.
+- **A local database with step 1's tables** must drop `weekly_ranking_snapshot_input` to get the index.
+- **A `JobInstance` completed on this branch cannot be continued** once step 3 adds `publish`; freeze the period again under a new `snapshotId` and revision.
+- **Out of scope:** ranks, publishing, the API, the assignment's "앞선 게시가 그대로다" and its seventh step, Flyway, throughput.
+````

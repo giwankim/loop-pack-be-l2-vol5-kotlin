@@ -356,6 +356,7 @@ scripts/final-check --app commerce-batch
 - commerce-batch는 7개 클래스, 45개 테스트, 실패 0, 오류 0, 건너뜀 0이다(26 s). 1단계의 끝의 확인(9.3절)이 5개 클래스와 33개 테스트였으므로, 이 단계가 2개 클래스(`WeeklyRankingScoreTest`, `WeeklyRankingJobRestartTest`)와 12개 테스트를 더했다.
 - 이 브랜치는 commerce-streamer를 바꾸지 않았으므로 돌리지 않았다.
 - `8563adad`의 코드는 `fda30058`의 것이고, 그 뒤로는 문서만 바뀌었다.
+- (2026-11-18 [명세 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246)의 닫는 검토) 검토의 고침(`184ae7f9`부터 `d7deb546`까지)이 테스트와 운영 코드를 바꿨으므로 `b63678a2`의 깨끗한 트리에서 다시 돌렸다(09:45:43Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했다(1 s). commerce-batch는 7개 클래스, 45개 테스트, 실패 0, 오류 0, 건너뜀 0이다(22 s). 검토가 더한 단언 둘은 있던 테스트의 줄이라 수는 그대로다. 이것이 2단계의 끝의 확인이다. 위의 `8563adad`의 실행은 앞의 확인이다. `b63678a2` 뒤로는 문서만 바뀌었다.
 
 ### 12.9 명세와 다른 것
 
