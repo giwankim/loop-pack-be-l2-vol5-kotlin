@@ -1,0 +1,87 @@
+package com.loopers.support
+
+import org.springframework.batch.core.job.parameters.JobParameters
+import org.springframework.batch.core.job.parameters.JobParametersBuilder
+import org.springframework.jdbc.core.simple.JdbcClient
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+
+/**
+ * What the weekly ranking's job tests share: the job's three identifying parameters, purchase activities by SQL,
+ * and the snapshot inputs and scores a run stored.
+ */
+object WeeklyRankingJobs {
+    const val INSERT_ACTIVITY_SQL =
+        "INSERT INTO purchase_activity (order_id, product_id, quantity, confirmed_at) VALUES (?, ?, ?, ?)"
+
+    fun jobParameters(
+        periodStart: LocalDate = LocalDate.parse("2026-08-17"),
+        snapshotId: String,
+        revision: Long = 1,
+    ): JobParameters {
+        return JobParametersBuilder()
+            .addLocalDate("periodStart", periodStart)
+            .addString("snapshotId", snapshotId)
+            .addLong("revision", revision)
+            .toJobParameters()
+    }
+
+    /** Inserts a purchase activity confirmed at [confirmedAt], a UTC wall time, into the test-only `purchase_activity`. */
+    fun JdbcClient.insertActivity(orderId: Long, productId: Long, quantity: Int, confirmedAt: LocalDateTime) {
+        sql(INSERT_ACTIVITY_SQL)
+            .params(orderId, productId, quantity, confirmedAt)
+            .update()
+    }
+
+    /** The assignment's section 6 orders, inserted in reverse key order so a reader's own order shows. */
+    fun JdbcClient.insertAssignmentActivities() {
+        WeeklyRankingInputs.ASSIGNMENT_INPUTS.reversed().forEach { input ->
+            insertActivity(
+                orderId = input.orderId,
+                productId = input.productId,
+                quantity = input.quantity,
+                confirmedAt = LocalDateTime.ofInstant(input.confirmedAt, ZoneOffset.UTC),
+            )
+        }
+    }
+
+    /** The inputs the freeze stored for [snapshotId], in key order. */
+    fun JdbcClient.snapshotInputs(snapshotId: String): List<StoredSnapshotInput> {
+        return sql(
+            """
+            SELECT order_id, product_id, quantity, confirmed_at FROM weekly_ranking_snapshot_input
+            WHERE snapshot_id = ? ORDER BY order_id, product_id
+            """.trimIndent(),
+        )
+            .param(snapshotId)
+            .query { resultSet, _ ->
+                StoredSnapshotInput(
+                    orderId = resultSet.getLong("order_id"),
+                    productId = resultSet.getLong("product_id"),
+                    quantity = resultSet.getInt("quantity"),
+                    confirmedAt = resultSet.getObject("confirmed_at", LocalDateTime::class.java),
+                )
+            }
+            .list()
+    }
+
+    /** The scores the score step stored for [snapshotId], in product order. */
+    fun JdbcClient.scores(snapshotId: String): List<StoredScore> {
+        return sql("SELECT product_id, score FROM weekly_ranking_score WHERE snapshot_id = ? ORDER BY product_id")
+            .param(snapshotId)
+            .query { resultSet, _ ->
+                StoredScore(productId = resultSet.getLong("product_id"), score = resultSet.getLong("score"))
+            }
+            .list()
+    }
+
+    data class StoredSnapshotInput(
+        val orderId: Long,
+        val productId: Long,
+        val quantity: Int,
+        val confirmedAt: LocalDateTime,
+    )
+
+    data class StoredScore(val productId: Long, val score: Long)
+}

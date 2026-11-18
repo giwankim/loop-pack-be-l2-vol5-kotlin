@@ -175,7 +175,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
 
 - 이름은 `<접두사>_<테이블>_ON_<대상>`이며 모두 대문자다. `_ON_` 앞이 테이블 이름이다. 예: `UK_ORDER_LINE_ITEM_ON_ORDER_ID_AND_PRODUCT_ID`.
 - 접두사는 유일 키 `UK_`, 외래 키 `FK_`, 인덱스 `IDX_`, CHECK `CK_`다.
-- 테이블은 DB의 테이블 이름 그대로다(`orders`, `likes`).
+- 테이블은 DB의 테이블 이름 그대로다(`orders`, `likes`). 이름이 MySQL의 64자를 넘을 때만 테이블을 용어집의 짧은 이름으로 쓰고, 대상은 줄이지 않는다. 예: `weekly_ranking_snapshot_input`의 `IDX_SNAPSHOT_INPUT_ON_SNAPSHOT_ID_AND_PRODUCT_ID_AND_QUANTITY`.
 - 유일 키·외래 키·인덱스의 대상은 컬럼 이름을 선언한 차례대로 `_AND_`로 잇는다. 컬럼 이름은 줄이지 않고(`USER_ID`, `CREATED_AT`), 정렬 방향은 넣지 않으며, 같은 값을 가르는 `id`도 넣는다. 예: `IDX_ORDERS_ON_USER_ID_AND_CREATED_AT_AND_ID`.
 - 외래 키는 자기 컬럼으로 이름 짓고 가리키는 테이블은 넣지 않는다. 예: `FK_LIKES_ON_USER_ID`. 두 컬럼이 같은 테이블을 가리켜도 이름이 겹치지 않는다.
 - CHECK 하나에는 규칙 하나를 둔다. 대상은 컬럼 하나의 규칙이면 `<컬럼>_<조건>`(`CK_ORDER_LINE_ITEM_ON_QUANTITY_POSITIVE`), 여러 컬럼에 걸친 규칙이면 그 규칙의 이름(`CK_ORDERS_ON_PAYMENT_STATE`)이다.

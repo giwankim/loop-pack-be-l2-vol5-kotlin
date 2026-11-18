@@ -3,8 +3,13 @@ package com.loopers.job.weeklyranking
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingSnapshotStore
 import com.loopers.support.WeeklyRankingInputs.ASSIGNMENT_CHECKSUM
-import com.loopers.support.WeeklyRankingInputs.ASSIGNMENT_INPUTS
 import com.loopers.support.WeeklyRankingInputs.EMPTY_CHECKSUM
+import com.loopers.support.WeeklyRankingJobs.INSERT_ACTIVITY_SQL
+import com.loopers.support.WeeklyRankingJobs.StoredSnapshotInput
+import com.loopers.support.WeeklyRankingJobs.insertActivity
+import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
+import com.loopers.support.WeeklyRankingJobs.jobParameters
+import com.loopers.support.WeeklyRankingJobs.snapshotInputs
 import com.loopers.support.test.BaseBatchJobTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import com.zaxxer.hikari.HikariDataSource
@@ -18,7 +23,6 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.batch.core.BatchStatus
 import org.springframework.batch.core.job.Job
 import org.springframework.batch.core.job.parameters.InvalidJobParametersException
-import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
 import org.springframework.batch.core.launch.JobInstanceAlreadyCompleteException
 import org.springframework.beans.factory.annotation.Autowired
@@ -40,9 +44,10 @@ import java.util.TimeZone
 import javax.sql.DataSource
 
 /**
- * Runs `weeklyRanking`, whose one step is `freeze`, and reads what it left (spec 237, seam 2). Purchase activities go in by
- * SQL into the test-only `purchase_activity`. Times cross JDBC as UTC `LocalDateTime` on both sides, while the JVM runs in
- * Asia/Seoul, so a nine-hour shift anywhere would show.
+ * Runs `weeklyRanking` and reads what its `freeze` step left (spec 237, seam 2). The scores `score` leaves after it are
+ * `WeeklyRankingScoreTest`'s, and a failed freeze runs no `score` step, which the scene of a freeze failing after writing its
+ * inputs shows. Purchase activities go in by SQL into the test-only `purchase_activity`. Times cross JDBC as UTC
+ * `LocalDateTime` on both sides, while the JVM runs in Asia/Seoul, so a nine-hour shift anywhere would show.
  *
  * The context's clock is stopped at [FROZEN_CLOCK_INSTANT] by the nested [FrozenClockConfig].
  *
@@ -61,21 +66,21 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
     @BeforeEach
     fun setUp() {
-        emptyTables("purchase_activity", "weekly_ranking_snapshot_input", "weekly_ranking_snapshot")
+        emptyTables("purchase_activity", "weekly_ranking_score", "weekly_ranking_snapshot_input", "weekly_ranking_snapshot")
         jobOperatorTestUtils.job = job
     }
 
     @Test
     fun `freezing the assignment's week completes with one snapshot input per order and product`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1"))
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1"))
             .containsExactly(
                 StoredSnapshotInput(orderId = 42, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00")),
                 StoredSnapshotInput(orderId = 42, productId = 8, quantity = 1, confirmedAt = utc("2026-08-17T00:00:00")),
@@ -87,7 +92,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `the snapshot is frozen with the inputs' count and checksum, the given period and revision, and the clock's time`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
 
         // act
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 3))
@@ -115,15 +120,15 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     fun `an activity at Monday midnight UTC is in the period, and ones a microsecond earlier or at the next Monday are not`() {
         // arrange: the scene's premise, asserted rather than assumed so a UTC-zone run fails instead of skipping
         assertThat(TimeZone.getDefault().id).isEqualTo("Asia/Seoul")
-        insertActivity(orderId = 60, productId = 7, quantity = 1, confirmedAt = utc("2026-08-16T23:59:59.999999"))
-        insertActivity(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00"))
-        insertActivity(orderId = 62, productId = 7, quantity = 3, confirmedAt = utc("2026-08-24T00:00:00"))
+        jdbcClient.insertActivity(orderId = 60, productId = 7, quantity = 1, confirmedAt = utc("2026-08-16T23:59:59.999999"))
+        jdbcClient.insertActivity(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00"))
+        jdbcClient.insertActivity(orderId = 62, productId = 7, quantity = 3, confirmedAt = utc("2026-08-24T00:00:00"))
 
         // act
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
-        assertThat(snapshotInputs("2026-08-17-r1"))
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1"))
             .containsExactly(
                 StoredSnapshotInput(orderId = 61, productId = 7, quantity = 2, confirmedAt = utc("2026-08-17T00:00:00")),
             )
@@ -136,15 +141,15 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a soft-deleted activity in the period is in neither the snapshot inputs nor their count and checksum`() {
         // arrange
-        insertAssignmentActivities()
-        insertActivity(orderId = 45, productId = 7, quantity = 4, confirmedAt = utc("2026-08-20T12:00:00"))
+        jdbcClient.insertAssignmentActivities()
+        jdbcClient.insertActivity(orderId = 45, productId = 7, quantity = 4, confirmedAt = utc("2026-08-20T12:00:00"))
         softDeleteActivity(orderId = 45, productId = 7, deletedAt = utc("2026-08-21T12:00:00"))
 
         // act
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
-        assertThat(snapshotInputs("2026-08-17-r1").map { it.orderId }).containsExactly(42, 42, 43, 44)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1").map { it.orderId }).containsExactly(42, 42, 43, 44)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -153,14 +158,14 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a period with no purchase activity is frozen with count 0 and the empty-input checksum`() {
         // arrange
-        insertActivity(orderId = 50, productId = 7, quantity = 1, confirmedAt = utc("2026-08-12T10:00:00"))
+        jdbcClient.insertActivity(orderId = 50, productId = 7, quantity = 1, confirmedAt = utc("2026-08-12T10:00:00"))
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEmpty()
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEmpty()
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(0L, EMPTY_CHECKSUM)
@@ -169,7 +174,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a freeze that fails after writing its inputs ends FAILED and leaves no row in either ranking table`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         failAfterTheInputsAreWritten("2026-08-17-r1")
 
         // act
@@ -177,14 +182,15 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEmpty()
+        assertThat(jobExecution.stepExecutions.map { it.stepName }).containsExactly(WeeklyRankingJobConfig.FREEZE_STEP_NAME)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEmpty()
         assertThat(snapshots()).isEmpty()
     }
 
     @Test
     fun `rerunning a failed freeze with the same parameters completes the same job instance with the full snapshot`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         failAfterTheInputsAreWritten("2026-08-17-r1")
         val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         assertThat(failedExecution.status).isEqualTo(BatchStatus.FAILED)
@@ -197,7 +203,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
         assertThat(jobExecution.jobInstance.id).isEqualTo(failedExecution.jobInstance.id)
         assertThat(jobExecution.id).isNotEqualTo(failedExecution.id)
-        assertThat(snapshotInputs("2026-08-17-r1")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).hasSize(4)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -206,7 +212,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a purchase activity recorded from another connection during the freeze is not blocked and is not in the snapshot`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val lateInserts = mutableListOf<Result<Unit>>()
         afterTheInputsAreWritten("2026-08-17-r1") {
             lateInserts += runCatching {
@@ -226,7 +232,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         assertThat(lateInserts.single().exceptionOrNull()).isNull()
         assertThat(activityOrderIds()).contains(45L)
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
-        assertThat(snapshotInputs("2026-08-17-r1").map(StoredSnapshotInput::orderId)).doesNotContain(45L)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1").map(StoredSnapshotInput::orderId)).doesNotContain(45L)
         assertThat(snapshots().single())
             .extracting(StoredSnapshot::inputCount, StoredSnapshot::inputChecksum)
             .containsExactly(4L, ASSIGNMENT_CHECKSUM)
@@ -235,11 +241,11 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a freeze under an existing snapshot ID for another period fails and leaves the existing snapshot as it was`() {
         // arrange
-        insertAssignmentActivities()
-        insertActivity(orderId = 60, productId = 7, quantity = 4, confirmedAt = utc("2026-08-25T10:00:00"))
+        jdbcClient.insertAssignmentActivities()
+        jdbcClient.insertActivity(orderId = 60, productId = 7, quantity = 4, confirmedAt = utc("2026-08-25T10:00:00"))
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(
@@ -254,16 +260,16 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
     }
 
     @Test
     fun `a freeze under an existing snapshot ID for another revision of the same period fails and writes nothing`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 2))
@@ -276,16 +282,16 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
     }
 
     @Test
     fun `a freeze of an already frozen period and revision under a new snapshot ID fails and writes nothing`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1-again"))
@@ -298,14 +304,14 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                     "conflicts with snapshot 2026-08-17-r1 (period 2026-08-17, revision 1)",
             )
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1-again")).isEmpty()
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1-again")).isEmpty()
     }
 
     @Test
     fun `a new revision of a frozen period freezes normally under a new snapshot ID`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // act
@@ -319,7 +325,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
                 tuple("2026-08-17-r1", 1L, ASSIGNMENT_CHECKSUM),
                 tuple("2026-08-17-r2", 2L, ASSIGNMENT_CHECKSUM),
             )
-        assertThat(snapshotInputs("2026-08-17-r2")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r2")).hasSize(4)
     }
 
     @Test
@@ -349,7 +355,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `running the schema script again on startup neither fails nor removes existing rows`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // act
@@ -358,13 +364,13 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         // assert
         assertThat(ranScripts).isTrue()
         assertThat(snapshots()).hasSize(1)
-        assertThat(snapshotInputs("2026-08-17-r1")).hasSize(4)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).hasSize(4)
     }
 
     @Test
     fun `a periodStart that is not a Monday is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val tuesday = jobParameters(periodStart = LocalDate.parse("2026-08-18"), snapshotId = "2026-08-18-r1")
 
         // act
@@ -378,7 +384,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a blank snapshotId is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
 
         // act
         val exception = assertThrows<InvalidJobParametersException> {
@@ -393,7 +399,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a snapshotId longer than the column is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val tooLong = "r".repeat(101)
 
         // act
@@ -409,7 +415,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a revision below 1 is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
 
         // act
         val exception = assertThrows<InvalidJobParametersException> {
@@ -424,7 +430,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a launch without periodStart is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val withoutPeriodStart = JobParametersBuilder()
             .addString("snapshotId", "2026-08-17-r1")
             .addLong("revision", 1)
@@ -441,7 +447,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a launch without snapshotId is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val withoutSnapshotId = JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.parse("2026-08-17"))
             .addLong("revision", 1)
@@ -458,7 +464,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a launch without revision is refused before anything is frozen`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val withoutRevision = JobParametersBuilder()
             .addLocalDate("periodStart", LocalDate.parse("2026-08-17"))
             .addString("snapshotId", "2026-08-17-r1")
@@ -476,7 +482,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a periodStart given as a String is refused with the spelling that makes it a LocalDate`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         val stringPeriodStart = JobParametersBuilder()
             .addString("periodStart", "2026-08-17")
             .addString("snapshotId", "2026-08-17-r1")
@@ -495,7 +501,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `a periodStart in the future is accepted and freezes an empty snapshot`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(
@@ -512,10 +518,10 @@ class WeeklyRankingFreezeTest @Autowired constructor(
     @Test
     fun `launching a completed run again with the same three values is refused and leaves the snapshot as it was`() {
         // arrange
-        insertAssignmentActivities()
+        jdbcClient.insertAssignmentActivities()
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
         val snapshotsBefore = snapshots()
-        val inputsBefore = snapshotInputs("2026-08-17-r1")
+        val inputsBefore = jdbcClient.snapshotInputs("2026-08-17-r1")
 
         // act
         assertThrows<JobInstanceAlreadyCompleteException> {
@@ -524,20 +530,8 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(snapshots()).isEqualTo(snapshotsBefore)
-        assertThat(snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
+        assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEqualTo(inputsBefore)
         assertThat(jobExecutionCount()).isEqualTo(1)
-    }
-
-    private fun jobParameters(
-        periodStart: LocalDate = LocalDate.parse("2026-08-17"),
-        snapshotId: String,
-        revision: Long = 1,
-    ): JobParameters {
-        return JobParametersBuilder()
-            .addLocalDate("periodStart", periodStart)
-            .addString("snapshotId", snapshotId)
-            .addLong("revision", revision)
-            .toJobParameters()
     }
 
     /**
@@ -553,25 +547,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
     private fun jobExecutionCount(): Long {
         return jdbcClient.sql("SELECT COUNT(*) FROM BATCH_JOB_EXECUTION").query(Long::class.java).single()
-    }
-
-    /** The assignment's section 6 orders, inserted in reverse key order so the freeze's own order shows. */
-    private fun insertAssignmentActivities() {
-        ASSIGNMENT_INPUTS.reversed().forEach { input ->
-            insertActivity(
-                orderId = input.orderId,
-                productId = input.productId,
-                quantity = input.quantity,
-                confirmedAt = LocalDateTime.ofInstant(input.confirmedAt, ZoneOffset.UTC),
-            )
-        }
-    }
-
-    /** Inserts a purchase activity confirmed at [confirmedAt], a UTC wall time. */
-    private fun insertActivity(orderId: Long, productId: Long, quantity: Int, confirmedAt: LocalDateTime) {
-        jdbcClient.sql(INSERT_ACTIVITY_SQL)
-            .params(orderId, productId, quantity, confirmedAt)
-            .update()
     }
 
     /** Soft-deletes the activity of [orderId] and [productId] at [deletedAt], a UTC wall time, as the streamer would. */
@@ -654,26 +629,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
         return LocalDateTime.parse(text)
     }
 
-    private fun snapshotInputs(snapshotId: String): List<StoredSnapshotInput> {
-        return jdbcClient
-            .sql(
-                """
-                SELECT order_id, product_id, quantity, confirmed_at FROM weekly_ranking_snapshot_input
-                WHERE snapshot_id = ? ORDER BY order_id, product_id
-                """.trimIndent(),
-            )
-            .param(snapshotId)
-            .query { resultSet, _ ->
-                StoredSnapshotInput(
-                    orderId = resultSet.getLong("order_id"),
-                    productId = resultSet.getLong("product_id"),
-                    quantity = resultSet.getInt("quantity"),
-                    confirmedAt = resultSet.getObject("confirmed_at", LocalDateTime::class.java),
-                )
-            }
-            .list()
-    }
-
     private fun snapshots(): List<StoredSnapshot> {
         return jdbcClient.sql("SELECT * FROM weekly_ranking_snapshot ORDER BY snapshot_id")
             .query { resultSet, _ ->
@@ -689,13 +644,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
             }
             .list()
     }
-
-    private data class StoredSnapshotInput(
-        val orderId: Long,
-        val productId: Long,
-        val quantity: Int,
-        val confirmedAt: LocalDateTime,
-    )
 
     private data class StoredSnapshot(
         val snapshotId: String,
@@ -719,9 +667,6 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
     companion object {
         val FROZEN_CLOCK_INSTANT: Instant = Instant.parse("2026-08-24T01:02:03.123456789Z")
-
-        private const val INSERT_ACTIVITY_SQL =
-            "INSERT INTO purchase_activity (order_id, product_id, quantity, confirmed_at) VALUES (?, ?, ?, ?)"
 
         /** `printf '61\t7\t2\t2026-08-17T00:00:00.000000Z\n' | shasum -a 256`: the boundary scene's one input. */
         const val BOUNDARY_CHECKSUM = "e02703d4c639b8e8eb6fff68f502505ae1bbbdf5f11cdca9f1a49a4949cd754e"
