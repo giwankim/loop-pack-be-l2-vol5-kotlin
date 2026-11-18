@@ -45,9 +45,9 @@ import javax.sql.DataSource
 
 /**
  * Runs `weeklyRanking` and reads what its `freeze` step left (spec 237, seam 2). The scores `score` leaves after it are
- * `WeeklyRankingScoreTest`'s, and a failed freeze runs no `score` step, which the conflict scenes' `single()` step execution
- * shows. Purchase activities go in by SQL into the test-only `purchase_activity`. Times cross JDBC as UTC `LocalDateTime` on
- * both sides, while the JVM runs in Asia/Seoul, so a nine-hour shift anywhere would show.
+ * `WeeklyRankingScoreTest`'s, and a failed freeze runs no `score` step, which the scene of a freeze failing after writing its
+ * inputs shows. Purchase activities go in by SQL into the test-only `purchase_activity`. Times cross JDBC as UTC
+ * `LocalDateTime` on both sides, while the JVM runs in Asia/Seoul, so a nine-hour shift anywhere would show.
  *
  * The context's clock is stopped at [FROZEN_CLOCK_INSTANT] by the nested [FrozenClockConfig].
  *
@@ -182,6 +182,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(jobExecution.stepExecutions.map { it.stepName }).containsExactly(WeeklyRankingJobConfig.FREEZE_STEP_NAME)
         assertThat(jdbcClient.snapshotInputs("2026-08-17-r1")).isEmpty()
         assertThat(snapshots()).isEmpty()
     }
