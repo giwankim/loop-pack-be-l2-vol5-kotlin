@@ -83,3 +83,45 @@ I ran a two-axis review on the diff before committing it. Neither axis found a h
 
 - **`after a completed run the snapshot's state is still FROZEN` does not assert the job's status.** Its subject is the snapshot's state, it sits outside this ticket's scene, and the restart ticket (249) will assert `FROZEN` after a failed run as well.
 - **This scene reads its rows with `scores(snapshotId)`, while the first scene uses `allScores()`.** The criterion names only the run's snapshot, and the two-snapshot scene already covers rows leaking across snapshots.
+
+## Issue 249: continue a failed score run from the product it stopped at
+
+Implemented as `fda30058`, a test class only; no production code changed. `scripts/final-check --app commerce-batch` on `fda30058`, a clean tree, started 2026-11-18T08:37:08Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 7 classes, 45 tests (19 s), 0 failures, 0 errors, 0 skipped**. Issue 248 ended at 6 classes and 39 tests, so this ticket adds 1 class and 6 tests. Only this document changed after `fda30058`.
+
+### Acceptance criteria
+
+- [x] **First run failing before product 9: `FAILED`; scores for 7 and 8 only; the `score` step's `ExecutionContext`, read back from the database, holds `read.count` = 2; the snapshot exists and is `FROZEN`.** `WeeklyRankingJobRestartTest`, first scene. The count is read through `jobRepository.getLastStepExecution(…)` under `scoreProductReader.read.count`, the way the probe reads its own.
+- [x] **Restart with the same three values: the same `JobInstance`, a new `JobExecution`, `COMPLETED`; scores 5, 1, 5.** Second scene.
+- [x] **The restart's `score` step execution reads 1 and writes 1, and across both runs products 7 and 8 were summed once each.** Second scene. Between the runs, `clearMocks(scoreStore, answers = true, recordedCalls = false, verificationMarks = false)` drops the throwing answer but keeps the first run's recorded calls, so `verify(exactly = 1)` counts both runs.
+- [x] **The restart did not run `freeze`: one `freeze` step execution, and the snapshot's frozen-at time, count, checksum and input rows equal those after the first run, despite the moved clock and the added purchase.** Third scene, by `jobRepository.getStepExecutionCount(instance, "freeze") == 1`. Between the runs the test's `MovableClock`, the context's primary `Clock`, moves a day, and order 45 buys product 9 × 4 inside the period.
+- [x] **Failure inside the first chunk (at product 8): `FAILED`, no score, no advanced read count; absent or 0 recorded. The restart processes all three and ends with 5, 1, 5.** Fourth and fifth scenes. **The key is absent**: the stored `score` step execution exists, but its `ExecutionContext` has no `scoreProductReader.read.count`. The restart's step reads 3 and writes 3.
+- [x] **Red checks, not committed, each recorded with the scene that failed.** See below.
+- [x] **`BatchRestartProbeTest` and its job are untouched.** `fda30058` touches one file, the new test.
+- [x] **`ktlintCheck` and `check` on commerce-batch pass, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to this document.**
+
+### Red checks
+
+Each was made without committing, run against `WeeklyRankingJobRestartTest`, then reverted:
+
+- **The reader with `setSaveState(false)`.** Two scenes fail. In the first-run scene, the stored read count is absent where 2 was expected. In the restart scene, the `score` step reads 3 and writes 3 where 1 and 1 were expected. The scores assertion above them still passes with 5, 1, 5. The overwrite writer hides the reprocessing, and the metadata catches it.
+- **The `score` step on `ResourcelessTransactionManager`.** None of the five sum-failure scenes fails. A failure in `sumQuantity` always comes before the chunk's write, so there is never a written but uncommitted score for a missing transaction to leak, and Batch stores the metadata through its own repository either way. Spec 246 predicted that "저장된 읽은 수나 chunk 안의 실패 장면이 붉다"; that does not hold. A sixth scene was added for it (below). Under this mutation, it fails: product 9's score, 5, stays though the run failed and the stored read count says 2.
+- **The processor summing from `purchase_activity`** (`WHERE ? IS NOT NULL AND product_id = ? AND deleted_at IS NULL`). Both scenes whose restart completes fail with product 9 = 9: its frozen 5 plus order 45's 4, recorded after the freeze.
+
+### Decisions made while implementing
+
+- **A sixth scene fails after the write, through the same spy bean.** The ticket put the failure on "the method that sums one product's quantity". That seam cannot show story 15, that a chunk's scores and the reader's position commit together, so the `ResourcelessTransactionManager` red check had no scene. The sixth scene stubs `saveScores` for the chunk holding product 9 to call the original and then throw. There is still no fault-injection code in production. On the real step, it leaves 7 and 8, no score for 9, and a read count of 2. Issue 250 should carry this, and the correction to spec 246's prediction, into `docs/design/weekly-ranking.md`.
+- **The moved clock is a test-only `MovableClock`.** It is nested in the test class, with a nested `@TestConfiguration` that makes it the primary `Clock`, as `WeeklyRankingFreezeTest`'s `FrozenClockConfig` stops its clock. `@BeforeEach` sets it back. commerce-api's `TestClock` is in another module, and one class needing a movable clock does not earn a shared one in `support`.
+- **The no-refreeze scene also asserts the restart `COMPLETED`.** A second `freeze` would not replace the snapshot. `FreezeTasklet`'s conflict check would refuse the existing snapshot ID and fail the run. The equal snapshot and input rows alone therefore cannot tell a skipped freeze from a refused one. The single `freeze` step execution and the completed restart can.
+- **The added purchase is of product 9.** Product 9 is the one the restart scores, so a sum over live purchase activity shows in the restart's own write.
+
+### Review
+
+A two-axis review ran before the commit.
+
+- **Spec.** Nothing missing. One defect: the no-refreeze scene's comment claimed a second freeze would change the snapshot, and the scene did not assert the restart's status. Both were fixed as described above. The `saveScores` scene is a deviation from the ticket's seam, recorded above.
+- **Standards.** No hard finding. Fixed: "the sum" as a noun in comments, which brushed against the glossary's Avoid list for 점수, became `sumQuantity`. A `StepCounts` helper and data class became the inline `.extracting(StepExecution::getReadCount, StepExecution::getWriteCount)` that `WeeklyRankingScoreTest` uses.
+- **Left as they are:**
+  - The private `scores()` and `snapshotInputs()` readers, which have the same shape as those in the other two ranking test classes. Each class keeps its own private row readers, as the precedents do.
+  - The repeated three-line arrange in the restart scenes, kept explicit per scene.
+  - The `snapshotId` parameter on the two failure stubs, as in the freeze test's `failAfterTheInputsAreWritten`.
