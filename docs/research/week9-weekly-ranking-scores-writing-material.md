@@ -86,7 +86,7 @@ I ran a two-axis review on the diff before committing it. Neither axis found a h
 
 ## Issue 249: continue a failed score run from the product it stopped at
 
-Recorded 2026-11-18 from [issue 249's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/249#issuecomment-6973810797). The text below is the comment's.
+Recorded 2026-11-18 from [issue 249's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/249#issuecomment-6973810797). The text below is the comment's. Spec 246's closing review (2026-11-18) corrected one sentence in both: under the processor-summing mutation, the two failing scenes are the restart scenes that read the scores, not every restart scene that completes.
 
 Implemented as `fda30058`, a test class only; no production code changed. `scripts/final-check --app commerce-batch` on `fda30058`, a clean tree, started 2026-11-18T08:37:08Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 7 classes, 45 tests (19 s), 0 failures, 0 errors, 0 skipped**. Issue 248 ended at 6 classes and 39 tests, so this ticket adds 1 class and 6 tests. Only this document changed after `fda30058`.
 
@@ -108,7 +108,7 @@ Each was made without committing, run against `WeeklyRankingJobRestartTest`, the
 
 - **The reader with `setSaveState(false)`.** Two scenes fail. In the first-run scene, the stored read count is absent where 2 was expected. In the restart scene, the `score` step reads 3 and writes 3 where 1 and 1 were expected. The scores assertion above them still passes with 5, 1, 5. The overwrite writer hides the reprocessing, and the metadata catches it.
 - **The `score` step on `ResourcelessTransactionManager`.** None of the five sum-failure scenes fails. A failure in `sumQuantity` always comes before the chunk's write, so there is never a written but uncommitted score for a missing transaction to leak, and Batch stores the metadata through its own repository either way. Spec 246 predicted that "저장된 읽은 수나 chunk 안의 실패 장면이 붉다"; that does not hold. A sixth scene was added for it (below). Under this mutation, it fails: product 9's score, 5, stays though the run failed and the stored read count says 2.
-- **The processor summing from `purchase_activity`** (`WHERE ? IS NOT NULL AND product_id = ? AND deleted_at IS NULL`). Both scenes whose restart completes fail with product 9 = 9: its frozen 5 plus order 45's 4, recorded after the freeze.
+- **The processor summing from `purchase_activity`** (`WHERE ? IS NOT NULL AND product_id = ? AND deleted_at IS NULL`). Both restart scenes that read the scores fail with product 9 = 9: its frozen 5 plus order 45's 4, recorded after the freeze. The restart scene that checks it does not freeze again reads no scores and passes.
 
 ### Decisions made while implementing
 

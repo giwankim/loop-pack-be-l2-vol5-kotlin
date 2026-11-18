@@ -252,7 +252,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 ### 12.1 job과 `score` step
 
 - `weeklyRanking`은 `freeze` 다음에 `score`를 실행하고, 이 브랜치에서는 `score`로 끝난다. 식별 매개변수 셋과 검증기는 4절 그대로다.
-- `score`는 chunk step이다. `StepBuilder.chunk<Long, ProductScore>(chunkSize)`가 돌려주는 `ChunkOrientedStepBuilder`에 애플리케이션의 트랜잭션 매니저를 준다. probe가 Batch 6.0.6에서 확인한 꼴(6절)이다.
+- `score`는 chunk step이다. `StepBuilder.chunk<Long, ProductScore>(chunkSize)`가 돌려주는 `ChunkOrientedStepBuilder`에 애플리케이션의 트랜잭션 매니저를 준다. probe가 Batch 6.0.6에서 확인한 꼴(6절)이다. (2026-11-18 명세 246의 닫는 검토: chunk의 항목 `ProductScore`는 프로세서·라이터·job 설정이 함께 쓰므로 `SnapshotInput`처럼 제 파일 `ProductScore.kt`에 둔다. 전에는 `WeeklyRankingScoreStore.kt`의 끝에 있었다.)
 - 격리 수준은 따로 주지 않는다. `freeze`가 READ COMMITTED인 것은 `purchase_activity`를 읽기 때문이었고(5.2절), `score`는 고정된 스냅샷 입력과 제 점수 표만 읽고 쓴다.
 - skip과 retry를 두지 않는다. 어떤 실패든 step이 `FAILED`가 되고, 실행도 `FAILED`로 끝난다.
 - 한 chunk의 점수와 리더의 읽은 수는 한 트랜잭션에 커밋된다. 그래서 저장된 읽은 수는 점수가 없는 상품을 지났다고 말하지 않고, 점수가 있는 상품을 빠뜨리지도 않는다.
@@ -309,7 +309,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 
 ### 12.6 장면
 
-9절의 방식 그대로다. 테스트 사이에 랭킹의 세 표와 `purchase_activity`를 비운다. `WeeklyRankingFreezeTest`는 job이 `score`까지 실행된 뒤에도 장면을 바꾸지 않고 지나간다. 점수 표를 비우는 일을 더하고 도우미를 `WeeklyRankingJobs`로 옮겼을 뿐이며, 실패한 고정의 장면에서 `score`는 실행되지 않는다.
+9절의 방식 그대로다. 테스트 사이에 랭킹의 세 표와 `purchase_activity`를 비운다. `WeeklyRankingFreezeTest`는 job이 `score`까지 실행된 뒤에도 장면을 바꾸지 않고 지나간다. 점수 표를 비우는 일을 더하고 도우미를 `WeeklyRankingJobs`로 옮겼을 뿐이며, 실패한 고정의 장면에서 `score`는 실행되지 않는다. (2026-11-18 명세 246의 닫는 검토: 두 클래스가 저마다 두던 점수와 스냅샷 입력을 읽는 도우미도 `WeeklyRankingJobs`로 옮겼다. 입력을 쓴 뒤 실패하는 고정의 장면이 실행된 step이 `freeze` 하나뿐임을 스스로 단언한다. 전에는 충돌 장면들의 `single()`이 이를 보였다. 기대를 `freeze`와 `score`로 바꾼 커밋하지 않은 수정에서 그 단언만 붉었다(`["freeze"]`). 되돌렸다.)
 
 | 이음매 | 클래스 | 장면 |
 | --- | --- | --- |
@@ -328,7 +328,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 `WeeklyRankingJobRestartTest`는 `WeeklyRankingScoreStore`를 springmockk의 `@MockkSpyBean`으로 감싸 정한 상품에서 실패시킨다. 1단계의 `digestInputs` spy와 같은 방식이다. chunk 크기가 2라서 상품 7과 8이 첫 chunk, 9가 둘째 chunk다. 첫 실행과 재시작 사이에 Batch 메타데이터와 랭킹의 표를 비우지 않는다. 그 사이에 spy의 실패를 거두되 기록한 호출은 남기고, 테스트의 시계를 하루 옮기고, 그 랭킹 기간에 주문 45(상품 9, 수량 4)를 기록한다.
 
 - 상품 9 앞에서 실패한 첫 실행은 `FAILED`다. 점수는 상품 7과 8의 둘이고, DB에서 다시 읽은 `score` step의 `ExecutionContext`에 `scoreProductReader.read.count`가 2이며, 스냅샷은 `FROZEN`이다.
-- 같은 세 값으로 다시 실행하면 같은 `JobInstance`, 새 `JobExecution`, `COMPLETED`이고 점수는 5, 1, 5다. 재시작의 `score` step 실행은 읽은 수 1, 쓴 수 1이고, 두 실행에 걸쳐 상품 7과 8의 수량은 한 번씩만 더해졌다.
+- 같은 세 값으로 다시 실행하면 같은 `JobInstance`, 새 `JobExecution`, `COMPLETED`이고 점수는 5, 1, 5다. 재시작의 `score` step 실행은 읽은 수 1, 쓴 수 1이고, 두 실행에 걸쳐 상품 7과 8의 수량은 한 번씩만 더해졌다. (2026-11-18 명세 246의 닫는 검토: 상품 9는 두 번 더해졌다. 첫 실행에서 던진 한 번과 재시작의 한 번이다. 이야기 19의 "상품마다 더한 횟수"를 다 세려고 더했다. 읽은 수·쓴 수는 프로세서를 다시 부르는 재시도를 보지 못한다. 기대를 한 번으로 바꾼 커밋하지 않은 수정에서 그 단언만 붉었다(`2 matching calls found, but needs exactly 1 calls`). 되돌렸다.)
 - 재시작은 다시 고정하지 않았다. 그 인스턴스의 `freeze` step 실행은 하나이고, 재시작은 `COMPLETED`이며, 스냅샷의 고정 시각·개수·체크섬과 스냅샷 입력의 행이 첫 실행 뒤와 같다. 둘째 고정은 스냅샷을 바꾸지 못하고 충돌로 실패하므로(5.1절), 같은 행만으로는 건너뛴 고정과 거절된 고정을 가르지 못한다. 하나뿐인 step 실행과 끝난 재시작이 가른다.
 - 상품 8에서, 곧 첫 chunk 안에서 실패하면 `FAILED`이고 점수가 하나도 없다. 저장된 `score` step 실행은 있으나, 그 `ExecutionContext`에 `scoreProductReader.read.count`가 없다.
 - 그 실행을 다시 실행하면 세 상품을 모두 처리한다. 읽은 수 3, 쓴 수 3이고 점수는 5, 1, 5다.
