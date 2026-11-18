@@ -1,8 +1,8 @@
 # 주간 랭킹 설계 — 랭킹 기간의 입력을 고정하고, 중단된 배치를 이어서 같은 랭킹을 만든다
 
-9주차 과제의 설계 문서다. 용어는 주간 랭킹의 [`CONTEXT.md`](../../apps/commerce-batch/CONTEXT.md)("랭킹 기간", "스냅샷", "스냅샷 입력", "차수", "체크섬", "충돌", "고정하다", "게시하다")와, 구매 활동의 [`CONTEXT.md`](../../apps/commerce-streamer/CONTEXT.md)를 따른다. 결정의 출처는 1단계가 [명세 237](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237)이다. 1단계는 [ADR 0038](../adr/0038-weekly-ranking-tables-are-not-entities.md)을 둔다. READ COMMITTED와 인덱스는 ADR이 아니라 이 문서의 5.2절이 적는다.
+9주차 과제의 설계 문서다. 용어는 주간 랭킹의 [`CONTEXT.md`](../../apps/commerce-batch/CONTEXT.md)("랭킹 기간", "스냅샷", "스냅샷 입력", "차수", "체크섬", "충돌", "고정하다", "게시하다")와, 구매 활동의 [`CONTEXT.md`](../../apps/commerce-streamer/CONTEXT.md)를 따른다. 결정의 출처는 1단계가 [명세 237](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237)이다. 1단계는 [ADR 0038](../adr/0038-weekly-ranking-tables-are-not-entities.md)을 둔다. READ COMMITTED와 인덱스는 ADR이 아니라 이 문서의 5.2절이 적는다. (2026-11-18 2단계: 결정의 출처는 [명세 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246)이고, "점수"를 용어집에 더했다. ADR은 더하지 않았다. 12절.)
 
-상태: 2026-11-17 1단계(`feat/weekly-ranking-input`)를 인터뷰하고, 같은 날 그 일곱 티켓을 구현한 뒤 이 문서를 썼다.
+상태: 2026-11-17 1단계(`feat/weekly-ranking-input`)를 인터뷰하고, 같은 날 그 일곱 티켓을 구현한 뒤 이 문서를 썼다. (2026-11-18 2단계(`feat/weekly-ranking-scores`)를 인터뷰하고, 같은 날 그 네 티켓을 구현한 뒤 12절을 더했다.)
 
 ## 1. 근거와 범위
 
@@ -15,7 +15,7 @@
 | 단계 | 하는 것 | 과제 | 브랜치 | 상태 |
 | --- | --- | --- | --- | --- |
 | 1 | `weeklyRanking` job과 그 첫 step `freeze`. 한 랭킹 기간의 구매 활동을 스냅샷으로 고정하고 개수와 체크섬을 남긴다. Batch 6에서의 재시작을 probe로 확인한다. | 2절, 3절 | `feat/weekly-ranking-input` | 인터뷰 끝남(2026-11-17). 구현 끝남(2026-11-17, 1.2절). [명세 237](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/237) |
-| 2 | 상품별 점수의 chunk step. 6절의 일곱 단계 가운데 실패와 재시작까지. | 4절, 6절 | `feat/weekly-ranking-scores` | 인터뷰 전 |
+| 2 | 상품별 점수의 chunk step. 6절의 일곱 단계 가운데 실패와 재시작까지. | 4절, 6절 | `feat/weekly-ranking-scores` | 인터뷰 끝남(2026-11-18). 구현 끝남(2026-11-18, 1.3절, 12절). [명세 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246) |
 | 3 | 게시, 게시 포인터, 차수 사이의 순서, `GET /api/v1/rankings/weekly`. | 5절, 1절, 6절의 마지막 단계 | `feat/weekly-ranking-publish` | 인터뷰 전 |
 | 4 | 늦은 구매의 새 차수, PG에서 API까지의 연결 테스트. | 7절, 8절 | `feat/weekly-ranking-late-purchase` | 인터뷰 전 |
 
@@ -34,6 +34,17 @@
 | [244](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/244) | ADR 0038, 이 문서, `CONTEXT-MAP.md`의 셋째 줄, 끝의 확인(9.3절). |
 
 티켓마다 구현 중에 정한 것은 [글감](../research/week9-weekly-ranking-input-writing-material.md)에 있다.
+
+### 1.3 2단계가 만든 것
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [247](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/247) | `WeeklyRankingJobConfig`의 둘째 step `score`, `ScoreProductReader`, `ScoreProcessor`, `ScoreWriter`, `WeeklyRankingScoreStore`, `WeeklyRankingScoreProperties`. 스키마 스크립트의 `weekly_ranking_score`와 스냅샷 입력의 보조 인덱스. `WeeklyRankingScoreTest`와 랭킹 테스트의 도우미 `WeeklyRankingJobs`. 앞선 두 커밋이 용어집의 "점수"와 `CODING_STANDARDS.md`의 긴 인덱스 이름 규칙(12.2절)을 더했다. |
+| [248](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/248) | 틀린 점수의 장면이 점수를 읽기 전에 실행의 `COMPLETED`를 단언한다. 장면과 그 붉은 확인은 247의 커밋에 이미 있었다. 운영 코드는 바뀌지 않았다. |
+| [249](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/249) | `WeeklyRankingJobRestartTest`와 그 장면 여섯. 운영 코드는 바뀌지 않았다. |
+| [250](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/250) | 이 문서의 12절, 1단계의 절에 붙인 2단계의 메모, 끝의 확인(12.8절). |
+
+티켓마다 구현 중에 정한 것은 [2단계의 글감](../research/week9-weekly-ranking-scores-writing-material.md)에 있다.
 
 ## 2. 맥락과 계약
 
@@ -55,12 +66,12 @@
 
 - 자연 키다. 대리 키와 `created_at`·`updated_at`·`deleted_at`이 없다. 스냅샷은 고정한 뒤 바뀌지 않고 지우지 않는다. 엔티티가 아닌 까닭은 ADR 0038에 있다.
 - 랭킹 기간의 끝은 저장하지 않는다. 시작에서 이레 뒤다.
-- 저장하는 상태는 `FROZEN` 하나다. 진행 중이나 실패를 뜻하는 행은 쓰지 않는다. 뒤의 단계가 제 상태를 더한다.
-- 두 표는 `sql/weekly-ranking-schema.sql`이 `CREATE TABLE IF NOT EXISTS`로 만든다. `spring.sql.init`이 `local, test` 블록에서 시작할 때마다 실행한다. 다른 프로필에서는 손으로 적용한다(8절).
+- 저장하는 상태는 `FROZEN` 하나다. 진행 중이나 실패를 뜻하는 행은 쓰지 않는다. 뒤의 단계가 제 상태를 더한다. (2026-11-18 2단계: 점수의 단계는 상태를 더하지 않았다. 12.3절.)
+- 두 표는 `sql/weekly-ranking-schema.sql`이 `CREATE TABLE IF NOT EXISTS`로 만든다. `spring.sql.init`이 `local, test` 블록에서 시작할 때마다 실행한다. 다른 프로필에서는 손으로 적용한다(8절). (2026-11-18 2단계: 같은 스크립트가 점수 표 `weekly_ranking_score`를 만들고, 스냅샷 입력에 보조 인덱스를 둔다. 12.2절.)
 
 ## 4. job과 매개변수
 
-- job은 `weeklyRanking`, 1단계의 step은 `freeze` 하나다. job 설정(`WeeklyRankingJobConfig`)과 그 빈들은 템플릿의 데모 job처럼 `spring.batch.job.name=weeklyRanking`일 때만 올라온다.
+- job은 `weeklyRanking`, 1단계의 step은 `freeze` 하나다. job 설정(`WeeklyRankingJobConfig`)과 그 빈들은 템플릿의 데모 job처럼 `spring.batch.job.name=weeklyRanking`일 때만 올라온다. (2026-11-18 2단계: job은 `freeze` 다음에 `score`를 실행한다. 매개변수와 검증기는 이 절 그대로다. 12.1절.)
 - 식별 매개변수는 셋이고 모두 사람이 준다: `periodStart`(`LocalDate`), `snapshotId`(`String`), `revision`(`Long`). `RunIdIncrementer`, run ID, 현재 시각은 매개변수에 없다. 그래서 같은 세 값으로 다시 실행하면 같은 `JobInstance`다.
 - 실행은 템플릿의 방식이다. `--job.name`과 세 매개변수를 명령줄로 준다. 형을 적지 않은 매개변수는 `String`이므로 `periodStart`와 `revision`에는 형을 붙인다.
 
@@ -154,10 +165,10 @@ Batch 6.0.6에서 확인한 이름: `StepBuilder.chunk(int)`는 Batch 6의 `Chun
 
 - **옮겨 담기는 한 문장이고 한 트랜잭션이다.** 한 주의 구매 활동이 클수록 그 트랜잭션이 길다. 나누어 옮기지 않는다. READ COMMITTED라 스트리머를 막지는 않는다(5.2절).
 - **랭킹의 표는 `local`, `test` 밖에서 손으로 적용한다.** Batch 메타데이터와 같다(ADR 0038).
-- **"끝난 고정은 다시 실행되지 않는다"는 이 단계에서 증명하지 않는다.** 고정 뒤에 실패할 step이 없기 때문이다. 이 단계의 job은 `freeze`로 끝나고, 끝난 실행을 같은 값으로 다시 실행하면 `JobInstanceAlreadyCompleteException`이다. 2단계(`feat/weekly-ranking-scores`)의 과제 6절 장면이 증명한다.
-- **이 단계에서 끝난 `JobInstance`는 step이 더해진 뒤에 이어 실행할 수 없다.** 이미 `COMPLETED`라서다. 메타데이터를 단계 사이에 보존하는 환경이 없으므로 받아들인다. 같은 랭킹 기간은 새 `snapshotId`와 차수로 다시 고정한다.
+- **"끝난 고정은 다시 실행되지 않는다"는 이 단계에서 증명하지 않는다.** 고정 뒤에 실패할 step이 없기 때문이다. 이 단계의 job은 `freeze`로 끝나고, 끝난 실행을 같은 값으로 다시 실행하면 `JobInstanceAlreadyCompleteException`이다. 2단계(`feat/weekly-ranking-scores`)의 과제 6절 장면이 증명한다. (2026-11-18 2단계: 증명했다. `score`에서 실패한 실행을 다시 실행하면 그 인스턴스의 `freeze` step 실행은 하나뿐이고, 스냅샷과 그 입력은 시계를 옮기고 구매 활동을 더한 뒤에도 첫 실행의 것 그대로다. 12.3절, 12.6절.)
+- **이 단계에서 끝난 `JobInstance`는 step이 더해진 뒤에 이어 실행할 수 없다.** 이미 `COMPLETED`라서다. 메타데이터를 단계 사이에 보존하는 환경이 없으므로 받아들인다. 같은 랭킹 기간은 새 `snapshotId`와 차수로 다시 고정한다. (2026-11-18 2단계: 2단계에서 끝난 인스턴스도 `publish`가 더해진 뒤에 같다. 12.5절.)
 - **거절된 매개변수는 Batch 6.0.6에서 실행 없는 `JobInstance`를 남긴다.** `TaskExecutorJobLauncher.createJobExecution`이 `createJobInstance`를 제 트랜잭션으로 커밋한 뒤에 검증기를 부르기 때문이다. 같은 나쁜 매개변수로 다시 실행하면 검증기의 말이 아니라 `IllegalStateException`("Cannot find any job execution for job instance")이 난다. 이런 인스턴스는 언제나 거절될 매개변수에만 생기므로 바른 실행을 막지 않는다. [Spring Batch issue 5562](https://github.com/spring-projects/spring-batch/issues/5562)이고, 커밋 `4dcf68f7b`가 6.1.0-RC1에서 고쳤다. Boot 4.2와 함께 오면 사라지고, 그때 이 저장소에서 지울 코드는 없다. 테스트는 이 인스턴스를 고정하지 않는다.
-- **처리량은 재지 않았고 주장하지 않는다.** 테스트의 입력은 몇 줄이다.
+- **처리량은 재지 않았고 주장하지 않는다.** 테스트의 입력은 몇 줄이다. (2026-11-18 2단계: `score`의 chunk 크기 100도 재지 않은 값이다. 2단계의 한계는 12.5절.)
 
 ## 9. 검증
 
@@ -227,7 +238,143 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 
 ## 11. 2단계로 넘기는 것
 
-- 점수 step의 리더가 쓸 `(snapshot_id, product_id)` 인덱스. 이 단계의 스냅샷 입력에는 기본 키뿐이다.
-- "끝난 고정은 다시 실행되지 않는다"의 증명(8절). 점수 step이 실패한 뒤 다시 시작해도 `freeze`의 입력이 다시 담기지 않고 체크섬이 같은지를 본다.
-- 스냅샷의 새 상태. 이 단계는 `FROZEN`만 쓴다.
-- probe가 확인한 네 사실(6절)은 점수 step의 chunk와 리더가 기댄다. 리더의 이름과 `<이름>.read.count`, `chunk(int)`가 돌려주는 빌더가 그대로인지 그 단계에서 다시 본다.
+- 점수 step의 리더가 쓸 `(snapshot_id, product_id)` 인덱스. 이 단계의 스냅샷 입력에는 기본 키뿐이다. (2026-11-18 2단계: 닫았다. 보조 인덱스 `(snapshot_id, product_id, quantity)`다. 12.2절.)
+- "끝난 고정은 다시 실행되지 않는다"의 증명(8절). 점수 step이 실패한 뒤 다시 시작해도 `freeze`의 입력이 다시 담기지 않고 체크섬이 같은지를 본다. (2026-11-18 2단계: 닫았다. 12.3절, 12.6절.)
+- 스냅샷의 새 상태. 이 단계는 `FROZEN`만 쓴다. (2026-11-18 2단계: 더하지 않기로 했다. 상태는 `FROZEN` 그대로다. 12.3절.)
+- probe가 확인한 네 사실(6절)은 점수 step의 chunk와 리더가 기댄다. 리더의 이름과 `<이름>.read.count`, `chunk(int)`가 돌려주는 빌더가 그대로인지 그 단계에서 다시 본다. (2026-11-18 2단계: 진짜 job에서 다시 봤다. 12.3절.)
+
+(2026-11-18 2단계: 3단계로 넘기는 것은 12.10절에 있다.)
+
+## 12. 점수 (2단계)
+
+결정의 출처는 [명세 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246)이다(2026-11-18 인터뷰, 질문 13개). 과제의 몫은 4절(chunk step)과, 6절의 일곱 단계 가운데 여섯째까지다. ADR은 더하지 않았다. 리더의 종류, chunk 크기, 인덱스는 모두 한 곳만 고치면 되돌릴 수 있다. 용어집은 "점수"를 더했다: 한 스냅샷의 스냅샷 입력에서 한 상품의 수량을 모두 더한 값이고, 스냅샷과 상품 한 쌍에 하나다. 과제의 "score stage"에서 "stage"는 용어집에도 표 이름에도 옮기지 않았다.
+
+### 12.1 job과 `score` step
+
+- `weeklyRanking`은 `freeze` 다음에 `score`를 실행하고, 이 브랜치에서는 `score`로 끝난다. 식별 매개변수 셋과 검증기는 4절 그대로다.
+- `score`는 chunk step이다. `StepBuilder.chunk<Long, ProductScore>(chunkSize)`가 돌려주는 `ChunkOrientedStepBuilder`에 애플리케이션의 트랜잭션 매니저를 준다. probe가 Batch 6.0.6에서 확인한 꼴(6절)이다.
+- 격리 수준은 따로 주지 않는다. `freeze`가 READ COMMITTED인 것은 `purchase_activity`를 읽기 때문이었고(5.2절), `score`는 고정된 스냅샷 입력과 제 점수 표만 읽고 쓴다.
+- skip과 retry를 두지 않는다. 어떤 실패든 step이 `FAILED`가 되고, 실행도 `FAILED`로 끝난다.
+- 한 chunk의 점수와 리더의 읽은 수는 한 트랜잭션에 커밋된다. 그래서 저장된 읽은 수는 점수가 없는 상품을 지났다고 말하지 않고, 점수가 있는 상품을 빠뜨리지도 않는다.
+
+| 부분 | 클래스 | 하는 것 |
+| --- | --- | --- |
+| 리더 | `ScoreProductReader` | `JdbcCursorItemReader<Long>`를 상속한 `@StepScope` 빈. `SELECT DISTINCT product_id … WHERE snapshot_id = ? ORDER BY product_id`로 그 스냅샷의 상품을 상품 ID 순으로 한 번씩 읽는다. 한 항목이 한 상품이다. `snapshotId`는 `jobParameters`에서 받는다. 이름은 `scoreProductReader`이고, 상태를 저장한다 |
+| 프로세서 | `ScoreProcessor` | 상품마다 `WeeklyRankingScoreStore.sumQuantity(snapshotId, productId)`를 한 번 부른다. 그 스냅샷 입력의 `quantity`를 더하는 질의 하나다. `purchase_activity`는 읽지 않는다 |
+| 라이터 | `ScoreWriter` | chunk를 `WeeklyRankingScoreStore.saveScores`에 넘긴다. 상품마다 `INSERT … VALUES (?, ?, ?) AS computed ON DUPLICATE KEY UPDATE score = computed.score`다. 저장된 점수에 더하지 않고 구한 값으로 덮는다 |
+| chunk 크기 | `WeeklyRankingScoreProperties` | 속성 `weekly-ranking.score.chunk-size`. `application.yml`이 100으로 둔다. 1보다 작으면 시작할 때 거절한다 |
+
+- 라이터의 행 별칭(`AS computed`)은 `VALUES(score)`를 대신한다. 그 함수는 MySQL 8.0.20부터 deprecated이고, 테스트의 컨테이너는 MySQL 8.4다.
+- 리더는 운영 코드의 컴포넌트이고 job 설정의 빌더 `@Bean`이 아니다. Batch 6.0.6의 `JdbcCursorItemReader`에 `(DataSource, sql, RowMapper)` 생성자가 있어, 프로세서·라이터와 함께 `step` 아래에 둔다.
+- 리더는 드라이버의 fetch size를 기본값으로 둔다. Connector/J는 첫 읽기 전에 한 스냅샷의 상품 ID를 모두 받는다. 그 목록은 상품의 수로 묶인다. 모든 입력을 흘려 읽는 고정의 체크섬(5.1절)과 다르다.
+- 다시 시작하면 리더는 같은 질의를 다시 실행하고, 저장된 `scoreProductReader.read.count`만큼 건너뛴다. 스냅샷 입력은 고정한 뒤 바뀌지 않으므로 같은 자리다.
+- 빈 스냅샷은 읽은 수 0, 쓴 수 0으로 `COMPLETED`다.
+
+### 12.2 점수 표와 인덱스
+
+| 표 | 컬럼 | 키 |
+| --- | --- | --- |
+| `weekly_ranking_score`(새 표) | `snapshot_id`(`VARCHAR(100)`), `product_id`(`BIGINT`), `score`(`BIGINT`) | 기본 키 `(snapshot_id, product_id)` |
+| `weekly_ranking_snapshot_input`(인덱스 추가) | 그대로 | 보조 인덱스 `IDX_SNAPSHOT_INPUT_ON_SNAPSHOT_ID_AND_PRODUCT_ID_AND_QUANTITY (snapshot_id, product_id, quantity)` |
+
+- 점수는 스냅샷과 상품 한 쌍에 하나다. 기본 키가 그것을 지켜, 둘째 쓰기는 덮고 겹치지 않는다. 점수 표도 자연 키이고 엔티티가 아니다(ADR 0038). 어느 실행이 썼는지의 컬럼은 없다. 재시작이 무엇을 처리했는지는 Batch 메타데이터와 테스트의 spy가 보인다(12.6절).
+- 보조 인덱스는 리더의 읽기와 프로세서의 더하기에 인덱스만으로 답하려고 둔다. 기본 키 `(snapshot_id, order_id, product_id)`로는 둘 다 그 스냅샷의 입력을 모두 훑는다. 이것은 명세의 판단이고 `EXPLAIN`으로 확인하지 않았다(12.5절). 테스트는 인덱스가 이름대로, 세 컬럼의 순서대로 있는지를 `information_schema.statistics`에서 읽는다.
+- `CODING_STANDARDS.md`대로 이름을 지으면 `IDX_WEEKLY_RANKING_SNAPSHOT_INPUT_ON_SNAPSHOT_ID_AND_PRODUCT_ID_AND_QUANTITY`, 76자로 MySQL의 64자를 넘는다. 그래서 이 단계가 표준에 규칙을 더했다. 이름이 64자를 넘을 때만 표의 부분을 용어집의 짧은 이름(스냅샷 입력 → `SNAPSHOT_INPUT`)으로 줄이고, 컬럼은 줄이지 않는다.
+- 인덱스는 스키마 스크립트의 `CREATE TABLE` 안에 적는다. `CREATE TABLE IF NOT EXISTS`는 이미 있는 표에 인덱스를 더하지 않고, MySQL에는 `CREATE INDEX IF NOT EXISTS`가 없다. 그래서 1단계의 표가 남은 로컬 DB에서는 그 표를 손으로 지우고 다시 띄운다. 랭킹의 데이터를 보존하는 환경이 아직 없으므로, ADR 0038이 Flyway를 들일 때로 적은 "보존해야 할 데이터가 든 표의 첫 `ALTER`"는 아직 아니다.
+
+### 12.3 스냅샷의 상태와 재시작
+
+- 스냅샷의 상태는 `FROZEN` 그대로다. `SCORED` 같은 상태를 쓰지 않는다. 그 쓰기는 chunk의 커밋 밖에 놓여, 점수와 상태가 서로 다른 것을 말하는 틈이 생긴다. step이 끝났다는 것은 Batch 메타데이터가 남기고, 다음 브랜치의 게시가 점수의 개수를 그 스냅샷의 상품의 개수와 견준다.
+- `score`에서 실패한 실행을 같은 세 값으로 다시 실행하면 같은 `JobInstance`의 새 `JobExecution`이다. Batch는 `COMPLETED`인 `freeze`를 건너뛴다. `freeze`에 `allowStartIfComplete`를 주지 않는다. 그래서 스냅샷과 그 입력, 개수, 체크섬, 고정 시각은 첫 실행의 것 그대로이고, 두 실행 사이에 기록된 구매 활동은 점수에 들지 않는다. 1단계가 열어 둔 "끝난 고정은 다시 실행되지 않는다"(8절)를 이것으로 닫는다.
+- 다시 실행한 `score`는 저장된 읽은 수 뒤의 상품만 처리한다. 커밋하지 않은 chunk의 점수는 그 chunk의 읽은 수와 함께 되돌아간다.
+- probe의 네 사실(6절)을 진짜 job에서 다시 봤다. `chunk(int)`는 그대로 `ChunkOrientedStepBuilder`를 돌려주고, 리더 `scoreProductReader`의 저장 키는 `scoreProductReader.read.count`다. 같은 인스턴스, 새 실행, 저장된 읽은 수, 남은 상품만 처리가 모두 그대로다. probe와 그 job은 바꾸지 않았다. 과제 3절의 증거로 그대로 남는다.
+
+### 12.4 고르지 않은 것
+
+- **keyset paging 리더.** probe가 Batch 6에서 확인한 것이 cursor 리더이고, 과제의 확인도 `read.count`다. 스냅샷 입력이 바뀌지 않으므로 cursor의 건너뛰기도 같은 자리에 닿는다.
+- **`GROUP BY` 리더.** 리더가 상품과 더한 값을 함께 읽으면 상품마다의 질의가 없어진다. 그러나 프로세서가 비고 과제 4절의 꼴에서 벗어난다.
+- **`SCORED` 상태.** 12.3절.
+- **어느 실행이 썼는지의 컬럼.** 테스트만을 위한 컬럼이다. 재시작이 무엇을 처리했는지는 Batch 메타데이터의 읽은 수·쓴 수와 spy가 센 호출이 보인다.
+- **인덱스를 위한 Flyway.** 12.2절.
+- **운영 코드의 실패 스위치.** 실패는 테스트의 spy가 만든다(12.6절).
+
+### 12.5 한계
+
+- **프로세서는 상품마다 질의 하나를 실행한다.** 과제 4절의 꼴이다. 한 chunk가 상품 100개면 질의도 100번이다.
+- **chunk 크기의 기본값 100은 재지 않았다.** 처리량은 주장하지 않는다. 테스트의 스냅샷에는 상품이 셋이다.
+- **보조 인덱스가 두 질의에 인덱스만으로 답한다는 것은 `EXPLAIN`으로 확인하지 않았다.** 테스트는 인덱스가 있음만 본다.
+- **인덱스는 이미 있는 표에 저절로 생기지 않는다(12.2절).** `local`, `test` 밖에서는 스키마 스크립트와 함께 손으로 적용한다.
+- **이 브랜치에서 끝난 `JobInstance`는 `publish`가 더해진 뒤에 이어 실행할 수 없다.** 1단계와 같은 한계다(8절). 같은 랭킹 기간은 새 `snapshotId`와 차수로 다시 고정한다.
+- **과제 6절의 "앞선 게시가 그대로다"와 일곱째 단계(따로 격리한 깨끗한 실행과 결과 체크섬을 견주기)는 이 단계에 없다.** 순위와 게시 포인터가 있어야 하므로 3단계의 몫이다.
+
+### 12.6 장면
+
+9절의 방식 그대로다. 테스트 사이에 랭킹의 세 표와 `purchase_activity`를 비운다. `WeeklyRankingFreezeTest`는 job이 `score`까지 실행된 뒤에도 장면을 바꾸지 않고 지나간다. 점수 표를 비우는 일을 더하고 도우미를 `WeeklyRankingJobs`로 옮겼을 뿐이며, 실패한 고정의 장면에서 `score`는 실행되지 않는다.
+
+| 이음매 | 클래스 | 장면 |
+| --- | --- | --- |
+| `weeklyRanking` job | `WeeklyRankingScoreTest` | 점수, 빈 랭킹 기간, 덮어 쓰기, 두 스냅샷, 상태, 인덱스. 6개 |
+| `weeklyRanking` job, chunk 크기 2 | `WeeklyRankingJobRestartTest` | 실패와 재시작. 6개 |
+
+`WeeklyRankingScoreTest`의 장면은 이렇다.
+
+- 과제의 주를 실행하면 `COMPLETED`이고, 점수 표 전체에 상품 7이 5, 상품 8이 1, 상품 9가 5, 그 셋뿐이다. 주문 42와 43의 상품 7이 점수 하나로 더해진다.
+- 구매 활동이 없는 랭킹 기간은 `COMPLETED`이고 점수가 없다. `score` step 실행은 읽은 수 0, 쓴 수 0이다.
+- 그 스냅샷 ID로 상품 7에 99를 먼저 넣어 두고 실행하면 `COMPLETED`이고 5가 된다. 8과 9는 1과 5다.
+- 같은 랭킹 기간을 다른 스냅샷 ID와 차수로 한 번 더 실행하면 두 스냅샷이 저마다 5, 1, 5를 가진다.
+- 끝난 실행 뒤 스냅샷의 상태는 `FROZEN`이다.
+- 스냅샷 입력의 보조 인덱스가 이름대로, 세 컬럼의 순서대로 있다. 그 표의 유일하지 않은 인덱스를 모두 읽으므로, 둘째 인덱스나 바뀐 순서도 드러난다.
+
+`WeeklyRankingJobRestartTest`는 `WeeklyRankingScoreStore`를 springmockk의 `@MockkSpyBean`으로 감싸 정한 상품에서 실패시킨다. 1단계의 `digestInputs` spy와 같은 방식이다. chunk 크기가 2라서 상품 7과 8이 첫 chunk, 9가 둘째 chunk다. 첫 실행과 재시작 사이에 Batch 메타데이터와 랭킹의 표를 비우지 않는다. 그 사이에 spy의 실패를 거두되 기록한 호출은 남기고, 테스트의 시계를 하루 옮기고, 그 랭킹 기간에 주문 45(상품 9, 수량 4)를 기록한다.
+
+- 상품 9 앞에서 실패한 첫 실행은 `FAILED`다. 점수는 상품 7과 8의 둘이고, DB에서 다시 읽은 `score` step의 `ExecutionContext`에 `scoreProductReader.read.count`가 2이며, 스냅샷은 `FROZEN`이다.
+- 같은 세 값으로 다시 실행하면 같은 `JobInstance`, 새 `JobExecution`, `COMPLETED`이고 점수는 5, 1, 5다. 재시작의 `score` step 실행은 읽은 수 1, 쓴 수 1이고, 두 실행에 걸쳐 상품 7과 8의 수량은 한 번씩만 더해졌다.
+- 재시작은 다시 고정하지 않았다. 그 인스턴스의 `freeze` step 실행은 하나이고, 재시작은 `COMPLETED`이며, 스냅샷의 고정 시각·개수·체크섬과 스냅샷 입력의 행이 첫 실행 뒤와 같다. 둘째 고정은 스냅샷을 바꾸지 못하고 충돌로 실패하므로(5.1절), 같은 행만으로는 건너뛴 고정과 거절된 고정을 가르지 못한다. 하나뿐인 step 실행과 끝난 재시작이 가른다.
+- 상품 8에서, 곧 첫 chunk 안에서 실패하면 `FAILED`이고 점수가 하나도 없다. 저장된 `score` step 실행은 있으나, 그 `ExecutionContext`에 `scoreProductReader.read.count`가 없다.
+- 그 실행을 다시 실행하면 세 상품을 모두 처리한다. 읽은 수 3, 쓴 수 3이고 점수는 5, 1, 5다.
+- 상품 9의 점수를 쓴 뒤, 그 chunk가 커밋되기 전에 실패하면 9의 점수는 남지 않고 저장된 읽은 수는 2다. spy가 `saveScores`의 원래 메서드를 부른 뒤 던진다.
+
+### 12.7 붉은 확인
+
+커밋하지 않은 로컬 수정으로 돌리고 되돌렸다(2026-11-18). 티켓마다의 기록은 글감에 있다.
+
+| 수정 | 붉어진 장면 |
+| --- | --- |
+| 라이터를 `score = weekly_ranking_score.score + computed.score`로 | 틀린 점수의 장면 하나. 상품 7이 104다 |
+| 더하기에서 `snapshot_id`의 조건을 빼기 | 두 스냅샷의 장면 하나. 둘째 스냅샷의 점수에 첫 스냅샷의 입력이 든다 |
+| 리더에 `setSaveState(false)` | 재시작 테스트의 셋. 상품 9 앞의 실패와 쓰기 뒤의 실패에서 저장된 읽은 수가 없고, 재시작이 3을 읽고 3을 쓴다. 그 위의 점수 5, 1, 5는 지나간다. 덮어 쓰기가 가린 재처리를 메타데이터가 잡는다. 더한 횟수의 단언을 읽은 수·쓴 수의 단언 앞으로 옮겨 다시 돌리면, 상품 7이 두 번 더해져 그 단언도 붉다 |
+| `score` step을 `ResourcelessTransactionManager`로 | 쓰기 뒤의 실패 장면 하나. 실패한 실행에 상품 9의 점수 5가 남고, 저장된 읽은 수는 2다 |
+| 프로세서가 `purchase_activity`에서 더하게 | 재시작 뒤 점수를 보는 두 장면. 상품 9가 9다. 고정된 5에 고정 뒤의 주문 45의 4가 더해졌다 |
+
+### 12.8 끝의 확인
+
+```
+scripts/final-check --app commerce-batch
+```
+
+- 2026-11-18 `8563adad`의 깨끗한 트리에서 돌렸다(08:59:42Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다(2 s).
+- commerce-batch는 7개 클래스, 45개 테스트, 실패 0, 오류 0, 건너뜀 0이다(26 s). 1단계의 끝의 확인(9.3절)이 5개 클래스와 33개 테스트였으므로, 이 단계가 2개 클래스(`WeeklyRankingScoreTest`, `WeeklyRankingJobRestartTest`)와 12개 테스트를 더했다.
+- 이 브랜치는 commerce-streamer를 바꾸지 않았으므로 돌리지 않았다.
+- `8563adad`의 코드는 `fda30058`의 것이고, 그 뒤로는 문서만 바뀌었다.
+
+### 12.9 명세와 다른 것
+
+2026-11-18 구현을 마치고 명세 246과 견준 것이다.
+
+| 명세 | 구현 | 어디서 |
+| --- | --- | --- |
+| `score` step을 `ResourcelessTransactionManager`로 바꾸면 "저장된 읽은 수나 chunk 안의 실패 장면이 붉다"(붉은 확인) | 더하기에서 실패하는 장면은 하나도 붉지 않다. 실패가 늘 chunk의 쓰기 앞이라 써 놓고 커밋하지 않은 점수가 없고, Batch는 어느 쪽이든 메타데이터를 제 저장소로 남긴다. 쓰기 뒤에 실패하는 장면을 더했고, 그 장면이 붉다(12.7절) | 249 |
+| 리더에 `saveState(false)`를 주면 재시작의 읽은 수·쓴 수와 더한 횟수가 붉다(붉은 확인) | 커밋한 장면은 읽은 수·쓴 수의 단언에서 멈춰, 그 뒤의 더한 횟수까지 가지 않는다. 더한 횟수가 붉은 것은 단언의 차례를 바꾼 커밋하지 않은 수정으로 따로 봤다(12.7절) | 250 |
+| 실패는 "한 상품의 수량을 더하는" 메서드의 spy로 만든다 | 쓰기 뒤의 실패 장면은 같은 spy 빈의 `saveScores`로 만든다. 더하기의 이음매로는 이야기 15(한 chunk의 점수와 읽은 수가 함께 커밋된다)를 보일 수 없다. 운영 코드에 실패 스위치는 여전히 없다 | 249 |
+| 그 메서드의 이름은 구현에서 정한다 | `WeeklyRankingScoreStore.sumQuantity` | 247 |
+| chunk 안의 실패에서 저장된 읽은 수는 없거나 0이다. 어느 쪽인지는 구현에서 확인해 적는다 | 없다. 저장된 `score` step 실행은 있으나 그 `ExecutionContext`에 키가 없다 | 249 |
+| 틀린 점수의 장면은 248의 몫(명세가 아니라 티켓의 나눔) | 247의 커밋에 이미 있었다. 248은 그 장면이 실행의 `COMPLETED`를 먼저 단언하게 했다 | 247, 248 |
+| 인덱스에 이름을 붙인다(이름은 정하지 않았다) | 표준대로의 이름이 MySQL의 64자를 넘어, 그때만 표의 부분을 용어집의 짧은 이름으로 줄이는 규칙을 `CODING_STANDARDS.md`에 더했다(12.2절) | 247 |
+
+### 12.10 3단계로 넘기는 것
+
+- 순위, 게시, 게시 포인터, 결과 체크섬, `GET /api/v1/rankings/weekly`, 차수 사이의 순서.
+- 과제 6절의 "앞선 게시가 그대로다"와 일곱째 단계(12.5절).
+- 점수의 단계가 끝났다는 표시는 Batch 메타데이터뿐이다. 게시는 점수의 개수를 그 스냅샷의 상품의 개수와 견준다(12.3절).
+- `publish`가 실패한 뒤 다시 실행하면 `freeze`와 `score`가 모두 건너뛰어지는지. 이 단계가 `freeze`에 대해 보인 것(12.6절)을 둘째 step에도 본다.
+- 이 브랜치에서 끝난 `JobInstance`는 이어 실행할 수 없다(12.5절).
