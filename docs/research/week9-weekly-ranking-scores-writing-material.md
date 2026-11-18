@@ -127,3 +127,53 @@ A two-axis review ran before the commit.
   - The private `scores()` and `snapshotInputs()` readers, which have the same shape as those in the other two ranking test classes. Each class keeps its own private row readers, as the precedents do.
   - The repeated three-line arrange in the restart scenes, kept explicit per scene.
   - The `snapshotId` parameter on the two failure stubs, as in the freeze test's `failAfterTheInputsAreWritten`.
+
+## Issue 250: the score step in the weekly ranking design, and the final check
+
+Recorded 2026-11-18 from [issue 250's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/250#issuecomment-6974014315). The text below is the comment's.
+
+Implemented as `44a0df4f`, a design document change only. `scripts/final-check --app commerce-batch` on `8563adad`, a clean tree whose code is `fda30058`'s, started 2026-11-18T08:59:42Z with `BOOTSTRAP_SERVERS` unset: ktlint passed (2 s), **commerce-batch 7 classes, 45 tests (26 s), 0 failures, 0 errors, 0 skipped**. Step 1's final check ended at 5 classes and 33 tests, so step 2 adds 2 classes (`WeeklyRankingScoreTest`, `WeeklyRankingJobRestartTest`) and 12 tests. Only documents changed after `8563adad`.
+
+### Acceptance criteria
+
+- [x] **The design doc holds the sections, in the glossary's terms, and passes the doc checks in the pre-commit hook.** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-scores/docs/design/weekly-ranking.md):
+  - §1.1 shows step 2's state and spec 246.
+  - §1.3 lists what each of 247–250 built.
+  - The new §12 covers:
+    - the `score` step (12.1) and the score table and index (12.2);
+    - why the state stays `FROZEN`, and the restart (12.3);
+    - what was not chosen (12.4) and the limits (12.5);
+    - the scenes (12.6) and red checks (12.7);
+    - the final check (12.8);
+    - where the build differs from the spec (12.9) and what is handed to step 3 (12.10).
+  - §3, §4, §8 and §11 carry dated notes that close "a finished freeze is not rerun", the index, the new state and the probe's four facts.
+  - `check-doc-notes` reports one CHANGED line: the §1.1 status cell, which `--warn-changed` allows. `check-doc-links` passes.
+- [x] **`scripts/final-check --app commerce-batch` passes on a clean tree, and the doc records the commit, start time and counts.** See the run above and design §12.8.
+- [x] **The count this step added is stated against step 1's 5 classes and 33 tests.** +2 classes, +12 tests.
+- [x] **The closing comment is appended to `docs/research/week9-weekly-ranking-scores-writing-material.md`.**
+- [x] **The spec is not closed by this ticket.** Spec 246 is closed by following `docs/agents/spec-closing.md`.
+
+### Decisions made while implementing
+
+- **Step 2's design is one new section, §12.** Step 1's sections stay as they were and gain dated notes that point into it. This keeps the doc insert-only under `check-doc-notes`. Step 3 can add §13 the same way.
+- **A red check was rerun for spec 246's prediction about the sum count.** The spec predicted that `saveState(false)` would turn red "the restart's read and write counts and the sum count". In the committed restart scene, the read/write-count assertion comes before `verify(exactly = 1)`, so the run stops there.
+  - I ran the mutation again without committing, with the `verify` moved first.
+  - Product 7 was summed twice ("2 matching calls found, but needs exactly 1").
+  - On the six-scene class, three scenes fail, not the two recorded under issue 249. That run had five scenes; the after-write scene also asserts the read count of 2.
+  - Both files were reverted. Design §12.7 and §12.9 record this.
+- **The index is not shown by `EXPLAIN` to answer both queries from itself alone.** That is the spec's judgement, and design §12.5 lists it as a limit. The test checks only that the index exists, under its name and in column order.
+
+### Review
+
+A two-axis review ran before the commit.
+
+- **Spec.**
+  - Fixed: the `saveState(false)` sum-count prediction that was never observed (above).
+  - Fixed: §11 now points to the step-3 handoff in §12.10.
+  - Fixed: a §12.9 row that cited the ticket split as if it were the spec.
+- **Standards.**
+  - Fixed: the `saveState(false)` red check counted 2 scenes where 3 fail.
+  - Fixed: the scenes and red checks were merged in one section. They are now §12.6 and §12.7, parallel to §9.1 and §9.2.
+  - Fixed: the probe re-check was more detailed in the §11 note than in §12.3. The detail moved to §12.3.
+  - Fixed: the freeze test's change is now described as also moving its helpers.
+- **Left as they are:** the short restatements in §12.5 and §12.10 of points made in §12.2 and §12.3 (the `JobInstance` limit, no `EXPLAIN`, the score count compared at publish). Each one is a pointer to its home section.
