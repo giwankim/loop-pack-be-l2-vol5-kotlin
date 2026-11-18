@@ -85,9 +85,10 @@ class WeeklyRankingScoreTest @Autowired constructor(
         insertScore(snapshotId = "2026-08-17-r1", productId = 7, score = 99)
 
         // act
-        jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
 
         // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
         assertThat(scores("2026-08-17-r1"))
             .containsExactly(
                 StoredScore(productId = 7, score = 5),
