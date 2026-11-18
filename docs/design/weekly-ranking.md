@@ -313,7 +313,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 
 | 이음매 | 클래스 | 장면 |
 | --- | --- | --- |
-| `weeklyRanking` job | `WeeklyRankingScoreTest` | 점수, 빈 랭킹 기간, 덮어 쓰기, 두 스냅샷, 상태, 인덱스. 6개 |
+| `weeklyRanking` job | `WeeklyRankingScoreTest` | 점수, 빈 랭킹 기간, 점수 바꾸기, 두 스냅샷, 상태, 인덱스. 6개 |
 | `weeklyRanking` job, chunk 크기 2 | `WeeklyRankingJobRestartTest` | 실패와 재시작. 6개 |
 
 `WeeklyRankingScoreTest`의 장면은 이렇다.
@@ -342,7 +342,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 | --- | --- |
 | 라이터를 `score = weekly_ranking_score.score + computed.score`로 | 틀린 점수의 장면 하나. 상품 7이 104다 |
 | 더하기에서 `snapshot_id`의 조건을 빼기 | 두 스냅샷의 장면 하나. 둘째 스냅샷의 점수에 첫 스냅샷의 입력이 든다 |
-| 리더에 `setSaveState(false)` | 재시작 테스트의 셋. 상품 9 앞의 실패와 쓰기 뒤의 실패에서 저장된 읽은 수가 없고, 재시작이 3을 읽고 3을 쓴다. 그 위의 점수 5, 1, 5는 지나간다. 덮어 쓰기가 가린 재처리를 메타데이터가 잡는다. 더한 횟수의 단언을 읽은 수·쓴 수의 단언 앞으로 옮겨 다시 돌리면, 상품 7이 두 번 더해져 그 단언도 붉다 |
+| 리더에 `setSaveState(false)` | 재시작 테스트의 셋. 상품 9 앞의 실패와 쓰기 뒤의 실패에서 저장된 읽은 수가 없고, 재시작이 3을 읽고 3을 쓴다. 그 위의 점수 5, 1, 5는 지나간다. 구한 값으로 덮는 저장이 가린 재처리를 메타데이터가 잡는다. 더한 횟수의 단언을 읽은 수·쓴 수의 단언 앞으로 옮겨 다시 돌리면, 상품 7이 두 번 더해져 그 단언도 붉다 |
 | `score` step을 `ResourcelessTransactionManager`로 | 쓰기 뒤의 실패 장면 하나. 실패한 실행에 상품 9의 점수 5가 남고, 저장된 읽은 수는 2다 |
 | 프로세서가 `purchase_activity`에서 더하게 | 재시작 뒤 점수를 보는 두 장면. 상품 9가 9다. 고정된 5에 고정 뒤의 주문 45의 4가 더해졌다 |
 
