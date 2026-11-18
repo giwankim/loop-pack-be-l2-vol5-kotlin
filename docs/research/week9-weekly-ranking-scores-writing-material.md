@@ -59,3 +59,27 @@ A two-axis review ran before the commit.
   - The `require(chunkSize >= 1)` check, which follows validation in every layer.
   - `StepMonitorListener` on `score`, matching `freeze`.
   - The parameter names spelled as literals in the test helper, as the freeze test already did.
+
+## Issue 248: replace a stored score instead of adding to it
+
+Recorded 2026-11-18 from [issue 248's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/248#issuecomment-6973246933). The text below is the comment's.
+
+Implemented as `8beb48e7`, on top of `855bb577`, which already held the scene and its red check (recorded under issue 247). `scripts/final-check --app commerce-batch` on `8beb48e7`, a clean tree, started 2026-11-18T08:28:10Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 6 classes, 39 tests (20 s), 0 failures, 0 errors, 0 skipped**. That is the same count as issue 247, since this ticket adds an assertion and no scene. Only this document changed after `8beb48e7`.
+
+### Acceptance criteria
+
+- [x] **With a score of 99 stored beforehand for product 7 under the run's snapshot ID, running the job ends `COMPLETED` and product 7's score is 5, with products 8 and 9 at 1 and 5.** This is `WeeklyRankingScoreTest`, `a wrong score stored beforehand under the snapshot ID is replaced by the computed one`. In `855bb577` the scene threw away the `JobExecution` and checked only the scores. `8beb48e7` keeps the execution and asserts `COMPLETED` before the scores, as the sibling scenes do.
+- [x] **Red check, not committed: with the writer changed to add to the stored score, this scene fails.** I ran it again on `8beb48e7`'s tree with `ON DUPLICATE KEY UPDATE score = weekly_ranking_score.score + computed.score`. Of the class's 6 tests, 1 failed: this scene, with product 7 at 104 and products 8 and 9 at 1 and 5. I then reverted the writer.
+- [x] **`ktlintCheck` and `check` on commerce-batch pass, with no skipped tests.** See the final-check run above.
+- [x] **The closing comment is appended to `docs/research/week9-weekly-ranking-scores-writing-material.md`.**
+
+### No production change
+
+The writer already sets `score = computed.score` (`855bb577`), so the scene was green on the code as it stood. The ticket expected that outcome.
+
+### Review
+
+I ran a two-axis review on the diff before committing it. Neither axis found a hard issue. I'm leaving two judgement calls as they are:
+
+- **`after a completed run the snapshot's state is still FROZEN` does not assert the job's status.** Its subject is the snapshot's state, it sits outside this ticket's scene, and the restart ticket (249) will assert `FROZEN` after a failed run as well.
+- **This scene reads its rows with `scores(snapshotId)`, while the first scene uses `allScores()`.** The criterion names only the run's snapshot, and the two-snapshot scene already covers rows leaking across snapshots.
