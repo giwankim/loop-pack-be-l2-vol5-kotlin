@@ -116,6 +116,8 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
             .containsExactly(1L, 1L)
         verify(exactly = 1) { scoreStore.sumQuantity(SNAPSHOT_ID, 7) }
         verify(exactly = 1) { scoreStore.sumQuantity(SNAPSHOT_ID, 8) }
+        // the first run's call threw, so the restart summed product 9 once
+        verify(exactly = 2) { scoreStore.sumQuantity(SNAPSHOT_ID, 9) }
     }
 
     /**
