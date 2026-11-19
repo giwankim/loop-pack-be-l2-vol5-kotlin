@@ -143,7 +143,7 @@ A two-axis review ran before the commit.
 
 ## Issue 255: keep the previous publication when publish fails, and converge on rerun
 
-Drafted 2026-11-19 as issue 255's closing comment. The text below is the comment's.
+Recorded 2026-11-19 from [issue 255's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/255#issuecomment-6997509569). The text below is the comment's.
 
 Implemented as `bf39cd42`, tests only, on top of issue 254's `b7318ffa`. `scripts/final-check --app commerce-batch` on `ca97b2cb`, a clean tree, started 2026-11-19T02:06:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 60 tests (34 s), 0 failures, 0 errors, 0 skipped**. Only this document differs between `bf39cd42` and `ca97b2cb`. Issue 254 ended at 8 classes and 54 tests, so this ticket adds 6 tests to `WeeklyRankingJobRestartTest`, which now has 12.
 
