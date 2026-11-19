@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 /**
  * The real commerce-batch as a child process of the test JVM (spec 259). Unlike [CommerceStreamerProcess], it runs to its exit:
  * [run] starts the batch's `weeklyRanking` job on the context's MySQL, waits for the process to end and returns the finished run.
- * A scene reads what the job did from the database and, when it needs them, from the run's log lines.
+ * A scene reads what the job did from the database.
  *
  * The process runs commerce-batch's bootJar at HEAD. Gradle's `:apps:commerce-api:test` depends on the batch's `bootJar` and passes
  * its path in the system property [JAR_PROPERTY], the way it passes the streamer's. commerce-api has no dependency on the batch,
@@ -131,16 +131,11 @@ object CommerceBatchProcess {
         return String(Files.readAllBytes(logFile), Charsets.UTF_8).lines().dropLastWhile { it.isEmpty() }
     }
 
-    /** A run that ended: its exit code and its log, which stays under `build/commerce-batch`. */
+    /** A run that ended with exit code 0, and its log, which stays under `build/commerce-batch`. */
     class Finished(
         val exitCode: Int,
         val logFile: Path,
-    ) {
-        /** Every line the batch logged, such as the freeze's and the publish's own lines. */
-        fun logLines(): List<String> {
-            return readLogLines(logFile)
-        }
-    }
+    )
 
     /** `weeklyRanking`'s three identifying parameters. */
     data class WeeklyRankingParameters(

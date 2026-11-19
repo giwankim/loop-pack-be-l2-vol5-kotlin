@@ -44,12 +44,12 @@ class CommerceBatchProcessRunTest(
     fun `a run on a period with no purchase activity exits with 0 and leaves the period's snapshot and its publication`() {
         createTheStreamerTables()
 
-        val finished = CommerceBatchProcess.run(
+        // run returns only after an exit with 0; any other code fails it with the log's tail.
+        CommerceBatchProcess.run(
             CommerceBatchProcess.Settings.of(environment),
             CommerceBatchProcess.WeeklyRankingParameters(PERIOD_START, snapshotId = "2026-08-17-r1", revision = 1),
         )
 
-        assertThat(finished.exitCode).isZero()
         assertThat(
             nativeStrings(
                 "select concat(snapshot_id, ' ', period_start, ' revision ', revision, ' ', state, ' inputs ', input_count) " +
@@ -76,8 +76,7 @@ class CommerceBatchProcessRunTest(
         }
 
         assertThat(exception.message)
-            .contains("The batch exited with")
-            .doesNotContain("The batch exited with 0.")
+            .containsPattern("The batch exited with [1-9][0-9]*\\.")
             .contains("periodStart must be a Monday, but 2026-08-18 is a TUESDAY")
         assertThat(nativeStrings("select snapshot_id from weekly_ranking_snapshot")).isEmpty()
     }
