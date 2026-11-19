@@ -3,9 +3,11 @@ package com.loopers.support
 import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.util.HexFormat
 
 /**
  * What the weekly ranking's job tests share: the job's three identifying parameters, purchase activities by SQL,
@@ -40,6 +42,13 @@ object WeeklyRankingJobs {
     fun JdbcClient.insertActivity(orderId: Long, productId: Long, quantity: Int, confirmedAt: LocalDateTime) {
         sql(INSERT_ACTIVITY_SQL)
             .params(orderId, productId, quantity, confirmedAt)
+            .update()
+    }
+
+    /** Inserts [publication] as it is, such as a previous revision's publication a scene starts from. */
+    fun JdbcClient.insertPublication(publication: StoredPublication) {
+        sql("INSERT INTO weekly_ranking_publication (period_start, snapshot_id, revision, published_at) VALUES (?, ?, ?, ?)")
+            .params(publication.periodStart, publication.snapshotId, publication.revision, publication.publishedAt)
             .update()
     }
 
@@ -102,6 +111,20 @@ object WeeklyRankingJobs {
                 )
             }
             .list()
+    }
+
+    /**
+     * The result checksum of [snapshotId]'s weekly ranking, in the input checksum's form: the lowercase hex SHA-256 of one line
+     * per ranking row in rank order, its product ID, score and rank joined by TAB, every line ended by LF, in UTF-8. Production
+     * code neither computes nor stores it (spec 252).
+     */
+    fun JdbcClient.resultChecksum(snapshotId: String): String {
+        val canonicalText = rankingItems()
+            .filter { it.snapshotId == snapshotId }
+            .joinToString(separator = "") { "${it.productId}\t${it.score}\t${it.productRank}\n" }
+        val digest = MessageDigest.getInstance("SHA-256").digest(canonicalText.toByteArray(Charsets.UTF_8))
+
+        return HexFormat.of().formatHex(digest)
     }
 
     /** Every period's publication, in period order. */

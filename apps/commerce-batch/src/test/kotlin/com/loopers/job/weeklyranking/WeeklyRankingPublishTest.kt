@@ -7,6 +7,7 @@ import com.loopers.support.WeeklyRankingJobs.StoredPublication
 import com.loopers.support.WeeklyRankingJobs.StoredRankingItem
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
+import com.loopers.support.WeeklyRankingJobs.insertPublication
 import com.loopers.support.WeeklyRankingJobs.jobParameters
 import com.loopers.support.WeeklyRankingJobs.publications
 import com.loopers.support.WeeklyRankingJobs.rankingItems
@@ -137,7 +138,7 @@ class WeeklyRankingPublishTest @Autowired constructor(
             revision = 1,
             publishedAt = LocalDateTime.parse("2026-08-17T00:05:00"),
         )
-        insertPublication(otherPeriod)
+        jdbcClient.insertPublication(otherPeriod)
 
         // act
         jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
@@ -165,7 +166,7 @@ class WeeklyRankingPublishTest @Autowired constructor(
             StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 8, score = 1, productRank = 2),
         )
         earlierItems.forEach(::insertRankingItem)
-        insertPublication(
+        jdbcClient.insertPublication(
             StoredPublication(
                 periodStart = LocalDate.parse("2026-08-17"),
                 snapshotId = "2026-08-17-r1",
@@ -203,7 +204,7 @@ class WeeklyRankingPublishTest @Autowired constructor(
             revision = 2,
             publishedAt = LocalDateTime.parse("2026-08-24T00:30:00"),
         )
-        insertPublication(laterPublication)
+        jdbcClient.insertPublication(laterPublication)
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 1))
@@ -296,15 +297,6 @@ class WeeklyRankingPublishTest @Autowired constructor(
         jdbcClient
             .sql("INSERT INTO weekly_ranking_item (snapshot_id, product_id, score, product_rank) VALUES (?, ?, ?, ?)")
             .params(item.snapshotId, item.productId, item.score, item.productRank)
-            .update()
-    }
-
-    private fun insertPublication(publication: StoredPublication) {
-        jdbcClient
-            .sql(
-                "INSERT INTO weekly_ranking_publication (period_start, snapshot_id, revision, published_at) VALUES (?, ?, ?, ?)",
-            )
-            .params(publication.periodStart, publication.snapshotId, publication.revision, publication.publishedAt)
             .update()
     }
 
