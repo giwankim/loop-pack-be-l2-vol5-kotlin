@@ -11,7 +11,7 @@ import java.util.HexFormat
 
 /**
  * What the weekly ranking's job tests share: the job's three identifying parameters, purchase activities by SQL,
- * the tables a run writes, and the snapshot inputs, scores, ranking items and publications it stored.
+ * the tables a run writes, and the snapshots, snapshot inputs, scores, ranking items and publications it stored.
  */
 object WeeklyRankingJobs {
     /** Every table the weekly ranking's job writes, for a test to empty before each scene. */
@@ -62,6 +62,23 @@ object WeeklyRankingJobs {
                 confirmedAt = LocalDateTime.ofInstant(input.confirmedAt, ZoneOffset.UTC),
             )
         }
+    }
+
+    /** Every snapshot row, in snapshot ID order. */
+    fun JdbcClient.snapshots(): List<StoredSnapshot> {
+        return sql("SELECT * FROM weekly_ranking_snapshot ORDER BY snapshot_id")
+            .query { resultSet, _ ->
+                StoredSnapshot(
+                    snapshotId = resultSet.getString("snapshot_id"),
+                    periodStart = resultSet.getObject("period_start", LocalDate::class.java),
+                    revision = resultSet.getLong("revision"),
+                    state = resultSet.getString("state"),
+                    frozenAt = resultSet.getObject("frozen_at", LocalDateTime::class.java),
+                    inputCount = resultSet.getLong("input_count"),
+                    inputChecksum = resultSet.getString("input_checksum"),
+                )
+            }
+            .list()
     }
 
     /** The inputs the freeze stored for [snapshotId], in key order. */
@@ -145,6 +162,16 @@ object WeeklyRankingJobs {
             }
             .list()
     }
+
+    data class StoredSnapshot(
+        val snapshotId: String,
+        val periodStart: LocalDate,
+        val revision: Long,
+        val state: String,
+        val frozenAt: LocalDateTime,
+        val inputCount: Long,
+        val inputChecksum: String,
+    )
 
     data class StoredSnapshotInput(
         val orderId: Long,
