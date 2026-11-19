@@ -140,3 +140,63 @@ A two-axis review ran before the commit.
 - **Standards.** No hard finding. Fixed: the new import's alphabetical position, a one-line `jdbcClient.sql(…)` chain broken like the file's others, and `Publication.isOf` renamed `isWrittenBy`.
 - **Spec.** No missing requirement in scope and no scope creep. Two points on the read-back: a plain read can see a stale row under concurrent same-period runs (fixed with `FOR SHARE`), and a stopped clock makes a same-snapshot rerun read as moved (kept, recorded in `Publication`'s KDoc and above).
 - **Left as they are:** `publish` both writing and reading (the read is what the write's outcome needs), and `(key, publishedAt)` travelling together into `publish` and `isWrittenBy`.
+
+## Issue 255: keep the previous publication when publish fails, and converge on rerun
+
+Drafted 2026-11-19 as issue 255's closing comment. The text below is the comment's.
+
+Implemented as `bf39cd42`, tests only, on top of issue 254's `b7318ffa`. `scripts/final-check --app commerce-batch` on `ca97b2cb`, a clean tree, started 2026-11-19T02:06:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 60 tests (34 s), 0 failures, 0 errors, 0 skipped**. Only this document differs between `bf39cd42` and `ca97b2cb`. Issue 254 ended at 8 classes and 54 tests, so this ticket adds 6 tests to `WeeklyRankingJobRestartTest`, which now has 12.
+
+### Acceptance criteria
+
+- [x] **Publish fails after the ranking rows are inserted: `FAILED`, no ranking for the new snapshot, the publication still holds the previous one.** Scene `a run failing at the publication write ends FAILED with no new ranking and the previous publication kept`. The spy makes `publish` throw. The scene verifies `rankScores` ran once, then reads an empty `weekly_ranking_item` and only the seeded revision 1 publication.
+- [x] **The rerun is the same `JobInstance` in a new `JobExecution`, `COMPLETED`, with one `freeze`, one `score` and two `publish` step executions, and publishes the new snapshot.** Scene `the restart of a run failed at the publication write publishes in the same job instance, without freezing or scoring`. The step counts come from `JobRepository.getStepExecutionCount`. The publication holds revision 2 at the moved clock's time.
+- [x] **Published under a failed execution: `FAILED` with the new snapshot already published; with the clock moved, the rerun is `COMPLETED` and the ranking rows and published-at time are unchanged.** Two scenes, one per run. The rerun scene compares the ranking rows (3) and the publication with what the failed run left, and the published-at time stays the first run's `2026-08-24T01:00`.
+- [x] **The clean-run comparison, as two test methods, each equal to the checksum of `7\t5\t1\n9\t5\t2\n8\t1\t3\n`.** One method fails before product 9 at chunk size 2 and reruns. The other runs clean. Both pass. See Checksums.
+- [x] **Red checks, not committed, each recorded with the scene that failed.** See Red checks.
+- [x] **Both checksum values are recorded.** See Checksums.
+- [x] **`scripts/final-check --app commerce-batch` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### What was built
+
+- **No production change.** The issue expected one only for the "already ranked" check of the spec's `publish` order, "if the publication rules ticket has not added it". Issue 254 added it (`e60c9950`). This ticket first wrote the same check itself, then was rebased onto 254 and kept 254's code.
+- **The scenes.** Each one seeds revision 1's publication of the period (`PREVIOUS_PUBLICATION`) and runs revision 2 (`2026-08-17-r2`), so a restart shows the publication move rather than appear. The existing score-restart scenes moved to revision 2 with them. Batch's metadata and the ranking tables are kept between a first run and its restart.
+- **Failures** come from `@MockkSpyBean` on `WeeklyRankingPublishStore`. No fault switch is in production code.
+- **Result checksum.** `WeeklyRankingJobs.resultChecksum` reads one snapshot's ranking rows in rank order. It joins product ID, score and rank by TAB, ends each line with LF and hashes the text with SHA-256 in lowercase hex, the input checksum's form. Production code neither computes nor stores it.
+
+### Checksums
+
+- Expected: `printf '7\t5\t1\n9\t5\t2\n8\t1\t3\n' | shasum -a 256` gives `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2` (`WeeklyRankingInputs.ASSIGNMENT_RESULT_CHECKSUM`), worked out apart from the code.
+- The restarted run (failed before product 9 at chunk size 2, then rerun): `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`.
+- The clean run: `745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2`.
+
+The two runs give the same ranking, and it is the assignment's.
+
+### Red checks
+
+These are mutations made without committing, run, then reverted. Each was run twice, on this ticket's own check and again on 254's code after the rebase, with the same result:
+
+- **`publish` step on `ResourcelessTransactionManager()` in place of the application's: red, 1 of 12.**
+  - The failure is in `a run failing at the publication write ends FAILED with no new ranking and the previous publication kept`: "Expecting empty but was" the three `2026-08-17-r2` ranking rows (7/5/1, 9/5/2, 8/1/3). Without the transaction, each statement commits on its own, and the ranking outlives the failed publication.
+  - The rerun scene stays green. The "already ranked" check finds the leftover rows and skips to the publication write. So the step's transaction is what the failure scene tests, not what the rerun needs.
+- **"Already ranked" removed (its condition replaced by `false`): red, 1 of 12.**
+  - The failure is in `the restart of a run whose publish committed completes and leaves the ranking and the published-at time as they were`: expected `COMPLETED`, but was `FAILED`, on `Duplicate entry '2026-08-17-r2-1' for key 'weekly_ranking_item.PRIMARY'`.
+  - This was also this ticket's first red. The scene was written before the check and failed the same way.
+
+### Decisions made while implementing
+
+- **In the published-under-a-failed-execution scene, the spy commits both writes in `REQUIRES_NEW` transactions, `rankScores` and `publish`, then throws after `publish`.** The issue says "runs the real publish in a `REQUIRES_NEW` transaction". The publish the assignment's section 5 means is the step's whole transaction, check, ranking and publication. If only the publication committed, the ranking would roll back with the step. The rerun would then rank again with no duplicate key, the "unchanged ranking rows" criterion would have nothing to compare, and the "already ranked" red check could never be red. Production makes one commit and the scene makes two, which changes no outcome.
+- **That rerun's moved clock also keeps 254's "not moved" reading honest.** The rerun publishes the same snapshot at a new time, so 254's read-back finds the first run's published-at time and reports the publication as not moved. A stopped clock would read it as moved (254's recorded limit).
+- **`insertPublication` moved into `WeeklyRankingJobs`**, now that two test classes seed publications (`CODING_STANDARDS.md` 테스트 › 도우미). The rebase also replaced the private copy that 254 had added to `WeeklyRankingPublishTest`.
+
+### Review
+
+A two-axis review ran before the commit, on this ticket's own version of the check.
+
+- **Standards.** One hard finding, fixed: the duplicated `insertPublication` helper. Also fixed: one long KDoc line was rewrapped. The other fix, naming the skip condition, went with the production code the rebase dropped.
+- **Spec.** No missing requirement and no scope creep. Moving the scenes to revision 2 was judged necessary for the seeded previous publication. The two `REQUIRES_NEW` wraps were judged faithful, and the helper's KDoc now says why the ranking is wrapped too.
+- **Left as they are:**
+  - "Result checksum" is not in the glossary. The spec and the design doc's 결과 체크섬 name it, and it lives only in test support.
+  - The `2026-08-17` literal repeats across the test classes, as their neighbours do.
+  - `WeeklyRankingJobRestartTest` now holds both the score and the publish restarts. The spec places both there.
