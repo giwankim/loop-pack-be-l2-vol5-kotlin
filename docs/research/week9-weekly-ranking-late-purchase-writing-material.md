@@ -153,7 +153,7 @@ The report timestamps confirm the order in the green run: the batch class at 10:
 
 ## Issue 262: link an order confirmation to the weekly ranking response in one test
 
-Drafted 2026-11-19 as issue 262's closing comment. It is not posted yet. The text below is the comment's.
+Recorded 2026-11-19 from [issue 262's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/262#issuecomment-7008047581). The text below is the comment's.
 
 Implemented as `35a75e44` on issue 261's `2443b191`. `scripts/final-check --app commerce-api` on `35a75e44`, a clean tree, started 2026-11-19T11:30:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 118 classes, 1208 tests (6 min 5 s), 0 failures, 0 errors, 0 skipped**. This ticket adds 1 class (`WeeklyRankingFlowTest`) and 1 test, which took 17.0 s in that run. No production code changed, and neither did the copy or the batch's test-only `purchase_activity` file: the test exposed no fault in any of them.
 
