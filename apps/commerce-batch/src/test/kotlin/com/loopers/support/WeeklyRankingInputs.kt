@@ -18,6 +18,12 @@ object WeeklyRankingInputs {
 
     const val ASSIGNMENT_CHECKSUM = "d07eff39ac33dc7bb7f63110fcf1c2a3f1c52fec496f369dada87d83a5c4720b"
 
+    /**
+     * The result checksum of the assignment's expected ranking: the canonical text `7\t5\t1\n9\t5\t2\n8\t1\t3\n`, one line
+     * per product in rank order with its product ID, score and rank.
+     */
+    const val ASSIGNMENT_RESULT_CHECKSUM = "745d50bbd2f04a2e8c937f9ebf5f2cddbf75b958540e964934a424903b0a67d2"
+
     /** The SHA-256 of the empty string. */
     const val EMPTY_CHECKSUM = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }

@@ -3,15 +3,26 @@ package com.loopers.support
 import org.springframework.batch.core.job.parameters.JobParameters
 import org.springframework.batch.core.job.parameters.JobParametersBuilder
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.util.HexFormat
 
 /**
  * What the weekly ranking's job tests share: the job's three identifying parameters, purchase activities by SQL,
- * and the snapshot inputs and scores a run stored.
+ * the tables a run writes, and the snapshot inputs, scores, ranking items and publications it stored.
  */
 object WeeklyRankingJobs {
+    /** Every table the weekly ranking's job writes, for a test to empty before each scene. */
+    val RANKING_TABLES = arrayOf(
+        "weekly_ranking_publication",
+        "weekly_ranking_item",
+        "weekly_ranking_score",
+        "weekly_ranking_snapshot_input",
+        "weekly_ranking_snapshot",
+    )
+
     const val INSERT_ACTIVITY_SQL =
         "INSERT INTO purchase_activity (order_id, product_id, quantity, confirmed_at) VALUES (?, ?, ?, ?)"
 
@@ -31,6 +42,13 @@ object WeeklyRankingJobs {
     fun JdbcClient.insertActivity(orderId: Long, productId: Long, quantity: Int, confirmedAt: LocalDateTime) {
         sql(INSERT_ACTIVITY_SQL)
             .params(orderId, productId, quantity, confirmedAt)
+            .update()
+    }
+
+    /** Inserts [publication] as it is, such as a previous revision's publication a scene starts from. */
+    fun JdbcClient.insertPublication(publication: StoredPublication) {
+        sql("INSERT INTO weekly_ranking_publication (period_start, snapshot_id, revision, published_at) VALUES (?, ?, ?, ?)")
+            .params(publication.periodStart, publication.snapshotId, publication.revision, publication.publishedAt)
             .update()
     }
 
@@ -76,6 +94,58 @@ object WeeklyRankingJobs {
             .list()
     }
 
+    /** Every snapshot's weekly ranking, by snapshot and then rank. */
+    fun JdbcClient.rankingItems(): List<StoredRankingItem> {
+        return sql(
+            """
+            SELECT snapshot_id, product_id, score, product_rank FROM weekly_ranking_item
+            ORDER BY snapshot_id, product_rank
+            """.trimIndent(),
+        )
+            .query { resultSet, _ ->
+                StoredRankingItem(
+                    snapshotId = resultSet.getString("snapshot_id"),
+                    productId = resultSet.getLong("product_id"),
+                    score = resultSet.getLong("score"),
+                    productRank = resultSet.getInt("product_rank"),
+                )
+            }
+            .list()
+    }
+
+    /**
+     * The result checksum of [snapshotId]'s weekly ranking, in the input checksum's form: the lowercase hex SHA-256 of one line
+     * per ranking row in rank order, its product ID, score and rank joined by TAB, every line ended by LF, in UTF-8. Production
+     * code neither computes nor stores it (spec 252).
+     */
+    fun JdbcClient.resultChecksum(snapshotId: String): String {
+        val canonicalText = rankingItems()
+            .filter { it.snapshotId == snapshotId }
+            .joinToString(separator = "") { "${it.productId}\t${it.score}\t${it.productRank}\n" }
+        val digest = MessageDigest.getInstance("SHA-256").digest(canonicalText.toByteArray(Charsets.UTF_8))
+
+        return HexFormat.of().formatHex(digest)
+    }
+
+    /** Every period's publication, in period order. */
+    fun JdbcClient.publications(): List<StoredPublication> {
+        return sql(
+            """
+            SELECT period_start, snapshot_id, revision, published_at FROM weekly_ranking_publication
+            ORDER BY period_start
+            """.trimIndent(),
+        )
+            .query { resultSet, _ ->
+                StoredPublication(
+                    periodStart = resultSet.getObject("period_start", LocalDate::class.java),
+                    snapshotId = resultSet.getString("snapshot_id"),
+                    revision = resultSet.getLong("revision"),
+                    publishedAt = resultSet.getObject("published_at", LocalDateTime::class.java),
+                )
+            }
+            .list()
+    }
+
     data class StoredSnapshotInput(
         val orderId: Long,
         val productId: Long,
@@ -84,4 +154,13 @@ object WeeklyRankingJobs {
     )
 
     data class StoredScore(val productId: Long, val score: Long)
+
+    data class StoredRankingItem(val snapshotId: String, val productId: Long, val score: Long, val productRank: Int)
+
+    data class StoredPublication(
+        val periodStart: LocalDate,
+        val snapshotId: String,
+        val revision: Long,
+        val publishedAt: LocalDateTime,
+    )
 }

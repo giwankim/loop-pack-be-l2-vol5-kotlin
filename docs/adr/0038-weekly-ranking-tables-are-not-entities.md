@@ -34,4 +34,4 @@ commerce-batch는 템플릿 그대로였다. 데모 job 하나와 `jpa.yml`을 �
 
 - 보존해야 할 데이터가 든 랭킹의 표를 처음 `ALTER`해야 하면 Flyway를 들인다.
 - commerce-batch가 DB 말고 다른 것(메시지, HTTP)에 쓰거나, 같은 SQL을 여러 job이 부르게 되면 포트를 다시 본다.
-- commerce-api가 랭킹의 표를 읽는 길(셋째 단계 `feat/weekly-ranking-publish`)이 엔티티를 원하면, 그 앱의 `ddl-auto`가 랭킹의 표에 닿지 않게 하는 방법을 그때 정한다.
+- commerce-api가 랭킹의 표를 읽는 길(셋째 단계 `feat/weekly-ranking-publish`)이 엔티티를 원하면, 그 앱의 `ddl-auto`가 랭킹의 표에 닿지 않게 하는 방법을 그때 정한다. (2026-11-19 셋째 단계: 엔티티를 두지 않았다. commerce-api는 세 표를 계약의 컬럼만 `JdbcClient`로 읽는다. [ADR 0039](./0039-what-a-ranking-period-shows-is-decided-by-a-publication-row-that-only-a-later-revision-replaces.md).)

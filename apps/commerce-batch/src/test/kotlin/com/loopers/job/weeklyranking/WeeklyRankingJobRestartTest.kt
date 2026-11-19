@@ -2,11 +2,20 @@ package com.loopers.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
 import com.loopers.batch.job.weeklyranking.step.ScoreProductReader
+import com.loopers.batch.job.weeklyranking.step.WeeklyRankingPublishStore
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingScoreStore
+import com.loopers.support.WeeklyRankingInputs
+import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
+import com.loopers.support.WeeklyRankingJobs.StoredPublication
+import com.loopers.support.WeeklyRankingJobs.StoredRankingItem
 import com.loopers.support.WeeklyRankingJobs.StoredScore
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
+import com.loopers.support.WeeklyRankingJobs.insertPublication
 import com.loopers.support.WeeklyRankingJobs.jobParameters
+import com.loopers.support.WeeklyRankingJobs.publications
+import com.loopers.support.WeeklyRankingJobs.rankingItems
+import com.loopers.support.WeeklyRankingJobs.resultChecksum
 import com.loopers.support.WeeklyRankingJobs.scores
 import com.loopers.support.WeeklyRankingJobs.snapshotInputs
 import com.loopers.support.test.BaseBatchJobTest
@@ -15,6 +24,8 @@ import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.entry
+import org.assertj.core.api.Assertions.tuple
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.batch.core.BatchStatus
@@ -28,17 +39,25 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.jdbc.Sql
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 
 /**
- * Shows the assignment's section 6, up to its sixth step, on the real `weeklyRanking` job (spec 246, 실패와 재시작). A run
- * fails while scoring, keeps the chunks it committed, and the same three values run again continue from the product it
- * stopped at without freezing again.
+ * Shows the assignment's sections 5 and 6 on the real `weeklyRanking` job (specs 246 and 252, 실패와 재시작). A run fails
+ * while scoring, keeps the chunks it committed, and the same three values run again continue from the product it stopped at
+ * without freezing again. A run fails while publishing and leaves the previous publication showing, and its rerun publishes
+ * without freezing or scoring again. The restarted run's ranking and a clean run's both match the assignment's expected one.
+ *
+ * Revision 1's publication of the period, [PREVIOUS_PUBLICATION], is seeded before each scene, and the scenes run revision
+ * 2. [publishStore] is a spy too: a scene makes the publication write throw, or commits the publish and then throws.
  *
  * The chunk size is 2, so products 7 and 8 are the first chunk and product 9 the second. [scoreStore] is a spy: a scene makes
  * `sumQuantity` throw for one product, and counts how often each product's quantity was summed. Nothing between a first run
@@ -61,15 +80,159 @@ import java.time.ZoneOffset
 class WeeklyRankingJobRestartTest @Autowired constructor(
     @param:Qualifier(WeeklyRankingJobConfig.JOB_NAME) private val job: Job,
     private val clock: MovableClock,
+    transactionManager: PlatformTransactionManager,
 ) : BaseBatchJobTest() {
+    private val requiresNew = TransactionTemplate(transactionManager).apply {
+        propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+    }
+
     @MockkSpyBean
     private lateinit var scoreStore: WeeklyRankingScoreStore
 
+    @MockkSpyBean
+    private lateinit var publishStore: WeeklyRankingPublishStore
+
     @BeforeEach
     fun setUp() {
-        emptyTables("purchase_activity", "weekly_ranking_score", "weekly_ranking_snapshot_input", "weekly_ranking_snapshot")
+        emptyTables("purchase_activity", *RANKING_TABLES)
+        jdbcClient.insertPublication(PREVIOUS_PUBLICATION)
         clock.instant = FIRST_RUN_INSTANT
         jobOperatorTestUtils.job = job
+    }
+
+    /** The spy throws at the publication write, after the step has inserted the new snapshot's ranking in its transaction. */
+    @Test
+    fun `a run failing at the publication write ends FAILED with no new ranking and the previous publication kept`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        failPublishing()
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        verify(exactly = 1) { publishStore.rankScores(SNAPSHOT_ID) }
+        assertThat(jdbcClient.rankingItems()).isEmpty()
+        assertThat(jdbcClient.publications()).containsExactly(PREVIOUS_PUBLICATION)
+    }
+
+    @Test
+    fun `the restart of a run failed at the publication write publishes in the same job instance, without freezing or scoring`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        failPublishing()
+        val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+        clearMocks(publishStore)
+        clock.advance(Duration.ofDays(1))
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jobExecution.jobInstance.id).isEqualTo(failedExecution.jobInstance.id)
+        assertThat(jobExecution.id).isNotEqualTo(failedExecution.id)
+        assertThat(stepExecutionCounts(jobExecution))
+            .containsExactly(
+                entry(WeeklyRankingJobConfig.FREEZE_STEP_NAME, 1L),
+                entry(WeeklyRankingJobConfig.SCORE_STEP_NAME, 1L),
+                entry(WeeklyRankingJobConfig.PUBLISH_STEP_NAME, 2L),
+            )
+        assertThat(jdbcClient.rankingItems())
+            .containsExactly(
+                StoredRankingItem(snapshotId = SNAPSHOT_ID, productId = 7, score = 5, productRank = 1),
+                StoredRankingItem(snapshotId = SNAPSHOT_ID, productId = 9, score = 5, productRank = 2),
+                StoredRankingItem(snapshotId = SNAPSHOT_ID, productId = 8, score = 1, productRank = 3),
+            )
+        assertThat(jdbcClient.publications())
+            .containsExactly(
+                StoredPublication(
+                    periodStart = LocalDate.parse("2026-08-17"),
+                    snapshotId = SNAPSHOT_ID,
+                    revision = REVISION,
+                    publishedAt = LocalDateTime.ofInstant(FIRST_RUN_INSTANT.plus(Duration.ofDays(1)), ZoneOffset.UTC),
+                ),
+            )
+    }
+
+    /**
+     * The assignment's section 5 case: the publish reached the database, but the execution was recorded as failed. The spy
+     * commits the step's two writes, the ranking and the publication, each in its own `REQUIRES_NEW` transaction, then throws
+     * after the publication, so the step's own transaction rolls back nothing they wrote.
+     */
+    @Test
+    fun `a run whose publish committed under a failed execution ends FAILED with the new snapshot already published`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        commitPublishThenFail()
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(jdbcClient.publications())
+            .extracting(StoredPublication::snapshotId, StoredPublication::revision)
+            .containsExactly(tuple(SNAPSHOT_ID, REVISION))
+    }
+
+    /** The clock moves a day between the runs, so a second publication write would show in the published-at time. */
+    @Test
+    fun `the restart of a run whose publish committed completes and leaves the ranking and the published-at time as they were`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        commitPublishThenFail()
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+        val rankingAfterFirstRun = jdbcClient.rankingItems()
+        val publicationsAfterFirstRun = jdbcClient.publications()
+        clearMocks(publishStore)
+        clock.advance(Duration.ofDays(1))
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(rankingAfterFirstRun).hasSize(3)
+        assertThat(jdbcClient.rankingItems()).isEqualTo(rankingAfterFirstRun)
+        assertThat(jdbcClient.publications()).isEqualTo(publicationsAfterFirstRun)
+        assertThat(publicationsAfterFirstRun.single().publishedAt)
+            .isEqualTo(LocalDateTime.ofInstant(FIRST_RUN_INSTANT, ZoneOffset.UTC))
+    }
+
+    /**
+     * The assignment's section 6, seventh step, with the clean run below. Each compares its own ranking to the expected
+     * text's checksum, so the two runs are shown equal to each other and to the right answer. The cleanup between the tests
+     * is the assignment's "isolated apart".
+     */
+    @Test
+    fun `a run restarted after failing before product 9 ranks to the checksum of the assignment's expected ranking`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        failSummingProduct(SNAPSHOT_ID, productId = 9)
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+        prepareRestart()
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jdbcClient.resultChecksum(SNAPSHOT_ID)).isEqualTo(WeeklyRankingInputs.ASSIGNMENT_RESULT_CHECKSUM)
+    }
+
+    @Test
+    fun `a clean run's ranking matches the checksum of the assignment's expected ranking`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jdbcClient.resultChecksum(SNAPSHOT_ID)).isEqualTo(WeeklyRankingInputs.ASSIGNMENT_RESULT_CHECKSUM)
     }
 
     @Test
@@ -79,7 +242,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         failSummingProduct(SNAPSHOT_ID, productId = 9)
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
@@ -95,11 +258,11 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         // arrange
         jdbcClient.insertAssignmentActivities()
         failSummingProduct(SNAPSHOT_ID, productId = 9)
-        val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
         prepareRestart()
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
@@ -130,13 +293,13 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         // arrange
         jdbcClient.insertAssignmentActivities()
         failSummingProduct(SNAPSHOT_ID, productId = 9)
-        val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
         val snapshotAfterFirstRun = snapshot()
         val inputsAfterFirstRun = jdbcClient.snapshotInputs(SNAPSHOT_ID)
         prepareRestart()
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
@@ -156,7 +319,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         failSummingProduct(SNAPSHOT_ID, productId = 8)
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
@@ -169,11 +332,11 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         // arrange
         jdbcClient.insertAssignmentActivities()
         failSummingProduct(SNAPSHOT_ID, productId = 8)
-        jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
         prepareRestart()
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
@@ -200,7 +363,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         failAfterWritingProduct(SNAPSHOT_ID, productId = 9)
 
         // act
-        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID))
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
 
         // assert
         assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
@@ -222,6 +385,36 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
             quantity = 4,
             confirmedAt = LocalDateTime.parse("2026-08-20T09:00:00"),
         )
+    }
+
+    private fun failPublishing() {
+        every { publishStore.publish(any(), any()) } throws IllegalStateException("fails writing the publication")
+    }
+
+    /**
+     * Commits the ranking and the publication in their own `REQUIRES_NEW` transactions, as the real calls would, then fails
+     * the step after the publication. The ranking is wrapped too: the publish the assignment's section 5 means is the step's
+     * whole transaction, and only committed ranking rows make the rerun meet an already ranked snapshot.
+     */
+    private fun commitPublishThenFail() {
+        every { publishStore.rankScores(SNAPSHOT_ID) } answers {
+            requiresNew.executeWithoutResult { callOriginal() }
+        }
+        every { publishStore.publish(any(), any()) } answers {
+            requiresNew.executeWithoutResult { callOriginal() }
+            throw IllegalStateException("fails after the publication committed")
+        }
+    }
+
+    /** How many executions each step has in [jobExecution]'s job instance, read from the job repository. */
+    private fun stepExecutionCounts(jobExecution: JobExecution): Map<String, Long> {
+        return listOf(
+            WeeklyRankingJobConfig.FREEZE_STEP_NAME,
+            WeeklyRankingJobConfig.SCORE_STEP_NAME,
+            WeeklyRankingJobConfig.PUBLISH_STEP_NAME,
+        ).associateWith { stepName ->
+            jobRepository.getStepExecutionCount(jobExecution.jobInstance, stepName)
+        }
     }
 
     private fun failSummingProduct(snapshotId: String, productId: Long) {
@@ -298,7 +491,16 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
     }
 
     companion object {
-        const val SNAPSHOT_ID = "2026-08-17-r1"
+        const val SNAPSHOT_ID = "2026-08-17-r2"
+        const val REVISION = 2L
+
+        /** Revision 1's publication of the same period, seeded before each scene, for the new snapshot to replace. */
+        val PREVIOUS_PUBLICATION = StoredPublication(
+            periodStart = LocalDate.parse("2026-08-17"),
+            snapshotId = "2026-08-17-r1",
+            revision = 1,
+            publishedAt = LocalDateTime.parse("2026-08-17T00:05:00"),
+        )
         val FIRST_RUN_INSTANT: Instant = Instant.parse("2026-08-24T01:00:00Z")
     }
 }

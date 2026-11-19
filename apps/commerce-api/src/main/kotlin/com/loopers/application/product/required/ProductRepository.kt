@@ -58,6 +58,13 @@ interface ProductRepository : Repository<Product, Long> {
     fun findAllLikedBy(userId: Long, pageable: Pageable): Slice<Product>
 
     /**
+     * The products of [productIds] that are not deleted, in no particular order; [Product]'s `@SQLRestriction` leaves the deleted
+     * ones out. The brand is read with them, since every caller reads its name. The weekly ranking's display fields call this.
+     */
+    @EntityGraph(attributePaths = ["brand"])
+    fun findAllByIdIn(productIds: Collection<Long>): List<Product>
+
+    /**
      * [brandId] 브랜드의 삭제되지 않은 상품을 id 오름차순으로 `FOR UPDATE`로 잠가 읽는다. 브랜드 삭제의 연쇄가 부른다(ADR 0017).
      *
      * 잠금은 `ORDER BY`가 아니라 훑는 인덱스의 차례로 걸린다. `brand_id` 인덱스의 항목이 `(brand_id, id)`이므로 id 차례이고,

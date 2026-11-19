@@ -33,3 +33,24 @@ CREATE TABLE IF NOT EXISTS weekly_ranking_score (
     score       BIGINT       NOT NULL,
     PRIMARY KEY (snapshot_id, product_id)
 );
+
+-- One snapshot's weekly ranking (spec 252). It carries its own copy of the score, so a reader never needs the score table,
+-- the job's working table. The primary key makes a read in rank order a key range read. The column is product_rank, since
+-- rank is reserved in MySQL 8.
+CREATE TABLE IF NOT EXISTS weekly_ranking_item (
+    snapshot_id  VARCHAR(100) NOT NULL,
+    product_id   BIGINT       NOT NULL,
+    score        BIGINT       NOT NULL,
+    product_rank INT          NOT NULL,
+    PRIMARY KEY (snapshot_id, product_rank),
+    CONSTRAINT UK_WEEKLY_RANKING_ITEM_ON_SNAPSHOT_ID_AND_PRODUCT_ID UNIQUE (snapshot_id, product_id)
+);
+
+-- What each ranking period shows: one row per period, naming the snapshot whose weekly ranking is visible (spec 252).
+CREATE TABLE IF NOT EXISTS weekly_ranking_publication (
+    period_start DATE         NOT NULL,
+    snapshot_id  VARCHAR(100) NOT NULL,
+    revision     BIGINT       NOT NULL,
+    published_at DATETIME(6)  NOT NULL,
+    PRIMARY KEY (period_start)
+);
