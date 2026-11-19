@@ -91,6 +91,56 @@ A two-axis review ran before the commit.
   - The three job parameters repeated in both tasklets, as `FreezeTasklet` does.
   - The duplicated fixed-clock config.
 
+## Issue 254: let only a later revision replace a period's publication
+
+Recorded 2026-11-19 from [issue 254's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/254#issuecomment-6997445432). The text below is the comment's.
+
+Implemented as `e60c9950`. `scripts/final-check --app commerce-batch` on `e60c9950`, a clean tree, started 2026-11-19T01:55:48Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 54 tests (32 s), 0 failures, 0 errors, 0 skipped**. Issue 253 ended at 8 classes and 50 tests, so this ticket adds 4 tests to `WeeklyRankingPublishTest`. Only this document changed after `e60c9950`.
+
+### Acceptance criteria
+
+- [x] **Revision 1 published, then revision 2 run: the publication holds revision 2's snapshot; revision 1's ranking rows are unchanged.** Revision 1's ranking (two items, deliberately unlike what the scores would give) and its publication are inserted by SQL. The revision 2 run is `COMPLETED`, the publication is `2026-08-17-r2`, revision 2, at the test clock's time, the revision 1 items read back as inserted, and the step's exit description is empty.
+- [x] **Revision 2 published, then revision 1 run: `COMPLETED`; revision 1's ranking rows exist; the publication's snapshot ID, revision and published-at time are revision 2's; the `publish` step's exit description says the publication was not moved.** Revision 2's publication is inserted by SQL at `2026-08-24T00:30:00`. Revision 1 ranks 7, 9, 8 and leaves that row exactly. The exit description reads `Publication of period 2026-08-17 not moved to snapshot 2026-08-17-r1 (period 2026-08-17, revision 1): it holds snapshot 2026-08-17-r2 (revision 2)`, and the same line is logged at WARN.
+- [x] **One score deleted before `publish` (by a spy on the publish store, before its first call): the step fails, and the snapshot has no ranking row and no publication.** `@MockkSpyBean` on `WeeklyRankingPublishStore`; `countScores`, the step's first store call, first deletes product 9's score in the step's transaction. The run is `FAILED` with `… has 2 scores for 3 products` in the exit description; `weekly_ranking_item` and `weekly_ranking_publication` are empty.
+- [x] **Red check, not committed, recorded in the writing material: with the condition removed from the publication write, the earlier-after-later scene is red.** See Red check.
+- [x] **`scripts/final-check --app commerce-batch` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+The ticket's fourth rule, "a snapshot whose ranking rows already exist, equal in count to its scores, is not ranked again", has its own scene: the spy inserts three items for the snapshot in an order the scores would not give (8, 9, 7) before the first call. The run is `COMPLETED`, the items read back as inserted, and the publication holds the snapshot. Before the change it failed on `weekly_ranking_item.PRIMARY`. Issue 255's published-under-a-failed-execution rerun is the scene this path exists for.
+
+### What was built
+
+- **The spec's full `publish` order.** `PublishTasklet` counts the snapshot's scores, then its ranking items. When there are items and they equal the scores, the count check and the ranking are skipped and only the publication is written. Otherwise the check and the ranking run as in 253 (now a private `rank`). An empty snapshot (0 items) takes the ranking path, where 0 meets 0.
+- **"Not moved" by read-back.** `WeeklyRankingPublishStore.publish` keeps 253's one conditional statement and then reads the period's row:
+
+  ```sql
+  SELECT snapshot_id, revision, published_at FROM weekly_ranking_publication WHERE period_start = ? FOR SHARE
+  ```
+
+  It returns a `Publication`. The tasklet asks `publication.isWrittenBy(key, publishedAt)`: the row holds this snapshot at this publish's time. If not, the step still completes, logs a warning and sets `contribution.exitStatus = ExitStatus.COMPLETED.addExitDescription(…)`; `ExitStatus.and` keeps the description through the step's end and its listener.
+- **Why `FOR SHARE`.** The step runs at REPEATABLE READ, and its first `COUNT(*)` fixes the read view. A plain `SELECT` would see a row this transaction changed as changed, but a row it left as it was as of that read view. If a publish of the same period committed in between, the plain read could name a stale holder, or find no row and fail the step. The locking read sees the latest row. It waits on nothing, since the upsert already holds the row's exclusive lock, so it adds no lock for same-period runs.
+
+### Red check
+
+A mutation made without committing, run, then reverted:
+
+- **The publication write's three `IF`/`GREATEST` assignments replaced by `incoming.*`: red, 1 of 6** (run when the class held 253's five scenes and the earlier-after-later one). The earlier-after-later scene finds `StoredPublication(periodStart=2026-08-17, snapshotId=2026-08-17-r1, revision=1, publishedAt=2026-08-24T01:02:03.123456)` where it expected revision 2's row. The other scenes stay green: none of them republishes a period that holds a later revision.
+
+### Decisions made while implementing
+
+- **A read-back, not `useAffectedRows`.** Connector/J's found-rows count gives 1 for an insert and for a row left as it was. `useAffectedRows=true` would tell them apart but changes the shared datasource's update counts for every statement; one read on a row already locked is local to this step.
+- **"Not moved" is decided by the published-at time, not a read before the write.** A read before the write is the "read first" the spec avoids, and goes stale under the same race. The cost is one limit: a stopped clock that republishes the same snapshot at the same instant reads as moved. A real clock never gives a later publish the same microsecond, and issue 255's rerun scene moves its clock between runs.
+- **The spy hooks `countScores`, the step's first store call.** The skip's item count comes after it, so one hook serves both the deletion and the insertion scenes.
+- **A test helper returns the publish step's exit description, not its `StepExecution`.** `@SpringBatchTest`'s step-scope listener would take a method returning `StepExecution` for a step context factory.
+
+### Review
+
+A two-axis review ran before the commit.
+
+- **Standards.** No hard finding. Fixed: the new import's alphabetical position, a one-line `jdbcClient.sql(…)` chain broken like the file's others, and `Publication.isOf` renamed `isWrittenBy`.
+- **Spec.** No missing requirement in scope and no scope creep. Two points on the read-back: a plain read can see a stale row under concurrent same-period runs (fixed with `FOR SHARE`), and a stopped clock makes a same-snapshot rerun read as moved (kept, recorded in `Publication`'s KDoc and above).
+- **Left as they are:** `publish` both writing and reading (the read is what the write's outcome needs), and `(key, publishedAt)` travelling together into `publish` and `isWrittenBy`.
+
 ## Issue 256: read a period's published weekly ranking through GET /api/v1/rankings/weekly
 
 Recorded 2026-11-19 from [issue 256's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/256#issuecomment-6997273889). The text below is the comment's.
