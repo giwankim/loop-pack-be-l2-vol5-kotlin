@@ -231,7 +231,7 @@ So the copy lacking a column the batch reads fails this test. The batch's `CREAT
 
 ## Issue 263: record the late purchase step (design section 14, final check, PR notes)
 
-Drafted 2026-11-19 as [issue 263](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/263)'s closing comment. Not posted yet; the text below is the draft.
+Recorded 2026-11-19 from [issue 263's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/263#issuecomment-7008430768). The text below is the comment's, with its two blob links written here as a relative link and a pointer.
 
 Recorded as `0be42e63`, documents only. `scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` ran once on `09f0f121`, a clean tree, starting 2026-11-19T11:42:15Z with `BOOTSTRAP_SERVERS` unset. ktlint passed (1 s). **commerce-batch: 9 classes, 65 tests (28 s). commerce-api: 118 classes, 1208 tests (5 min 59 s). commerce-streamer: 18 classes, 68 tests (51 s). 0 failures, 0 errors, 0 skipped in all three.** The code of `09f0f121` is issue 262's `35a75e44`, and only documents changed after it. Section 14 was being written in the working tree while the check ran; no file Gradle reads changed.
 
