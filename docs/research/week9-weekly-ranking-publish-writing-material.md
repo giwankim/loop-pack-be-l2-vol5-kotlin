@@ -93,7 +93,7 @@ A two-axis review ran before the commit.
 
 ## Issue 254: let only a later revision replace a period's publication
 
-Recorded 2026-11-19 from issue 254's closing comment. The text below is the comment's.
+Recorded 2026-11-19 from [issue 254's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/254#issuecomment-6997445432). The text below is the comment's.
 
 Implemented as `e60c9950`. `scripts/final-check --app commerce-batch` on `e60c9950`, a clean tree, started 2026-11-19T01:55:48Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 54 tests (32 s), 0 failures, 0 errors, 0 skipped**. Issue 253 ended at 8 classes and 50 tests, so this ticket adds 4 tests to `WeeklyRankingPublishTest`. Only this document changed after `e60c9950`.
 
