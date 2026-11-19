@@ -26,7 +26,7 @@ commerce-batch는 템플릿 그대로였다. 데모 job 하나와 `jpa.yml`을 �
 
 - `local`, `test` 밖에서는 랭킹의 표를 사람이 적용한다. 빠뜨리면 job이 표가 없다는 SQL 오류로 실패한다. Batch 메타데이터도 이미 그렇다.
 - 스키마가 SQL 파일에 있고 코드의 SQL은 문자열이다. 컴파일이 열 이름의 어긋남을 잡지 못하고, 실제 MySQL에서 job을 돌리는 테스트가 잡는다.
-- commerce-batch의 테스트는 `purchase_activity`를 테스트 전용 SQL 파일(`sql/purchase-activity.sql`)로 만든다. 계약의 열과 `id`, `deleted_at`, `confirmed_at`의 인덱스다. 스트리머의 진짜 표와 어긋나도 이 앱의 테스트는 알지 못한다. 넷째 단계(`feat/weekly-ranking-late-purchase`)의 연결 테스트가 두 앱을 함께 돌려 잡는다.
+- commerce-batch의 테스트는 `purchase_activity`를 테스트 전용 SQL 파일(`sql/purchase-activity.sql`)로 만든다. 계약의 열과 `id`, `deleted_at`, `confirmed_at`의 인덱스다. 스트리머의 진짜 표와 어긋나도 이 앱의 테스트는 알지 못한다. 넷째 단계(`feat/weekly-ranking-late-purchase`)의 연결 테스트가 두 앱을 함께 돌려 잡는다. (2026-11-19 넷째 단계: `WeeklyRankingFlowTest`가 스트리머가 만든 진짜 `purchase_activity`에서 배치를 자식 프로세스로 돌린다. 어긋남은 드러나지 않았고, 테스트 전용 파일은 그대로 남아 이 앱의 테스트가 쓴다. [주간 랭킹 설계](../design/weekly-ranking.md) 14.4절.)
 - commerce-batch와 commerce-api가 다른 구조를 가진다. 같은 저장소에서 영속성의 자리가 앱마다 다르다.
 - 이 규칙을 막는 ArchUnit 규칙은 없다. 리뷰가 지킨다.
 
