@@ -849,6 +849,7 @@ scripts/final-check --app commerce-batch --app commerce-api --app commerce-strea
 - commerce-streamer는 18개 클래스, 68개 테스트, 실패 0, 오류 0, 건너뜀 0이다(51 s). 이 브랜치는 commerce-streamer의 파일을 바꾸지 않았다. 연결 테스트가 그 bootJar를 자식 프로세스로 돌리므로 함께 돌렸다.
 - 세 앱 모두 테스트가 0개가 아니고, 건너뛴 것이 없으며, `check`가 종료 코드 0으로 끝났다. 실행 뒤 `pgrep -fl "commerce-(batch|streamer)"`가 찾은 것이 없었다.
 - `09f0f121`의 코드는 `35a75e44`(262)의 것이고, 그 뒤로는 문서만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 이 절을 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다.
+- (2026-11-19 [명세 259](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/259)의 닫는 검토) 검토의 고침(`7333ffb6`)이 테스트의 코드를 바꿨으므로 그 깨끗한 트리에서 다시 돌렸다(12:38:32Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했다(1 s). commerce-batch는 9개 클래스, 65개 테스트(32 s), commerce-api는 118개 클래스, 1208개 테스트(6 min 7 s), commerce-streamer는 18개 클래스, 68개 테스트(47 s)이고, 셋 모두 실패 0, 오류 0, 건너뜀 0이다. 고침은 테스트를 더하지도 빼지도 않았으므로 수는 그대로다. `WeeklyRankingFlowTest`의 한 장면은 이 실행에서 16.0 s였다. 실행 뒤 `pgrep -fl "commerce-(batch|streamer)"`가 찾은 것이 없었다. 이것이 4단계의 끝의 확인이다. 위의 `09f0f121`의 실행은 앞의 확인이다. `7333ffb6` 뒤로는 문서만 바뀌었다.
 
 ### 14.11 명세와 다른 것
 
