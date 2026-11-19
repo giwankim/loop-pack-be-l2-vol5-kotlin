@@ -335,3 +335,150 @@ A two-axis review ran on the uncommitted documents.
 ### Left for the spec's closing
 
 The spec's own review, closing comment and PR into `week9` (`docs/agents/spec-closing.md`).
+
+## Spec 252: the closing review
+
+Recorded 2026-11-19 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/252#issuecomment-6999565834) of [spec 252](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/252). The text is the comment's, with its blob URLs.
+
+Step 3 of week 9 is built, and its closing review is done. `scripts/final-check --app commerce-batch --app commerce-api` on `2edfec32`, a clean tree, started 2026-11-19T03:11:56Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 60 tests (28 s); commerce-api 115 classes, 1203 tests (5 min 7 s); 0 failures, 0 errors, 0 skipped in both**. Step 2 ended commerce-batch at 7 classes and 45 tests, so this step adds 1 class and 15 tests there, and 2 classes and 16 tests to commerce-api. The review's one fix is a rename, so the counts match the run on `f282e642` that issue 257 recorded. This branch does not touch commerce-streamer, so it was not run. Only documents change after `2edfec32`.
+
+Tickets 253–257 are closed, each with its own comment. [Design 1.4](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md#14-3단계가-만든-것) lists what each one built, [design 13](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md#13-순위와-게시-3단계) holds the step, and [ADR 0039](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/adr/0039-what-a-ranking-period-shows-is-decided-by-a-publication-row-that-only-a-later-revision-replaces.md) records the publication row.
+
+### Where the implementation differs
+
+[Design 13.10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md#1310-명세와-다른-것) has seventeen rows: issue 257's sixteen and the rename below. The ones that change what a reader would assume:
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| Ranking with `RANK()` turns the assignment's ranking scene red (red check) | Swapping the function while keeping `ORDER BY score DESC, product_id ASC` stays green. Ranking by score alone is red, refused by the primary key `(snapshot_id, product_rank)` | Issue 253 |
+| "Not moved" goes to the log and the exit description (how to tell was left open) | The row is read back `FOR SHARE` right after the write, and told by snapshot ID and published-at time. A stopped clock would misreport a republish as moved | Issue 254 |
+| The published-under-a-failed-execution spy runs "진짜 게시" in `REQUIRES_NEW` | It commits both `rankScores` and `publish`. With the publication alone, the ranking rolls back, the rerun ranks again, and the "already ranked" red check cannot go red | Issue 255 |
+| "월요일의 검사는 조회 서비스에도 둔다" | One `@AssertTrue`, run by the controller's `@Valid` and by the service's method validation. `CoreException` carries no message, and a second check behind the proxy would be unreachable | Issue 256 |
+| A non-date `periodStart` is 400 with a message that says why | `ApiControllerAdvice` names the field and the value on any binding failure, for every `@ModelAttribute` endpoint. No test pinned the old Spring text | Issue 256 |
+| Bean Validation on `WeeklyRankingRequest` | `WeeklyRankingFindRequest`, after `CODING_STANDARDS.md`'s `<Aggregate><Verb>Request` | This review |
+
+**Now proven:** the assignment's "앞선 게시가 그대로다" (a failed publish leaves the previous publication and no ranking rows) and its seventh step (a restarted run and a clean run give the same result checksum as the canonical one, `745d50bb…`).
+
+**Not proven here:** two runs of one period at once (serial runs are an operating rule), the API's throughput and `EXPLAIN`, and a period actually frozen twice; the two revisions are seeded rows. The linking test where both apps meet on one database is step 4's ([design 13.6](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md#136-한계), [13.12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md#1312-4단계로-넘기는-것)).
+
+### The closing review
+
+A two-axis review of `week9...feat/weekly-ranking-publish` at `dd58d7cf` (18 commits, 3 of them merges; 37 files), with one reviewer on the standards and one on this spec. Standards found no breach of a documented rule and 6 judgement calls. Spec found 1 partial requirement, 2 additions and nothing implemented wrongly; all three were already in design 13.10. Each was checked against the code and decided.
+
+#### What changed
+
+- **`2edfec32`: the read's request is `WeeklyRankingFindRequest`.** It was the only one of the 19 application requests with neither a verb nor `List`. `List` would mislead, since the read returns one ranking, so the verb is the port's `find`. Issue 256's review had kept the old name after `ProductListRequest`; design 13.10 now records the reversal.
+
+A dated note in design 13.9 records the final check above.
+
+#### Left as they were
+
+- **`findItems(snapshotId, limit: Int)` rather than `Pageable`/`Slice`.** ADR 0013 ties `Pageable` to a list envelope with a next page; this top-N read has neither, like `claimDueOutboxes(batchSize)`.
+- **Two Korean KDoc sentences extended in Korean** (`ApiControllerAdvice`, `BaseApplicationServiceTest`). They keep old sentences true; the new paragraph is English.
+- **The three count methods of `WeeklyRankingPublishStore`.** What repeats is `JdbcClient`'s idiom; each keeps its SQL beside its name and KDoc.
+- **The test-only table definitions and the local UTC conversion in commerce-api.** The module boundary forces both, and design 13.6 already records the first.
+- **`ProductQueryService.findAllSummaries` as a one-line delegation.** It is the product slice's port and owns the read-only transaction the brand read needs.
+- **The Monday check, the advice's reach and the restart spy's two commits.** Each is in design 13.10 with a reason the review checked: `CoreException` has no message parameter, the advice mirrors `handleMethodArgumentTypeMismatch`, and a spy that commits only the publication leaves the test green with the skip deleted.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/research/week9-weekly-ranking-publish-writing-material.md#spec-252-the-closing-review).
+
+## Draft PR body
+
+A draft for the PR from `feat/weekly-ranking-publish` into `week9`, in the shape of step 2's, written after the spec's closing review.
+
+Title: `feat(commerce-batch): rank a frozen snapshot's scores and publish them as its period's weekly ranking, and read the publication through GET /api/v1/rankings/weekly`
+
+````markdown
+## Summary
+
+Week 9 step 3. The `weeklyRanking` job gets its third step, `publish`. In one transaction it checks that the scores cover every product of the snapshot, ranks them, and writes the period's publication: a single row per period that only a later revision replaces. commerce-api reads what a period's publication points to through `GET /api/v1/rankings/weekly`. A failed publish leaves the previous publication, and a rerun converges on the same ranking. A second real freeze of one period and the cross-app linking test are step 4's.
+
+- **Spec:** issue 252, with tickets 253–257, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/252#issuecomment-6999565834)
+- **Design:** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/design/weekly-ranking.md) section 13: 13.1 the step, 13.2 the tables, 13.3 the read, 13.4 the contract, 13.6 the limits, 13.7–13.8 the scenes and red checks, 13.10–13.11 what differs from the spec and the assignment
+- **ADR:** [0039](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/adr/0039-what-a-ranking-period-shows-is-decided-by-a-publication-row-that-only-a-later-revision-replaces.md), what a ranking period shows is decided by a publication row that only a later revision replaces
+- **Writing material:** [`docs/research/week9-weekly-ranking-publish-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/docs/research/week9-weekly-ranking-publish-writing-material.md), which holds every ticket's closing comment
+- **Glossary:** 순위 (rank) and 게시 (publication) in [`apps/commerce-batch/CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/apps/commerce-batch/CONTEXT.md); the three tables and the columns commerce reads in [`CONTEXT-MAP.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-publish/CONTEXT-MAP.md)
+
+```text
+--job.name=weeklyRanking periodStart=… snapshotId=… revision=…   # unchanged
+  step freeze, step score                  # unchanged; skipped on a restart when COMPLETED
+  step publish                             # one tasklet, one transaction, the app's TX manager
+    PublishTasklet
+      already ranked?                      # items > 0 and items == scores: skip to the publication
+      scores == input products?            # else check() fails the step and writes nothing
+      rankScores                           # INSERT … SELECT ROW_NUMBER() OVER (ORDER BY score DESC, product_id ASC)
+      publish                              # INSERT … ON DUPLICATE KEY UPDATE, moved only by a later revision,
+                                           # then a FOR SHARE read-back; "not moved" is a WARN + exit description
+
+GET /api/v1/rankings/weekly?periodStart=2026-08-17&limit=10      # commerce-api, no login
+  WeeklyRankingQueryService                # @ValidatedApplicationService(readOnly = true)
+    findPublication(periodStart)           # header: publication JOIN snapshot; none → 200 NOT_PUBLISHED
+    findItems(snapshotId, limit)           # by the header's snapshot ID, deleted products out before LIMIT
+    ProductFinder.findAllSummaries(ids)    # display fields and like counts, in the same transaction
+```
+
+## Review Points
+
+#### 1. Should an earlier revision's publish succeed without moving anything?
+
+Publishing revision 1 after revision 2 leaves the row on revision 2, and the step ends `COMPLETED` with a WARN and an exit description saying so. Failing it would leave a `JobInstance` that no rerun can complete, for a ranking that is not wrong. The write takes no lock first: the conditional upsert alone ends any order of two publishes on the later revision. Serial runs of one period are an operating rule, and no scene runs two at once (ADR 0039).
+
+**Would you fail the step, or lock the period, instead?**
+
+#### 2. Is "items == scores" a sound sign that ranking already happened?
+
+A rerun after a publish that committed under a failed execution must not rank again, or the primary key `(snapshot_id, product_rank)` refuses it. The tasklet skips ranking when the snapshot has items and as many as its scores. Ranking is one `INSERT … SELECT` in the same transaction as the publication, so a partial set cannot be committed. The red check that sets the condition to `false` turns that restart `FAILED` (design 13.8).
+
+**Would you rather store a marker, and where would you commit it?**
+
+#### 3. Is reading batch's tables by SQL under a written contract enough?
+
+commerce-api has no entity for the three tables (`ddl-auto: create` would drop them) and no dependency on commerce-batch. `CONTEXT-MAP.md` lists the nine columns it reads, and its tests create them from a test-only SQL file. That file does not follow a change to batch's schema script; the two first meet in step 4's linking test (design 13.6). The read is two statements, not the assignment's one join, so a period whose ranking has no visible item still answers `PUBLISHED` (design 13.11).
+
+**Would you put the tables in a shared schema module now, or wait for step 4's test?**
+
+## Evidence
+
+**Before:** step 2's job: `freeze` and `score`. The scores existed, but nothing ranked them, nothing said which snapshot a period shows, and commerce-api could not read them.
+
+**After:** on real MySQL, `WeeklyRankingPublishTest` (9 scenes), 6 new scenes in `WeeklyRankingJobRestartTest`, `WeeklyRankingApiTest` (15) and `WeeklyRankingFinderTest` (1). Step 1's 25 freeze scenes and step 2's 6 score scenes pass unchanged with `publish` after them.
+
+- The assignment's week ranks product 7 first (5), 9 second (5), 8 third (1). An empty period publishes with no items. Another period's publication is untouched.
+- A later revision moves the publication; an earlier one leaves it and says so. Missing scores fail the step and write nothing.
+- A failed publish leaves revision 1's publication and no ranking rows (the assignment's "앞선 게시가 그대로다"). The restart is the same `JobInstance`, runs `freeze` and `score` once in total, and publishes revision 2.
+- A publish committed under a failed execution: the rerun is `COMPLETED`, and the ranking rows and the published-at time are unchanged though the clock moved.
+- A restarted run and a clean run both give the canonical result checksum `745d50bb…`, computed apart from the code (the assignment's seventh step).
+- The API returns the published ranking in rank order, honours `limit`, leaves deleted products and brands out before the limit, answers 200 `NOT_PUBLISHED` with null `snapshotId` and `inputFrozenAt`, ignores a ranked but unpublished revision, and refuses a missing, non-date or non-Monday `periodStart` and a `limit` of 0 or 101 with a message that says why.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| Rank by `RANK() OVER (ORDER BY score DESC)` | 3 of 4 scenes: products 7 and 9 tie, and the primary key refuses the second |
+| The publication's three assignments unconditional | The earlier-revision scene: the publication becomes revision 1 |
+| `publish` step on `ResourcelessTransactionManager` | The failed-publish scene: revision 2's three ranking rows stay |
+| "Already ranked" condition set to `false` | The committed-under-failure rerun: `FAILED` on a duplicate primary key |
+| Items read without `product.deleted_at IS NULL` | The three deleted-product scenes: 500 |
+| Items read by the snapshot's period, not its ID | The unpublished-revision scene: six items, not three |
+| `@Valid` removed from `WeeklyRankingFinder.find` | `WeeklyRankingFinderTest` |
+
+`scripts/final-check --app commerce-batch --app commerce-api` on `2edfec32`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-batch | 8 (7 before) | 60 (45 before) | 0 |
+| commerce-api | 115 (113 before) | 1203 (1187 before) | 0 |
+
+Not shown here: two runs of one period at once, the API's throughput and `EXPLAIN`, and a period actually frozen twice (the two revisions are seeded rows).
+
+## Merge Danger
+
+**Door:** two-way
+
+No entity and no migration. `weekly_ranking_item` and `weekly_ranking_publication` are created only in `local` and `test`; a revert leaves them unused.
+
+**Blast Radius:** commerce-batch, commerce-api
+
+- **Every `@ModelAttribute` endpoint** now answers a value the binder cannot convert (`page=abc`) with a message naming the field and the value, instead of Spring's conversion text.
+- **Outside `local` and `test`**, the schema script's two new tables must be applied by hand before the first run, like steps 1 and 2's.
+- **A `JobInstance` completed before this branch cannot be continued** with `publish`; freeze the period again under a new `snapshotId` and revision.
+- **Out of scope:** a second real freeze of one period, the linking test from PG to the API, a republished order event adding nothing, caching the read, Flyway.
+````

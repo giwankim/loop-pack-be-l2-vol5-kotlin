@@ -640,6 +640,7 @@ scripts/final-check --app commerce-batch --app commerce-api
 - commerce-api는 115개 클래스, 1203개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 40 s). 256이 2개 클래스(`WeeklyRankingApiTest`, `WeeklyRankingFinderTest`)와 16개 테스트를 더했다.
 - 이 브랜치는 commerce-streamer를 바꾸지 않았으므로 돌리지 않았다.
 - `f282e642`의 코드는 `bf39cd42`(배치)와 `48913f1c`(API)를 합친 것이고, 그 뒤로는 문서만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 ADR 0039와 이 절을 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다.
+- (2026-11-19 [명세 252](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/252)의 닫는 검토) 검토의 고침(`2edfec32`, `WeeklyRankingRequest`를 `WeeklyRankingFindRequest`로)이 운영 코드를 바꿨으므로 그 깨끗한 트리에서 다시 돌렸다(03:11:56Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했다(1 s). commerce-batch는 8개 클래스, 60개 테스트, 실패 0, 오류 0, 건너뜀 0이다(28 s). commerce-api는 115개 클래스, 1203개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 7 s). 이름만 바꿨으므로 수는 그대로다. 이것이 3단계의 끝의 확인이다. 위의 `f282e642`의 실행은 앞의 확인이다. `2edfec32` 뒤로는 문서만 바뀌었다.
 
 ### 13.10 명세와 다른 것
 
@@ -655,7 +656,7 @@ scripts/final-check --app commerce-batch --app commerce-api
 | 있는 테스트의 장면은 job이 `publish`까지 실행된 뒤에도 지나간다 | 지나간다. 다만 `WeeklyRankingJobRestartTest`의 `score` 재시작 장면 여섯은 차수 2로 옮겼다. 새 장면이 넣어 두는 차수 1의 게시와 한 클래스에 있어서다. 단언은 그대로다 | 255 |
 | 월요일의 검사는 조회 서비스에도 둔다 | 서비스에 둘째 검사를 적지 않았다. `WeeklyRankingFindRequest`의 `@AssertTrue`를 컨트롤러의 `@Valid`와 서비스의 메서드 검증이 함께 실행한다. `CoreException`은 까닭을 말하는 메시지를 싣지 못하고, 프록시 뒤의 둘째 검사는 닿지 않는 코드가 된다. 컨트롤러 없는 테스트와 `@Valid`를 뺀 붉은 확인이 지킨다 | 256 |
 | `periodStart`는 필수다 | `@NotNull`이 붙은 nullable이다(13.3절) | 256 |
-| Bean Validation은 `WeeklyRankingRequest`에 둔다 | 이름이 `WeeklyRankingFindRequest`다. `CODING_STANDARDS.md`의 `<애그리거트><동사>Request`를 따라 포트의 `find`를 동사로 삼았다. 이 읽기는 목록의 조각이 아니라 랭킹 하나라 다른 읽기의 `List`는 맞지 않는다. 256은 `ProductListRequest`를 따른다며 이름을 남겼고, 2026-11-19 명세의 마감 검토에서 고쳤다 | 256, 명세 마감 |
+| Bean Validation은 `WeeklyRankingRequest`에 둔다 | 이름이 `WeeklyRankingFindRequest`다. `CODING_STANDARDS.md`의 `<애그리거트><동사>Request`를 따라 포트의 `find`를 동사로 삼았다. 이 읽기는 목록의 조각이 아니라 랭킹 하나라 다른 읽기의 `List`는 맞지 않는다. 256은 `ProductListRequest`를 따른다며 이름을 남겼고, 2026-11-19 명세의 닫는 검토에서 고쳤다(`2edfec32`) | 256, 명세 252의 닫는 검토 |
 | 머리는 게시와 스냅샷을 `period_start`로 잇는다 | 스냅샷 ID와 랭킹 기간 둘로 잇는다. 랭킹 기간만으로는 그 랭킹 기간의 모든 차수가 이어진다. 그래서 `weekly_ranking_snapshot.period_start`가 계약에 들었다 | 256 |
 | 날짜가 아닌 `periodStart`는 400이고 메시지가 까닭을 말한다 | `ApiControllerAdvice.handleMethodArgumentNotValid`가 바인딩 실패에 필드와 값을 넣어 말한다. 랭킹만이 아니라 `@ModelAttribute`를 쓰는 모든 엔드포인트에 닿는다. 전의 말을 고정한 테스트는 없었다 | 256 |
 | API의 테스트는 랭킹의 세 표를 테스트 전용 SQL 파일로 만든다 | 클래스 수준의 `@Sql(executionPhase = BEFORE_TEST_CLASS)`다. 테스트의 하위 클래스가 더할 수 있는 것의 목록이 닫혀 있어 `CODING_STANDARDS.md`에 날짜 붙인 메모를 더했다 | 256 |
