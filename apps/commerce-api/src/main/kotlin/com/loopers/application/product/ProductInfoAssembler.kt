@@ -31,17 +31,23 @@ class ProductInfoAssembler(
      * 조각 하나. 좋아요 수는 조각의 식별자 목록에 대해 한 번에 센다. 항목마다 세면 조각 크기만큼 조회가 붙는다(설계 5.28).
      */
     fun toInfos(slice: Slice<Product>): Slice<ProductInfo> {
-        val likeCounts = countLikes(slice)
+        val likeCounts = countLikes(slice.content)
         return slice.map { ProductInfo.from(it, likeCounts.getValue(it.id)) }
     }
 
     /** 고객 목록의 조각 하나. 좋아요 수는 [toInfos]처럼 조각의 식별자 목록에 대해 한 번에 센다. */
     fun toListInfo(slice: Slice<Product>): ProductListInfo {
-        val likeCounts = countLikes(slice)
+        val likeCounts = countLikes(slice.content)
         return ProductListInfo.from(slice.map { ProductSummaryInfo.from(it, likeCounts.getValue(it.id)) })
     }
 
-    private fun countLikes(slice: Slice<Product>): Map<Long, Long> {
-        return likeCounter.countLikes(slice.content.map { it.id })
+    /** Customer list items of [products], with the like counts counted for the whole list at once, as for a slice. */
+    fun toSummaryInfos(products: List<Product>): List<ProductSummaryInfo> {
+        val likeCounts = countLikes(products)
+        return products.map { ProductSummaryInfo.from(it, likeCounts.getValue(it.id)) }
+    }
+
+    private fun countLikes(products: List<Product>): Map<Long, Long> {
+        return likeCounter.countLikes(products.map { it.id })
     }
 }

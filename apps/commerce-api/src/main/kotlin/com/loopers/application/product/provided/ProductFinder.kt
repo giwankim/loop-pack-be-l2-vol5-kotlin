@@ -74,4 +74,11 @@ interface ProductFinder {
      * 받아 다른 목록과 같은 길로 다시 검증한다.
      */
     fun findAllLikedBy(userId: Long, @Valid request: ProductLikedListRequest): Slice<ProductInfo>
+
+    /**
+     * The products of [productIds] that are not deleted, as customer list items, in no particular order. An ID of a missing or
+     * deleted product is left out rather than refused. The weekly ranking reads its items' display fields with this, inside its
+     * read-only transaction, after its items statement has already left deleted products out.
+     */
+    fun findAllSummaries(productIds: Collection<Long>): List<ProductSummaryInfo>
 }
