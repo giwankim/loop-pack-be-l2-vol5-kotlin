@@ -285,3 +285,53 @@ The design doc's 13th section should record these:
 - The `deleted_at IS NULL` restated in SQL.
 - The uncached read.
 - The two copies of the table definitions.
+
+## Issue 257: record the publish step in ADR 0039 and design section 13
+
+Recorded 2026-11-19 from [issue 257's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/257#issuecomment-6997864585). The text below is the comment's.
+
+Recorded as `89099c45`, documents only. `scripts/final-check --app commerce-batch --app commerce-api` ran on `f282e642`, a clean tree, starting 2026-11-19T02:22:13Z with `BOOTSTRAP_SERVERS` unset. ktlint passed (18 s). **commerce-batch: 8 classes, 60 tests (30 s). commerce-api: 115 classes, 1203 tests (5 min 40 s). 0 failures, 0 errors, 0 skipped in both.** The code of `f282e642` is `bf39cd42` (batch) and `48913f1c` (API), and only documents changed after it. The ADR and section 13 were being written in the working tree while the check ran; no file Gradle reads changed.
+
+### Acceptance criteria
+
+- [x] **ADR 0039 exists and the design doc links it.** `docs/adr/0039-what-a-ranking-period-shows-is-decided-by-a-publication-row-that-only-a-later-revision-replaces.md`, linked from the design doc's header and from section 13. It holds three decisions: the publication row in place of a snapshot state, the conditional write in place of a lock or a failed step, and commerce-api reading the three tables by SQL under the contract.
+- [x] **Design section 13 lists the spec's limits.** Section 13.6 has all five: serial same-period runs as an operating rule, two copies of the table definitions, an uncached and unmeasured read, a job instance completed before this branch, and the result checksum not stored. It adds four the implementation brought: "not moved" told by the published-at time, no way to take a publication back, the two revisions being seeded rows, and the tables applied by hand outside `local` and `test`.
+- [x] **The deviation from the assignment's "one joined query" is recorded with its reason.** Section 13.11, under 과제와 다른 것 and not 명세와 다른 것, as the spec asked.
+- [x] **`CONTEXT-MAP.md` names the three tables and the columns commerce reads, and they match the API's statements.** Section 13.4 sets the contract's nine columns beside the two statements of `JdbcWeeklyRankingRepository`. They are the same, and the test-only SQL file holds the same nine. Both glossaries match the code. Nothing needed changing.
+- [x] **Both final checks pass; the commit, timings and test counts are in the design doc.** Section 13.9, the run above.
+- [x] **No Avoid word of either glossary appears in the new prose.** Checked by a script over the added lines and by the standards review. 게시 포인터 remains only in old lines of 1.1, 12.5 and 12.10, which gained dated notes.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### What was written
+
+- **ADR 0039.** Beside the three decisions it records seven things not chosen (a `PUBLISHED` state, a locking read first, failing an earlier revision, a lock on same-period runs, `useAffectedRows`, a JPA entity in commerce-api, a shared schema module) and its costs. It names three conditions for a second look: taking a publication back or reading its history, same-period runs that can overlap, and a second reader of the tables.
+- **Design section 13**, twelve subsections: the job and the `publish` step, the tables, the read, the contract and glossaries, what was not chosen, limits, scenes, red checks, the final check, differences from the spec, differences from the assignment, and what goes to step 4.
+- **Dated notes** in sections 1 to 12. The header, the 1.1 status cell and a new 1.4 (what step 3 built) are updated, and every item of 12.5 and 12.10 that this step closes says where.
+- **ADR 0038** gains a dated note on its third revisit condition: commerce-api took no entity.
+
+### Differences from spec 252
+
+Section 13.10 has sixteen rows. The ones that change what a reader would assume:
+
+- **The `RANK()` red check.** Swapping the function while keeping `ORDER BY score DESC, product_id ASC` stays green. Ranking by score alone is red, and what refuses it is the primary key `(snapshot_id, product_rank)`, not the unique key.
+- **"Not moved" is told by a read-back.** The write is still one statement with no lock first. The `FOR SHARE` read after it takes a shared lock on a row the write already holds.
+- **The published-under-a-failed-execution scene commits two writes**, the ranking and the publication, each in `REQUIRES_NEW`.
+- **The Monday check is one `@AssertTrue`**, run by the controller's `@Valid` and by the service's method validation. The service has no second check.
+- **The header joins on the snapshot ID and the period**, which put `weekly_ranking_snapshot.period_start` in the contract.
+- **`ApiControllerAdvice` names the field on a binding failure**, for every `@ModelAttribute` endpoint.
+
+### Review
+
+A two-axis review ran on the uncommitted documents.
+
+- **Standards.** One hard finding, fixed: the 1.1 row for step 3 had its description reworded. Design docs are insert-only, so the old description is back and only the status cell changed. Also fixed:
+  - Section 13.3 left out that the third read counts likes, and so that a cache would also have to follow like counts.
+  - Two ADR sentences were stronger than their evidence: what the step 4 linking test will catch, and that a clock never repeats a microsecond.
+  - Section 13.1 now says its two pieces of reasoning (the assignment order of `revision`, the `FOR SHARE` read) have no red check or concurrent scene behind them.
+  - Section 13.3 now names REPEATABLE READ as what the third read relies on.
+- **Spec.** No acceptance criterion missing. Three differences were added to 13.10: the glossary entries are a clause longer than the spec's text, `WeeklyRankingPublishTest` has nine scenes where the spec listed six, and the assembler and the product port each gained a method. The quoted 게시 entry now matches the glossary.
+- **Left as they are:** section 1.4, the notes in sections 2, 3, 4, 8 and 11, and the limits beyond the spec's five. Steps 1 and 2 recorded the same kinds of thing.
+
+### Left for the spec's closing
+
+The spec's own review, closing comment and PR into `week9` (`docs/agents/spec-closing.md`).
