@@ -60,7 +60,8 @@ import java.util.UUID
  * 공통 설정 애노테이션은 모두 여기에 있다. 하위 클래스가 더하는 것은 추가 `@Import`, 트랜잭션에서 빠지는 표시, Service나 저장소,
  * 캐시 writer를 spy하는 `@MockkSpyBean` 필드,
  * 측정용 seed를 클래스마다 한 번 넣는 `ProductQueryPerformanceApiTest`의 `@TestInstance(PER_CLASS)`,
- * 주문을 확정해 PG를 부르거나 고정하는 시계가 필요한 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`뿐이다(ADR 0012).
+ * 주문을 확정해 PG를 부르거나 고정하는 시계가 필요한 클래스의 `@EnableTestPg`, 주문 이벤트 토픽의 이름을 덮는 `@TestPropertySource`,
+ * 주간 랭킹의 표를 테스트 전용 SQL로 만드는 `WeeklyRankingApiTest`의 `@Sql`뿐이다(ADR 0012).
  *
  * Every context here needs the Kafka broker, not only the tests that read it: the application declares its order events topic,
  * and in the test profile the admin fails the context when it has no broker. [KafkaTestContainersConfig] starts the broker once

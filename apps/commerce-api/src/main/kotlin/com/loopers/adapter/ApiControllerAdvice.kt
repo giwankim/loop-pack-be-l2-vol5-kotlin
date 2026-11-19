@@ -15,6 +15,7 @@ import jakarta.validation.ConstraintViolationException
 import org.springframework.dao.PessimisticLockingFailureException
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.validation.FieldError
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.MissingServletRequestParameterException
@@ -96,12 +97,18 @@ class ApiControllerAdvice {
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = e.message)
     }
 
-    /** Controller의 `@Valid @RequestBody`가 거른 입력. 필드 오류를 필드 이름 순으로 이어 한 메시지로 준다. */
+    /**
+     * Controller의 `@Valid @RequestBody`나 `@ModelAttribute @Valid`가 거른 입력. 필드 오류를 필드 이름 순으로 이어 한 메시지로 준다.
+     *
+     * A query string bound to a Request can also fail before validation, on a value the binder cannot convert. Spring's message
+     * for that is its own conversion text without the field's name, so it gets one that names the field and the value, as
+     * [handleMethodArgumentTypeMismatch] names the parameter and the value.
+     */
     @ExceptionHandler
     fun handleMethodArgumentNotValid(e: MethodArgumentNotValidException): ResponseEntity<ApiResponse<*>> {
         val message = e.bindingResult.fieldErrors
             .sortedWith(compareBy({ it.field }, { it.defaultMessage }))
-            .joinToString(" ") { it.defaultMessage ?: "필드 '${it.field}'의 값이 잘못되었습니다." }
+            .joinToString(" ") { it.toMessage() }
         log.warn { "MethodArgumentNotValidException : $message" }
         return failureResponse(errorType = ErrorType.BAD_REQUEST, errorMessage = message.ifBlank { null })
     }
@@ -217,6 +224,14 @@ class ApiControllerAdvice {
             ApiResponse.fail(errorCode = errorType.code, errorMessage = errorMessage ?: errorType.message),
             errorType.status,
         )
+    }
+}
+
+/** One field error as the message says it. A conversion failure names the field and the value; a constraint keeps its own message. */
+private fun FieldError.toMessage(): String {
+    return when {
+        isBindingFailure -> "요청 값 '$field'의 값 '$rejectedValue'이(가) 잘못되었습니다."
+        else -> defaultMessage ?: "필드 '$field'의 값이 잘못되었습니다."
     }
 }
 

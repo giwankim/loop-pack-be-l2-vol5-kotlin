@@ -7,6 +7,7 @@ import com.loopers.application.product.provided.ProductLikedListRequest
 import com.loopers.application.product.provided.ProductListInfo
 import com.loopers.application.product.provided.ProductListRequest
 import com.loopers.application.product.provided.ProductSort
+import com.loopers.application.product.provided.ProductSummaryInfo
 import com.loopers.application.product.required.ProductListRepository
 import com.loopers.application.product.required.ProductRepository
 import com.loopers.domain.product.Product
@@ -94,6 +95,11 @@ class ProductQueryService(
         return productInfoAssembler.toInfos(
             productRepository.findAllLikedBy(userId = userId, pageable = PageRequest.of(request.page, request.size)),
         )
+    }
+
+    /** Each item reads its brand, so the move to [ProductSummaryInfo] ends inside this transaction too. */
+    override fun findAllSummaries(productIds: Collection<Long>): List<ProductSummaryInfo> {
+        return productInfoAssembler.toSummaryInfos(productRepository.findAllByIdIn(productIds))
     }
 
     /** 두 목록이 같은 쿼리로 고른다. 무엇으로 옮길지는 목록마다 다르므로 상품의 조각을 그대로 돌려준다. */
