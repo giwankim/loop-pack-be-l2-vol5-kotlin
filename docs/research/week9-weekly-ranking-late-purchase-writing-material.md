@@ -81,3 +81,72 @@ A two-axis review ran before the commit.
 - **Left as they are:**
   - The same arrange in scenes 2 and 3.
   - `SettableClock.withZone` returning a fixed clock. Nothing calls it.
+
+## Issue 261: run commerce-batch as a child process from commerce-api tests
+
+Recorded 2026-11-19 from issue 261's closing comment. The text below is the comment's.
+
+Implemented as `06a7bdbf`, with review fixes in `3c64946b`, rebased onto issue 260's `9f7f12f2`. Before the rebase they were `b2f4fdaf` and `f44b1c79` on `72a24070` (step 3's merge into `week9`). Issue 260 changed only commerce-batch's tests, its glossary and this document, so the batch's bootJar and everything commerce-api's tests read are the same after the rebase. `scripts/final-check --app commerce-api` on `f44b1c79`, a clean tree, started 2026-11-19T10:54:07Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 117 classes, 1207 tests (5 min 45 s), 0 failures, 0 errors, 0 skipped**. The same check on `b2f4fdaf` (started 10:46:50Z) gave the same counts in 6 min 6 s. This ticket adds 2 classes (`CommerceBatchProcessTest`, `CommerceBatchProcessRunTest`) and 4 tests. No production code changed.
+
+### Acceptance criteria
+
+- [x] **A test starts the batch on an empty period (tables from the batch's real schema file) and gets exit code 0, with a snapshot row and a publication row in the context's database.** This is `CommerceBatchProcessRunTest`'s first scene, which took 9.3 s in the final check. The rows read `2026-08-17-r1 2026-08-17 revision 1 FROZEN inputs 0` and `2026-08-17 2026-08-17-r1 revision 1`. The batch's log has `Froze period 2026-08-17 revision 1 as 2026-08-17-r1: 0 inputs`, `Ranked 0 products` and `Published snapshot 2026-08-17-r1`.
+- [x] **The same start with a non-Monday `periodStart` gives a non-zero exit code, and the failure text carries the tail of the batch's log.** This is the second scene, which took 4.5 s. The failure matches `The batch exited with [1-9][0-9]*\.`, and its last 40 lines carry the validator's `periodStart must be a Monday, but 2026-08-18 is a TUESDAY`. No snapshot row is left. The refusal reaches Boot's runner as `InvalidJobParametersException` (`Application run failed`), so the JVM exits before `SpringApplication.exit`.
+- [x] **A missing or unreadable jar property fails the test; it never skips it.** `CommerceBatchProcessTest` covers both cases with no container: no property, and a property that names no file. Each throws an `AssertionError` naming `commerce-batch.jar`, and the second also names the path. A file that exists but is unreadable fails the same `isRegularFile && isReadable` check. The schema property goes through the same check.
+- [x] **`WeeklyRankingApiTest` and `WeeklyRankingFinderTest` pass when run after a class that left the batch's full tables behind.** Shown once with a temporary, uncommitted ordering: `junit.jupiter.testclass.order.default=…ClassOrderer$OrderAnnotation` and `@Order(1)` on `CommerceBatchProcessRunTest`, with the three classes filtered. See Red check.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section. Issue 260's branch also creates this file, so the two sections are joined when the branches meet.
+
+### What was built
+
+- **`CommerceBatchProcess`** (commerce-api test support) is modelled on `CommerceStreamerProcess`, but it runs to its exit.
+  - It starts `java -jar <batch bootJar>` with `--spring.profiles.active=test`, the context's three `datasource.mysql-jpa.main.*` values, `--job.name=weeklyRanking` and `periodStart=…,java.time.LocalDate snapshotId=… revision=…,java.lang.Long`. That is the spelling design section 8 gives an operator.
+  - It waits up to 120 s. Past that, it forces the process to end and fails.
+  - A non-zero exit fails too. Both failures carry the last 40 lines of the log, which is kept as `build/commerce-batch/<snapshotId>-<millis>.log`.
+  - A shutdown hook ends a process the test JVM leaves behind.
+  - `run` returns only after an exit with 0.
+- **No Redis address is passed.** The batch's `test` profile points Redis at `localhost:6379`. Lettuce connects on first use, and the batch's main code never uses Redis, so the start never connects. Both runs above started without a Redis container's address.
+- **Gradle.** `:apps:commerce-api:test` gets a `commerceBatchBootJar` configuration on the batch's `bootArchives`, declared like the streamer's.
+  - It declares the jar and `apps/commerce-batch/src/main/resources/sql/weekly-ranking-schema.sql` as test inputs.
+  - It passes them to the test JVM as `-Dcommerce-batch.jar` and `-Dcommerce-batch.weekly-ranking-schema`.
+  - There is no module dependency in either direction. A changed batch jar or schema file reruns commerce-api's tests.
+- **`WeeklyRankingBatchTables.reset`** gives a scene that runs the batch the batch's own tables.
+  - It drops the five ranking tables and Batch's nine metadata tables, then runs the batch's schema file through `ResourceDatabasePopulator`.
+  - Issue 262's flow test is meant to reuse it.
+- **`purchase_activity` is never written by hand.** The freeze reads it, so the empty-period scene first starts the real streamer once. The streamer's `ddl-auto=create` makes the table empty, and the streamer is terminated before the batch runs. The class names its own topic and group.
+- **The copy.** `sql/weekly-ranking-tables.sql` is now `DROP TABLE IF EXISTS` (publication, item, snapshot), then `CREATE TABLE`. Before, it was `CREATE TABLE IF NOT EXISTS` and `DELETE`. Its header says why.
+
+### Red check
+
+The ordered run of `CommerceBatchProcessRunTest` → `WeeklyRankingApiTest` → `WeeklyRankingFinderTest` described under the acceptance criteria was run twice:
+
+| Copy script | `CommerceBatchProcessRunTest` | `WeeklyRankingApiTest` | `WeeklyRankingFinderTest` |
+|---|---|---|---|
+| old (`IF NOT EXISTS` + `DELETE`) | 2/2 pass | **9 of 15 fail**: `Field 'revision' doesn't have a default value` on `insert into weekly_ranking_snapshot (snapshot_id, period_start, frozen_at)` | 1/1 pass |
+| new (`DROP` + `CREATE`) | 2/2 pass | 15/15 pass | 1/1 pass |
+
+The report timestamps confirm the order in the green run: the batch class at 10:45:15Z, then `WeeklyRankingApiTest` at 10:45:51Z. `WeeklyRankingFinderTest` passes either way, because its one scene is refused by the Monday check before any SQL runs. The ordering was reverted before the commit.
+
+### Decisions made while implementing
+
+- **Batch's metadata is dropped, not only the ranking tables.** The spec's "표" section names only the ranking tables. A `COMPLETED` job instance left by an earlier class with the same three parameters would refuse the run, though, and the flow test uses `2026-08-17-r1` too. The batch's `test` profile (`initialize-schema: always`) creates the metadata tables again at its start.
+- **`run` fails on a non-zero exit instead of handing the code back.** That follows the spec: "종료 코드가 0이 아니면 로그의 끝과 함께 실패한다". The ticket's "returns the exit code" is kept as `Finished.exitCode`, which is always 0 when `run` returns.
+- **The copy drops only its own three tables.** The batch's `weekly_ranking_snapshot_input` and `weekly_ranking_score` may stay behind after a batch class. The copy's classes never read them, and the batch schema has no foreign keys, so the drops cannot be refused.
+- **The two child-process classes share shapes but no code:** the jar check, `javaCommand`, the log tail and the datasource arguments. With two copies, extracting a helper was deferred.
+
+### Review
+
+`code-review` since `72a24070` (before the rebase), with Standards and Spec in parallel:
+
+- **Standards.**
+  - No hard violations.
+  - Fixed in `f44b1c79` (now `3c64946b`):
+    - The empty-period scene's `exitCode` assertion could never fail. It was dropped, and the non-Monday scene now asserts a non-zero code by pattern instead of the absence of 0.
+    - `Finished.logLines()` had no caller. It was dropped.
+    - `CODING_STANDARDS.md` gained dated memos for the copy's drop, the reset, and `CommerceBatchProcessRunTest`'s constructor dependencies.
+  - Not changed:
+    - The duplication with `CommerceStreamerProcess` and the `jdbcUrl`/`username`/`password` clump, deferred as above.
+    - The streamer's jar check, which still lacks the readability check.
+- **Spec.**
+  - Nothing missing.
+  - The metadata drop goes past "랭킹의 표를 지우고". It is recorded above for design section 14 (issue 263).
