@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 256: read a period's published weekly ranking through GET /api/v1/rankings/weekly
 
-Recorded 2026-11-19 as issue 256's closing comment. The text below is the comment's.
+Recorded 2026-11-19 from [issue 256's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/256#issuecomment-6997273889). The text below is the comment's.
 
 Implemented as `48913f1c`, on top of `f89251f9` (spec 246's merge into `week9`). This ticket touches commerce-api only and seeds its own rows, so it does not wait for 253. `scripts/final-check --app commerce-api` ran on `48913f1c`, a clean tree, starting 2026-11-19T01:46:01Z with `BOOTSTRAP_SERVERS` unset. ktlint passed, and **commerce-api ran 115 classes and 1203 tests (6 min 8 s): 0 failures, 0 errors, 0 skipped**. The ticket adds 2 classes and 16 tests. Only this document changed after `48913f1c`.
 
