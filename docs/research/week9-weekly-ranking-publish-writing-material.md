@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 253: rank a snapshot's scores and publish them as the period's weekly ranking
 
-Drafted 2026-11-19 as [issue 253](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/253)'s closing comment. The comment has not been posted yet. When it is, its link replaces this line. The text below is the comment's.
+Recorded 2026-11-19 from [issue 253's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/253#issuecomment-6996994688). The text below is the comment's.
 
 Implemented as `02e76662`, on top of `4ee5649b`, which commits the 순위 and 게시 entries of `apps/commerce-batch/CONTEXT.md` and the publish rules added to 게시하다. `scripts/final-check --app commerce-batch` on `02e76662`, a clean tree, started 2026-11-19T01:31:45Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 8 classes, 50 tests (28 s), 0 failures, 0 errors, 0 skipped**. Spec 246 ended at 7 classes and 45 tests, so this ticket adds 1 class (`WeeklyRankingPublishTest`) and 5 tests. Only this document changed after `02e76662`.
 
