@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 260: show a late purchase changes nothing until a later revision is run
 
-Recorded 2026-11-19 from issue 260's closing comment. The text below is the comment's.
+Recorded 2026-11-19 from [issue 260's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/260#issuecomment-7007021165). The text below is the comment's.
 
 Implemented as `41f1a280`, on top of `e1496f5f`, which commits the 늦은 구매 entry of `apps/commerce-batch/CONTEXT.md` on its own. `scripts/final-check --app commerce-batch` on `41f1a280`, a clean tree, started 2026-11-19T10:47:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 9 classes, 65 tests (31 s), 0 failures, 0 errors, 0 skipped**. Spec 252 ended at 8 classes and 60 tests, so this ticket adds 1 class (`WeeklyRankingLatePurchaseTest`) and 5 tests. No production code changed. Only this document changed after `41f1a280`.
 
