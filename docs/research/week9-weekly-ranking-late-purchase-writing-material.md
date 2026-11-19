@@ -150,3 +150,81 @@ The report timestamps confirm the order in the green run: the batch class at 10:
 - **Spec.**
   - Nothing missing.
   - The metadata drop goes past "랭킹의 표를 지우고". It is recorded above for design section 14 (issue 263).
+
+## Issue 262: link an order confirmation to the weekly ranking response in one test
+
+Drafted 2026-11-19 as issue 262's closing comment. It is not posted yet. The text below is the comment's.
+
+Implemented as `35a75e44` on issue 261's `2443b191`. `scripts/final-check --app commerce-api` on `35a75e44`, a clean tree, started 2026-11-19T11:30:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 118 classes, 1208 tests (6 min 5 s), 0 failures, 0 errors, 0 skipped**. This ticket adds 1 class (`WeeklyRankingFlowTest`) and 1 test, which took 17.0 s in that run. No production code changed, and neither did the copy or the batch's test-only `purchase_activity` file: the test exposed no fault in any of them.
+
+### Acceptance criteria
+
+- [x] **One of the three first orders' events is published twice: the streamer logs two `Recorded` lines for it and `purchase_activity` holds one row per order and product.** The second order (A×3) is the one. Its lines end `result=RECORDED` and `result=ALREADY_RECORDED`, the other two orders have one line each, and the table holds four rows.
+- [x] **Before any run the API answers `NOT_PUBLISHED`.** With a null `snapshotId` and no items.
+- [x] **Revision 1 exits 0; the API answers A 5 rank 1, C 5 rank 2, B 1 rank 3 with `snapshotId` `2026-08-17-r1`.**
+- [x] **After the fourth order is relayed and recorded, the API answer is unchanged.** The whole response body equals revision 1's, `inputFrozenAt` included.
+- [x] **Revision 2 exits 0; the API answers B 6 rank 1, A 5 rank 2, C 5 rank 3 with `snapshotId` `2026-08-17-r2` and an `inputFrozenAt` later than revision 1's.**
+- [x] **`weekly_ranking_snapshot` holds input counts 4 and 5 and two different checksums; both are logged and copied here with `scripts/scene-lines`.** See Recorded run.
+- [x] **The streamer is terminated before the tables are cleaned, and no child process outlives the test.** One `@AfterEach` terminates the streamer and then truncates in `finally`. `terminate` checks the process is gone, and `CommerceBatchProcess.run` returns only after the batch exited. After the final check `pgrep -fl "commerce-(batch|streamer)"` found nothing.
+- [x] **Red check, not committed.** See Red check.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Recorded run
+
+`scripts/scene-lines --results build/final-check/commerce-api-test-results WeeklyRankingFlowTest`, from the final check on `35a75e44`. Products A, B and C are 1, 2 and 3.
+
+```text
+Flow 1, three orders relayed and one republished: products A 1, B 2, C 3; deliveries 4 [Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=0, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:1, orderId=1, partition=0, offset=0, result=RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:2, orderId=2, partition=2, offset=1, result=ALREADY_RECORDED; Recorded the order confirmed event. eventId=order-confirmed:v1:3, orderId=3, partition=2, offset=2, result=RECORDED]; purchase_activity [order 1 product 1 quantity 2 confirmed_at 2026-08-18T01:02:03.123456Z; order 1 product 2 quantity 1 confirmed_at 2026-08-18T01:02:03.123456Z; order 2 product 1 quantity 3 confirmed_at 2026-08-19T01:02:03.123456Z; order 3 product 3 quantity 5 confirmed_at 2026-08-20T01:02:03.123456Z]; order 4 confirmed at 2026-08-21T01:02:03.123456Z, its outbox row PENDING
+Flow 2-3, before any run NOT_PUBLISHED; revision 1 exited with 0: snapshotId 2026-08-17-r1, inputFrozenAt 2026-11-19T11:32:50.939346Z, items [rank 1 product 1 score 5; rank 2 product 3 score 5; rank 3 product 2 score 1]
+Flow 4-5, the late purchase recorded after revision 1 froze: delivery [Recorded the order confirmed event. eventId=order-confirmed:v1:4, orderId=4, partition=1, offset=0, result=RECORDED]; purchase_activity 5 rows; the response is unchanged: snapshotId 2026-08-17-r1, items [rank 1 product 1 score 5; rank 2 product 3 score 5; rank 3 product 2 score 1]
+Flow 6-7, revision 2 exited with 0: snapshotId 2026-08-17-r2, inputFrozenAt 2026-11-19T11:32:55.027157Z, items [rank 1 product 2 score 6; rank 2 product 1 score 5; rank 3 product 3 score 5]; snapshots [2026-08-17-r1 revision 1 inputs 4 checksum e14b0382a9ce98607490b80ff51ff6a998e9eca5dd9b2d1fd85feb022f5f1108; 2026-08-17-r2 revision 2 inputs 5 checksum d5c448e17824b5ee5ab33787723e1e0b9f84a42d45e3d79b1d7332364e1a35b4]
+```
+
+- The two checksums were the same in three runs (two filtered runs and the final check). The order and product IDs start at 1 after the truncation and the confirmation times are pinned, so the snapshot's inputs are the same rows each time.
+- The streamer logged order 2's first delivery before order 1's, though order 1 was relayed first. The two records are on different partitions (0 and 2), and the streamer's consumers don't order deliveries across partitions. The test asserts each order's results, not one order across all lines.
+
+### What was built
+
+- **`WeeklyRankingFlowTest`** (`com.loopers.adapter.webapi.v1.ranking`) is one `@Test` on `BaseWebApiAdapterTest`, outside the test transaction, cleaned with `DatabaseCleanUp`.
+  - Orders, confirmations and ranking reads are MockMvc requests. The test PG accepts each create.
+  - The relay rounds are new `OrderEventRelay` instances on the context's beans, and the batch runs are `CommerceBatchProcess.run`. Nothing else is driven by hand.
+  - `WeeklyRankingBatchTables.reset` gives it the batch's own tables before anything else. The copy is never applied.
+  - `purchase_activity` is only read. The streamer's start creates it and the streamer alone writes it.
+- **Exactly one event is republished.** The stop stub fails the first `markPublished` of a round, and a round sends its whole claimed batch before it marks any row. So the stopped round has to claim one row. The scene confirms and relays the first order, confirms the second and runs the stopped round, then confirms the third and runs a round a day later by the pinned clock. That round is past the 60 s lease and sends the second order's event again with the third's.
+- **The late purchase is late by order of events alone.** The fourth order (B×5) is confirmed at a pinned 2026-08-21T01:02:03.123456Z, inside the period. Its outbox row is asserted `PENDING` and is relayed only after revision 1's run returned.
+- **`inputFrozenAt` is compared, not asserted as a literal.** The batch child runs on the real clock: revision 2's was 4.1 s after revision 1's in the recorded run.
+
+### Red check
+
+Run once with an uncommitted change and reverted: after `WeeklyRankingBatchTables.reset`, the `@BeforeEach` also ran the copy `sql/weekly-ranking-tables.sql`, so the snapshot, item and publication tables had only the contract's columns. Batch's metadata was still dropped, so a completed instance from an earlier run could not be what refused the run.
+
+- The scene failed at revision 1's run: `The batch exited with 5.`
+- The log's tail carried the cause: `java.sql.SQLSyntaxErrorException: Unknown column 'revision' in 'field list'`, on the freeze's `SELECT snapshot_id, period_start, revision FROM weekly_ranking_snapshot WHERE snapshot_id = ? OR (period_start = ? AND revision = ?)`.
+- The streamer was terminated by the `@AfterEach`, and no child process was left.
+
+So the copy lacking a column the batch reads fails this test. The batch's `CREATE TABLE IF NOT EXISTS` doesn't repair a table that already exists.
+
+### Decisions made while implementing
+
+- **Which event is republished: the second order's (A×3).** The spec names A at 8 as what a double count would show. A double count would also fail the four-row `purchase_activity` assertion and the snapshot's input count of 4.
+- **The first three confirmations are interleaved with relay rounds** instead of confirming all three and then relaying. The spec lists "confirm three, relay"; one round over three rows would republish all three.
+- **`TopicReader` is not used.** The broker's records are not something this scene asserts: the streamer's `Recorded` lines are the deliveries.
+- **The run's exit code is not asserted in the test.** `run` throws on any other code, so an assertion on 0 could never fail (issue 261's review dropped the same one).
+- **The streamer start, the new relay and the `purchase_activity` SQL repeat what the two E2E classes have.** Those are on `BaseCommittingApplicationServiceTest`; this class is on `BaseWebApiAdapterTest`, as the spec decided. Moving them was left out, with a dated note in `CODING_STANDARDS.md`.
+
+### Review
+
+`code-review` of the uncommitted change on `2443b191`, with Standards and Spec in parallel. All fixes are in `35a75e44`.
+
+- **Standards.** Fixed before the commit:
+  - The first body is now `body`, and the later ones `revision1Body` and `revision2Body`.
+  - `status` and `snapshotId` are asserted with `extractingPath`. The items are still read as lines from the `JsonNode`: nine path lines per revision was the alternative.
+  - The order ID comes from the `asNumber()` assertion.
+  - The helpers are `requestCreate` and `requestConfirmAt`, both returning `MvcTestResult`, with `createdOrderId` and `assertConfirmed` beside them. Before, they were `createOrder` and `confirmOrderAt`.
+  - The products take the fixture's default name and stock (100 or more).
+  - The `relayDue` flag is gone: the scene pins the clock before each round.
+  - The confirm helper takes the PG `amount`, not a unit count.
+  - The event ID is built in one `eventIdOf`.
+  - The KDoc says four INFO lines, not one per step.
+- **Spec.** Nothing missing or wrong. Fixed: the fourth order's outbox row is asserted `PENDING`, not only logged. A dated note's count of what makes the class's context was corrected.
