@@ -1,6 +1,7 @@
 package com.loopers.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
+import com.loopers.batch.job.weeklyranking.step.WeeklyRankingPublishStore
 import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
 import com.loopers.support.WeeklyRankingJobs.StoredPublication
 import com.loopers.support.WeeklyRankingJobs.StoredRankingItem
@@ -10,12 +11,15 @@ import com.loopers.support.WeeklyRankingJobs.jobParameters
 import com.loopers.support.WeeklyRankingJobs.publications
 import com.loopers.support.WeeklyRankingJobs.rankingItems
 import com.loopers.support.test.BaseBatchJobTest
+import com.ninjasquad.springmockk.MockkSpyBean
+import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.tuple
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.batch.core.BatchStatus
 import org.springframework.batch.core.job.Job
+import org.springframework.batch.core.job.JobExecution
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.TestConfiguration
@@ -39,6 +43,9 @@ import java.time.ZoneOffset
 class WeeklyRankingPublishTest @Autowired constructor(
     @param:Qualifier(WeeklyRankingJobConfig.JOB_NAME) private val job: Job,
 ) : BaseBatchJobTest() {
+    @MockkSpyBean
+    private lateinit var publishStore: WeeklyRankingPublishStore
+
     @BeforeEach
     fun setUp() {
         emptyTables("purchase_activity", *RANKING_TABLES)
@@ -146,6 +153,150 @@ class WeeklyRankingPublishTest @Autowired constructor(
                     publishedAt = LocalDateTime.parse("2026-08-24T01:02:03.123456"),
                 ),
             )
+    }
+
+    /** Revision 1's ranking and publication are inserted by SQL, standing for a revision 1 run that completed first. */
+    @Test
+    fun `a later revision run replaces an earlier revision's publication and leaves the earlier ranking`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        val earlierItems = listOf(
+            StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 7, score = 4, productRank = 1),
+            StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 8, score = 1, productRank = 2),
+        )
+        earlierItems.forEach(::insertRankingItem)
+        insertPublication(
+            StoredPublication(
+                periodStart = LocalDate.parse("2026-08-17"),
+                snapshotId = "2026-08-17-r1",
+                revision = 1,
+                publishedAt = LocalDateTime.parse("2026-08-24T00:30:00"),
+            ),
+        )
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r2", revision = 2))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jdbcClient.publications())
+            .containsExactly(
+                StoredPublication(
+                    periodStart = LocalDate.parse("2026-08-17"),
+                    snapshotId = "2026-08-17-r2",
+                    revision = 2,
+                    publishedAt = LocalDateTime.parse("2026-08-24T01:02:03.123456"),
+                ),
+            )
+        assertThat(jdbcClient.rankingItems().filter { it.snapshotId == "2026-08-17-r1" }).isEqualTo(earlierItems)
+        assertThat(publishExitDescription(jobExecution)).isEmpty()
+    }
+
+    /** Revision 2's publication is inserted by SQL; no revision 2 run happens, so it stands for one that completed first. */
+    @Test
+    fun `an earlier revision run after a later one is published completes with its ranking and leaves the publication`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        val laterPublication = StoredPublication(
+            periodStart = LocalDate.parse("2026-08-17"),
+            snapshotId = "2026-08-17-r2",
+            revision = 2,
+            publishedAt = LocalDateTime.parse("2026-08-24T00:30:00"),
+        )
+        insertPublication(laterPublication)
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1", revision = 1))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jdbcClient.rankingItems())
+            .extracting(StoredRankingItem::snapshotId, StoredRankingItem::productId, StoredRankingItem::productRank)
+            .containsExactly(
+                tuple("2026-08-17-r1", 7L, 1),
+                tuple("2026-08-17-r1", 9L, 2),
+                tuple("2026-08-17-r1", 8L, 3),
+            )
+        assertThat(jdbcClient.publications()).containsExactly(laterPublication)
+        assertThat(publishExitDescription(jobExecution))
+            .contains(
+                "Publication of period 2026-08-17 not moved to snapshot 2026-08-17-r1 (period 2026-08-17, revision 1): " +
+                    "it holds snapshot 2026-08-17-r2 (revision 2)",
+            )
+    }
+
+    /** The check, the ranking and the publication are one transaction, so a refused snapshot leaves none of them. */
+    @Test
+    fun `a snapshot missing one product's score fails publish and leaves no ranking item and no publication`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        beforeTheFirstPublishCall("2026-08-17-r1") {
+            jdbcClient
+                .sql("DELETE FROM weekly_ranking_score WHERE snapshot_id = ? AND product_id = 9")
+                .param("2026-08-17-r1")
+                .update()
+        }
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.FAILED)
+        assertThat(publishExitDescription(jobExecution))
+            .contains("snapshot 2026-08-17-r1 (period 2026-08-17, revision 1) has 2 scores for 3 products")
+        assertThat(jdbcClient.rankingItems()).isEmpty()
+        assertThat(jdbcClient.publications()).isEmpty()
+    }
+
+    /**
+     * The inserted ranking holds as many items as the snapshot has scores, in an order the scores would not give, so a second
+     * ranking would fail on the item's key or change the items.
+     */
+    @Test
+    fun `a snapshot already ranked is not ranked again and is still published`() {
+        // arrange
+        jdbcClient.insertAssignmentActivities()
+        val rankedItems = listOf(
+            StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 8, score = 1, productRank = 1),
+            StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 9, score = 5, productRank = 2),
+            StoredRankingItem(snapshotId = "2026-08-17-r1", productId = 7, score = 5, productRank = 3),
+        )
+        beforeTheFirstPublishCall("2026-08-17-r1") {
+            rankedItems.forEach(::insertRankingItem)
+        }
+
+        // act
+        val jobExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = "2026-08-17-r1"))
+
+        // assert
+        assertThat(jobExecution.status).isEqualTo(BatchStatus.COMPLETED)
+        assertThat(jdbcClient.rankingItems()).isEqualTo(rankedItems)
+        assertThat(jdbcClient.publications())
+            .extracting(StoredPublication::periodStart, StoredPublication::snapshotId)
+            .containsExactly(tuple(LocalDate.parse("2026-08-17"), "2026-08-17-r1"))
+    }
+
+    /** Runs [action] inside [snapshotId]'s publish transaction, before the publish store's first call, then lets it go on. */
+    private fun beforeTheFirstPublishCall(snapshotId: String, action: () -> Unit) {
+        every { publishStore.countScores(snapshotId) } answers {
+            action()
+            callOriginal()
+        }
+    }
+
+    /** Not a `StepExecution`: `@SpringBatchTest`'s step-scope listener would take such a method for a step context factory. */
+    private fun publishExitDescription(jobExecution: JobExecution): String {
+        return jobExecution.stepExecutions
+            .single { it.stepName == WeeklyRankingJobConfig.PUBLISH_STEP_NAME }
+            .exitStatus
+            .exitDescription
+    }
+
+    private fun insertRankingItem(item: StoredRankingItem) {
+        jdbcClient
+            .sql("INSERT INTO weekly_ranking_item (snapshot_id, product_id, score, product_rank) VALUES (?, ?, ?, ?)")
+            .params(item.snapshotId, item.productId, item.score, item.productRank)
+            .update()
     }
 
     private fun insertPublication(publication: StoredPublication) {

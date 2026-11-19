@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.time.LocalDateTime
 
 /**
  * The `publish` step's SQL: the counts it checks, the weekly ranking it makes from the score table, and the publication it
@@ -20,6 +21,15 @@ class WeeklyRankingPublishStore(
     fun countScores(snapshotId: String): Long {
         return jdbcClient
             .sql("SELECT COUNT(*) FROM weekly_ranking_score WHERE snapshot_id = ?")
+            .param(snapshotId)
+            .query(Long::class.java)
+            .single()
+    }
+
+    /** How many items [snapshotId]'s weekly ranking has: as many as its scores once it is ranked, none before. */
+    fun countRankingItems(snapshotId: String): Long {
+        return jdbcClient
+            .sql("SELECT COUNT(*) FROM weekly_ranking_item WHERE snapshot_id = ?")
             .param(snapshotId)
             .query(Long::class.java)
             .single()
@@ -60,8 +70,13 @@ class WeeklyRankingPublishStore(
      *
      * MySQL assigns the columns left to right, each `IF` reading the values assigned before it, so `revision` comes last:
      * moved first, it would make the other two compare against the incoming revision.
+     *
+     * It returns the period's publication as read right after the write, since the statement's update count cannot tell
+     * the outcome: Connector/J reports found rows, so an inserted row and a row left as it was both count 1. The read locks the
+     * row in share mode, so it reads the latest row rather than the transaction's snapshot, which a publish of the same period
+     * committed in between would leave stale. It waits on nothing: the write already holds the row's exclusive lock.
      */
-    fun publish(key: SnapshotKey, publishedAt: Instant) {
+    fun publish(key: SnapshotKey, publishedAt: Instant): Publication {
         jdbcClient
             .sql(
                 """
@@ -77,5 +92,19 @@ class WeeklyRankingPublishStore(
             )
             .params(key.periodStart, key.snapshotId, key.revision, JdbcUtcTimes.toJdbc(publishedAt))
             .update()
+
+        return jdbcClient
+            .sql(
+                "SELECT snapshot_id, revision, published_at FROM weekly_ranking_publication WHERE period_start = ? FOR SHARE",
+            )
+            .param(key.periodStart)
+            .query { resultSet, _ ->
+                Publication(
+                    snapshotId = resultSet.getString("snapshot_id"),
+                    revision = resultSet.getLong("revision"),
+                    publishedAt = JdbcUtcTimes.fromJdbc(resultSet.getObject("published_at", LocalDateTime::class.java)),
+                )
+            }
+            .single()
     }
 }
