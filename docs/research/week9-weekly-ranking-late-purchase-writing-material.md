@@ -228,3 +228,164 @@ So the copy lacking a column the batch reads fails this test. The batch's `CREAT
   - The event ID is built in one `eventIdOf`.
   - The KDoc says four INFO lines, not one per step.
 - **Spec.** Nothing missing or wrong. Fixed: the fourth order's outbox row is asserted `PENDING`, not only logged. A dated note's count of what makes the class's context was corrected.
+
+## Issue 263: record the late purchase step (design section 14, final check, PR notes)
+
+Drafted 2026-11-19 as [issue 263](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/263)'s closing comment. Not posted yet; the text below is the draft.
+
+Recorded as `0be42e63`, documents only. `scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` ran once on `09f0f121`, a clean tree, starting 2026-11-19T11:42:15Z with `BOOTSTRAP_SERVERS` unset. ktlint passed (1 s). **commerce-batch: 9 classes, 65 tests (28 s). commerce-api: 118 classes, 1208 tests (5 min 59 s). commerce-streamer: 18 classes, 68 tests (51 s). 0 failures, 0 errors, 0 skipped in all three.** The code of `09f0f121` is issue 262's `35a75e44`, and only documents changed after it. Section 14 was being written in the working tree while the check ran; no file Gradle reads changed.
+
+### Acceptance criteria
+
+- [x] **Design section 14 is written and section 1.1's fourth row says the step is done, with a link to the spec.** [`docs/design/weekly-ranking.md`](../design/weekly-ranking.md) section 14 has eleven subsections. The 1.1 row changed only its status cell, which `scripts/check-doc-notes` reports as the one changed base line.
+- [x] **Every difference between the spec and what was built is in a "명세와 다른 것" table, each with its ticket.** Section 14.11, eleven rows.
+- [x] **`scripts/final-check` passes for the three apps on one commit; the commit, timings and test counts are in section 14.** Section 14.10, the run above. One invocation with three `--app` flags, so ktlint ran once and the three apps ran on the same commit.
+- [x] **The draft PR body is in the writing material.** Below, under Draft PR body.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### What was written
+
+- **Design section 14**: what the step built, the batch as a child process, the two ways commerce-api's tests make the ranking tables, what step 3 deferred and how it was closed, the contract and glossary, what was not chosen, limits, scenes, red checks, the final check, and differences from the spec.
+- **The note left on this issue by issue 261** is in 14.3: `WeeklyRankingBatchTables.reset` also drops Batch's nine metadata tables, with the three reasons. The batch child getting no Redis address is in 14.2, and as a limit in 14.7.
+- **How section 13.6's two deferred limits were closed** is in 14.4.
+  - The table definitions are still in two places. What changed is that one test runs the batch and the API on tables made from the batch's own script. That a changed contract column would fail it is a judgement from the test's shape; the red check that was run is the reverse one (with the copy run over the batch's tables, the batch's first statement fails).
+  - The two revisions are real runs in two places: two job runs in `WeeklyRankingLatePurchaseTest`, two batch processes in `WeeklyRankingFlowTest`.
+- **The "later revision frozen and scored but not yet published" moment** is pointed at two existing scenes: step 3's failed publish (design 13.7) on the batch side, and `WeeklyRankingApiTest`'s ranked-but-unpublished revision on the API side.
+- **The limit that nobody is told a late purchase arrived** is the first item of 14.7.
+- **Dated notes** on the header, 13.6, 13.12 and on ADR 0038's consequence that named this step's linking test. No new ADR. `CONTEXT-MAP.md` is unchanged: the flow test changed no contract.
+
+### Differences from spec 259
+
+Section 14.11 has eleven rows. The ones that change what a reader would assume:
+
+- **The rerun of revision 1 is refused, not a quiet no-op.** Batch throws `JobInstanceAlreadyCompleteException` before any step, so the spec's red check could not go red on that scene. The restart of revision 1's failed publish, a fifth scene, is the path the publication's condition guards.
+- **The table reset drops Batch's metadata too**, beyond the spec's "랭킹의 표를 지우고".
+- **The non-Monday parameter is a committed scene**, where the spec listed it as an uncommitted red check.
+- **Confirmations are interleaved with relay rounds** so that exactly one event is republished.
+- **The exit code 0 is not asserted in a test**: `run` throws on any other code.
+
+### What was checked in the recorded run
+
+`scripts/scene-lines --results build/final-check/commerce-api-test-results WeeklyRankingFlowTest` on the final check's results gave the same two snapshot checksums as issue 262's three runs (`e14b0382…1108` and `d5c448e1…35b4`), with `inputFrozenAt` `2026-11-19T11:45:10.216297Z` and `2026-11-19T11:45:14.523448Z`. Section 14.8 records them. `WeeklyRankingFlowTest`'s one scene took 15.4 s in this run.
+
+### Review
+
+A two-axis review ran on the uncommitted documents, with one reviewer on the standards and one on the ticket and spec 259.
+
+- **Standards.** No hard violation: `scripts/check-doc-notes` reports only the 1.1 status cell, every section reference resolves, and no Avoid word of either glossary is used for its concept. Fixed:
+  - Section 14 named `WeeklyRankingFinderTest` as a user of the copy. Only `WeeklyRankingApiTest` carries the `@Sql`; spec 259 has the same slip, and 14.3 now says so.
+  - The third late purchase scene compares revision 1's snapshot row, scores and ranking with literals; only the snapshot inputs are read before and after.
+  - "The scene sets the clock before each run" now says each run that completes: the restart scene's failing first run sets none.
+  - Three sentences were stronger than their evidence: that a leftover `COMPLETED` instance ends the child with a non-zero code (never run that way), that the batch's start does not connect to Redis (inferred from runs that started without the address), and the streamer's delivery order (it differed between issue 262's run and this one).
+- **Spec.** No acceptance criterion missing. Fixed in 14.11:
+  - Added: issue 261's two `CODING_STANDARDS.md` memos, and that the flow test's red check ran the copy after the reset, not in place of it.
+  - Dropped: a row that read the spec's three `--app` values as three separate runs.
+  - Corrected: Flyway's rejection is ADR 0038's, not ADR 0039's, and the reset is shared test support, not only the flow test's.
+- **Left as they are:**
+  - "a clean tree". The final check's header printed `commit 09f0f121 (clean)`; the documents were edited after it started, as in step 3.
+  - 운영자 for the person who runs the job. The root glossary lists it under 관리자's Avoid words, but section 4 and spec 259 already use it for this role.
+  - "두 정의는 그대로 둘" appears in the 13.6 note, 14.4 and 14.7.
+  - `CommerceBatchProcess`'s KDoc and issue 261's section cite design section 8 for the command's spelling; it is section 4. The KDoc is code, outside this documents-only ticket.
+
+### Left for the spec's closing
+
+The spec's own review, closing comment and PR into `week9` (`docs/agents/spec-closing.md`). The draft below gets its final numbers and the comment's URL then.
+
+## Draft PR body
+
+A draft for the PR from `feat/weekly-ranking-late-purchase` into `week9`, in the shape of step 3's, written before the spec's closing review. It carries the assignment's section 8 notes: one job instance from failure to restart, checksums and expected scores, and the publication's revision with the late purchase's result. It makes no throughput claim; none was measured.
+
+Title: `test: show a late purchase reaches the weekly ranking only through a later revision, from the confirm request to the ranking response`
+
+````markdown
+## Summary
+
+Week 9 step 4, the last. No production code changes. A purchase recorded after a snapshot was frozen (늦은 구매) changes nothing until an operator runs the same period under a new snapshot ID and a higher revision; this branch shows that in two places. commerce-batch gets five scenes over two real revisions. commerce-api gets one test that goes from the confirm request to the ranking response through the real relay, broker, streamer and batch, with commerce-batch run as a child process.
+
+- **Spec:** issue 259, with tickets 260–263
+- **Design:** [`docs/design/weekly-ranking.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-late-purchase/docs/design/weekly-ranking.md) section 14: 14.2 the child process, 14.3 the tables, 14.4 what step 3 deferred, 14.7 the limits, 14.8–14.9 the scenes and red checks, 14.11 what differs from the spec
+- **Writing material:** [`docs/research/week9-weekly-ranking-late-purchase-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-late-purchase/docs/research/week9-weekly-ranking-late-purchase-writing-material.md), which holds every ticket's closing comment
+- **Glossary:** 늦은 구매 (late purchase) in [`apps/commerce-batch/CONTEXT.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/weekly-ranking-late-purchase/apps/commerce-batch/CONTEXT.md): late relative to a snapshot, not to the period's end
+- **No ADR.** `CONTEXT-MAP.md` is unchanged.
+
+```text
+WeeklyRankingFlowTest (commerce-api, one @Test, everything over HTTP except relay rounds and batch runs)
+  tables from commerce-batch's own weekly-ranking-schema.sql     # never the contract-only copy
+  confirm orders 1–3 (A×2 B×1, A×3, C×5), relay                  # order 2's event is republished once
+    streamer child process records purchase_activity             # 4 rows; order 2: RECORDED, ALREADY_RECORDED
+  confirm order 4 (B×5) inside the period, leave its outbox row PENDING
+  GET /api/v1/rankings/weekly                                    # NOT_PUBLISHED
+  batch child process: revision 1 (2026-08-17-r1)                # exit 0
+  GET                                                            # A 5, C 5, B 1
+  relay order 4, streamer records it                             # the late purchase: 5 rows
+  GET                                                            # unchanged, the whole body
+  batch child process: revision 2 (2026-08-17-r2)                # exit 0
+  GET                                                            # B 6, A 5, C 5; a later inputFrozenAt
+```
+
+## Review Points
+
+#### 1. Is refusing a repeated old command enough, or should it be a quiet no-op?
+
+Running revision 1's three values again after revision 2 is published is refused by Batch (`JobInstanceAlreadyCompleteException`) before any step. Nothing changes, but the operator sees a failed launch. The only path on which revision 1 reaches `publish` after revision 2 is a restart of its failed publish, and there the publication's condition keeps revision 2 (design 14.8, 14.11).
+
+**Would you make the repeat exit 0?**
+
+#### 2. Is it acceptable that nobody is told a late purchase arrived?
+
+A late purchase sits in `purchase_activity` until an operator decides to run a later revision. Nothing detects it, and no read that compares the table with the published snapshot's input count is written down (design 14.7).
+
+**Would you add that read as an operator's query now, or wait for a real need?**
+
+#### 3. Is one cross-app test enough to keep two table definitions?
+
+The ranking tables are still defined twice: the batch's schema script, and a contract-only copy for commerce-api's API tests. The flow test runs the batch and the API on the batch's script, and the copy now drops and recreates its tables, so test order cannot decide a result. That a changed contract column would fail the flow test is a judgement from its shape, not a red check that was run (design 14.4).
+
+**Would you move the definitions into one shared module instead?**
+
+## Evidence
+
+**Before:** step 3's two revisions were rows seeded by SQL, commerce-api's tests made the ranking tables from a copy, and no run went from an order confirmation to the ranking response.
+
+**After:** on real MySQL and a real broker.
+
+- **One job instance, from failure to restart** (`WeeklyRankingLatePurchaseTest`): revision 1's publish fails (`FAILED`), revision 2 completes and is published, and revision 1 is started again with the same three values. The new execution belongs to the same `JobInstance`, runs the `publish` step alone, ranks revision 1 as 7, 9, 8, and ends `COMPLETED`. The publication still holds `2026-08-17-r2`, revision 2, published at 02:00, though the restart's clock was at 03:00.
+- **Checksums and expected scores, commerce-batch.** Revision 2's checksum was computed apart from the code with `printf … | shasum -a 256`.
+
+  | Snapshot | Inputs | Checksum | Scores | Ranking |
+  | --- | --- | --- | --- | --- |
+  | `2026-08-17-r1` | 4 | `d07eff39…720b` | 7 → 5, 8 → 1, 9 → 5 | 7, 9, 8 |
+  | `2026-08-17-r2` | 5 | `0c19c2a5…6716` | 7 → 5, 8 → 6, 9 → 5 | 8, 7, 9 |
+
+- **The publication's revision and the late purchase's result.** After the late purchase and before revision 2, revision 1's snapshot, scores, ranking and publication equal their literals. After revision 2 the publication holds revision 2, and revision 1's rows are unchanged.
+- **The same over HTTP** (`WeeklyRankingFlowTest`): `NOT_PUBLISHED`, then A 5, C 5, B 1 under `2026-08-17-r1`; the same body after the late purchase is recorded; then B 6, A 5, C 5 under `2026-08-17-r2` with a later `inputFrozenAt`. The snapshots hold 4 and 5 inputs with checksums `e14b0382…1108` and `d5c448e1…35b4`.
+- **A republished event counts once:** order 2's event is delivered twice, `purchase_activity` holds one row per order and product, and A scores 5, not 8.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| The publication's three assignments unconditional | The restart scene: the publication goes back to revision 1 at 03:00. The plain rerun scene stays green, since Batch refuses it first |
+| The copy back to `CREATE TABLE IF NOT EXISTS` + `DELETE`, run after a batch class | 9 of `WeeklyRankingApiTest`'s 15: `Field 'revision' doesn't have a default value` |
+| The flow test also runs the copy after the batch's script | Revision 1's run exits with 5: `Unknown column 'revision' in 'field list'` |
+
+`scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` on `09f0f121`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-batch | 9 (8 before) | 65 (60 before) | 0 |
+| commerce-api | 118 (115 before) | 1208 (1203 before) | 0 |
+| commerce-streamer | 18 (untouched) | 68 | 0 |
+
+Not shown here: throughput (not measured), two runs of one period at once, and a red check that changes a contract column in the batch's script.
+
+## Merge Danger
+
+**Door:** two-way
+
+Tests, test support, a Gradle test input and documents. No production code, no entity, no migration.
+
+**Blast Radius:** commerce-api's test task
+
+- **`:apps:commerce-api:test` now needs commerce-batch's bootJar**, as it already needs the streamer's. A changed batch jar or schema script reruns commerce-api's tests.
+- **A class that runs the batch drops Batch's metadata tables** in the test database, and the contract-only copy drops its three tables before each class that uses it.
+- **Out of scope:** detecting or announcing a late purchase, an automatic later revision, a shared schema module, the upstream `[volume-9]` PR.
+````
