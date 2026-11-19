@@ -5,6 +5,7 @@ import com.loopers.batch.job.weeklyranking.step.WeeklyRankingSnapshotStore
 import com.loopers.support.WeeklyRankingInputs.ASSIGNMENT_CHECKSUM
 import com.loopers.support.WeeklyRankingInputs.EMPTY_CHECKSUM
 import com.loopers.support.WeeklyRankingJobs.INSERT_ACTIVITY_SQL
+import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
 import com.loopers.support.WeeklyRankingJobs.StoredSnapshotInput
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
@@ -66,7 +67,7 @@ class WeeklyRankingFreezeTest @Autowired constructor(
 
     @BeforeEach
     fun setUp() {
-        emptyTables("purchase_activity", "weekly_ranking_score", "weekly_ranking_snapshot_input", "weekly_ranking_snapshot")
+        emptyTables("purchase_activity", *RANKING_TABLES)
         jobOperatorTestUtils.job = job
     }
 
