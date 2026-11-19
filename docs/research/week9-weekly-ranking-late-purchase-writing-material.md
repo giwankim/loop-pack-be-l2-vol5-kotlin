@@ -84,7 +84,7 @@ A two-axis review ran before the commit.
 
 ## Issue 261: run commerce-batch as a child process from commerce-api tests
 
-Recorded 2026-11-19 from issue 261's closing comment. The text below is the comment's.
+Recorded 2026-11-19 from [issue 261's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/261#issuecomment-7007520718). The text below is the comment's.
 
 Implemented as `06a7bdbf`, with review fixes in `3c64946b`, rebased onto issue 260's `9f7f12f2`. Before the rebase they were `b2f4fdaf` and `f44b1c79` on `72a24070` (step 3's merge into `week9`). Issue 260 changed only commerce-batch's tests, its glossary and this document, so the batch's bootJar and everything commerce-api's tests read are the same after the rebase. `scripts/final-check --app commerce-api` on `f44b1c79`, a clean tree, started 2026-11-19T10:54:07Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 117 classes, 1207 tests (5 min 45 s), 0 failures, 0 errors, 0 skipped**. The same check on `b2f4fdaf` (started 10:46:50Z) gave the same counts in 6 min 6 s. This ticket adds 2 classes (`CommerceBatchProcessTest`, `CommerceBatchProcessRunTest`) and 4 tests. No production code changed.
 
