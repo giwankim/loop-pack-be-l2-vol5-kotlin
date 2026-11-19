@@ -86,7 +86,7 @@ HTTP 테스트는 `MockMvcTester`로 요청하고 단언한다. 까닭과 고르
   ```kotlin
   val id = body.extractingPath("$.data.id").asNumber().actual().toLong()
   ```
-- 두 응답을 `JsonNode`의 부분 트리로 견주는 테스트(주문의 목록 항목과 상세 등)는 클래스 안의 도우미 `MvcTestResult.json()`으로 본문을 읽는다. 같은 응답을 단언도 하고 견주기도 하면 그 결과를 지역 변수에 받는다. 이름은 응답이 무엇인지 따라 짓고(`created`, `ownDetail`, `missing`, `original`, `orders`) 본문 이름(`body`, `detail` 등)과 겹치지 않게 한다. 상태와 경로는 그 변수로 단언하고, 견줄 때 `json()`으로 읽는다. 주문 테스트에 이미 있던 `JsonNode` 필드 단언(목록 항목의 스냅샷, 쪽마다의 차례)은 ADR 0011대로 그대로 둔다. 한 응답의 필드를 새로 단언할 때는 `extractingPath`를 쓴다.
+- 두 응답을 `JsonNode`의 부분 트리로 견주는 테스트(주문의 목록 항목과 상세 등)는 클래스 안의 도우미 `MvcTestResult.json()`으로 본문을 읽는다. 같은 응답을 단언도 하고 견주기도 하면 그 결과를 지역 변수에 받는다. 이름은 응답이 무엇인지 따라 짓고(`created`, `ownDetail`, `missing`, `original`, `orders`) 본문 이름(`body`, `detail` 등)과 겹치지 않게 한다. 상태와 경로는 그 변수로 단언하고, 견줄 때 `json()`으로 읽는다. 주문 테스트에 이미 있던 `JsonNode` 필드 단언(목록 항목의 스냅샷, 쪽마다의 차례)은 ADR 0011대로 그대로 둔다. 한 응답의 필드를 새로 단언할 때는 `extractingPath`를 쓴다. (2026-11-19, [issue 262](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/262): `WeeklyRankingFlowTest`는 차수마다의 항목을 `JsonNode`에서 읽은 줄(`itemsOf`)로 단언한다. 같은 줄이 장면의 로그에 남고, 항목의 필드는 `WeeklyRankingApiTest`가 경로로 단언한다.)
 
 ### 도우미
 

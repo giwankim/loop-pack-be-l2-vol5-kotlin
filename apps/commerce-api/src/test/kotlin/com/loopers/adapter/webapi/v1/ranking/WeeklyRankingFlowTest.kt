@@ -208,9 +208,9 @@ class WeeklyRankingFlowTest(
         runWeeklyRanking(REVISION_1, revision = 1)
 
         val afterRevision1 = requestGetWeeklyRanking()
-        val revision1Body = assertThat(afterRevision1).hasStatusOk().bodyJson()
-        revision1Body.extractingPath("$.data.status").isEqualTo("PUBLISHED")
-        revision1Body.extractingPath("$.data.snapshotId").isEqualTo(REVISION_1)
+        val bodyAfterRevision1 = assertThat(afterRevision1).hasStatusOk().bodyJson()
+        bodyAfterRevision1.extractingPath("$.data.status").isEqualTo("PUBLISHED")
+        bodyAfterRevision1.extractingPath("$.data.snapshotId").isEqualTo(REVISION_1)
         val revision1 = afterRevision1.json()["data"]
         assertThat(itemsOf(revision1)).containsExactly(
             "rank 1 product ${productA.id} score 5",
@@ -252,9 +252,9 @@ class WeeklyRankingFlowTest(
         runWeeklyRanking(REVISION_2, revision = 2)
 
         val afterRevision2 = requestGetWeeklyRanking()
-        val revision2Body = assertThat(afterRevision2).hasStatusOk().bodyJson()
-        revision2Body.extractingPath("$.data.status").isEqualTo("PUBLISHED")
-        revision2Body.extractingPath("$.data.snapshotId").isEqualTo(REVISION_2)
+        val bodyAfterRevision2 = assertThat(afterRevision2).hasStatusOk().bodyJson()
+        bodyAfterRevision2.extractingPath("$.data.status").isEqualTo("PUBLISHED")
+        bodyAfterRevision2.extractingPath("$.data.snapshotId").isEqualTo(REVISION_2)
         val revision2 = afterRevision2.json()["data"]
         assertThat(itemsOf(revision2)).containsExactly(
             "rank 1 product ${productB.id} score 6",

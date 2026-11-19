@@ -4,6 +4,7 @@ import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
 import com.loopers.batch.job.weeklyranking.step.ScoreProductReader
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingPublishStore
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingScoreStore
+import com.loopers.support.MovableClock
 import com.loopers.support.WeeklyRankingInputs
 import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
 import com.loopers.support.WeeklyRankingJobs.StoredPublication
@@ -18,6 +19,7 @@ import com.loopers.support.WeeklyRankingJobs.rankingItems
 import com.loopers.support.WeeklyRankingJobs.resultChecksum
 import com.loopers.support.WeeklyRankingJobs.scores
 import com.loopers.support.WeeklyRankingJobs.snapshotInputs
+import com.loopers.support.WeeklyRankingJobs.snapshots
 import com.loopers.support.test.BaseBatchJobTest
 import com.ninjasquad.springmockk.MockkSpyBean
 import io.mockk.clearMocks
@@ -42,12 +44,10 @@ import org.springframework.test.context.jdbc.Sql
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.support.TransactionTemplate
-import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.ZoneOffset
 
 /**
@@ -294,7 +294,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         jdbcClient.insertAssignmentActivities()
         failSummingProduct(SNAPSHOT_ID, productId = 9)
         val failedExecution = jobOperatorTestUtils.startJob(jobParameters(snapshotId = SNAPSHOT_ID, revision = REVISION))
-        val snapshotAfterFirstRun = snapshot()
+        val snapshotAfterFirstRun = jdbcClient.snapshots().single()
         val inputsAfterFirstRun = jdbcClient.snapshotInputs(SNAPSHOT_ID)
         prepareRestart()
 
@@ -306,7 +306,7 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         assertThat(
             jobRepository.getStepExecutionCount(failedExecution.jobInstance, WeeklyRankingJobConfig.FREEZE_STEP_NAME),
         ).isEqualTo(1)
-        assertThat(snapshot()).isEqualTo(snapshotAfterFirstRun)
+        assertThat(jdbcClient.snapshots().single()).isEqualTo(snapshotAfterFirstRun)
         assertThat(snapshotAfterFirstRun.frozenAt).isEqualTo(LocalDateTime.ofInstant(FIRST_RUN_INSTANT, ZoneOffset.UTC))
         assertThat(jdbcClient.snapshotInputs(SNAPSHOT_ID)).isEqualTo(inputsAfterFirstRun)
     }
@@ -442,42 +442,6 @@ class WeeklyRankingJobRestartTest @Autowired constructor(
         val key = "${ScoreProductReader.NAME}.read.count"
 
         return if (executionContext.containsKey(key)) executionContext.getInt(key) else null
-    }
-
-    private fun snapshot(): StoredSnapshot {
-        return jdbcClient.sql("SELECT frozen_at, input_count, input_checksum FROM weekly_ranking_snapshot WHERE snapshot_id = ?")
-            .param(SNAPSHOT_ID)
-            .query { resultSet, _ ->
-                StoredSnapshot(
-                    frozenAt = resultSet.getObject("frozen_at", LocalDateTime::class.java),
-                    inputCount = resultSet.getLong("input_count"),
-                    inputChecksum = resultSet.getString("input_checksum"),
-                )
-            }
-            .single()
-    }
-
-    private data class StoredSnapshot(val frozenAt: LocalDateTime, val inputCount: Long, val inputChecksum: String)
-
-    /** A clock a scene sets and moves. Only the instant is read: the freeze reads `clock.instant()`. */
-    class MovableClock(
-        @Volatile var instant: Instant,
-    ) : Clock() {
-        fun advance(duration: Duration) {
-            instant = instant.plus(duration)
-        }
-
-        override fun instant(): Instant {
-            return instant
-        }
-
-        override fun getZone(): ZoneId {
-            return ZoneOffset.UTC
-        }
-
-        override fun withZone(zone: ZoneId): Clock {
-            throw UnsupportedOperationException("The movable clock does not change zones")
-        }
     }
 
     /** Puts [MovableClock] in the context as its primary `Clock`. */

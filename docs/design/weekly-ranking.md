@@ -703,7 +703,7 @@ scripts/final-check --app commerce-batch --app commerce-api
 commerce-api의 테스트가 진짜 `weeklyRanking`을 돌리는 길은 `CommerceBatchProcess`다. 7주차의 `CommerceStreamerProcess`를 본떴으나, 띄워 두는 프로세스가 아니라 끝까지 실행하고 끝나는 프로세스다.
 
 - `java -jar <배치의 bootJar>`에 `--spring.profiles.active=test`, 컨텍스트의 `datasource.mysql-jpa.main.*` 셋, `--job.name=weeklyRanking`, 식별 매개변수 셋(`periodStart=…,java.time.LocalDate snapshotId=… revision=…,java.lang.Long`)을 넘긴다. 4절이 운영자에게 주는 철자와 같다.
-- 120 s 안에 끝나지 않으면 프로세스를 강제로 끝내고 실패한다. 종료 코드가 0이 아니어도 실패한다. 두 실패 모두 로그의 마지막 40줄을 싣는다. 로그는 `build/commerce-batch/<snapshotId>-<밀리초>.log`로 남는다. `run`은 종료 코드 0으로 끝난 뒤에만 돌아온다.
+- 120 s 안에 끝나지 않으면 프로세스를 강제로 끝내고 실패한다. 종료 코드가 0이 아니어도 실패한다. 두 실패 모두 로그의 마지막 40줄을 싣는다. 로그는 `build/commerce-batch/<snapshotId>-<밀리초>.log`로 남는다. `run`은 종료 코드 0으로 끝난 뒤에만 돌아온다. (2026-11-19 명세 259의 닫는 검토: 120 s는 잰 값에 둔 여유다. 이날 노트북에서 남은 로그 13개에서 배치의 시작은 3.2 s에서 4.0 s였고, 끝난 `weeklyRanking` 실행 10개는 장면의 몇 줄에 0.15 s에서 0.26 s였다. 로그는 커밋을 적지 않으므로 끝의 확인의 수치가 아니라 그날 `build/commerce-batch`에 남은 것이다. 시간 한도의 실패는 커밋한 장면이 없고, 같은 검토에서 한 번 red check로 보았다. 커밋하지 않은 검토의 수정 위에서 `RUN_WAIT`만 1 s로 바꾸고 `CommerceBatchProcessRunTest`를 돌리자 두 장면이 모두 `The batch did not exit within 1 s. Its log is build/commerce-batch/….log.`과 로그의 끝으로 실패했고, 끝난 뒤에 남은 배치 프로세스는 없었다. 값은 120 s로 되돌렸다. 시작을 마친 뒤에 멈춘 job은 만들어 보지 않았다.)
 - 운영 코드는 그대로다. `CommerceBatchApplication.main`이 이미 job의 종료 코드로 프로세스를 끝낸다.
 - **Redis의 주소를 넘기지 않는다.** 배치의 `test` 프로필은 Redis를 `localhost:6379`로 둔다. 배치의 main 코드는 Redis를 쓰지 않고 Lettuce는 처음 쓸 때 연결한다. 장면의 실행은 모두 그 주소 없이 시작해 종료 코드 0으로 끝났다. 시작이 Redis에 연결하지 않는다는 것은 거기서 나온 판단이고, 연결을 따로 재지는 않았다.
 - **Gradle.** `:apps:commerce-api:test`가 배치의 `bootArchives`를 가리키는 `commerceBatchBootJar` 구성을 스트리머의 것과 같은 방식으로 둔다. 그 jar와 `apps/commerce-batch/src/main/resources/sql/weekly-ranking-schema.sql`을 테스트의 입력으로 선언하고 `-Dcommerce-batch.jar`, `-Dcommerce-batch.weekly-ranking-schema`로 넘긴다. 어느 쪽으로도 모듈 의존은 없다. 배치의 jar나 스크립트가 바뀌면 commerce-api의 테스트가 다시 돈다.
@@ -730,7 +730,7 @@ commerce-api의 테스트에서 랭킹의 표를 만드는 길은 둘이고, 클
 
 13.6절이 4단계로 미룬 한계는 둘이고, 13.12절이 넘긴 것은 넷이다.
 
-- **두 곳의 표 정의.** 정의는 여전히 둘이고 사본은 배치의 스크립트를 저절로 따라가지 않는다. 달라진 것은 두 앱이 한 DB에서 만나는 실행이 있다는 것이다. `WeeklyRankingFlowTest`는 배치의 스크립트로 만든 표에 배치가 쓰고, 같은 표를 API가 운영의 두 문장(13.3절)으로 읽는다. 배치의 스크립트가 계약의 컬럼(13.4절)을 바꾸면 이 테스트의 읽기가 실패한다. 이것은 테스트의 꼴에서 나온 판단이고, 스크립트의 컬럼을 바꾼 붉은 확인은 돌리지 않았다. 돌린 것은 거꾸로다. 표를 사본으로 만들면 배치의 첫 문장이 실패한다(14.9절).
+- **두 곳의 표 정의.** 정의는 여전히 둘이고 사본은 배치의 스크립트를 저절로 따라가지 않는다. 달라진 것은 두 앱이 한 DB에서 만나는 실행이 있다는 것이다. `WeeklyRankingFlowTest`는 배치의 스크립트로 만든 표에 배치가 쓰고, 같은 표를 API가 운영의 두 문장(13.3절)으로 읽는다. 배치의 스크립트가 계약의 컬럼(13.4절)을 바꾸면 이 테스트의 읽기가 실패한다. 이것은 테스트의 꼴에서 나온 판단이고, 스크립트의 컬럼을 바꾼 붉은 확인은 돌리지 않았다. 돌린 것은 거꾸로다. 표를 사본으로 만들면 배치의 첫 문장이 실패한다(14.9절). (2026-11-19 명세 259의 닫는 검토: 돌렸다. 커밋하지 않은 검토의 수정 위에서 배치의 스크립트와 게시의 SQL(`WeeklyRankingPublishStore`)에서 `product_rank`를 `rank_position`으로 함께 바꾸고 `WeeklyRankingFlowTest`를 돌렸다. 배치의 차수 1은 종료 코드 0으로 끝났고, 그 뒤의 읽기가 200이 아니라 500이었다. 까닭은 `Unknown column 'item.product_rank' in 'field list'`다. 사본을 쓰는 `WeeklyRankingApiTest`는 이 확인에서 돌리지 않았다. 배치의 두 파일은 되돌렸다. 본 것은 계약의 컬럼 하나다.)
 - **`purchase_activity`의 두 정의(ADR 0038의 대가).** 같은 꼴이다. 연결 테스트에서 배치의 고정은 스트리머가 만든 진짜 표를 읽었고, 네 행과 다섯 행을 옮겨 담았다. 배치의 테스트 전용 `sql/purchase-activity.sql`은 그대로 남아 배치의 테스트가 쓴다.
 - **직접 넣은 두 차수.** 두 곳에서 한 랭킹 기간을 두 번 실제로 고정해 게시했다. `WeeklyRankingLatePurchaseTest`는 job을 두 번 실행하고, 연결 테스트는 배치의 프로세스를 두 번 실행한다. 어느 쪽도 스냅샷, 주간 랭킹, 게시의 행을 SQL로 넣지 않는다.
 - **다시 발행된 이벤트.** 연결 테스트의 1과 3이다(14.8절).
@@ -744,7 +744,7 @@ commerce-api의 테스트에서 랭킹의 표를 만드는 길은 둘이고, 클
 ### 14.5 맥락의 계약과 용어집
 
 - [`CONTEXT-MAP.md`](../../CONTEXT-MAP.md)는 바꾸지 않았다. 연결 테스트가 계약을 바꾸지 않았다. API의 두 문장도, 배치가 `purchase_activity`에서 읽는 컬럼도 그대로다. "commerce-api의 테스트는 계약의 컬럼만 담은 사본으로 표를 만든다"는 문장은 사본을 쓰는 `WeeklyRankingApiTest`에 여전히 맞다.
-- 용어집의 "늦은 구매"는 두 장면과 같다. 배치의 장면의 늦은 구매는 랭킹 기간 안의 확정 시각(2026-08-20)을 들고 차수 1을 고정한 뒤에 들어온 행이다. 연결 테스트의 늦은 구매는 랭킹 기간 안에 확정됐으나(2026-08-21) 그 아웃박스 행이 차수 1을 고정한 뒤에야 릴레이된 주문이다. 둘 다 늦은 까닭이 확정 시각이 아니라 기록된 때다.
+- 용어집의 "늦은 구매"는 두 장면과 같다. 배치의 장면의 늦은 구매는 랭킹 기간 안의 확정 시각(2026-08-20)을 들고 차수 1을 고정한 뒤에 들어온 행이다. 연결 테스트의 늦은 구매는 랭킹 기간 안에 확정됐으나(2026-08-21) 그 아웃박스 행이 차수 1을 고정한 뒤에야 중계된 주문이다. 둘 다 늦은 까닭이 확정 시각이 아니라 기록된 때다.
 
 ### 14.6 고르지 않은 것
 
@@ -799,17 +799,17 @@ commerce-api의 테스트에서 랭킹의 표를 만드는 길은 둘이고, 클
 - 빈 랭킹 기간을 `2026-08-17-r1`, 차수 1로 실행하면 종료 코드 0으로 돌아오고, 컨텍스트의 DB에 그 스냅샷(`FROZEN`, 스냅샷 입력 0개)과 그 게시가 있다.
 - `periodStart=2026-08-18`로 실행하면 `The batch exited with <0이 아닌 수>.`로 실패하고, 실패의 글이 로그의 끝에서 검증기의 `periodStart must be a Monday, but 2026-08-18 is a TUESDAY`를 싣는다. 스냅샷의 행은 없다.
 
-**`WeeklyRankingFlowTest`(262).** `@Test` 하나가 차례로 걷는다. 주문, 확정, 랭킹의 읽기는 MockMvc의 요청이고 테스트 PG가 결제를 받는다. 손으로 움직이는 것은 릴레이의 한 바퀴(컨텍스트의 빈으로 만든 새 `OrderEventRelay`)와 배치의 실행(`CommerceBatchProcess.run`) 둘뿐이다. 상품은 A, B, C이고 식별자가 1, 2, 3이다. 확정 시각은 `TestClock`으로 랭킹 기간 2026-08-17 안에 고정한다.
+**`WeeklyRankingFlowTest`(262).** `@Test` 하나가 차례로 걷는다. 주문, 확정, 랭킹의 읽기는 MockMvc의 요청이고 테스트 PG가 결제를 받는다. 손으로 움직이는 것은 중계의 한 바퀴(컨텍스트의 빈으로 만든 새 `OrderEventRelay`)와 배치의 실행(`CommerceBatchProcess.run`) 둘뿐이다. 상품은 A, B, C이고 식별자가 1, 2, 3이다. 확정 시각은 `TestClock`으로 랭킹 기간 2026-08-17 안에 고정한다.
 
 1. **세 주문과 한 번의 다시 발행.** 주문 1(A×2, B×1), 주문 2(A×3), 주문 3(C×5)을 확정한다. 주문 2의 이벤트가 다시 발행된다. 스트리머의 `Recorded` 줄은 주문 2에 둘(`RECORDED`, `ALREADY_RECORDED`)이고 나머지 두 주문에 하나씩이며, `purchase_activity`는 네 행이다. 주문 4(B×5)도 랭킹 기간 안의 시각(2026-08-21)에 확정하되, 그 아웃박스 행은 `PENDING`으로 둔다.
 2. **랭킹을 읽는다.** `NOT_PUBLISHED`이고 `snapshotId`가 null이며 항목이 없다.
 3. **차수 1을 실행한다.** 답은 A 5점 1위, C 5점 2위, B 1점 3위이고 `snapshotId`가 `2026-08-17-r1`이다. 다시 발행된 이벤트가 두 번 세어졌다면 A가 8점이다.
-4. **주문 4의 아웃박스 행을 릴레이하고 스트리머가 기록하기를 기다린다.** `purchase_activity`가 다섯 행이다. 이것이 늦은 구매다. 테스트는 `purchase_activity`에 쓰지 않는다.
+4. **주문 4의 아웃박스 행을 중계하고 스트리머가 기록하기를 기다린다.** `purchase_activity`가 다섯 행이다. 이것이 늦은 구매다. 테스트는 `purchase_activity`에 쓰지 않는다.
 5. **랭킹을 읽는다.** 응답의 본문 전체가 3의 것과 같다. `inputFrozenAt`도 같다.
 6. **차수 2를 실행한다.** 답은 B 6점 1위, A 5점 2위, C 5점 3위이고 `snapshotId`가 `2026-08-17-r2`이며 `inputFrozenAt`이 3의 값보다 뒤다.
 7. **`weekly_ranking_snapshot`을 읽는다.** 스냅샷 입력이 4개와 5개이고 두 체크섬이 다르다.
 
-- **한 이벤트만 다시 발행하려고 확정과 릴레이를 번갈아 한다.** 멈춤의 stub(`stopRelayAfterBrokerAckBeforeMarkingPublished`)은 한 바퀴의 첫 `markPublished`를 실패시키고, 한 바퀴는 집은 행을 모두 보낸 뒤에 표시한다. 그래서 멈추는 바퀴는 한 행만 집어야 한다. 주문 1을 확정해 릴레이하고, 주문 2를 확정해 멈추는 바퀴를 돌리고, 주문 3을 확정해 고정한 시계로 하루 뒤의 바퀴를 돌린다. 그 바퀴는 60 s의 리스를 넘겨 주문 2의 이벤트를 주문 3의 것과 함께 다시 보낸다.
+- **한 이벤트만 다시 발행하려고 확정과 중계를 번갈아 한다.** 멈춤의 stub(`stopRelayAfterBrokerAckBeforeMarkingPublished`)은 한 바퀴의 첫 `markPublished`를 실패시키고, 한 바퀴는 집은 행을 모두 보낸 뒤에 표시한다. 그래서 멈추는 바퀴는 한 행만 집어야 한다. 주문 1을 확정해 중계하고, 주문 2를 확정해 멈추는 바퀴를 돌리고, 주문 3을 확정해 고정한 시계로 하루 뒤의 바퀴를 돌린다. 그 바퀴는 60 s의 리스를 넘겨 주문 2의 이벤트를 주문 3의 것과 함께 다시 보낸다.
 - 262의 기록된 실행에서 스트리머는 주문 2의 첫 전달을 주문 1의 것보다 먼저 적었고, 끝의 확인의 실행에서는 주문 1의 것을 먼저 적었다. 두 record의 파티션이 다르고(0과 2) 스트리머는 파티션 사이의 차례를 지키지 않는다. 테스트는 주문마다의 결과를 단언한다.
 - 스트리머는 `@AfterEach`에서 표를 비우기 전에 끝낸다. 장면이 실패해도 같다. 끝의 확인 뒤에 남은 자식 프로세스는 없었다(14.10절).
 
@@ -864,6 +864,9 @@ scripts/final-check --app commerce-batch --app commerce-api --app commerce-strea
 | 틀린 매개변수(월요일이 아닌 날짜)를 넘기는 것은 커밋하지 않는 붉은 확인이다 | 커밋한 장면이다(`CommerceBatchProcessRunTest`). 거절은 Boot의 runner에 `InvalidJobParametersException`으로 닿아 `Application run failed`로 끝나므로, JVM은 `SpringApplication.exit`에 닿기 전에 끝난다. 장면은 0이 아닌 종료 코드를 꼴로 단언한다 | 261 |
 | `CommerceBatchProcess`의 테스트 클래스를 말하지 않는다 | 둘이다. 컨테이너 없는 `CommerceBatchProcessTest`와 진짜 배치를 돌리는 `CommerceBatchProcessRunTest`. 뒤의 것은 `purchase_activity`를 만들려고 스트리머를 한 번 띄운다(14.3절) | 261 |
 | 차수 1과 차수 2를 실행한다(종료 코드 0) | 테스트는 종료 코드를 단언하지 않는다. `run`이 0이 아닌 코드에 던지므로 0의 단언은 실패할 수 없다 | 261, 262 |
-| 세 주문을 확정하고 릴레이한다. 그 가운데 한 주문의 이벤트는 다시 발행된다 | 확정과 릴레이를 번갈아 한다. 세 행을 한 바퀴에 릴레이하면 셋이 모두 다시 발행된다(14.8절) | 262 |
+| 세 주문을 확정하고 중계한다. 그 가운데 한 주문의 이벤트는 다시 발행된다 | 확정과 중계를 번갈아 한다. 세 행을 한 바퀴에 중계하면 셋이 모두 다시 발행된다(14.8절) | 262 |
 | 연결 테스트의 클래스는 트랜잭션에서 빠지는 표시와 `DatabaseCleanUp`을 쓴다 | 그에 더해 `OrderEventOutboxModifyService`의 `@MockkSpyBean`, `@EnableTestPg`, 토픽을 정하는 `@TestPropertySource`를 단다. `BaseWebApiAdapterTest`의 하위 클래스가 더할 수 있는 것의 목록 밖이라 `CODING_STANDARDS.md`에 날짜 붙인 메모 둘을 더했다. 새 기반 클래스는 두지 않았다. 261도 같은 문서에 메모 둘을 더했다. 사본이 표를 지우고 다시 만든다는 것과 `reset`, 그리고 `CommerceBatchProcessRunTest`가 생성자로 받는 것이다. 명세는 그 문서를 말하지 않는다 | 261, 262 |
 | 글감은 첫 티켓이 만든다 | 260과 261이 함께 진행되어 저마다 만들었고, 261을 260 위로 옮기며 뒤에 이어 붙였다 | 260, 261 |
+| 배치의 있는 장면은 손대지 않는다 | 장면은 그대로다. 2단계의 `WeeklyRankingJobRestartTest`에 있던 `MovableClock`을 `com.loopers.support`로 옮겨 `WeeklyRankingLatePurchaseTest`도 쓴다(260이 따로 둔 `SettableClock`은 없앴다). 그 클래스의 private `snapshot()`과 `StoredSnapshot`도 없애고 `WeeklyRankingJobs.snapshots()`로 읽는다. 시계를 컨텍스트에 넣는 설정은 클래스마다 그대로다 | 2026-11-19 명세 259의 닫는 검토 |
+| (티켓 261) `run`은 종료 코드를 돌려준다 | `run`은 아무것도 돌려주지 않는다. 261은 그 말을 `Finished.exitCode`로 남겼으나 언제나 0이고 읽는 곳이 없어 `Finished`를 없앴다. 명세의 "종료 코드가 0이 아니면 로그의 끝과 함께 실패한다"는 그대로다 | 2026-11-19 명세 259의 닫는 검토 |
+| 연결 테스트의 본문 이름을 말하지 않는다 | 262의 검토가 정한 `revision1Body`, `revision2Body`를 `bodyAfterRevision1`, `bodyAfterRevision2`로 바꿨다. `<요청>Body`는 쓰기 요청의 응답이고, 같은 읽기를 다시 읽으면 무엇 뒤인지 붙인다는 `CODING_STANDARDS.md`를 따랐다 | 2026-11-19 명세 259의 닫는 검토 |

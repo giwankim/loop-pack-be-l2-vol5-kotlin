@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
  * The batch runs with its `test` profile and the context's datasource. The profile turns on Batch's metadata schema and the weekly
  * ranking's schema file, both created only if missing. No Redis address is passed: the batch's main code never uses Redis, and
  * the connection is made on first use, so its start doesn't need one. The job's three identifying parameters are given in their
- * command-line spelling ([WeeklyRankingParameters.arguments]), the one an operator types (weekly-ranking design 8).
+ * command-line spelling ([WeeklyRankingParameters.arguments]), the one an operator types (weekly-ranking design 4).
  *
  * The run has a deadline, [RUN_WAIT]. Running out ends the process and fails, and so does a non-zero exit code:
  * `CommerceBatchApplication.main` exits with the job's exit code, and a refused start exits non-zero too. Both failures carry the
@@ -34,7 +34,10 @@ object CommerceBatchProcess {
     /** The system property Gradle sets to the batch's `weekly-ranking-schema.sql`, the source of the ranking's tables. */
     const val SCHEMA_PROPERTY = "commerce-batch.weekly-ranking-schema"
 
-    /** A start takes several seconds on a laptop and the job's run on a few rows well under one. The rest is a margin for load. */
+    /**
+     * A start took 3.2 to 4.0 s on a laptop and the job's run on a few rows 0.15 to 0.26 s (weekly-ranking design 14.2). The rest
+     * is a margin for load.
+     */
     private val RUN_WAIT: Duration = Duration.ofSeconds(120)
 
     /** How long a process past its deadline may take to end once it is forced. */
@@ -47,14 +50,14 @@ object CommerceBatchProcess {
     private val LOG_DIRECTORY: Path = Path.of("build", "commerce-batch")
 
     /**
-     * Runs the batch's `weeklyRanking` job with [parameters] from the jar [jarPath] names, and returns the run once the process
-     * exited with 0. A missing jar, a run past [RUN_WAIT] and a non-zero exit code fail with an [AssertionError].
+     * Runs the batch's `weeklyRanking` job with [parameters] from the jar [jarPath] names, and returns once the process exited
+     * with 0. A missing jar, a run past [RUN_WAIT] and a non-zero exit code fail with an [AssertionError].
      */
     fun run(
         settings: Settings,
         parameters: WeeklyRankingParameters,
         jarPath: String? = System.getProperty(JAR_PROPERTY),
-    ): Finished {
+    ) {
         val jar = requiredFile(JAR_PROPERTY, jarPath, "commerce-batch bootJar")
 
         Files.createDirectories(LOG_DIRECTORY)
@@ -76,11 +79,10 @@ object CommerceBatchProcess {
             runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
         }
 
-        val finished = Finished(process.exitValue(), logFile)
-        if (finished.exitCode != 0) {
-            throw AssertionError(failure("The batch exited with ${finished.exitCode}.", logFile))
+        val exitCode = process.exitValue()
+        if (exitCode != 0) {
+            throw AssertionError(failure("The batch exited with $exitCode.", logFile))
         }
-        return finished
     }
 
     /** The batch's `weekly-ranking-schema.sql` from the path Gradle passes in [SCHEMA_PROPERTY], for a scene to run itself. */
@@ -131,19 +133,13 @@ object CommerceBatchProcess {
         return String(Files.readAllBytes(logFile), Charsets.UTF_8).lines().dropLastWhile { it.isEmpty() }
     }
 
-    /** A run that ended with exit code 0, and its log, which stays under `build/commerce-batch`. */
-    class Finished(
-        val exitCode: Int,
-        val logFile: Path,
-    )
-
     /** `weeklyRanking`'s three identifying parameters. */
     data class WeeklyRankingParameters(
         val periodStart: LocalDate,
         val snapshotId: String,
         val revision: Long,
     ) {
-        /** The command-line spelling, with the types the job's validator requires (weekly-ranking design 8). */
+        /** The command-line spelling, with the types the job's validator requires (weekly-ranking design 4). */
         fun arguments(): List<String> {
             return listOf(
                 "periodStart=$periodStart,java.time.LocalDate",

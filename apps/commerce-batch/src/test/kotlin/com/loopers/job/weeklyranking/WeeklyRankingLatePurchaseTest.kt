@@ -2,6 +2,7 @@ package com.loopers.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
 import com.loopers.batch.job.weeklyranking.step.WeeklyRankingPublishStore
+import com.loopers.support.MovableClock
 import com.loopers.support.WeeklyRankingInputs.ASSIGNMENT_CHECKSUM
 import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
 import com.loopers.support.WeeklyRankingJobs.StoredPublication
@@ -36,11 +37,9 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.jdbc.Sql
-import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.ZoneOffset
 
 private val log = KotlinLogging.logger {}
@@ -50,14 +49,14 @@ private val log = KotlinLogging.logger {}
  * left (spec 259). Revision 1 freezes the assignment's section 6 inputs; the late purchase, order 45 (product 8 × 5), is then
  * inserted with a confirmed-at inside the period; revision 2 freezes it under a new snapshot ID.
  *
- * The context's clock is the nested [SettableClockConfig]'s, set before each run, so each snapshot's frozen-at time and the
+ * The context's clock is the nested [MovableClockConfig]'s, set before each run, so each snapshot's frozen-at time and the
  * publication's published-at time tell the runs apart.
  */
 @TestPropertySource(properties = ["spring.batch.job.name=${WeeklyRankingJobConfig.JOB_NAME}"])
 @Sql("/sql/purchase-activity.sql")
 class WeeklyRankingLatePurchaseTest @Autowired constructor(
     @param:Qualifier(WeeklyRankingJobConfig.JOB_NAME) private val job: Job,
-    private val clock: SettableClock,
+    private val clock: MovableClock,
 ) : BaseBatchJobTest() {
     @MockkSpyBean
     private lateinit var publishStore: WeeklyRankingPublishStore
@@ -91,7 +90,7 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
         jdbcClient.insertAssignmentActivities()
         runToCompletion(REVISION_1, at = REVISION_1_AT)
         insertLatePurchase()
-        clock.now = REVISION_2_AT
+        clock.instant = REVISION_2_AT
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(REVISION_2)
@@ -131,7 +130,7 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
         runToCompletion(REVISION_1, at = REVISION_1_AT)
         insertLatePurchase()
         val inputsBefore = jdbcClient.snapshotInputs(REVISION_1_ID)
-        clock.now = REVISION_2_AT
+        clock.instant = REVISION_2_AT
 
         // act
         jobOperatorTestUtils.startJob(REVISION_2)
@@ -158,7 +157,7 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
         runToCompletion(REVISION_2, at = REVISION_2_AT)
         val snapshotsBefore = jdbcClient.snapshots()
         val itemsBefore = jdbcClient.rankingItems()
-        clock.now = RERUN_AT
+        clock.instant = RERUN_AT
 
         // act
         assertThrows<JobInstanceAlreadyCompleteException> {
@@ -186,7 +185,7 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
         clearMocks(publishStore)
         insertLatePurchase()
         runToCompletion(REVISION_2, at = REVISION_2_AT)
-        clock.now = RERUN_AT
+        clock.instant = RERUN_AT
 
         // act
         val jobExecution = jobOperatorTestUtils.startJob(REVISION_1)
@@ -201,7 +200,7 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
 
     /** Runs [jobParameters] with the clock at [at], and stops the scene unless the run completes. */
     private fun runToCompletion(jobParameters: JobParameters, at: Instant) {
-        clock.now = at
+        clock.instant = at
         val jobExecution = jobOperatorTestUtils.startJob(jobParameters)
         check(jobExecution.status == BatchStatus.COMPLETED) { "The run of $jobParameters ended ${jobExecution.status}" }
     }
@@ -227,28 +226,16 @@ class WeeklyRankingLatePurchaseTest @Autowired constructor(
         }
     }
 
-    /** A clock whose instant a scene sets. Its instants have no fraction, so the cut to microseconds keeps them as they are. */
-    class SettableClock(var now: Instant) : Clock() {
-        override fun getZone(): ZoneId {
-            return ZoneOffset.UTC
-        }
-
-        override fun withZone(zone: ZoneId): Clock {
-            return fixed(now, zone)
-        }
-
-        override fun instant(): Instant {
-            return now
-        }
-    }
-
-    /** Puts a [SettableClock] in place of the context's primary `Clock`. */
+    /**
+     * Puts a [MovableClock] in the context as its primary `Clock`. The scene's instants have no fraction, so the cut to
+     * microseconds keeps them as they are.
+     */
     @TestConfiguration(proxyBeanMethods = false)
-    class SettableClockConfig {
+    class MovableClockConfig {
         @Primary
         @Bean
-        fun settableClock(): SettableClock {
-            return SettableClock(REVISION_1_AT)
+        fun movableClock(): MovableClock {
+            return MovableClock(REVISION_1_AT)
         }
     }
 
