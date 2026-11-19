@@ -1,6 +1,7 @@
 package com.loopers.job.weeklyranking
 
 import com.loopers.batch.job.weeklyranking.WeeklyRankingJobConfig
+import com.loopers.support.WeeklyRankingJobs.RANKING_TABLES
 import com.loopers.support.WeeklyRankingJobs.StoredScore
 import com.loopers.support.WeeklyRankingJobs.insertActivity
 import com.loopers.support.WeeklyRankingJobs.insertAssignmentActivities
@@ -35,7 +36,7 @@ class WeeklyRankingScoreTest @Autowired constructor(
 ) : BaseBatchJobTest() {
     @BeforeEach
     fun setUp() {
-        emptyTables("purchase_activity", "weekly_ranking_score", "weekly_ranking_snapshot_input", "weekly_ranking_snapshot")
+        emptyTables("purchase_activity", *RANKING_TABLES)
         jobOperatorTestUtils.job = job
     }
 
