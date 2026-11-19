@@ -1,7 +1,7 @@
 package com.loopers.adapter.webapi.v1.ranking
 
 import com.loopers.adapter.webapi.ApiResponse
-import com.loopers.application.ranking.provided.WeeklyRankingRequest
+import com.loopers.application.ranking.provided.WeeklyRankingFindRequest
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 
@@ -15,6 +15,6 @@ interface WeeklyRankingApiSpec {
             "삭제된 상품은 빠지고 남은 상품의 순위는 그대로이며, limit는 빠진 뒤에 셉니다. periodEnd는 들지 않는 끝(다음 월요일)입니다.",
     )
     fun getWeeklyRanking(
-        request: WeeklyRankingRequest,
+        request: WeeklyRankingFindRequest,
     ): ApiResponse<WeeklyRankingResponse>
 }

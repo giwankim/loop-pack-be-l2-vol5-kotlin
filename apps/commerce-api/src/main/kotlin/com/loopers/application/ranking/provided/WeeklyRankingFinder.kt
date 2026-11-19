@@ -8,9 +8,9 @@ import jakarta.validation.Valid
  */
 interface WeeklyRankingFinder {
     /**
-     * The weekly ranking that [WeeklyRankingRequest.periodStart]'s publication points to, its first [WeeklyRankingRequest.limit]
-     * items in rank order. Deleted products are left out before the limit, and the others keep their ranks. A period with no
-     * publication is [WeeklyRankingStatus.NOT_PUBLISHED] with no items.
+     * The weekly ranking that [WeeklyRankingFindRequest.periodStart]'s publication points to, its first
+     * [WeeklyRankingFindRequest.limit] items in rank order. Deleted products are left out before the limit, and the others keep
+     * their ranks. A period with no publication is [WeeklyRankingStatus.NOT_PUBLISHED] with no items.
      */
-    fun find(@Valid request: WeeklyRankingRequest): WeeklyRankingInfo
+    fun find(@Valid request: WeeklyRankingFindRequest): WeeklyRankingInfo
 }

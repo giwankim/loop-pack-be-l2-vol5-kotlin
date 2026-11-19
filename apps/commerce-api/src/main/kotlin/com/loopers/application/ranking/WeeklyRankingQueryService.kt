@@ -4,7 +4,7 @@ import com.loopers.application.product.provided.ProductFinder
 import com.loopers.application.ranking.provided.WeeklyRankingFinder
 import com.loopers.application.ranking.provided.WeeklyRankingInfo
 import com.loopers.application.ranking.provided.WeeklyRankingItemInfo
-import com.loopers.application.ranking.provided.WeeklyRankingRequest
+import com.loopers.application.ranking.provided.WeeklyRankingFindRequest
 import com.loopers.application.ranking.required.WeeklyRankingRepository
 import com.loopers.support.stereotype.ValidatedApplicationService
 
@@ -20,7 +20,7 @@ class WeeklyRankingQueryService(
     private val weeklyRankingRepository: WeeklyRankingRepository,
     private val productFinder: ProductFinder,
 ) : WeeklyRankingFinder {
-    override fun find(request: WeeklyRankingRequest): WeeklyRankingInfo {
+    override fun find(request: WeeklyRankingFindRequest): WeeklyRankingInfo {
         // Method validation has refused a missing value before this line.
         val periodStart = checkNotNull(request.periodStart)
         val publication = weeklyRankingRepository.findPublication(periodStart)

@@ -462,7 +462,7 @@ scripts/final-check --app commerce-batch
 
 | 자리 | 클래스 |
 | --- | --- |
-| `application/ranking/provided` | `WeeklyRankingFinder`, `WeeklyRankingRequest`, `WeeklyRankingInfo`와 그 항목·상태 |
+| `application/ranking/provided` | `WeeklyRankingFinder`, `WeeklyRankingFindRequest`, `WeeklyRankingInfo`와 그 항목·상태 |
 | `application/ranking` | `WeeklyRankingQueryService`(`@ValidatedApplicationService(readOnly = true)`) |
 | `application/ranking/required` | `WeeklyRankingRepository`와 두 읽기의 행 |
 | `adapter/persistence/ranking` | `JdbcWeeklyRankingRepository`. `JdbcClient`이고 엔티티가 없다. `JdbcClient`는 부른 쪽의 JPA 트랜잭션의 연결을 쓴다 |
@@ -501,7 +501,7 @@ scripts/final-check --app commerce-batch
 **요청.**
 
 - `periodStart`는 필수다. 없는 값, 날짜가 아닌 값, 월요일이 아닌 날짜는 모두 범용 `BAD_REQUEST`의 400이고 메시지가 까닭을 말한다. `limit`은 없으면 10이고, 1보다 작거나 100보다 크면 400이다.
-- 검사는 `WeeklyRankingRequest`의 Bean Validation이다. 월요일의 검사는 `@AssertTrue`다. 컨트롤러의 `@Valid`와 조회 서비스의 메서드 검증이 같은 제약을 실행하므로, 컨트롤러 없이 서비스를 부르는 쪽도 거절된다(13.10절).
+- 검사는 `WeeklyRankingFindRequest`의 Bean Validation이다. 월요일의 검사는 `@AssertTrue`다. 컨트롤러의 `@Valid`와 조회 서비스의 메서드 검증이 같은 제약을 실행하므로, 컨트롤러 없이 서비스를 부르는 쪽도 거절된다(13.10절).
 - `periodStart`는 `@NotNull`이 붙은 nullable이다. null이 아닌 생성자 매개변수면 없는 값이 Kotlin의 null 검사로 바인더에서 실패하고, 그 오류는 필드를 말하지 않는다.
 - 바인더가 바꾸지 못한 값(`periodStart=2026-08-32`)은 `ApiControllerAdvice`가 필드와 값을 넣어 말한다. 이 고침은 `@ModelAttribute`를 쓰는 모든 엔드포인트에 닿는다(13.10절).
 
@@ -653,8 +653,9 @@ scripts/final-check --app commerce-batch --app commerce-api
 | "이미 있으면 건너뛴다"는 실패와 재시작의 티켓(255)이 더한다(명세가 아니라 티켓의 나눔) | 254가 먼저 더했다. 255는 함께 진행하다 같은 확인을 따로 적었고, 254 위로 옮기며 254의 코드를 남겼다. 255의 커밋은 테스트뿐이다 | 254, 255 |
 | 게시는 커밋됐고 실행은 실패한 장면에서 spy가 "진짜 게시를 `REQUIRES_NEW` 트랜잭션에서 실행한 뒤 던진다" | spy가 `rankScores`와 `publish` 둘을 저마다 `REQUIRES_NEW`로 커밋한다. 과제 5절의 게시는 확인, 순위, 게시의 트랜잭션 전체다. 게시의 행만 커밋하면 주간 랭킹이 step과 함께 되돌아가, 재시작이 겹치는 키 없이 다시 순위를 매기고 "이미 있으면 건너뛴다"의 붉은 확인이 붉을 수 없다. 운영은 한 번 커밋하고 장면은 두 번 커밋한다 | 255 |
 | 있는 테스트의 장면은 job이 `publish`까지 실행된 뒤에도 지나간다 | 지나간다. 다만 `WeeklyRankingJobRestartTest`의 `score` 재시작 장면 여섯은 차수 2로 옮겼다. 새 장면이 넣어 두는 차수 1의 게시와 한 클래스에 있어서다. 단언은 그대로다 | 255 |
-| 월요일의 검사는 조회 서비스에도 둔다 | 서비스에 둘째 검사를 적지 않았다. `WeeklyRankingRequest`의 `@AssertTrue`를 컨트롤러의 `@Valid`와 서비스의 메서드 검증이 함께 실행한다. `CoreException`은 까닭을 말하는 메시지를 싣지 못하고, 프록시 뒤의 둘째 검사는 닿지 않는 코드가 된다. 컨트롤러 없는 테스트와 `@Valid`를 뺀 붉은 확인이 지킨다 | 256 |
+| 월요일의 검사는 조회 서비스에도 둔다 | 서비스에 둘째 검사를 적지 않았다. `WeeklyRankingFindRequest`의 `@AssertTrue`를 컨트롤러의 `@Valid`와 서비스의 메서드 검증이 함께 실행한다. `CoreException`은 까닭을 말하는 메시지를 싣지 못하고, 프록시 뒤의 둘째 검사는 닿지 않는 코드가 된다. 컨트롤러 없는 테스트와 `@Valid`를 뺀 붉은 확인이 지킨다 | 256 |
 | `periodStart`는 필수다 | `@NotNull`이 붙은 nullable이다(13.3절) | 256 |
+| Bean Validation은 `WeeklyRankingRequest`에 둔다 | 이름이 `WeeklyRankingFindRequest`다. `CODING_STANDARDS.md`의 `<애그리거트><동사>Request`를 따라 포트의 `find`를 동사로 삼았다. 이 읽기는 목록의 조각이 아니라 랭킹 하나라 다른 읽기의 `List`는 맞지 않는다. 256은 `ProductListRequest`를 따른다며 이름을 남겼고, 2026-11-19 명세의 마감 검토에서 고쳤다 | 256, 명세 마감 |
 | 머리는 게시와 스냅샷을 `period_start`로 잇는다 | 스냅샷 ID와 랭킹 기간 둘로 잇는다. 랭킹 기간만으로는 그 랭킹 기간의 모든 차수가 이어진다. 그래서 `weekly_ranking_snapshot.period_start`가 계약에 들었다 | 256 |
 | 날짜가 아닌 `periodStart`는 400이고 메시지가 까닭을 말한다 | `ApiControllerAdvice.handleMethodArgumentNotValid`가 바인딩 실패에 필드와 값을 넣어 말한다. 랭킹만이 아니라 `@ModelAttribute`를 쓰는 모든 엔드포인트에 닿는다. 전의 말을 고정한 테스트는 없었다 | 256 |
 | API의 테스트는 랭킹의 세 표를 테스트 전용 SQL 파일로 만든다 | 클래스 수준의 `@Sql(executionPhase = BEFORE_TEST_CLASS)`다. 테스트의 하위 클래스가 더할 수 있는 것의 목록이 닫혀 있어 `CODING_STANDARDS.md`에 날짜 붙인 메모를 더했다 | 256 |

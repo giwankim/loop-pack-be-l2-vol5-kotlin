@@ -17,7 +17,7 @@ class WeeklyRankingFinderTest(
     @Test
     fun `the query service refuses a periodStart that is not a Monday without the controller`() {
         val exception = assertThrows<ConstraintViolationException> {
-            weeklyRankingFinder.find(WeeklyRankingRequest(periodStart = LocalDate.parse("2026-08-18")))
+            weeklyRankingFinder.find(WeeklyRankingFindRequest(periodStart = LocalDate.parse("2026-08-18")))
         }
 
         assertThat(exception.constraintViolations.map { it.message }).containsExactly("periodStart는 월요일이어야 합니다.")

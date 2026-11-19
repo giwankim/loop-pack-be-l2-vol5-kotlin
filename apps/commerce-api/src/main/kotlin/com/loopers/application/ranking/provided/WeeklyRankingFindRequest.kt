@@ -20,7 +20,7 @@ import java.time.LocalDate
  *
  * The bounds of [limit] are the product list's: 100 at most, so the API decides how much one read returns.
  */
-data class WeeklyRankingRequest(
+data class WeeklyRankingFindRequest(
     @NotNull(message = "periodStart는 필수입니다.")
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     val periodStart: LocalDate?,
