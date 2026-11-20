@@ -19,7 +19,7 @@ spring:
 
 weekly-ranking:
   score:
-    chunk-size: 100 # products per chunk; not measured
+    chunk-size: 100 # products per chunk, and rows per score statement; not measured
 
 management:
   health:

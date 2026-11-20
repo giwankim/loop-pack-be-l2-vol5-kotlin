@@ -327,10 +327,12 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 | --- | --- | --- |
 | 리더 | `ScoreProductReader` | `JdbcCursorItemReader<Long>`를 상속한 `@StepScope` 빈. `SELECT DISTINCT product_id … WHERE snapshot_id = ? ORDER BY product_id`로 그 스냅샷의 상품을 상품 ID 순으로 한 번씩 읽는다. 한 항목이 한 상품이다. `snapshotId`는 `jobParameters`에서 받는다. 이름은 `scoreProductReader`이고, 상태를 저장한다 |
 | 프로세서 | `ScoreProcessor` | 상품마다 `WeeklyRankingScoreStore.sumQuantity(snapshotId, productId)`를 한 번 부른다. 그 스냅샷 입력의 `quantity`를 더하는 질의 하나다. `purchase_activity`는 읽지 않는다 |
-| 라이터 | `ScoreWriter` | chunk를 `WeeklyRankingScoreStore.saveScores`에 넘긴다. 상품마다 `INSERT … VALUES (?, ?, ?) AS computed ON DUPLICATE KEY UPDATE score = computed.score`다. 저장된 점수에 더하지 않고 구한 값으로 덮는다 |
-| chunk 크기 | `WeeklyRankingScoreProperties` | 속성 `weekly-ranking.score.chunk-size`. `application.yml`이 100으로 둔다. 1보다 작으면 시작할 때 거절한다 |
+| 라이터 | `ScoreWriter` | chunk를 `WeeklyRankingScoreStore.saveScores`에 넘긴다. chunk마다 한 문장이고, 상품마다 한 행이다. `INSERT … VALUES (?, ?, ?), (?, ?, ?), … AS computed ON DUPLICATE KEY UPDATE score = computed.score`. 저장된 점수에 더하지 않고 구한 값으로 덮는다 |
+| chunk 크기 | `WeeklyRankingScoreProperties` | 속성 `weekly-ranking.score.chunk-size`. `application.yml`이 100으로 둔다. 1보다 작으면 시작할 때 거절한다. 라이터의 한 문장에 드는 행의 수이기도 하다 |
 
 - 라이터의 행 별칭(`AS computed`)은 `VALUES(score)`를 대신한다. 그 함수는 MySQL 8.0.20부터 deprecated이고, 테스트의 컨테이너는 MySQL 8.4다.
+- (2026-11-20 issue 265) 라이터는 chunk를 한 문장으로 보낸다. 전에는 `saveScores`가 chunk를 돌며 상품마다 한 문장을 실행했다. chunk는 한 트랜잭션이었지만 점수 100개가 MySQL과의 왕복 100번이었다. 2단계는 프로세서의 질의만 한계로 적고(12.5절) 이것은 적지 않았다. 메서드와 그 시그니처는 그대로여서 `ScoreWriter`와 재시작 테스트의 spy(12.6절)는 바뀌지 않았다. 티켓이 먼저 확인하라고 한 것은 둘이다. `JdbcClient.params(List)`는 펼친 목록을 차례대로 묶는다. 한 문장으로 쓴 점수 5, 1, 5가 그것을 보인다(12.6절). 행 별칭은 여러 행의 `VALUES`에서도 그 행의 값을 가리킨다. MySQL 8.4에서 세 행이 모두 키가 겹치는 문장으로 봤다(12.7절).
+- JDBC 배치나 `JdbcBatchItemWriter`를 고르지 않았다. 배치는 Connector/J가 고쳐 써야 왕복이 준다. `jpa.yml`에 `rewriteBatchedStatements: true`가 있으나, 그것이 `AS computed`가 붙은 문장을 고쳐 쓰는지는 확인하지 않았다. 여러 행의 문장은 그 자체로 한 문장이다.
 - 리더는 운영 코드의 컴포넌트이고 job 설정의 빌더 `@Bean`이 아니다. Batch 6.0.6의 `JdbcCursorItemReader`에 `(DataSource, sql, RowMapper)` 생성자가 있어, 프로세서·라이터와 함께 `step` 아래에 둔다.
 - 리더는 드라이버의 fetch size를 기본값으로 둔다. Connector/J는 첫 읽기 전에 한 스냅샷의 상품 ID를 모두 받는다. 그 목록은 상품의 수로 묶인다. 모든 입력을 흘려 읽는 고정의 체크섬(5.1절)과 다르다.
 - 다시 시작하면 리더는 같은 질의를 다시 실행하고, 저장된 `scoreProductReader.read.count`만큼 건너뛴다. 스냅샷 입력은 고정한 뒤 바뀌지 않으므로 같은 자리다.
@@ -367,6 +369,7 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 ### 12.5 한계
 
 - **프로세서는 상품마다 질의 하나를 실행한다.** 과제 4절의 꼴이다. 한 chunk가 상품 100개면 질의도 100번이다.
+- **라이터의 한 문장은 chunk 크기만큼 커진다.** (2026-11-20 issue 265) 한 문장에 chunk의 모든 행이 들므로, `weekly-ranking.score.chunk-size`가 문장의 크기도 묶는다. 넘을 수 없는 값은 MySQL의 `max_allowed_packet`이다. 문장의 크기는 재지 않았다. 한 행은 스냅샷 ID(`VARCHAR(100)`)와 `BIGINT` 둘이다.
 - **chunk 크기의 기본값 100은 재지 않았다.** 처리량은 주장하지 않는다. 테스트의 스냅샷에는 상품이 셋이다.
 - **보조 인덱스가 두 질의에 인덱스만으로 답한다는 것은 `EXPLAIN`으로 확인하지 않았다.** 테스트는 인덱스가 있음만 본다.
 - **인덱스는 이미 있는 표에 저절로 생기지 않는다(12.2절).** `local`, `test` 밖에서는 스키마 스크립트와 함께 손으로 적용한다.
@@ -411,6 +414,12 @@ scripts/final-check --app commerce-batch --app commerce-streamer
 | 리더에 `setSaveState(false)` | 재시작 테스트의 셋. 상품 9 앞의 실패와 쓰기 뒤의 실패에서 저장된 읽은 수가 없고, 재시작이 3을 읽고 3을 쓴다. 그 위의 점수 5, 1, 5는 지나간다. 구한 값으로 덮는 저장이 가린 재처리를 메타데이터가 잡는다. 더한 횟수의 단언을 읽은 수·쓴 수의 단언 앞으로 옮겨 다시 돌리면, 상품 7이 두 번 더해져 그 단언도 붉다 |
 | `score` step을 `ResourcelessTransactionManager`로 | 쓰기 뒤의 실패 장면 하나. 실패한 실행에 상품 9의 점수 5가 남고, 저장된 읽은 수는 2다 |
 | 프로세서가 `purchase_activity`에서 더하게 | 재시작 뒤 점수를 보는 두 장면. 상품 9가 9다. 고정된 5에 고정 뒤의 주문 45의 4가 더해졌다 |
+
+2026-11-20 issue 265의 확인이다. 셋 다 커밋하지 않은 로컬 수정이고 되돌렸다.
+
+- **문장의 수.** `WeeklyRankingScoreTest`에 장면 하나를 더해, 과제의 주를 실행하는 앞뒤로 `performance_schema.events_statements_summary_by_digest`에서 점수 표의 `INSERT … ON DUPLICATE KEY UPDATE`가 실행된 횟수를 읽었다. 그 표는 컨테이너의 `root`로 읽는다. 이 클래스의 chunk 크기는 100이라 상품 셋이 한 chunk다. 고치기 전의 `saveScores`에서 그 장면만 붉었다(`expected: 1L but was: 3L`). 고친 뒤에는 1이다. 서버의 통계에 기대는 확인이라 장면으로 커밋하지 않았다.
+- **여러 행에서도 덮는다.** 고친 `saveScores`를 `score = weekly_ranking_score.score + computed.score`로 바꾸자 틀린 점수의 장면 하나만 붉었다. 상품 7이 104이고, 같은 문장의 8과 9는 1과 5다. 세 행 가운데 한 행만 키가 겹치는 문장이다.
+- **행 별칭은 그 행의 값이다.** 위의 장면은 겹치는 행이 문장의 첫 행 하나뿐이라, 별칭이 그 행의 값인지 첫 행의 값인지를 가르지 못한다. 그래서 운영 코드는 그대로 두고 틀린 점수의 장면이 상품 8에 50, 상품 9에 60도 먼저 넣게 했다. 세 행이 모두 겹치는 한 문장이다. 장면은 그대로 지나갔고 점수는 5, 1, 5다. 상품 8의 1은 첫 행의 5에서 올 수 없다.
 
 ### 12.8 끝의 확인
 

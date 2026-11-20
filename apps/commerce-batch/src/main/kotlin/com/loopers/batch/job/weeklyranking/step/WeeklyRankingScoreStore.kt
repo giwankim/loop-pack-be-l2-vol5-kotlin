@@ -35,20 +35,26 @@ class WeeklyRankingScoreStore(
 
     /**
      * Stores each of [scores] as [snapshotId]'s score of its product, replacing a stored one with the computed value rather
-     * than adding to it, so a product scored twice keeps the same score.
+     * than adding to it, so a product scored twice keeps the same score. All of [scores] go in one statement, a row each, so
+     * the caller's chunk size is also the bound on the statement's size.
      */
     fun saveScores(snapshotId: String, scores: List<ProductScore>) {
-        scores.forEach { productScore ->
-            jdbcClient
-                .sql(
-                    """
-                    INSERT INTO weekly_ranking_score (snapshot_id, product_id, score)
-                    VALUES (?, ?, ?) AS computed
-                    ON DUPLICATE KEY UPDATE score = computed.score
-                    """.trimIndent(),
-                )
-                .params(snapshotId, productScore.productId, productScore.score)
-                .update()
+        if (scores.isEmpty()) {
+            return
         }
+
+        val rowPlaceholders = scores.joinToString(", ") { "(?, ?, ?)" }
+        val params = scores.flatMap { productScore -> listOf(snapshotId, productScore.productId, productScore.score) }
+
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO weekly_ranking_score (snapshot_id, product_id, score)
+                VALUES $rowPlaceholders AS computed
+                ON DUPLICATE KEY UPDATE score = computed.score
+                """.trimIndent(),
+            )
+            .params(params)
+            .update()
     }
 }
