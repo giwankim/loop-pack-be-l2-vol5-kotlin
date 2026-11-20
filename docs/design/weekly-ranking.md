@@ -83,6 +83,58 @@
 - 저장하는 상태는 `FROZEN` 하나다. 진행 중이나 실패를 뜻하는 행은 쓰지 않는다. 뒤의 단계가 제 상태를 더한다. (2026-11-18 2단계: 점수의 단계는 상태를 더하지 않았다. 12.3절.) (2026-11-19 3단계: 게시도 상태를 더하지 않았다. 게시한 뒤에도 `FROZEN`이다. 13.1절.)
 - 두 표는 `sql/weekly-ranking-schema.sql`이 `CREATE TABLE IF NOT EXISTS`로 만든다. `spring.sql.init`이 `local, test` 블록에서 시작할 때마다 실행한다. 다른 프로필에서는 손으로 적용한다(8절). (2026-11-18 2단계: 같은 스크립트가 점수 표 `weekly_ranking_score`를 만들고, 스냅샷 입력에 보조 인덱스를 둔다. 12.2절.) (2026-11-19 3단계: 같은 스크립트가 `weekly_ranking_item`과 `weekly_ranking_publication`을 만든다. 13.2절.)
 
+### 3.1 다섯 표의 관계
+
+(2026-11-20) 표는 단계마다 하나둘씩 더해져 이 절, 12.2절, 13.2절에 나뉘어 있다. 아래는 네 단계가 끝난 뒤의 다섯 표를 한 그림에 모은 것이다. 컬럼과 키의 정본은 `sql/weekly-ranking-schema.sql`이다.
+
+```mermaid
+erDiagram
+    purchase_activity ||..o{ weekly_ranking_snapshot_input : "freeze가 옮겨 담는다"
+    weekly_ranking_snapshot ||--o{ weekly_ranking_snapshot_input : snapshot_id
+    weekly_ranking_snapshot ||--o{ weekly_ranking_score : snapshot_id
+    weekly_ranking_snapshot ||--o{ weekly_ranking_item : snapshot_id
+    weekly_ranking_snapshot ||--o| weekly_ranking_publication : snapshot_id
+
+    weekly_ranking_snapshot {
+        varchar snapshot_id PK
+        date period_start "UK (period_start, revision)"
+        bigint revision "UK (period_start, revision)"
+        varchar state "FROZEN뿐"
+        datetime frozen_at
+        bigint input_count
+        char input_checksum
+    }
+    weekly_ranking_snapshot_input {
+        varchar snapshot_id PK
+        bigint order_id PK
+        bigint product_id PK
+        int quantity
+        datetime confirmed_at
+    }
+    weekly_ranking_score {
+        varchar snapshot_id PK
+        bigint product_id PK
+        bigint score
+    }
+    weekly_ranking_item {
+        varchar snapshot_id PK
+        int product_rank PK
+        bigint product_id "UK (snapshot_id, product_id)"
+        bigint score
+    }
+    weekly_ranking_publication {
+        date period_start PK
+        varchar snapshot_id
+        bigint revision
+        datetime published_at
+    }
+```
+
+- 선은 선언한 외래 키가 아니다. 스키마 스크립트에 `FOREIGN KEY`가 없고, 표는 `snapshot_id`의 값으로만 이어진다. `order_id`와 `product_id`도 커머스의 표를 식별자로만 가리킨다(2절, ADR 0038).
+- 점선은 표 사이의 관계가 아니라 복사다. `freeze`가 `purchase_activity`의 행을 스냅샷 입력으로 옮겨 담고(5.1절), 그 뒤로 job은 `purchase_activity`를 읽지 않는다.
+- 게시는 랭킹 기간마다 한 행이고 그 랭킹 기간의 스냅샷 하나를 든다. 그래서 한 스냅샷에서 보면 게시는 없거나 하나다(13.2절, ADR 0039).
+- commerce-api가 읽는 것은 `weekly_ranking_publication`, `weekly_ranking_snapshot`, `weekly_ranking_item`의 셋이다(13.3절, [`CONTEXT-MAP.md`](../../CONTEXT-MAP.md)).
+
 ## 4. job과 매개변수
 
 - job은 `weeklyRanking`, 1단계의 step은 `freeze` 하나다. job 설정(`WeeklyRankingJobConfig`)과 그 빈들은 템플릿의 데모 job처럼 `spring.batch.job.name=weeklyRanking`일 때만 올라온다. (2026-11-18 2단계: job은 `freeze` 다음에 `score`를 실행한다. 매개변수와 검증기는 이 절 그대로다. 12.1절.) (2026-11-19 3단계: `score` 다음에 `publish`를 실행한다. 매개변수와 검증기는 여전히 이 절 그대로다. 13.1절.)
