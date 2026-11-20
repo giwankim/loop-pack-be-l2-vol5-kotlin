@@ -432,6 +432,8 @@ scripts/final-check --app commerce-batch
 - 이 브랜치는 commerce-streamer를 바꾸지 않았으므로 돌리지 않았다.
 - `8563adad`의 코드는 `fda30058`의 것이고, 그 뒤로는 문서만 바뀌었다.
 - (2026-11-18 [명세 246](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/246)의 닫는 검토) 검토의 고침(`184ae7f9`부터 `d7deb546`까지)이 테스트와 운영 코드를 바꿨으므로 `b63678a2`의 깨끗한 트리에서 다시 돌렸다(09:45:43Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했다(1 s). commerce-batch는 7개 클래스, 45개 테스트, 실패 0, 오류 0, 건너뜀 0이다(22 s). 검토가 더한 단언 둘은 있던 테스트의 줄이라 수는 그대로다. 이것이 2단계의 끝의 확인이다. 위의 `8563adad`의 실행은 앞의 확인이다. `b63678a2` 뒤로는 문서만 바뀌었다.
+- (2026-11-20 issue 265) 라이터를 한 문장으로 바꾼 `36362fa8`에서 `scripts/final-check --app commerce-batch`를 돌렸다(09:15:53Z 시작, `BOOTSTRAP_SERVERS` 없음). 스크립트는 트리에 커밋하지 않은 변경이 있다고 적었다. 추적하지 않는 `docs/blog/week9.md` 하나이고, 추적하는 파일은 커밋 그대로였다. ktlint가 통과했다(1 s). commerce-batch는 9개 클래스, 65개 테스트, 실패 0, 오류 0, 건너뜀 0이다(27 s). 이 변경은 테스트를 더하지도 바꾸지도 않았다. 위의 45개와의 차이는 3단계와 4단계의 것이다.
+- (같은 날, 같은 커밋) 뒤이어 `scripts/final-check --app commerce-api`를 돌렸다. 그 앱의 흐름 테스트가 배치를 자식 프로세스로 실행하기 때문이다(14절). ktlint가 통과했다(1 s). commerce-api는 118개 클래스, 1208개 테스트, 실패 0, 오류 0, 건너뜀 0이다(5 min 45 s). commerce-streamer는 바꾸지 않았으므로 돌리지 않았다. `36362fa8` 뒤로는 문서만 바뀌었다.
 
 ### 12.9 명세와 다른 것
 
