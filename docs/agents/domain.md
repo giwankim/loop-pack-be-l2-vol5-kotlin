@@ -12,15 +12,17 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## File structure
 
-This repo has two contexts since 2026-10-28, so `CONTEXT-MAP.md` exists at the root. Both contexts keep their ADRs in the root `docs/adr/`; there is no per-context ADR directory.
+This repo has two contexts since 2026-10-28 and three since 2026-11-17, so `CONTEXT-MAP.md` exists at the root. All contexts keep their ADRs in the root `docs/adr/`; there is no per-context ADR directory.
 
 ```
 /
 ├── CONTEXT-MAP.md
 ├── CONTEXT.md                         ← 커머스 (commerce-api)
-├── docs/adr/                          ← decisions of both contexts
+├── docs/adr/                          ← decisions of all contexts
 ├── apps/
 │   ├── commerce-api/
+│   ├── commerce-batch/
+│   │   └── CONTEXT.md                 ← 주간 랭킹 (commerce-batch)
 │   └── commerce-streamer/
 │       └── CONTEXT.md                 ← 구매 활동 (commerce-streamer)
 ├── modules/

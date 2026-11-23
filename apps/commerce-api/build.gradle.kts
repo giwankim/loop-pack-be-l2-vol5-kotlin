@@ -64,6 +64,17 @@ dependencies {
     commerceStreamerBootJar(project(path = ":apps:commerce-streamer", configuration = "bootArchives"))
 }
 
+// The real weekly ranking job in commerce-api's tests: commerce-batch's bootJar, which a test runs to its exit as a child process
+// (spec 259). Like the streamer's jar it is a test input only, so commerce-api gains no dependency on the batch.
+val commerceBatchBootJar: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+dependencies {
+    commerceBatchBootJar(project(path = ":apps:commerce-batch", configuration = "bootArchives"))
+}
+
 // OrderEventRelayFailedSendTest runs the resume and backlog SQL as the design document states it, so changing the document has to run it again.
 tasks.test {
     inputs.file(rootProject.file("docs/design/order-outbox.md")).withPathSensitivity(PathSensitivity.RELATIVE)
@@ -75,6 +86,21 @@ tasks.test {
     jvmArgumentProviders.add(
         CommandLineArgumentProvider {
             listOf("-Dcommerce-streamer.jar=${streamerJar.singleFile.absolutePath}")
+        },
+    )
+
+    // The batch's jar and the batch's own schema file for the ranking's tables, which a scene runs itself rather than a copy.
+    // CommerceBatchProcess reads both paths from these system properties.
+    val batchJar = commerceBatchBootJar
+    val rankingSchema = rootProject.file("apps/commerce-batch/src/main/resources/sql/weekly-ranking-schema.sql")
+    inputs.files(batchJar).withPathSensitivity(PathSensitivity.NONE).withPropertyName("commerceBatchBootJar")
+    inputs.file(rankingSchema).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("commerceBatchWeeklyRankingSchema")
+    jvmArgumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-Dcommerce-batch.jar=${batchJar.singleFile.absolutePath}",
+                "-Dcommerce-batch.weekly-ranking-schema=${rankingSchema.absolutePath}",
+            )
         },
     )
 }

@@ -17,6 +17,10 @@ spring:
     jdbc:
       initialize-schema: never
 
+weekly-ranking:
+  score:
+    chunk-size: 100 # products per chunk, and rows per score statement; not measured
+
 management:
   health:
     defaults:
@@ -30,6 +34,10 @@ spring:
   batch:
     jdbc:
       initialize-schema: always
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/weekly-ranking-schema.sql # the weekly ranking's tables, created only if missing
 
 ---
 spring:
