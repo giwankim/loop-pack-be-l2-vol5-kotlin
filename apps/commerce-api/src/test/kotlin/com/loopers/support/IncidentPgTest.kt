@@ -164,21 +164,27 @@ class IncidentPgTest(
 
     /**
      * The incident test reads the created PG order IDs in its `finally`, so a malformed create must not throw there and hide the
-     * phase's failure. The scene sends a create with no `orderId` to the test PG itself, since commerce always sends one.
+     * phase's failure. The scene sends a create with no `orderId` to the test PG itself, since commerce always sends one. A
+     * registered order's stub is in place, and the same create with its `orderId` is accepted, so the missing field alone is why the
+     * first one matched no stub.
      */
     @Test
-    fun `a create without a PG order ID is left out of the created ones, and is reported as unmatched`() {
+    fun `a create without a PG order ID matches no registered stub, and is left out of the created ones`() {
+        val pgOrderId = nextPgOrderId()
+        incidentPg.registerNormal(pgOrderId, amount = AMOUNT, card = CARD)
         val json = """
             {"cardType":"${CARD.type}","cardNo":"${CARD.number}","amount":$AMOUNT,
              "callbackUrl":"http://127.0.0.1:8080/api/v1/payments/callback"}
         """
 
-        val response = sendCreateJsonToPg(json)
+        val withoutOrderId = sendCreateJsonToPg(json)
+        val withOrderId = sendCreateToPg(pgOrderId)
 
-        assertThat(response.statusCode()).isEqualTo(404)
-        assertThat(incidentPg.createdPgOrderIds()).isEmpty()
+        assertThat(withoutOrderId.statusCode()).isEqualTo(404)
+        assertThat(withOrderId.statusCode()).isEqualTo(202)
+        assertThat(incidentPg.createdPgOrderIds()).containsExactly(pgOrderId)
         assertThat(incidentPg.pgOrderIdsCreatedMoreThanOnce()).isEmpty()
-        assertThat(incidentPg.createCount()).isOne()
+        assertThat(incidentPg.createCount()).isEqualTo(2)
         assertThat(incidentPg.unmatchedRequests()).hasSize(1)
     }
 
