@@ -6,7 +6,6 @@ import com.loopers.adapter.webapi.UserIdHeader
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
-import com.loopers.domain.product.Product
 import com.loopers.domain.shared.Money
 import com.loopers.domain.user.User
 import com.loopers.support.test.BaseWebApiAdapterTest
@@ -55,13 +54,11 @@ class IncidentPgTest(
 
     private lateinit var owner: User
 
-    private lateinit var item: Product
-
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
         owner = prepareUser()
-        item = prepareProduct(price = 1_000, stock = 10)
+        prepareProduct(price = 1_000, stock = 10)
     }
 
     @AfterEach
@@ -72,7 +69,7 @@ class IncidentPgTest(
     /** The PG holds the transaction as the lookup finds it: `SUCCESS`, under the key the fixture minted. */
     @Test
     fun `a registered normal order confirms as pending and finishes as successful on the PG's callback`() {
-        val orderId = prepareOrder(owner, listOf(item), quantity = 2).id
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
         val pgOrderId = nextPgOrderId()
         val registered = incidentPg.registerNormal(pgOrderId, amount = AMOUNT, card = CARD)
 
@@ -98,7 +95,7 @@ class IncidentPgTest(
      */
     @Test
     fun `a registered lost order confirms as unknown while response loss is on`() {
-        val orderId = prepareOrder(owner, listOf(item), quantity = 2).id
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
         val pgOrderId = nextPgOrderId()
         val registered = incidentPg.registerLost(pgOrderId, amount = AMOUNT, card = CARD)
 
@@ -113,7 +110,7 @@ class IncidentPgTest(
         assertThat(registered.status).isEqualTo(PgStatus.SUCCESS)
         assertThat(incidentPg.transactions()).containsExactly(registered)
         assertThat(incidentPg.createCount(pgOrderId)).isOne()
-        assertThat(incidentPg.lookupCount(pgOrderId)).isZero()
+        assertThat(incidentPg.listLookupCount(pgOrderId)).isZero()
         assertThat(incidentPg.unmatchedRequests()).isEmpty()
     }
 
@@ -123,7 +120,7 @@ class IncidentPgTest(
      */
     @Test
     fun `response loss is off until started and on while started, and once released a lost order's create is answered`() {
-        val orderId = prepareOrder(owner, listOf(item), quantity = 2).id
+        val orderId = prepareOrder(owner, listOf(product), quantity = 2).id
         val pgOrderId = nextPgOrderId()
         incidentPg.registerLost(pgOrderId, amount = AMOUNT, card = CARD)
         assertThat(incidentPg.isResponseLossOn()).isFalse()
@@ -149,10 +146,10 @@ class IncidentPgTest(
      */
     @Test
     fun `a second create for one PG order ID is reported, and an order created once is not`() {
-        val confirmedId = prepareOrder(owner, listOf(item), quantity = 2).id
+        val confirmedId = prepareOrder(owner, listOf(product), quantity = 2).id
         val confirmedPgOrderId = nextPgOrderId()
         incidentPg.registerNormal(confirmedPgOrderId, amount = AMOUNT, card = CARD)
-        val retriedId = prepareOrder(owner, listOf(item), quantity = 2).id
+        val retriedId = prepareOrder(owner, listOf(product), quantity = 2).id
         val retriedPgOrderId = nextPgOrderId()
         incidentPg.registerNormal(retriedPgOrderId, amount = AMOUNT, card = CARD)
         assertThat(requestConfirm(confirmedId)).hasStatus(HttpStatus.ACCEPTED)
@@ -167,14 +164,14 @@ class IncidentPgTest(
 
     /** The create commerce sent for [pgOrderId], sent again over HTTP to the test PG with the PG contract's headers. */
     private fun sendCreateToPg(pgOrderId: String): HttpResponse<String> {
-        val body = """
+        val json = """
             {"orderId":"$pgOrderId","cardType":"${CARD.type}","cardNo":"${CARD.number}","amount":$AMOUNT,
              "callbackUrl":"http://127.0.0.1:8080/api/v1/payments/callback"}
         """
         val request = HttpRequest.newBuilder(URI.create("${server.baseUrl()}/api/v1/payments"))
             .header("X-USER-ID", "135135")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .POST(HttpRequest.BodyPublishers.ofString(json))
             .build()
 
         return HttpClient.newHttpClient().use { client -> client.send(request, HttpResponse.BodyHandlers.ofString()) }

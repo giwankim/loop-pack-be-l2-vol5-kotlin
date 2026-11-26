@@ -246,8 +246,11 @@ class TestPg(
         return server.findAll(getRequestedFor(urlPathMatching(LOOKUP_PATHS))).size
     }
 
-    /** The list lookups the PG received whose query `orderId` is the PG order ID [pgOrderId], whatever their headers. */
-    fun lookupCount(pgOrderId: String): Int {
+    /**
+     * The list lookups the PG received whose query `orderId` is the PG order ID [pgOrderId], whatever their headers. Unlike
+     * [lookupCount], it leaves out lookups by transaction key, which carry no PG order ID.
+     */
+    fun listLookupCount(pgOrderId: String): Int {
         return server.findAll(getRequestedFor(urlPathEqualTo(PAYMENTS_PATH)).withQueryParam("orderId", equalTo(pgOrderId))).size
     }
 

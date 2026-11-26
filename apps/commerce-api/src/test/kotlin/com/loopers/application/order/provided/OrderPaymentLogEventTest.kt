@@ -512,12 +512,24 @@ class OrderPaymentLogEventTest(
 
     /** The one event of the scene's order whose name is [name]. */
     private fun event(name: String): LogEvent {
-        return orderApplicationLogs.logEventsOf(order.id).single { it.name == name }
+        return orderEvents().single { it.name == name }
     }
 
     /** The names of the scene's order's events, in the order they were logged. */
     private fun eventNames(): List<String> {
-        return orderApplicationLogs.logEventsOf(order.id).map { it.name }
+        return orderEvents().map { it.name }
+    }
+
+    /**
+     * The scene's order's event sequence. Every scene has one order, so it must be every captured event: an event of another
+     * order or one without an `orderId` fails the scene, as it did when the scenes read all events.
+     */
+    private fun orderEvents(): List<LogEvent> {
+        val events = orderApplicationLogs.logEventsOf(order.id)
+        val all = orderApplicationLogs.logEvents()
+        check(events == all) { "An event outside order ${order.id}: $all" }
+
+        return events
     }
 
     /** The fields every event carries. */

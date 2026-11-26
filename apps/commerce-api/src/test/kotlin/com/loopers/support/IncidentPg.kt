@@ -28,7 +28,7 @@ class IncidentPg(server: WireMockServer) {
     private val transactions = mutableListOf<PgTransaction>()
 
     /** The create of each lost order, by PG order ID, so the loss stubs can be added again when the loss is started. */
-    private val lostCreates = mutableMapOf<String, Pair<Long, CreditCard>>()
+    private val lostCreates = mutableMapOf<String, LostCreate>()
 
     /** The loss stubs in place. Empty while response loss is off. */
     private val lossStubs = mutableListOf<StubMapping>()
@@ -53,7 +53,7 @@ class IncidentPg(server: WireMockServer) {
     fun registerLost(pgOrderId: String, amount: Long, card: CreditCard): PgTransaction {
         val transaction = hold(pgOrderId, amount)
         testPg.acceptsCreate(pgOrderId, amount, card, transaction.transactionKey, pgStatus = PgStatus.SUCCESS.name)
-        lostCreates[pgOrderId] = amount to card
+        lostCreates[pgOrderId] = LostCreate(amount, card)
         if (responseLoss) {
             lossStubs += testPg.losesCreateResponse(pgOrderId, amount, card)
         }
@@ -66,7 +66,7 @@ class IncidentPg(server: WireMockServer) {
         check(!responseLoss) { "Response loss is already on." }
         responseLoss = true
         lostCreates.forEach { (pgOrderId, create) ->
-            lossStubs += testPg.losesCreateResponse(pgOrderId, amount = create.first, card = create.second)
+            lossStubs += testPg.losesCreateResponse(pgOrderId, create.amount, create.card)
         }
     }
 
@@ -100,8 +100,8 @@ class IncidentPg(server: WireMockServer) {
     }
 
     /** The list lookups the PG received for [pgOrderId]. */
-    fun lookupCount(pgOrderId: String): Int {
-        return testPg.lookupCount(pgOrderId)
+    fun listLookupCount(pgOrderId: String): Int {
+        return testPg.listLookupCount(pgOrderId)
     }
 
     /** The requests that matched no stub, as [TestPg.unmatchedRequests]. */
@@ -124,3 +124,9 @@ class IncidentPg(server: WireMockServer) {
         return transaction
     }
 }
+
+/** What a lost order's create carries besides its PG order ID, so its loss stub can be laid again. */
+private data class LostCreate(
+    val amount: Long,
+    val card: CreditCard,
+)
