@@ -109,7 +109,12 @@ class PaymentIncidentE2ETest(
         private const val PG_USER_ID = "135135"
 
         /** The files the fault phase writes. Recovery hashes them before it starts and checks the hashes at the end. */
-        private val FAULT_FILES = listOf("fault.json", "fault-health.json", "fault-prometheus.txt", "fault-log-events.json")
+        private val FAULT_FILES = phaseFiles("fault") + "fault-log-events.json"
+
+        /** The three files [observe] writes for [phase]: the record, health as fetched, and Prometheus as fetched. */
+        private fun phaseFiles(phase: String): List<String> {
+            return listOf("$phase.json", "$phase-health.json", "$phase-prometheus.txt")
+        }
     }
 
     /** Field injection, not the constructor. The reason is on the same field in `OrderPaymentIntegrationTest`. */
@@ -145,10 +150,10 @@ class PaymentIncidentE2ETest(
     @Test
     fun `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`() {
         val evidence = IncidentEvidence.start(objectMapper, Instant.now())
-        val ownerRowsAtStart = ownerRows()
         var phase = "baseline"
         var failure: Throwable? = null
         try {
+            val ownerRowsAtStart = ownerRows()
             val baseline = runBaseline(evidence)
 
             phase = "fault"
@@ -361,16 +366,23 @@ class PaymentIncidentE2ETest(
         val targets = unresolvedOrderIds().toList()
         assertThat(targets).isEqualTo(fault.lostOrderIds)
         assertThat(incidentPg.isResponseLossOn()).isFalse()
-        val faultFileSha256 = FAULT_FILES.associateWith { evidence.sha256(it) }
+        val faultFileSha256 = faultFileSha256(evidence)
         val createsBefore = incidentPg.createCount()
 
         targets.forEach { orderId ->
-            val reconciled = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
-            reconciled.extractingPath("$.data.status").isEqualTo("CONFIRMED")
-            reconciled.extractingPath("$.data.paymentStatus").isEqualTo("SUCCESS")
+            val body = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
+            body.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+            body.extractingPath("$.data.paymentStatus").isEqualTo("SUCCESS")
         }
 
-        val record = observe(evidence, "recovery", fault.orderIds, targets, expectedUnknown = "0.0", faultFileSha256)
+        val record = observe(
+            evidence,
+            "recovery",
+            fault.orderIds,
+            targets,
+            expectedUnknown = "0.0",
+            faultFileSha256 = faultFileSha256,
+        )
 
         val pgTransactions = incidentPg.transactions().associateBy { it.pgOrderId }
         assertThat(record.responseLossOn).isFalse()
@@ -415,20 +427,29 @@ class PaymentIncidentE2ETest(
         val eventsBeforeRepeats = orderApplicationLogs.logEvents()
         val pgRequestsBeforeRepeats = incidentPg.requestCount()
         targets.forEach { orderId ->
-            val reconciled = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
-            reconciled.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+            val secondReconcileBody = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
+            secondReconcileBody.extractingPath("$.data.status").isEqualTo("CONFIRMED")
             assertThat(requestCallback(orderId)).hasStatusOk()
         }
         val otherUser = prepareUser()
-        val refused = assertThat(requestReconcile(targets.first(), otherUser.id)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
-        refused.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
+        val error = assertThat(requestReconcile(targets.first(), otherUser.id)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        error.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
 
         assertThat(orderRows(allOrderIds)).isEqualTo(rowsBeforeRepeats)
         assertThat(orderApplicationLogs.logEvents()).isEqualTo(eventsBeforeRepeats)
         assertThat(incidentPg.requestCount()).isEqualTo(pgRequestsBeforeRepeats)
         assertThat(outboxRowCounts()).isEqualTo(allOrderIds.associateWith { 1 })
         assertThat(ownerRows()).isEqualTo(ownerRowsAtStart)
-        assertThat(FAULT_FILES.associateWith { evidence.sha256(it) }).isEqualTo(record.faultFileSha256)
+        assertThat(readOrders(allOrderIds)).hasSize(2 * ORDERS_PER_PHASE).allSatisfy({
+            assertThat(it.createCount).isOne()
+        })
+        val writtenSha256: Map<String, String> = JsonPath.read(evidence.read("recovery.json"), "$.faultFileSha256")
+        assertThat(faultFileSha256(evidence)).isEqualTo(writtenSha256)
+    }
+
+    /** The SHA-256 of each fault file as it is now, by file name. */
+    private fun faultFileSha256(evidence: IncidentEvidence): Map<String, String> {
+        return FAULT_FILES.associateWith { evidence.sha256(it) }
     }
 
     /**
@@ -514,9 +535,10 @@ class PaymentIncidentE2ETest(
             unresolvedGauge = scraped.gauge,
             faultFileSha256 = faultFileSha256,
         )
-        evidence.writeJson("$phase.json", record)
-        evidence.writeText("$phase-health.json", scraped.health)
-        evidence.writeText("$phase-prometheus.txt", scraped.prometheus)
+        val (recordFile, healthFile, prometheusFile) = phaseFiles(phase)
+        evidence.writeJson(recordFile, record)
+        evidence.writeText(healthFile, scraped.health)
+        evidence.writeText(prometheusFile, scraped.prometheus)
 
         return record
     }
@@ -832,6 +854,11 @@ private class IncidentEvidence private constructor(
     /** Writes [value] as indented JSON to a new file [name]. Fails if the file exists. */
     fun writeJson(name: String, value: Any) {
         writeText(name, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value))
+    }
+
+    /** The text of the file [name], as a later check reads back what was written. Fails if the file does not exist. */
+    fun read(name: String): String {
+        return Files.readString(directory.resolve(name))
     }
 
     /** The SHA-256 of the file [name] as it is now, in lowercase hex. Fails if the file does not exist. */
