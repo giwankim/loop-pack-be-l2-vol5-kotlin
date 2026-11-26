@@ -225,7 +225,7 @@ class OrderPaymentIntegrationTest(
 
     /**
      * 과제 6절의 장면 4. 생성은 PG에 닿았지만 응답을 잃었다. PG 거래가 생겼을 수도 있으므로 결제는 결과 미확인, 주문은 결제 중인 주문으로
-     * 남고 예약도 그대로다(ADR 0024 규칙 4). 그런 결제의 수는 gauge가 알리고, 어느 주문인지는 주문 식별자를 담은 WARN 한 줄이 남긴다. 생성은 다시 보내지
+     * 남고 예약도 그대로다(ADR 0024 규칙 4). 그런 결제의 수는 gauge가 알리고, 어느 주문인지는 WARN 이벤트 `pg.create.outcome-unknown`의 `orderId`가 남긴다. 생성은 다시 보내지
      * 않는다. 대사가 PG 주문 번호로 그 PG 거래를 찾아 결제를 끝내고, 생성은 1 그대로다(ADR 0024 규칙 3).
      */
     @Test
@@ -245,7 +245,9 @@ class OrderPaymentIntegrationTest(
         assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(testPg.createCount()).isOne()
         assertThat(applicationLogs.list.filter { it.level == Level.WARN }).singleElement().satisfies({
-            assertThat(it.formattedMessage).contains("결과 미확인", "orderId=${order.id}")
+            assertThat(it.keyValuePairs.associate { pair -> pair.key to pair.value.toString() })
+                .containsEntry("event", "pg.create.outcome-unknown")
+                .containsEntry("orderId", order.id.toString())
         })
         inNewTransaction {
             val persisted = orderFinder.find(user.id, order.id)
@@ -889,7 +891,7 @@ class OrderPaymentIntegrationTest(
      */
     @ParameterizedTest
     @CsvSource(
-        "several transactions, PG 거래가 2개다",
+        "several transactions, PG 거래를 여럿 말해",
         "another PG order ID, reason=PG_ORDER_ID_MISMATCH",
         "another amount, reason=AMOUNT_MISMATCH",
     )
