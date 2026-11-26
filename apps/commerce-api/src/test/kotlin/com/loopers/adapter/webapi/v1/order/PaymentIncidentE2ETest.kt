@@ -98,6 +98,9 @@ class PaymentIncidentE2ETest(
         private val SCRAPE_WAIT: Duration = Duration.ofSeconds(10)
 
         private val GAUGE_STATUSES = listOf("UNKNOWN", "PENDING")
+
+        /** The PG contract's synthetic account, every PG request's `X-USER-ID`. The test PG's stubs match only this value. */
+        private const val PG_USER_ID = "135135"
     }
 
     /** Field injection, not the constructor. The reason is on the same field in `OrderPaymentIntegrationTest`. */
@@ -256,16 +259,22 @@ class PaymentIncidentE2ETest(
 
     /**
      * The diagnosis of the fault's unresolved payments, as an operator would make it. Every [Hypothesis] and its expected observation
-     * is fixed in the test and its time taken before the first lookup. Then, for each lost order, the test sends the PG's list
-     * lookup straight to the test PG by the PG order ID read from the payment row, and reads the order's captured log events. Each
-     * hypothesis judges that observation, and `verdict.json` holds the judgements. Commerce is not asked: no endpoint of it is
-     * called, and the rows the lookups could have moved are read before and after them and must be equal.
+     * is fixed in the test and written to `hypotheses.json` before the first lookup. Then, for each lost order, the test sends the
+     * PG's list lookup straight to the test PG by the PG order ID read from the payment row, and reads the order's captured log
+     * events. Each hypothesis judges that observation, and `verdict.json` holds the hypotheses again with the judgements, so the
+     * verdict reads on its own. Commerce is not asked: no endpoint of it is called, and the rows the lookups could have moved are
+     * read before and after them and must be equal.
      *
      * The lookup lands in the same request log as commerce's own. The fault phase saw none for these PG order IDs, so exactly one
-     * afterwards is the operator's, and commerce sent none in between.
+     * afterwards is the operator's, and commerce sent none in between. Every lookup finds the transaction `SUCCESS`, so "still
+     * processing" falls to the lookup and "failed apply" can fall only to the event order.
      */
     private fun runDiagnosis(evidence: IncidentEvidence, fault: PhaseRecord) {
-        val hypothesesWrittenAt = Instant.now().toString()
+        val hypotheses = HypothesesRecord(
+            writtenAt = Instant.now().toString(),
+            hypotheses = Hypothesis.entries.map { HypothesisRecord(it, it.statement, it.expected) },
+        )
+        evidence.writeJson("hypotheses.json", hypotheses)
         val lost = fault.orders.filter { it.orderId in fault.lostOrderIds }
         val rowsBefore = diagnosedRows(fault.lostOrderIds)
 
@@ -273,8 +282,10 @@ class PaymentIncidentE2ETest(
             val pgOrderId = checkNotNull(order.pgOrderId) { "Order ${order.orderId} has no PG order ID." }
             val lookedUpAt = Instant.now().toString()
             val lookup = sendListLookupToPg(pgOrderId)
+            check(lookup.statusCode() == 200) {
+                "The PG's list lookup for $pgOrderId answered ${lookup.statusCode()}: ${lookup.body()}"
+            }
             val observation = Observation(
-                lookupHttpStatus = lookup.statusCode(),
                 lookupStatuses = JsonPath.read(lookup.body(), "$[*].status"),
                 events = orderApplicationLogs.logEventsOf(order.orderId).map { it.name },
             )
@@ -284,6 +295,7 @@ class PaymentIncidentE2ETest(
                 pgOrderId = pgOrderId,
                 lookedUpAt = lookedUpAt,
                 lookupBody = lookup.body(),
+                observed = observation,
                 judgements = Hypothesis.entries.map { it.judge(observation) },
             )
         }
@@ -291,14 +303,14 @@ class PaymentIncidentE2ETest(
         evidence.writeJson(
             "verdict.json",
             VerdictRecord(
-                hypothesesWrittenAt = hypothesesWrittenAt,
-                hypotheses = Hypothesis.entries.map { HypothesisRecord(it.name, it.statement, it.expected) },
+                hypothesesWrittenAt = hypotheses.writtenAt,
+                hypotheses = hypotheses.hypotheses,
                 orders = diagnoses,
             ),
         )
 
         assertThat(diagnoses).hasSize(LOST_PLACES.size).allSatisfy({ diagnosis ->
-            assertThat(diagnosis.judgements.map { it.observed.lookupHttpStatus }).containsOnly(200)
+            assertThat(diagnosis.observed.lookupStatuses).containsExactly("SUCCESS")
             assertThat(diagnosis.verdictOf(Hypothesis.A)).isEqualTo(Verdict.REJECTED)
             assertThat(diagnosis.verdictOf(Hypothesis.B)).isEqualTo(Verdict.ACCEPTED)
             assertThat(diagnosis.verdictOf(Hypothesis.C)).isEqualTo(Verdict.REJECTED)
@@ -335,7 +347,7 @@ class PaymentIncidentE2ETest(
     private fun sendListLookupToPg(pgOrderId: String): HttpResponse<String> {
         val query = URLEncoder.encode(pgOrderId, StandardCharsets.UTF_8)
         val request = HttpRequest.newBuilder(URI.create("${server.baseUrl()}/api/v1/payments?orderId=$query"))
-            .header("X-USER-ID", "135135")
+            .header("X-USER-ID", PG_USER_ID)
             .GET()
             .build()
 
@@ -589,44 +601,52 @@ private enum class Hypothesis(val statement: String, val expected: String) {
     fun judge(observation: Observation): Judgement {
         val verdict = if (holds(observation)) Verdict.ACCEPTED else Verdict.REJECTED
 
-        return Judgement(hypothesis = name, expected = expected, observed = observation, verdict = verdict)
+        return Judgement(hypothesis = this, expected = expected, verdict = verdict)
     }
 }
 
 private enum class Verdict { ACCEPTED, REJECTED }
 
-/** What the diagnosis saw for one order: the PG's answer to the list lookup, and the order's captured event names in order. */
+/** What the diagnosis saw for one order: the statuses in the PG's answer to the list lookup, and the order's event names in order. */
 private data class Observation(
-    val lookupHttpStatus: Int,
     val lookupStatuses: List<String>,
     val events: List<String>,
 )
 
 /** One hypothesis judged against one order's observation, as `verdict.json` holds it. */
 private data class Judgement(
-    val hypothesis: String,
+    val hypothesis: Hypothesis,
     val expected: String,
-    val observed: Observation,
     val verdict: Verdict,
 )
 
-/** One lost order's diagnosis: when its lookup was sent, the PG's answer as received, and each hypothesis's judgement. */
+/**
+ * One lost order's diagnosis: when its lookup was sent, the PG's answer as received, what was observed, and each hypothesis's
+ * judgement of that observation.
+ */
 private data class OrderDiagnosis(
     val orderId: Long,
     val pgOrderId: String,
     val lookedUpAt: String,
     val lookupBody: String,
+    val observed: Observation,
     val judgements: List<Judgement>,
 ) {
     fun verdictOf(hypothesis: Hypothesis): Verdict {
-        return judgements.single { it.hypothesis == hypothesis.name }.verdict
+        return judgements.single { it.hypothesis == hypothesis }.verdict
     }
 }
 
 private data class HypothesisRecord(
-    val hypothesis: String,
+    val hypothesis: Hypothesis,
     val statement: String,
     val expected: String,
+)
+
+/** `hypotheses.json`: the hypotheses and their expected observations, written before the first lookup. */
+private data class HypothesesRecord(
+    val writtenAt: String,
+    val hypotheses: List<HypothesisRecord>,
 )
 
 /** `verdict.json`: the hypotheses as written before the first lookup, and each lost order's judgements. */
