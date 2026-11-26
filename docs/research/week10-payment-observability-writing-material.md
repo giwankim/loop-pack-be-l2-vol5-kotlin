@@ -65,3 +65,35 @@ This change was not committed: adding `and deleted_at is null` to the count. The
 - **ADR 0014 gets a dated memo on rule 1** for the exception. The design doc's §2 (issue 272) still has to state it, along with "revisit the count if payments can be deleted".
 - **Two base helpers.** `confirmOrderRejectedBeforeCreate` and `confirmOrderLosingCreateResponse` exist so that `PaymentFinderTest` does not inject `OrderConfirmer` just to prepare data. `confirmOrder` shares their body. `CODING_STANDARDS.md` has dated notes for both, and for the class's `JdbcTemplate`.
 - **The migration adds the index with `ALGORITHM = INPLACE, LOCK = NONE`.** It was not run against a non-test schema.
+
+## Issue 269: the count as the gauge commerce.payment.unresolved over a real scrape
+
+Recorded 2026-11-26 from issue 269's closing comment. The text below is the comment's.
+
+Implemented as `79a7c758`. `scripts/final-check --app commerce-api` on `79a7c758`, a clean tree, started 2026-11-26T06:09:40Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1222 tests (5 min 47 s), 0 failures, 0 errors, 0 skipped**.
+
+### Acceptance criteria
+
+- [x] **Over real HTTP, the Prometheus text contains `commerce_payment_unresolved` for `status="UNKNOWN"` and `status="PENDING"`.** `UnresolvedPaymentGaugeE2ETest`, first scene, on `BaseRealPortWebApiAdapterTest`. The `# HELP` line carries the three things the description must state: what it counts, "can be one interval old", and "aggregate with max, not sum".
+- [x] **One-order rehearsal.** `losesCreateResponse`, confirm over `mvc` (202): the scraped `UNKNOWN` value becomes `1.0` within a bounded wait, health answers 200 and `UP`, `PENDING` stays `0.0`. With the successful PG transaction stubbed, the customer's reconcile answers 200 and `UNKNOWN` returns to `0.0`. The PG's create count stays 1 and no request missed a stub.
+- [x] **A 처리 중 payment shows as 1 under `status="PENDING"`.** A create accepted as `PENDING`; `UNKNOWN` stays `0.0`.
+- [x] **A failed count turns both series to `NaN`, and the next good count restores the values.** A `PaymentQueryService` spy throws from `countUnresolved`. Both series scrape as `NaN` and the adapter logged a WARN with the exception. With the stub lifted, `UNKNOWN` returns to `1.0` and `PENDING` to `0.0`.
+- [x] **In the default `test` context the gauge's bean and its metric are absent.** `UnresolvedPaymentGaugeDisabledTest` (on `BaseApplicationServiceTest`, the shared context) finds no `UnresolvedPaymentGauge` bean and no meter named `commerce.payment.unresolved`. `UnresolvedPaymentGaugeEnabledPropertyTest` reads the real `application.yml`, as `OrderEventRelayEnabledPropertyTest` does: on under local, dev, qa and prd, off under test, and 10s under the deployed profiles.
+- [x] **No scene reads the gauge from a bean or a status JSON in place of the Prometheus text.** Every value is a line of the scraped text. The disabled scene checks only that the meter is absent.
+- [x] **Red check.** See below.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Red check
+
+Not committed: deleting `count.set(null)` from the refresh's `catch`, so a failed count keeps the last value. The scene `a failed count turns both series to NaN with a WARN, and the next good count restores the values` failed at its wait for `NaN` (`ConditionTimeoutException`: not fulfilled within 10 seconds). The scraped value stayed `1.0`. The source was restored before the commit.
+
+### Decisions made while implementing
+
+- **One stored count, both series read it.** The refresh stores an `UnresolvedPaymentCount?` in one `AtomicReference`, and `null` is `NaN` for both. A scrape never mixes two refreshes. The gauges are registered with Micrometer's supplier form, which holds the state strongly; the `obj, fn` form holds a weak reference.
+- **The failure lasts until the scene has seen `NaN`.** The spec says the spy fails the count once. At the base's 100 ms interval the next tick overwrites a single failure, and a scrape can miss it. So the stub throws until the scene scrapes `NaN`, and the scene then lifts it. `CODING_STANDARDS.md` has a dated note for the spy.
+- **`adapter.monitoring` is a sixth adapter layer** in `HexagonalArchitectureTest`, and it reaches only provided ports, like the relay's trigger. That keeps Micrometer out of the application layer (story 24). Without the layer, `ensureAllClassesAreContainedInArchitecture` fails.
+- **The `test` profile turns it off, and every other profile has it on.** `matchIfMissing = true` plus `enabled: true` in the default document, `false` in the test document. The real-port base sets it on at 100 ms, so its context (and `ManagementEndpointE2ETest`'s) counts in the background. Neither captures SQL.
+- **Two KDocs changed.** `OrderPaymentSaga` and `OrderPaymentIntegrationTest` said no metric finds an unknown payment, and the review found that `OrderEventRelayScheduler` said an instance with the relay off has no scheduling at all. The gauge now enables scheduling everywhere but `test`. The WARNs' new shape is issue 270's.
+- **Requests go through `mvc`, as the spec says.** The confirm and reconcile helpers are a fourth copy of `OrderConfirmationApiTest`'s, like the earlier ones the issue 262 note records.
+- **The real-port context with `@EnableTestPg` and the spy is one more cached context.**
