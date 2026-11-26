@@ -110,7 +110,7 @@ class OrderPaymentSaga(
             pgTransactionFields(pgTransaction),
         )
 
-        return applyTransactionAndLog(userId, orderId, pgTransaction, Trigger.CONFIRM, payment)
+        return applyTransactionAndLog(Trigger.CONFIRM, payment, userId, orderId, pgTransaction)
     }
 
     /**
@@ -137,7 +137,7 @@ class OrderPaymentSaga(
         val payment = paymentFinder.findByOrder(order.id)
 
         val pgTransaction = try {
-            retrieveTransaction(payment, Trigger.RECONCILE)
+            retrieveTransaction(Trigger.RECONCILE, payment)
         } catch (_: PgUnavailableException) {
             null
         }
@@ -146,7 +146,7 @@ class OrderPaymentSaga(
             return orderFinder.findInfo(userId, orderId)
         }
 
-        return applyTransactionAndLog(userId, orderId, pgTransaction, Trigger.RECONCILE, payment)
+        return applyTransactionAndLog(Trigger.RECONCILE, payment, userId, orderId, pgTransaction)
     }
 
     /**
@@ -166,7 +166,7 @@ class OrderPaymentSaga(
         val payment = paymentFinder.findByOrder(order.id)
 
         val pgTransaction = try {
-            retrieveTransaction(payment, Trigger.CALLBACK)
+            retrieveTransaction(Trigger.CALLBACK, payment)
         } catch (_: PgUnavailableException) {
             throw CoreException(ErrorType.PG_UNAVAILABLE)
         }
@@ -175,7 +175,7 @@ class OrderPaymentSaga(
             return
         }
 
-        applyTransactionAndLog(order.userId, orderId, pgTransaction, Trigger.CALLBACK, payment)
+        applyTransactionAndLog(Trigger.CALLBACK, payment, order.userId, orderId, pgTransaction)
     }
 
     /**
@@ -198,7 +198,7 @@ class OrderPaymentSaga(
      * Every answer leaves one `pg.lookup.*` event with [trigger], the unavailable one before it is rethrown ([logEvent]). The
      * transaction key is the found transaction's, or else the payment's if it is known.
      */
-    private fun retrieveTransaction(payment: Payment, trigger: Trigger): PgTransaction? {
+    private fun retrieveTransaction(trigger: Trigger, payment: Payment): PgTransaction? {
         val knownKey = mapOf("transactionKey" to payment.transactionKey)
 
         val transaction = try {
@@ -237,11 +237,11 @@ class OrderPaymentSaga(
 
     /** TX B's entry for [transaction], logged as [applyAndLog] says, with the key of the transaction it applies. */
     private fun applyTransactionAndLog(
+        trigger: Trigger,
+        payment: Payment,
         userId: Long,
         orderId: Long,
         transaction: PgTransaction,
-        trigger: Trigger,
-        payment: Payment,
     ): OrderInfo {
         return applyAndLog(trigger, payment, mapOf("transactionKey" to transaction.transactionKey)) {
             orderPaymentSagaSteps.applyTransaction(userId, orderId, transaction)
