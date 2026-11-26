@@ -1,0 +1,16 @@
+{
+  "writtenAt" : "2026-11-26T12:06:03.969260Z",
+  "hypotheses" : [ {
+    "hypothesis" : "A",
+    "statement" : "The PG is still processing the payment.",
+    "expected" : "The PG's list lookup finds the transaction PENDING."
+  }, {
+    "hypothesis" : "B",
+    "statement" : "The PG's success response was lost.",
+    "expected" : "The lookup finds the transaction SUCCESS, and the order's only event is pg.create.outcome-unknown."
+  }, {
+    "hypothesis" : "C",
+    "statement" : "Commerce received the success but failed to apply it.",
+    "expected" : "The lookup finds the transaction SUCCESS, and the order's events hold pg.create.accepted, then payment.apply.failed."
+  } ]
+}

@@ -1,0 +1,119 @@
+{
+  "phase" : "baseline",
+  "observedAt" : "2026-11-26T12:06:03.350864Z",
+  "responseLossOn" : false,
+  "orderIds" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ],
+  "lostOrderIds" : [ ],
+  "unresolvedOrderIds" : [ ],
+  "orders" : [ {
+    "orderId" : 1,
+    "idempotencyKey" : "2a01260a-c8cf-4e35-96c0-b6f4c8234432",
+    "pgOrderId" : "f0cadc3f-d1dd-4e65-a199-47c0e15523a4",
+    "transactionKey" : "20261126:TR:incident-1",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 2,
+    "idempotencyKey" : "e449c6aa-81a4-476d-82b5-de98866eebed",
+    "pgOrderId" : "b1141f77-d246-42b2-a246-c88c7d111f89",
+    "transactionKey" : "20261126:TR:incident-2",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 3,
+    "idempotencyKey" : "ae6f3971-85f8-4765-a508-33d8a7508ecd",
+    "pgOrderId" : "29626451-2e4b-44bc-a57d-c4f8405983de",
+    "transactionKey" : "20261126:TR:incident-3",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 4,
+    "idempotencyKey" : "5a8f77ee-71ba-40ef-894c-3ff540c79a9b",
+    "pgOrderId" : "54943893-53a4-4fa3-8287-f093b642947d",
+    "transactionKey" : "20261126:TR:incident-4",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 5,
+    "idempotencyKey" : "8bbdfe2e-c763-4774-a346-f6d0ddeb9588",
+    "pgOrderId" : "e28ce3e8-3212-4f83-937c-07447e2f19ef",
+    "transactionKey" : "20261126:TR:incident-5",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 6,
+    "idempotencyKey" : "8128eaf2-79d1-4878-8b75-38514cfc9058",
+    "pgOrderId" : "89ae3733-99e9-4b2e-9434-3bd0382e8b5c",
+    "transactionKey" : "20261126:TR:incident-6",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 7,
+    "idempotencyKey" : "82f79f99-b0f4-4240-b632-751162ddba80",
+    "pgOrderId" : "393f6f0d-f201-489e-8857-cffc55014911",
+    "transactionKey" : "20261126:TR:incident-7",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 8,
+    "idempotencyKey" : "b5e2baee-94ca-4b9c-9102-943a0a39196f",
+    "pgOrderId" : "636de23f-374c-4c1a-9214-f29eb3ffc03f",
+    "transactionKey" : "20261126:TR:incident-8",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 9,
+    "idempotencyKey" : "6b71ea13-eace-4c9b-9427-04ec291d7174",
+    "pgOrderId" : "70d216c8-51e8-4a52-94e8-d98769f90258",
+    "transactionKey" : "20261126:TR:incident-9",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 10,
+    "idempotencyKey" : "c6aaa479-4c07-4797-90d4-bd1e38ffd3c3",
+    "pgOrderId" : "eb233b7f-d112-4347-955b-ce0078d71aa7",
+    "transactionKey" : "20261126:TR:incident-10",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  } ],
+  "productStock" : 10,
+  "pgTransactionCount" : 10,
+  "pgCreateCount" : 10,
+  "pgOrderIdsCreatedMoreThanOnce" : [ ],
+  "unmatchedPgRequests" : 0,
+  "healthStatus" : "UP",
+  "unresolvedGauge" : {
+    "UNKNOWN" : "0.0",
+    "PENDING" : "0.0"
+  }
+}
