@@ -136,3 +136,29 @@ The changes below were not committed.
 - **`faultFileSha256` is a nullable field of the phase record.** Only recovery sets it, and the shared mapper leaves it out of the other phases' files.
 - **The PG transaction's `SUCCESS` is read from the fixture**, which is the PG here. A real lookup would add to the lookup counts the test asserts. The proof that commerce applied the PG's transaction is the matching transaction key.
 - **The test is renamed** `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`.
+
+## Issue 279: the incident section of the design doc, and the final check's run committed as evidence
+
+Recorded 2026-11-26 from [issue 279's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/279#issuecomment-7192347452). The text below is the comment's.
+
+Implemented as `e875b133`, on top of `a0429979`. Docs and evidence only. `scripts/final-check --app commerce-api` on `a0429979`, a clean tree, started 2026-11-26T12:03:50Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (7 min 29 s), 0 failures, 0 errors, 0 skipped**. That is 2 classes and 5 tests more than step 1's final check (124, 1244). Its incident run is `20261126T120602Z-0c742bb1`. No file under `src/main` changed in spec 274. Only documents and evidence changed after `a0429979`.
+
+### Acceptance criteria
+
+- [x] **Section 3 is written in the design doc's Korean and uses the glossary's terms.** [Section 3 of `docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/e875b133/docs/design/payment-incident.md#3-2단계-사고의-재현과-복구) covers, in order: what was built, the lifecycle and its fixture, the three hypotheses and the verdict, the proof of recovery, the evidence layout, the failed-recovery cases, what was not chosen, the limits, the scenes, the red checks, the final check, where the build differs from the spec, and what step 3 inherits. 운영자 is on 관리자's Avoid list, so the section defines it once as the person handling the incident, not the admin-API role.
+- [x] **The committed evidence is the run of this ticket's final check, and the design doc records its commit and run ID.** [`docs/evidence/week10/20261126T120602Z-0c742bb1/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/e875b133/docs/evidence/week10/20261126T120602Z-0c742bb1) holds the run's 12 files, byte-identical to the build directory (`diff -r` is empty). It has no `failure.json`, and the Prometheus texts are untrimmed. The four fault files still match the SHA-256s in `recovery.json`. Section 3.5 records the commit `a0429979` and the run ID, with the run's values per phase.
+- [x] **The three red checks are in the design doc with the scene that failed.** Section 3.10 lists them: the early 알림 (fault phase, `UNKNOWN 2.0`), the recovery by a new-key confirm (refused with `IDEMPOTENCY_KEY_MISMATCH`, failing on the gauge), and the lost order's PG transaction held `PENDING` (A `ACCEPTED`). It adds the direct re-sent create from 278 and the two from 275.
+- [x] **The design doc's step table marks step 2 as built.** So does the status line.
+- [x] **`scripts/final-check --app commerce-api` passes on a clean tree, with no skipped tests, and its commit, time and counts are recorded.** Section 3.11. See the run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Also in section 3
+
+- **Week 5 scenes for failed recoveries (3.6).** Lookup unavailable, no transaction (scene 8), several transactions and another amount (scene 9) are cited by test name. For "still `PENDING`" no week 5 scene reconciles while the PG still says pending. The scene cited is step 1's `unchanged` log event scene, and it asserts the events only. No scene re-reads the payment row after a reconcile finds `PENDING`. This is recorded as a limit.
+- **Two limits for step 3's runbook (3.8).** An operator reconciles as the customer, carrying the owner's `X-USER-ID`, and must reach the PG directly to diagnose.
+
+### Decisions made while writing
+
+- **The evidence is a separate directory per run**, `docs/evidence/week10/<run id>/`, so a later step's run can sit beside it.
+- **The review corrected 278's wording.** `result=unchanged` does not come only from a race. A sequential reconcile that finds `PENDING` again leaves it too. Section 3.4 says that a confirmed order's reconcile and 알림 never reach TX B. 278's note above is left as it was recorded.
+- **The committed Prometheus texts carry the local absolute path** in the `disk_free_bytes` and `disk_total_bytes` labels. They are kept untrimmed, as the spec asks.
