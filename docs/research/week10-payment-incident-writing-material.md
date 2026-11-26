@@ -95,3 +95,44 @@ The change below was not committed.
 - **C follows the ticket's definition**, `pg.create.accepted` then `payment.apply.failed`. The design doc (2.11) also names `pg.lookup.found` → `payment.apply.failed` and `pg.create.rejected` → `payment.apply.failed` as failed applies. Neither path can reach a lost create, so the verdict is the same, but a later incident with a lookup in its sequence would need C widened.
 - **The hypotheses keep the spec's letters A, B and C.** The review suggested names, and the letters were kept because spec 274 labels them that way. The enum's KDoc and the files carry each statement.
 - The test is renamed `lost responses leave three payments unknown under health UP, a PG lookup and log events tell why, evidence is kept`. The longer name did not fit ktlint's 130 columns.
+
+## Issue 278: recovering the three unresolved payments through the reconcile API, proven on the same ten orders
+
+Drafted 2026-11-26 as issue 278's closing comment. The text below is the comment's.
+
+Implemented as `933e30ff`, with review fixes in `68e86fac`, on top of `9c45c8af`. `scripts/final-check --app commerce-api` on `68e86fac`, a clean tree, started 2026-11-26T11:39:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 16 s), 0 failures, 0 errors, 0 skipped**. Class and test counts are the same as issue 277's run: recovery extends the same `@Test`. Its incident run is `20261126T114111Z-a052e207`. No file under `src/main` changed since `9c45c8af`.
+
+### Acceptance criteria
+
+- [x] **The fault set's same 10 orders, read fresh: 10 confirmed, 0 결과 미확인, 10 PG transactions all `SUCCESS`; 20 PG transactions in all.** [`PaymentIncidentE2ETest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/68e86fac/apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/PaymentIncidentE2ETest.kt)'s new `runRecovery` reads the targets from the database's unresolved payments, asserts them equal to the three lost orders, and freezes them. It asserts response loss off, and reconciles each target once through `POST /api/v1/orders/{orderId}/payment/reconcile` with the owner's `X-USER-ID` (200, `CONFIRMED`/`SUCCESS`). `recovery.json` holds the fault's 10 order IDs, all `CONFIRMED`/`SUCCESS` with no reservation. Each payment's transaction key equals the one the PG holds, and no unresolved payment is left. The PG transaction count from the request log is 20.
+- [x] **Create count is 1 for each of the 20 PG 주문 번호, the increase during recovery is 0, and no PG request missed its stub.** The total create count is the same before and after the reconciles. Each of the 20 orders, read fresh at the end, has one create. `pgOrderIdsCreatedMoreThanOnce` is empty and `unmatchedPgRequests` is 0. Each target has two list lookups: the diagnosis's and the reconcile's.
+- [x] **Stock is down by exactly 20 at the end, with nothing more deducted on success.** Product stock is 0 (20 − 20) after recovery and is unchanged by the repeats.
+- [x] **The owner's point balance and coupon are unchanged.** The owner's `point_account` and `coupon` rows, read whole at the start of the run, equal those read at the end.
+- [x] **One outbox row per order, still one after the repeats.** After the repeats, each of the 20 orders has exactly one live `order_event_outbox` row.
+- [x] **A second reconcile and a repeated PG 알림 on a recovered order change nothing.** See the deviation below for `result=unchanged`. After a second reconcile (200, `CONFIRMED`) and a repeated 알림 (200) for each target, the orders, payments, product and outbox rows of all 20 orders are unchanged. The captured event list is unchanged, and the PG received no request.
+- [x] **Another user's reconcile of a fault order is refused.** 404 with `ORDER_NOT_FOUND`, inside the same unchanged-rows window.
+- [x] **Scraped gauge `UNKNOWN` returns to `0.0`; health is UP.** `recovery.json`, `recovery-health.json` and `recovery-prometheus.txt` come from one scrape: `UNKNOWN 0.0`, `PENDING 0.0`, `UP`.
+- [x] **The fault files' hashes at the end equal those in `recovery.json`.** `fault.json`, `fault-health.json`, `fault-prometheus.txt` and `fault-log-events.json` are hashed before the first reconcile. `recovery.json` carries the hashes as `faultFileSha256`. At the end the test reads `recovery.json` back from disk and compares it with the files hashed again.
+- [x] **Red checks, not committed, recorded in the writing material.** See below.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** See the run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Deviation: no `result=unchanged`
+
+A recovered order is `CONFIRMED`. Both reconcile paths, the customer's and the PG 알림's, return at `OrderPaymentSaga.checkLookupNeeded` before any lookup or TX B, so they leave no event at all. `payment.apply.committed` with `result=unchanged` comes only from a TX B that re-reads a payment another path already applied: a race, which a sequential test cannot reach without a production change, and the spec forbids one. "Changes nothing" is asserted as no new event, no PG request and unchanged rows. That is stronger than one log line. The `unchanged` event itself stays pinned by `OrderPaymentLogEventTest`. This is a wording error in the ticket, not a gap in commerce, so no new ticket.
+
+### Red checks
+
+The changes below were not committed.
+- **An early 알림 for a fault order.** The fault phase also plays the first lost order's PG 알림. The gauge wait fails with `expected: {"PENDING"="0.0", "UNKNOWN"="3.0"} but was: {"PENDING"="0.0", "UNKNOWN"="2.0"}`, and `failure.json` has `"phase" : "fault"`.
+- **Recovery by a new confirm.** The first target is confirmed again with a new idempotency key instead of reconciled. Commerce refuses it with `IDEMPOTENCY_KEY_MISMATCH` before any create leaves, so the duplicate-create check does not go red. Recovery fails on the gauge instead (`UNKNOWN 1.0` where `0.0` is expected, `"phase" : "recovery"`). The guard against a second charge is ADR 0024/0025's idempotency key, not the test.
+- **A second create re-sent straight to the PG.** To show that the duplicate-create check can go red, the first target's create is re-sent to the test PG over `HttpClient` (202). Recovery fails on that order's `createCount=2`, and the `finally`'s check is added as suppressed: `PG order IDs that received more than one create: [<its PG order ID>]`.
+
+### Decisions made while implementing
+
+- **The row snapshot gains the outbox.** The diagnosis's `diagnosedRows` is now `orderRows` and includes `order_event_outbox`. The diagnosis also asserts zero outbox rows for the three lost orders before recovery.
+- **`IncidentPg` gains `requestCount()`**, delegating to `TestPg`, for the repeats' "no PG request".
+- **The fault files are named from the phase files `observe` writes** (`phaseFiles("fault")` plus `fault-log-events.json`), so a renamed suffix cannot leave the hash list stale.
+- **`faultFileSha256` is a nullable field of the phase record.** Only recovery sets it, and the shared mapper leaves it out of the other phases' files.
+- **The PG transaction's `SUCCESS` is read from the fixture**, which is the PG here. A real lookup would add to the lookup counts the test asserts. The proof that commerce applied the PG's transaction is the matching transaction key.
+- **The test is renamed** `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`.
