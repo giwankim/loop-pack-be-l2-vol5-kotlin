@@ -65,3 +65,33 @@ The change below was not committed.
 - **`failure.json` carries the phase, the exception's class and message, and its stack trace.** The `finally` releases response loss and checks for a second create on any PG order ID. A second create fails the test on its own, or is added as suppressed to an earlier failure. A failure in `@BeforeEach`, before the run directory exists, has nowhere to write.
 - **The evidence writer stays in the test.** It has one user, so by the 도우미 rule it is a private class of `PaymentIncidentE2ETest`, not `com.loopers.support`. `IncidentPg` gains `createCount()` and `createdPgOrderIds()`. `CODING_STANDARDS.md` notes the class's constructor dependencies.
 - **Not yet asserted here.** `fault-log-events.json` holds the three orders' captured events (each a single `pg.create.outcome-unknown` with `cause` `NoHttpResponseException`). Judging them is issue 277's verdict.
+
+## Issue 277: judging three hypotheses for the unresolved payments by a read-only PG lookup and log events
+
+Recorded 2026-11-26 from [issue 277's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/277#issuecomment-7190724667). The text below is the comment's.
+
+Implemented as `f72939f6`, with review fixes in `f7d6a2df`, on top of `f6ed99bb`. `scripts/final-check --app commerce-api` on `f7d6a2df`, a clean tree, started 2026-11-26T11:19:29Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 14 s), 0 failures, 0 errors, 0 skipped**. Class and test counts are the same as issue 276's run: the diagnosis extends the same `@Test`. Its incident run is `20261126T112123Z-4599ad08`. No file under `src/main` changed since `f6ed99bb`.
+
+### Acceptance criteria
+
+- [x] **The payment, order and stock rows of the three orders are identical before and after the lookup.** [`PaymentIncidentE2ETest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/f7d6a2df/apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/PaymentIncidentE2ETest.kt)'s new `runDiagnosis` reads whole rows (`select *`) of the three `orders`, their three `payment` rows and the one `product` row before and after the lookups. It asserts that the sets are equal, and that they hold 3, 3 and 1 rows, so the equality is not over empty lists.
+- [x] **Per order: A is rejected by the lookup's status, C by the event sequence, B is accepted.** Each hypothesis is an enum entry with its statement, its expected observation, and a check that judges the observation. The test asserts per order that A is `REJECTED`, B is `ACCEPTED` and C is `REJECTED`. It also asserts that every lookup found exactly `SUCCESS`, so C, which expects `SUCCESS` too, can fall only to the event order.
+- [x] **The event sequence is read from captured events by `orderId`, through the reader of the first ticket.** `orderApplicationLogs.logEventsOf(orderId).map { it.name }`. Each lost order's sequence is `[pg.create.outcome-unknown]`.
+- [x] **Red check, not committed, recorded in the writing material.** See below.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** See the run above.
+- [x] **The closing comment is appended to the writing material.** It goes into `docs/research/week10-payment-incident-writing-material.md`.
+
+### Red checks
+
+The change below was not committed.
+- The fixture holds the first lost order's PG transaction as `PENDING` (`IncidentPg.hold`'s 13th transaction). The fault phase still passes, since its create response is lost and commerce sends no lookup. The diagnosis then reads lookup `["PENDING"]` for order 13 and judges A `ACCEPTED` and B `REJECTED`. The assertion fails with `expected: REJECTED but was: ACCEPTED` at the A verdict. The run directory holds the baseline and fault files, `verdict.json` with that order's judgements, and `failure.json` with `"phase" : "diagnosis"`.
+
+### Decisions made while implementing
+
+- **The test sends the lookup itself.** It sends `GET /api/v1/payments?orderId=<PG order ID>` with the PG contract's `X-USER-ID` over `HttpClient`, straight to the test PG, as `IncidentPgTest` sends its second create. No commerce endpoint is called, and the fixture gains nothing.
+- **The operator's lookup is told apart by count.** It lands in the same request log as commerce's own lookups. The fault phase asserted zero list lookups for the three PG order IDs, and the diagnosis asserts exactly one afterwards, so it is the operator's and commerce sent none in between. Create counts (one per PG order ID, 20 in all) and unmatched requests (none) are asserted unchanged.
+- **The hypotheses get their own file, `hypotheses.json`.** It is written before the first lookup. The evidence writer creates files only, so `verdict.json` could not be written early and filled in afterwards. `verdict.json` repeats the hypotheses and their `writtenAt`, so it reads on its own. Per order it holds the PG order ID, the lookup's time and raw body, one observation (lookup statuses and event names), and each hypothesis's expected observation and verdict. This file is one more than the spec's list.
+- **The lookup's HTTP status is checked before its body is parsed**, so a 4xx or 5xx reaches `failure.json` as itself and not as a JSON parse error.
+- **C follows the ticket's definition**, `pg.create.accepted` then `payment.apply.failed`. The design doc (2.11) also names `pg.lookup.found` → `payment.apply.failed` and `pg.create.rejected` → `payment.apply.failed` as failed applies. Neither path can reach a lost create, so the verdict is the same, but a later incident with a lookup in its sequence would need C widened.
+- **The hypotheses keep the spec's letters A, B and C.** The review suggested names, and the letters were kept because spec 274 labels them that way. The enum's KDoc and the files carry each statement.
+- The test is renamed `lost responses leave three payments unknown under health UP, a PG lookup and log events tell why, evidence is kept`. The longer name did not fit ktlint's 130 columns.
