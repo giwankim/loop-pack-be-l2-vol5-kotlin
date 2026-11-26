@@ -162,3 +162,125 @@ Implemented as `e875b133`, on top of `a0429979`. Docs and evidence only. `script
 - **The evidence is a separate directory per run**, `docs/evidence/week10/<run id>/`, so a later step's run can sit beside it.
 - **The review corrected 278's wording.** `result=unchanged` does not come only from a race. A sequential reconcile that finds `PENDING` again leaves it too. Section 3.4 says that a confirmed order's reconcile and 알림 never reach TX B. 278's note above is left as it was recorded.
 - **The committed Prometheus texts carry the local absolute path** in the `disk_free_bytes` and `disk_total_bytes` labels. They are kept untrimmed, as the spec asks.
+
+## Spec 274: the closing review
+
+Recorded 2026-11-26 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274#issuecomment-7194436290) of [spec 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274). The text is the comment's, with its blob URLs.
+
+Step 2 of week 10 is built, and its closing review is done. `scripts/final-check --app commerce-api` on `7902fb9f`, a clean tree, started 2026-11-26T13:51:41Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 25 s), 0 failures, 0 errors, 0 skipped**. Step 1's final check ended at 124 classes and 1244 tests, so this step adds 2 classes and 5 tests. The review's fixes add and remove no test, so the counts match the run on `a0429979` that issue 279 recorded. Only documents and evidence change after `7902fb9f`.
+
+Tickets 275–279 are closed, each with its own comment. [Design 3](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/design/payment-incident.md#3-2단계-사고의-재현과-복구) holds the step. No file under `src/main` changed in this spec, and there is no ADR.
+
+### The incident, as the committed run shows it
+
+The committed evidence is now this final check's incident run, [`docs/evidence/week10/20261126T135338Z-47f59811/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident/docs/evidence/week10/20261126T135338Z-47f59811): 12 files, no `failure.json`, the Prometheus texts untrimmed. It replaces issue 279's run `20261126T120602Z-0c742bb1`, because the review changed the incident test. The values are the same; only the timestamps, the PG order IDs and the hashes differ.
+
+| Phase | What the files hold |
+| --- | --- |
+| Baseline | Orders 1–10 all `CONFIRMED`/`SUCCESS`, one create and one list lookup each. Stock 10, 10 PG transactions, gauge `UNKNOWN 0.0`, `PENDING 0.0`, health `UP` |
+| Fault | Orders 11–20 under response loss. 13, 16 and 19 are `PAYMENT_PENDING`/`UNKNOWN` with one reservation, one create, no list lookup and a `null` transaction key, and they are the database's unresolved payments. Stock 0, 20 PG transactions, gauge `UNKNOWN 3.0`, health still `UP`. Each lost order's only event is `pg.create.outcome-unknown` (WARN, `cause=NoHttpResponseException`) |
+| Diagnosis | Hypotheses written at 13:53:39.578Z, before the first PG lookup at .590Z. Every lookup finds `["SUCCESS"]`: A (still processing) rejected, B (response lost) accepted, C (failed apply) rejected. No order, payment, product or outbox row changed |
+| Recovery | The customer's reconcile on the three. Orders 11–20 all `CONFIRMED`/`SUCCESS`, no reservation, one create each, so no customer is charged twice. 20 PG transactions and 20 creates, no unresolved payment, gauge `UNKNOWN 0.0`, health `UP`. The four fault files still hash as `recovery.json` holds them (`fault.json` starts `bb4fd0c2…`) |
+
+### Where the implementation differs
+
+[Design 3.12](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/design/payment-incident.md#312-명세와-다른-것) has nine rows, all from the tickets; this review added none. The ones that change what a reader would assume:
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| A repeated reconcile and 알림 leave `result=unchanged` | No event at all. A confirmed order returns before the lookup and TX B, so the test asserts no new event, no PG request and equal rows | Issue 278 |
+| Recovering by a new-key confirm turns the duplicate-create check red | Commerce refuses it with `IDEMPOTENCY_KEY_MISMATCH` before any create, so it fails on the gauge. A create re-sent straight to the test PG shows the check can go red | Issue 278 |
+| All 10 PG transactions `SUCCESS` | Read from the fixture, which is the PG here. The proof that commerce applied each is the matching transaction key | Issue 278 |
+
+**Not proven here:** how an operator reconciles without carrying the customer's `X-USER-ID`, diagnosis without direct access to the PG, a PG that sends its 알림, response loss other than a dropped connection, hypothesis C after a lookup, the payment row after a reconcile finds `PENDING` again, and anything about throughput or concurrency ([design 3.8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/design/payment-incident.md#38-한계)). The first two are where step 3's runbook starts.
+
+### The closing review
+
+A two-axis review of `week10...feat/payment-incident` at `c2bd90a8` (17 commits, 21 files), with one reviewer on the standards and one on this spec. Standards found 1 hard breach of a documented rule, 3 possible breaches and 6 kinds of possible smell. Spec found 2 partial requirements, 3 weaker implementations and no scope creep. Each was checked against the code and decided.
+
+#### What changed
+
+- **`3136770a`: the incident test takes its order IDs from the orders `prepareOrder` returns.** It created the orders, dropped what the port returned, and read the IDs back by SQL, against the fixture rule that generated values are read from what `prepare` built. The port returns the saved order, so the IDs are still the database's own. This supersedes issue 276's "named by the order IDs read back from the database".
+- **`3136770a`: the callback's request JSON is `json`**, not `body`, as the HTTP test rule names it, and `charge` takes the balance and the owner by name.
+- **`3136770a`: the PG contract's user ID lives in one place.** `TestPg.PG_USER_ID` is public, and the incident test and `IncidentPgTest` use it instead of their own `"135135"`.
+- **`7902fb9f`: the design no longer says baseline to recovery took under a second.** It was measured with a 100 ms gauge refresh where production uses 10 s, so under the evidence rule it was at best a reference, and nothing argued from it.
+
+#### Left as they were
+
+- **The `finally` releases response loss and checks for a second create before writing `failure.json`.** Both are in-memory WireMock calls, and the class promises `failure.json` for a failure in the phases, which holds.
+- **The spec's three weaker items** (`SUCCESS` read from the fixture, the second red check, no `result=unchanged`) are stated in design 3.4, 3.10 and 3.12.
+- **Each phase states its own assertions**, so the per-order block and the health and duplicate-create checks repeat across phases. A phase reads top to bottom as its acceptance criteria, and a red check fails on the line that names it.
+- **`IncidentPg` delegates five reads to its private `TestPg`.** It is the one test PG the incident sees, and keeping `TestPg` private keeps stubs from going around its state.
+- **Lost orders filtered outside `PhaseRecord`**, at two call sites in one file.
+- **Strings for statuses and gauge values, `(pgOrderId, amount, card)` travelling together, and `Hypothesis.A/B/C`.** The records mirror the JSON files, and A/B/C are the spec's labels, already in the committed `hypotheses.json`.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/research/week10-payment-incident-writing-material.md#spec-274-the-closing-review).
+
+## Draft PR body
+
+The body of the PR from `feat/payment-incident` into `week10`, written at the spec's closing review (2026-11-26) in `/mattpocock-skills:pr`'s shape, with the final check on `7902fb9f` and the comment's link. It makes no timing, throughput or concurrency claim; none was measured under production settings.
+
+### Summary
+
+Week 10 step 2. The PG succeeds but commerce never hears it, so three payments stay 결과 미확인 while health answers UP. This branch reproduces that incident in one test on real MySQL and the test PG, tells its cause apart from two others by a read-only PG lookup and each order's log events, recovers the payments through the customer's 대사, and proves the recovery on the same ten orders. Every phase writes its evidence to files and asserts on what it wrote.
+
+- **Spec:** issue 274, with tickets 275–279, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274#issuecomment-7194436290)
+- **Design:** [`docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/design/payment-incident.md) section 3: 3.2 the lifecycle, 3.3 the hypotheses and the verdict, 3.4 the recovery and its proof, 3.5 the evidence, 3.8 the limits, 3.10 the red checks, 3.12 what differs from the spec, 3.13 what step 3 inherits
+- **Evidence:** [`docs/evidence/week10/20261126T135338Z-47f59811/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident/docs/evidence/week10/20261126T135338Z-47f59811), the final check's incident run, 12 files as written
+- **Writing material:** [`docs/research/week10-payment-incident-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident/docs/research/week10-payment-incident-writing-material.md), which holds every ticket's closing comment
+- **No production code changed, and no ADR.** Test code and documents only.
+
+One `@Test`, four phases, each ending in one observation that is written and then asserted:
+
+```text
+PaymentIncidentE2ETest
+  baseline   orders 1–10, each confirmed and finished by its PG 알림         → baseline.json, -health.json, -prometheus.txt
+  fault      orders 11–20; the 3rd, 6th, 9th lose the create's response     → fault.json, …, fault-log-events.json
+             (IncidentPg: the PG makes a SUCCESS transaction and drops the connection)
+  diagnosis  hypotheses first, then a PG list lookup sent straight to the test PG → hypotheses.json, verdict.json
+             A still processing | B response lost | C failed apply, judged by the lookup's status and the order's events
+  recovery   the customer's 대사 on the unresolved payments in the DB           → recovery.json (with the fault files' SHA-256), …
+  finally    release the loss, fail on any PG order ID created twice          → failure.json on a failure
+```
+
+### Evidence
+
+**Before:** step 1 showed one lost order moving the gauge, but nothing reproduced an incident among normal orders, separated its cause from the others, or showed the recovery on the same orders without a second create.
+
+**After:** from the committed run, values as the files hold them.
+
+| Phase | Gauge `UNKNOWN` | Health | Unresolved in the DB | PG transactions / creates | Stock |
+| --- | --- | --- | --- | --- | --- |
+| Baseline (orders 1–10) | 0.0 | UP | none | 10 / 10 | 10 |
+| Fault (orders 11–20) | 3.0 | UP | 13, 16, 19 | 20 / 20 | 0 |
+| Recovery (the same 11–20) | 0.0 | UP | none | 20 / 20 | 0 |
+
+- **Diagnosis:** every lookup finds `["SUCCESS"]` and each lost order's only event is `pg.create.outcome-unknown`, so A is rejected, B accepted, C rejected. No order, payment, product or outbox row changed.
+- **Recovery:** all ten `CONFIRMED`/`SUCCESS` with one create each, the lost three with two list lookups (the diagnosis's and the 대사's). A second 대사 and a repeated 알림 change no row and send no PG request; another user's 대사 is refused.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| One lost order's 알림 sent before the fault's observation | The fault phase: `UNKNOWN 2.0` where `3.0` is expected; `failure.json` with `"phase" : "fault"` |
+| The first target confirmed with a new 멱등 키 instead of reconciled | Refused with `IDEMPOTENCY_KEY_MISMATCH` before any create; recovery fails on the gauge (`UNKNOWN 1.0`) |
+| The first target's create re-sent straight to the test PG | Recovery fails on `createCount=2`, and the `finally` adds the duplicate-create failure |
+| One lost order's PG transaction held `PENDING` | The diagnosis: A `ACCEPTED`, `expected: REJECTED but was: ACCEPTED` |
+| `stopResponseLoss` leaves the loss stub | `IncidentPgTest`'s switch scene: `expected: 200 but was: 202` |
+| `logEventsOf`'s `orderId` filter inverted | 21 of `OrderPaymentLogEventTest`'s 22 scenes |
+
+`scripts/final-check --app commerce-api` on `7902fb9f`, a clean tree, after the closing review's fixes, with ktlint passing and only documents and evidence changed since (6 min 25 s):
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 126 (124 before) | 1249 (1244 before) | 0 |
+
+### Merge Danger
+
+**Door:** two-way
+
+Test code, documents and evidence files only. A revert removes them.
+
+**Blast Radius:** commerce-api's test suite
+
+- `TestPg` gained four reads and a public `PG_USER_ID`; its stubs are unchanged, and every earlier scene passes.
+- `OrderPaymentLogEventTest` reads events through the new `LogEvents.kt`, with its 22 scenes as strict as before.
+- The committed Prometheus texts carry the local absolute path in the `disk_free_bytes` and `disk_total_bytes` labels, kept untrimmed as the spec asks.

@@ -1,5 +1,5 @@
 {
-  "hypothesesWrittenAt" : "2026-11-26T12:06:03.969260Z",
+  "hypothesesWrittenAt" : "2026-11-26T13:53:39.578754Z",
   "hypotheses" : [ {
     "hypothesis" : "A",
     "statement" : "The PG is still processing the payment.",
@@ -15,9 +15,9 @@
   } ],
   "orders" : [ {
     "orderId" : 13,
-    "pgOrderId" : "7a6f77a6-e4f0-4460-b17f-9ebb874a6193",
-    "lookedUpAt" : "2026-11-26T12:06:03.985345Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"7a6f77a6-e4f0-4460-b17f-9ebb874a6193\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "0816b411-e29e-498d-92bf-7487f48ec5d1",
+    "lookedUpAt" : "2026-11-26T13:53:39.590063Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"0816b411-e29e-498d-92bf-7487f48ec5d1\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -37,9 +37,9 @@
     } ]
   }, {
     "orderId" : 16,
-    "pgOrderId" : "70564f22-c3f5-477a-ae5d-5758ebe5b103",
-    "lookedUpAt" : "2026-11-26T12:06:03.990617Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"70564f22-c3f5-477a-ae5d-5758ebe5b103\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "c935103a-a686-47fb-bdb7-8f1cfb7e80e9",
+    "lookedUpAt" : "2026-11-26T13:53:39.593665Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"c935103a-a686-47fb-bdb7-8f1cfb7e80e9\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -59,9 +59,9 @@
     } ]
   }, {
     "orderId" : 19,
-    "pgOrderId" : "7dcb2c78-59ce-457f-9288-12783d915ec5",
-    "lookedUpAt" : "2026-11-26T12:06:03.993456Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"7dcb2c78-59ce-457f-9288-12783d915ec5\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "9dc05c4b-f138-4986-8063-0c9902cdce2c",
+    "lookedUpAt" : "2026-11-26T13:53:39.595785Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"9dc05c4b-f138-4986-8063-0c9902cdce2c\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
