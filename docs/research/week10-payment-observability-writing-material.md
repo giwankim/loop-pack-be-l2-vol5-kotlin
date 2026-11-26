@@ -129,3 +129,37 @@ Not committed: `put("idempotencyKey", payment.idempotencyKey)` added to the saga
 - **`cause` is the exception's message, as the spec says.** The exceptions' KDoc warns that a parse error's message can hold part of the response body, so `cause` can too. The old WARN already did this. Issue 272's design section should state it.
 - **`OrderEventRecovererTest` now captures only `OrderEventRecovery`'s logger.** It read every INFO line in `com.loopers.application.order`, and the orders it prepares now leave `pg.create.accepted` there. Its KDoc already said it captured recovery's lines.
 - **Review changes.** Every lookup scene now asserts no unmatched PG request (`CODING_STANDARDS.md`, 테스트 › 단언). The unavailable scene split into the customer's and the PG's, so the callback's `PG_UNAVAILABLE` is asserted instead of swallowed. The amount check matches whole values. `Trigger.field` became `Trigger.value`. A `?.let` guard became a braced `if`. Not taken: an enum bundling each event's level, name and sentence. Seven call sites read clearly as they are.
+
+## Issue 271: a log event for TX B's result, so a failed apply differs from a lost response
+
+Recorded 2026-11-26 from [issue 271's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/271#issuecomment-7185945672). The text below is the comment's.
+
+Implemented as `81c7a44b`. `scripts/final-check --app commerce-api` on `81c7a44b`, a clean tree, started 2026-11-26T07:37:22Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 124 classes, 1244 tests (6 min 27 s), 0 failures, 0 errors, 0 skipped**.
+
+### Acceptance criteria
+
+- [x] **`payment.apply.committed` is asserted for each result.** `OrderPaymentLogEventTest`: changed to 성공, 실패 and 처리 중 (one parameterised scene over the create's PG status, `from` = `UNKNOWN`), unchanged (a lookup finding the pending transaction again), and conflicted at WARN (a callback finding a transaction under another key). Each asserts the exact key-value map and the event order.
+- [x] **A 생성 전 거절 leaves `pg.create.rejected` followed by `payment.apply.committed`.** `changed`, `UNKNOWN` → `FAILED`, no `transactionKey`.
+- [x] **With TX B forced to throw through `OrderPaymentSpies`, `payment.apply.failed` is logged with the order's identifiers, the response is the same error, and the payment is unchanged.** `failTxBOnceAfterItsWrites` after an accepted create: the confirm throws the same `DataAccessResourceFailureException` instance the event carries (`isSameAs`), and the payment is still 결과 미확인 with no transaction key. The review added the rejection entry's scene, with a new sibling stub `failRejectionTxBOnceAfterItsWrites`.
+- [x] **Lost-response sequence.** `losesCreateResponse`: the only event is `pg.create.outcome-unknown`.
+- [x] **Failed-apply sequence.** `pg.create.accepted` → `payment.apply.failed` on confirm, `pg.lookup.found` → `payment.apply.failed` on the customer's reconcile, and `pg.create.rejected` → `payment.apply.failed`.
+- [x] **No captured apply event holds the user ID, the 멱등 키, the amount or card data.** The personal-data scene now leaves `pg.create.accepted`, `payment.apply.committed`, `pg.lookup.unavailable`, `pg.lookup.found` and `payment.apply.failed` (a failed callback apply), and checks every key and value as before.
+- [x] **Red check.** See below.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.**
+
+### Red check
+
+Not committed: the `payment.apply.failed` log call guarded off. 3 of 21 scenes failed: `a TX B that fails after an accepted create leaves payment apply failed at WARN and rethrows the same exception`, `a TX B that fails after a found lookup leaves payment apply failed after pg lookup found`, and `no event carries the user ID, the idempotency key, the amount or card data` (its event list lacks the failed apply). The rejection-entry scene was added after the check. The source was restored before the commit.
+
+### Decisions made while implementing
+
+- **The saga logs around the proxy call, not inside TX B.** `applyAndLog` calls the `OrderPaymentSagaSteps` entry; a normal return means Spring has committed, and a commit-time failure throws out of the same call. Logging in `applyResult` would claim a commit before it happened.
+- **TX B's entries return `AppliedAnswer(info, result)`.** The `ReconcileResult` was dropped once mapped to `OrderInfo`. `OrderPaymentSagaSteps` is not a provided port, so its return type was free to change. `failTxBOnceAfterItsWrites` needed no change.
+- **The reconciles read the payment before the lookup.** `retrieveTransaction` now takes the payment, so the apply events (including `failed`) carry its identifiers. `logPgAnswer` became `logEvent`, with an optional `cause`. The private wrapper is `applyTransactionAndLog` (review rename).
+- **The catch is `Exception`, and it only observes.** It rethrows the same instance. The exact catches around the PG calls stay exact, because there a wide catch could turn 결과 미확인 into 실패.
+- **Apply events carry the applied transaction's `transactionKey`, not `pgStatus`.** `from` and `to` say what changed; the preceding `pg.*` event already carries `pgStatus`. The rejection entry has no key. A conflicted event carries no reason: `PaymentModifyService`'s own WARN still names it.
+- **`OrderPaymentIntegrationTest`'s mismatch scene leaves out the conflicted apply event** when it reads the one WARN naming the mismatch, so it stays strict about that WARN.
+- **One more cached context.** The `OrderPaymentSagaSteps` spy in `OrderPaymentLogEventTest`. `CODING_STANDARDS.md` has a dated note.
+- **The design doc's §1.2 gains rows for 270 and 271.** 270's was missing.
+- **Limits, for issue 272's section.** `payment.apply.failed` carries the exception, and a database message can quote values; the personal-data scene checks key-value pairs, not exception text. TX B only updates rows, so a duplicate-key message is unlikely. No scene reads the HTTP error of a failed TX B: the scenes pin the rethrown instance, and the controller advice is unchanged.
