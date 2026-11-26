@@ -20,13 +20,17 @@
 
 | 티켓 | 만든 것 |
 | --- | --- |
-| [267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267) | 실제 포트의 테스트 기반 `BaseRealPortWebApiAdapterTest`와 `ManagementEndpointApiTest`. 운영 코드는 없다. |
+| [267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267) | 실제 포트의 테스트 기반 `BaseRealPortWebApiAdapterTest`와 `ManagementEndpointE2ETest`. 운영 코드는 없다. |
 
 티켓마다 구현 중에 정한 것은 [글감](../research/week10-payment-observability-writing-material.md)에 있다.
 
 ## 2. 1단계: 끝나지 않은 결제의 지표와 결제의 로그 이벤트
 
 (1단계를 구현한 뒤 쓴다.)
+
+### 2.1 뒤 단계가 넘겨받는 것
+
+(1단계를 구현한 뒤 쓴다. 명세 266은 실제 포트의 테스트 기반, `trigger`와 아홉 이벤트로 주문별 경로를 읽는 방법, "분산 추적을 하지 않았다"와 "나이 지표가 없다"는 남은 위험을 든다.)
 
 ## 3. 2단계: 사고의 재현과 복구
 

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
  * The management server's endpoints as a scraper sees them: real HTTP to the injected management port (spec 266, stories 25
  * and 26). `monitoring.yml` exposes health and prometheus only.
  */
-class ManagementEndpointApiTest : BaseRealPortWebApiAdapterTest() {
+class ManagementEndpointE2ETest : BaseRealPortWebApiAdapterTest() {
     @Test
     fun `health is UP and the Prometheus text holds metrics that already exist`() {
         val health = managementGet("/actuator/health")
