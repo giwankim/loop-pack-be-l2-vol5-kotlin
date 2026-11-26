@@ -925,7 +925,12 @@ class OrderPaymentIntegrationTest(
 
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(applicationLogs.list.filter { it.level == Level.WARN }).singleElement().satisfies({
+        // A mismatched transaction reaches TX B, whose conflicted `payment.apply.committed` is a second WARN that
+        // OrderPaymentLogEventTest asserts. This scene reads the warning that says what did not match.
+        val warnings = applicationLogs.list.filter { it.level == Level.WARN }.filterNot { logged ->
+            logged.keyValuePairs.orEmpty().any { it.key == "event" && it.value == "payment.apply.committed" }
+        }
+        assertThat(warnings).singleElement().satisfies({
             assertThat(it.formattedMessage).contains(warning)
         })
         assertThat(testPg.createCount()).isZero()

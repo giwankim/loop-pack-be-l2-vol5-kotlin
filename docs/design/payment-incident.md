@@ -23,6 +23,8 @@
 | [267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267) | 실제 포트의 테스트 기반 `BaseRealPortWebApiAdapterTest`와 `ManagementEndpointE2ETest`. 운영 코드는 없다. |
 | [268](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/268) | `PaymentFinder.countUnresolved`(결과 미확인과 처리 중의 수, ADR 0014의 예외)와 `IDX_PAYMENT_ON_STATUS`. 이주 SQL `docs/migrations/2026-11-26-payment-status-index.sql`. |
 | [269](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/269) | gauge `commerce.payment.unresolved`(`status`가 `UNKNOWN`, `PENDING`)의 구동 어댑터 `adapter/monitoring`의 `UnresolvedPaymentGauge`. 설정 `payment.unresolved-gauge.enabled`(`test`에서 끔)와 `refresh-interval`(10 s). `UnresolvedPaymentGaugeE2ETest`가 실제 scrape로 읽는다. |
+| [270](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/270) | `OrderPaymentSaga`가 PG의 답마다 남기는 이벤트 일곱(`pg.create.*`, `pg.lookup.*`). 고정된 문장과 key-value(`event`, `trigger`, `orderId`, `paymentId`, `pgOrderId`와 이벤트마다 더하는 필드). `OrderPaymentLogEventTest`가 잡은 key-value로 읽는다. |
+| [271](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/271) | TX B의 결과 이벤트 둘. 커밋한 뒤의 `payment.apply.committed`(`result`가 `changed`·`unchanged`·`conflicted`, 바뀌면 `from`과 `to`. 충돌이면 WARN)와, 되돌아간 TX B의 `payment.apply.failed`(WARN, 예외를 실은 뒤 그대로 다시 던진다). TX B의 두 입구는 `OrderInfo`와 `ReconcileResult`를 담은 `AppliedAnswer`를 돌려준다. |
 
 티켓마다 구현 중에 정한 것은 [글감](../research/week10-payment-observability-writing-material.md)에 있다.
 

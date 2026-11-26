@@ -1,5 +1,6 @@
 package com.loopers.application.order
 
+import com.loopers.application.order.OrderPaymentSagaSteps.AppliedAnswer
 import com.loopers.application.order.OrderPaymentSagaSteps.StartedPayment
 import com.loopers.application.order.provided.OrderConfirmRequest
 import com.loopers.application.order.provided.OrderConfirmer
@@ -17,6 +18,7 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PgTransaction
+import com.loopers.domain.payment.ReconcileResult
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ValidatedApplicationService
@@ -69,7 +71,8 @@ class OrderPaymentSaga(
      *   3, 4). 결과는 대사가 조회로 안다. 그런 결제의 수는 gauge
      *   `commerce.payment.unresolved`가 알리고, 어느 주문인지는 WARN 이벤트 `pg.create.outcome-unknown`이 남긴다.
      *
-     * Every PG answer leaves one `pg.create.*` event with the trigger `confirm` ([logPgAnswer]). A replay calls no PG and leaves none.
+     * Every PG answer leaves one `pg.create.*` event with the trigger `confirm` ([logEvent]), and each TX B it goes to leaves one
+     * `payment.apply.*` event after it ([applyAndLog]). A replay calls no PG and leaves none.
      *
      * 두 예외는 트랜잭션 밖에서 정확한 타입으로 잡는다. 넓게 잡으면 결과 미확인이 실패로 바뀔 수 있다.
      */
@@ -82,10 +85,12 @@ class OrderPaymentSaga(
         val pgTransaction = try {
             pgTransactionClient.create(payment, request.toCreditCard())
         } catch (e: PgRejectedException) {
-            logPgAnswer(Level.INFO, "pg.create.rejected", "PG가 PG 거래를 만들기 전에 생성을 거절했다.", Trigger.CONFIRM, payment)
-            return orderPaymentSagaSteps.applyRejection(userId, orderId, e.rejection)
+            logEvent(Level.INFO, "pg.create.rejected", "PG가 PG 거래를 만들기 전에 생성을 거절했다.", Trigger.CONFIRM, payment)
+            return applyAndLog(Trigger.CONFIRM, payment, emptyMap()) {
+                orderPaymentSagaSteps.applyRejection(userId, orderId, e.rejection)
+            }
         } catch (e: PgOutcomeUnknownException) {
-            logPgAnswer(
+            logEvent(
                 Level.WARN,
                 "pg.create.outcome-unknown",
                 "PG 거래의 생성 결과를 몰라 결제를 결과 미확인으로 둔다.",
@@ -96,7 +101,7 @@ class OrderPaymentSaga(
             return orderFinder.findInfo(userId, orderId)
         }
 
-        logPgAnswer(
+        logEvent(
             Level.INFO,
             "pg.create.accepted",
             "PG가 생성을 받아들여 PG 거래를 돌려줬다.",
@@ -105,7 +110,7 @@ class OrderPaymentSaga(
             pgTransactionFields(pgTransaction),
         )
 
-        return orderPaymentSagaSteps.applyTransaction(userId, orderId, pgTransaction)
+        return applyTransactionAndLog(userId, orderId, pgTransaction, Trigger.CONFIRM, payment)
     }
 
     /**
@@ -113,7 +118,7 @@ class OrderPaymentSaga(
      *
      * 찾은 PG 거래는 확정과 같은 TX B의 PG 거래 입구로 간다. TX B는 주문을 잠근 뒤 결제를 다시 읽으므로, 확정의 TX B나 다른 대사가 같은 답을
      * 먼저 반영했으면 `Unchanged`라 주문도 예약도 다시 바뀌지 않는다(ADR 0024 규칙 5). 결제와 맞지 않는 PG 거래는 TX B 안의 `Conflicted`가
-     * WARN으로 남긴다.
+     * WARN으로 남긴다. That TX B's `payment.apply.committed` is WARN too ([applyAndLog]).
      *
      * - PG 거래가 없으면(`null`) 저장된 상태로 답한다. 0건은 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3).
      * - 조회할 수 없으면(`PgUnavailableException`) 저장된 상태로 답한다.
@@ -129,8 +134,10 @@ class OrderPaymentSaga(
             return orderInfoAssembler.toInfo(order)
         }
 
+        val payment = paymentFinder.findByOrder(order.id)
+
         val pgTransaction = try {
-            retrieveTransaction(order, Trigger.RECONCILE)
+            retrieveTransaction(payment, Trigger.RECONCILE)
         } catch (_: PgUnavailableException) {
             null
         }
@@ -139,7 +146,7 @@ class OrderPaymentSaga(
             return orderFinder.findInfo(userId, orderId)
         }
 
-        return orderPaymentSagaSteps.applyTransaction(userId, orderId, pgTransaction)
+        return applyTransactionAndLog(userId, orderId, pgTransaction, Trigger.RECONCILE, payment)
     }
 
     /**
@@ -156,8 +163,10 @@ class OrderPaymentSaga(
             return
         }
 
+        val payment = paymentFinder.findByOrder(order.id)
+
         val pgTransaction = try {
-            retrieveTransaction(order, Trigger.CALLBACK)
+            retrieveTransaction(payment, Trigger.CALLBACK)
         } catch (_: PgUnavailableException) {
             throw CoreException(ErrorType.PG_UNAVAILABLE)
         }
@@ -166,7 +175,7 @@ class OrderPaymentSaga(
             return
         }
 
-        orderPaymentSagaSteps.applyTransaction(order.userId, orderId, pgTransaction)
+        applyTransactionAndLog(order.userId, orderId, pgTransaction, Trigger.CALLBACK, payment)
     }
 
     /**
@@ -182,21 +191,20 @@ class OrderPaymentSaga(
     }
 
     /**
-     * [order]의 결제를 PG 주문 번호로 한 번 조회한다. 조회의 답은 타입마다 갈린다(ADR 0028 규칙 3). PG 거래가 여럿이면
+     * [payment]를 PG 주문 번호로 한 번 조회한다. 조회의 답은 타입마다 갈린다(ADR 0028 규칙 3). PG 거래가 여럿이면
      * (`MultiplePgTransactionsException`) 어느 것이 결제의 것인지 모르므로 고르지 않고, PG 거래가 없을 때처럼 `null`을 돌려준다. 조회 불가
      * (`PgUnavailableException`)는 두 대사가 달리 다루므로 그대로 던진다.
      *
-     * Every answer leaves one `pg.lookup.*` event with [trigger], the unavailable one before it is rethrown ([logPgAnswer]). The
+     * Every answer leaves one `pg.lookup.*` event with [trigger], the unavailable one before it is rethrown ([logEvent]). The
      * transaction key is the found transaction's, or else the payment's if it is known.
      */
-    private fun retrieveTransaction(order: Order, trigger: Trigger): PgTransaction? {
-        val payment = paymentFinder.findByOrder(order.id)
+    private fun retrieveTransaction(payment: Payment, trigger: Trigger): PgTransaction? {
         val knownKey = mapOf("transactionKey" to payment.transactionKey)
 
         val transaction = try {
             pgTransactionClient.retrieve(payment)
         } catch (_: MultiplePgTransactionsException) {
-            logPgAnswer(
+            logEvent(
                 Level.WARN,
                 "pg.lookup.several",
                 "PG가 PG 주문 번호 하나에 PG 거래를 여럿 말해 어느 것도 반영하지 않았다.",
@@ -206,7 +214,7 @@ class OrderPaymentSaga(
             )
             return null
         } catch (e: PgUnavailableException) {
-            logPgAnswer(
+            logEvent(
                 Level.WARN,
                 "pg.lookup.unavailable",
                 "PG에 조회할 수 없어 결제를 그대로 둔다.",
@@ -218,13 +226,71 @@ class OrderPaymentSaga(
         }
 
         if (transaction == null) {
-            logPgAnswer(Level.INFO, "pg.lookup.none", "조회가 PG 거래를 찾지 못했다.", trigger, payment, knownKey)
+            logEvent(Level.INFO, "pg.lookup.none", "조회가 PG 거래를 찾지 못했다.", trigger, payment, knownKey)
             return null
         }
 
-        logPgAnswer(Level.INFO, "pg.lookup.found", "조회가 PG 거래 하나를 찾았다.", trigger, payment, pgTransactionFields(transaction))
+        logEvent(Level.INFO, "pg.lookup.found", "조회가 PG 거래 하나를 찾았다.", trigger, payment, pgTransactionFields(transaction))
 
         return transaction
+    }
+
+    /** TX B's entry for [transaction], logged as [applyAndLog] says, with the key of the transaction it applies. */
+    private fun applyTransactionAndLog(
+        userId: Long,
+        orderId: Long,
+        transaction: PgTransaction,
+        trigger: Trigger,
+        payment: Payment,
+    ): OrderInfo {
+        return applyAndLog(trigger, payment, mapOf("transactionKey" to transaction.transactionKey)) {
+            orderPaymentSagaSteps.applyTransaction(userId, orderId, transaction)
+        }
+    }
+
+    /**
+     * Runs one TX B entry ([apply]) and leaves its result as an event, so a failed apply is told from a lost PG response (spec 266,
+     * story 12). [apply] goes through the [OrderPaymentSagaSteps] proxy, so when it returns TX B has committed:
+     * `payment.apply.committed` carries `result` and, when the payment changed, `from` and `to`. It is INFO, and WARN when the
+     * answer conflicted with the payment. When TX B throws it has rolled back: `payment.apply.failed` at WARN carries the exception,
+     * and the same exception is rethrown, so the answer is what it was without the event. The catch is wide because it only observes:
+     * nothing is turned into another answer, unlike the exact catches around the PG calls.
+     */
+    private fun applyAndLog(
+        trigger: Trigger,
+        payment: Payment,
+        fields: Map<String, String?>,
+        apply: () -> AppliedAnswer,
+    ): OrderInfo {
+        val applied = try {
+            apply()
+        } catch (e: Exception) {
+            logEvent(
+                Level.WARN,
+                "payment.apply.failed",
+                "TX B가 PG의 답을 반영하다 되돌아갔다.",
+                trigger,
+                payment,
+                fields,
+                cause = e,
+            )
+            throw e
+        }
+
+        val result = applied.result
+        val level = if (result is ReconcileResult.Conflicted) Level.WARN else Level.INFO
+        logEvent(level, "payment.apply.committed", "TX B가 PG의 답을 반영하고 커밋했다.", trigger, payment, fields + resultFields(result))
+
+        return applied.info
+    }
+
+    /** The `result` of a committed TX B, with the statuses the payment moved between when it changed. */
+    private fun resultFields(result: ReconcileResult): Map<String, String?> {
+        return when (result) {
+            is ReconcileResult.Changed -> mapOf("result" to "changed", "from" to result.from.name, "to" to result.to.name)
+            ReconcileResult.Unchanged -> mapOf("result" to "unchanged")
+            is ReconcileResult.Conflicted -> mapOf("result" to "conflicted")
+        }
     }
 
     /**
@@ -245,18 +311,20 @@ class OrderPaymentSaga(
     }
 
     /**
-     * Logs one PG answer for [payment] as the event [event] (spec 266, "로그 이벤트"). The message is a fixed sentence and the
+     * Logs one PG answer or TX B result for [payment] as the event [event] (spec 266, "로그 이벤트"), with [cause] as the log's
+     * exception when there is one. The message is a fixed sentence and the
      * identifiers go only in the payload, which the deployed profiles' logstash JSON carries as top-level fields. Every event carries
      * `event`, `trigger`, `orderId`, `paymentId` and `pgOrderId`, plus the non-null [fields]. The payment's 멱등 키 and amount, the
      * user and the card never go in: they are read from the payment row by `paymentId`.
      */
-    private fun logPgAnswer(
+    private fun logEvent(
         level: Level,
         event: String,
         message: String,
         trigger: Trigger,
         payment: Payment,
         fields: Map<String, String?> = emptyMap(),
+        cause: Throwable? = null,
     ) {
         val payload = buildMap<String, Any> {
             put("event", event)
@@ -274,6 +342,7 @@ class OrderPaymentSaga(
         log.at(level) {
             this.message = message
             this.payload = payload
+            this.cause = cause
         }
     }
 

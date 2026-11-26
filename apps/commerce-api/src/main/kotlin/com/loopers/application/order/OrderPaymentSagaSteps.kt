@@ -93,7 +93,7 @@ class OrderPaymentSagaSteps(
      * 다시 해도 된다(ADR 0024 규칙 5). 이 트랜잭션이 DB 오류로 되돌아가면 결제는 그대로 남고, 대사가 같은 PG 거래로 다시 부른다. 같은 답을
      * 둘이 함께 반영하면 뒤진 쪽은 주문 잠금에서 기다린 뒤 끝난 결제를 읽어 `Unchanged`가 되므로 주문도 예약도 한 번만 바뀐다.
      */
-    fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): OrderInfo {
+    fun applyTransaction(userId: Long, orderId: Long, transaction: PgTransaction): AppliedAnswer {
         val order = orderFinder.findForUpdate(userId, orderId)
 
         val reconcileResult = paymentRecorder.reconcile(orderId = order.id, transaction = transaction)
@@ -105,7 +105,7 @@ class OrderPaymentSagaSteps(
      * TX B의 거절 입구. 주문을 다시 잠그고 생성 전 거절을 결제에 반영한 뒤, 그 결과로 주문을 바꾼다([applyResult]).
      * 생성 전 거절은 PG 거래가 없다는 증거라서 결제는 거래 키 없이 실패로 끝난다(ADR 0022).
      */
-    fun applyRejection(userId: Long, orderId: Long, rejection: PgRejection): OrderInfo {
+    fun applyRejection(userId: Long, orderId: Long, rejection: PgRejection): AppliedAnswer {
         val order = orderFinder.findForUpdate(userId, orderId)
 
         val reconcileResult = paymentRecorder.reject(orderId = order.id, rejection = rejection)
@@ -131,7 +131,7 @@ class OrderPaymentSagaSteps(
      * 잠금은 주문 → 상품(실패일 때만, id 오름차순) → 상품 목록 revision(품절이 풀리면)의 차례다(ADR 0028 규칙 4). 상품은 [StockReserver.release]가,
      * revision은 커밋 앞의 훅이 잠근다. 결제는 주문 잠금 뒤의 일반 읽기로 가장 최근에 커밋된 것을 본다.
      */
-    private fun applyResult(order: Order, result: ReconcileResult): OrderInfo {
+    private fun applyResult(order: Order, result: ReconcileResult): AppliedAnswer {
         if (result is ReconcileResult.Changed) {
             when (result.to) {
                 PaymentStatus.SUCCESS -> order.completePayment(clock.instant())
@@ -151,7 +151,7 @@ class OrderPaymentSagaSteps(
             leaveInOutbox(savedOrder)
         }
 
-        return orderInfoAssembler.toInfo(savedOrder)
+        return AppliedAnswer(orderInfoAssembler.toInfo(savedOrder), result)
     }
 
     private fun isChangedToSuccess(result: ReconcileResult): Boolean {
@@ -194,5 +194,14 @@ class OrderPaymentSagaSteps(
     data class StartedPayment(
         val info: OrderInfo,
         val payment: Payment?,
+    )
+
+    /**
+     * TX B's answer. [info] is the order as TX B saved it, and [result] is what the PG's answer did to the payment, which the saga
+     * logs once TX B has committed (`payment.apply.committed`).
+     */
+    data class AppliedAnswer(
+        val info: OrderInfo,
+        val result: ReconcileResult,
     )
 }
