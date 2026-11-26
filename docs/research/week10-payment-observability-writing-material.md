@@ -307,7 +307,7 @@ The one schema change is an added index (`docs/migrations/2026-11-26-payment-sta
 
 **Blast Radius:** commerce-api
 
-- Every commerce-api instance outside `test` now runs scheduling and one count query every 10 s. Before, only an instance with the relay on had scheduled work. The relay and the gauge share Boot's single scheduler thread, so a long relay round delays the gauge (design 2.6).
+- Every commerce-api instance outside `test` now runs scheduling and one count query every 10 s. Before, only an instance with the relay on had scheduled work. The relay and the gauge share Boot's single scheduler thread, so a long relay round delays the gauge, and a slow count, such as one waiting on an unresponsive database, delays the relay (design 2.6).
 - Each PG answer now adds an INFO or WARN line, roughly two lines per confirmation.
 - TX B's two entries return `AppliedAnswer` instead of their old types. Only the saga calls them.
-- `cause` can carry part of a PG response body on a parse error, as the old WARN did.
+- One scrape can mix two refreshes' counts: each series reads the stored count on its own, so a refresh between the two reads shows a payment that just moved in both series or in neither. The next scrape corrects it (design 2.1).
