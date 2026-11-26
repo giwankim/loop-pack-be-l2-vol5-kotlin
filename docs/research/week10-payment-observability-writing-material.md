@@ -97,3 +97,35 @@ Not committed: deleting `count.set(null)` from the refresh's `catch`, so a faile
 - **Two KDocs changed.** `OrderPaymentSaga` and `OrderPaymentIntegrationTest` said no metric finds an unknown payment, and the review found that `OrderEventRelayScheduler` said an instance with the relay off has no scheduling at all. The gauge now enables scheduling everywhere but `test`. The WARNs' new shape is issue 270's.
 - **Requests go through `mvc`, as the spec says.** The confirm and reconcile helpers are a fourth copy of `OrderConfirmationApiTest`'s, like the earlier ones the issue 262 note records.
 - **The real-port context with `@EnableTestPg` and the spy is one more cached context.**
+
+## Issue 270: a log event with the order's identifiers for every PG answer
+
+Recorded 2026-11-26 from the closing comment drafted for issue 270, before it was posted. The text below is the comment's.
+
+Implemented as `5a86efa7`. `scripts/final-check --app commerce-api` on `5a86efa7`, a clean tree, started about 2026-11-26T07:07:49Z (its logs' creation time) with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 124 classes, 1234 tests (6 min 14 s), 0 failures, 0 errors, 0 skipped**. The first run on the commit before its amend failed two `OrderEventRecovererTest` scenes. See the decisions below.
+
+### Acceptance criteria
+
+- [x] **Each of the seven events has at least one scene asserting its fields, its level and its `trigger`.** `OrderPaymentLogEventTest`, 12 scenes on `BaseCommittingApplicationServiceTest` with the test PG. Each asserts the event's exact key-value map (`containsExactlyInAnyOrderEntriesOf`), so an extra field fails it too.
+- [x] **`pg.create.outcome-unknown` carries the failure kind in `cause` for a lost response and for an HTTP error status.** `NoHttpResponseException` for `losesCreateResponse`, `HTTP 503` for a 503 answer.
+- [x] **The three `trigger` values each appear on their own path.** `confirm` on the create scenes. `reconcile` and `callback` on the found lookup (parameterised) and on two unavailable-lookup scenes. The callback one still throws `PG_UNAVAILABLE` after the event.
+- [x] **No captured event has a key or value holding the user ID, the 멱등 키, the amount or card data.** One scene leaves `pg.create.accepted`, `pg.lookup.unavailable` and `pg.lookup.found`, the events carrying every added field. No key names the user, the key, the amount or the card. No value holds the 멱등 키, the card number or type, or the amount as a whole value. The user ID is checked by key only, because IDs restart at 1 and the user's ID can equal the order's.
+- [x] **A replayed confirm with the same 멱등 키 leaves no event.** The create count stays 1, and nothing captured after the first confirm has an `event` key.
+- [x] **Existing confirm and reconcile scenes pass unchanged, apart from any that asserted the old WARN text.** `OrderPaymentIntegrationTest` changed in two places. The lost-response scene reads `event` and `orderId` from the WARN's key-value pairs. The several-transactions row matches the new fixed sentence, because its CSV siblings still read TX B's `Conflicted` WARN text (issue 271's).
+- [x] **Red check.** See below.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Red check
+
+Not committed: `put("idempotencyKey", payment.idempotencyKey)` added to the saga's payload. 11 of 12 scenes failed. Among them, `no event carries the user ID, the idempotency key, the amount or card data` found the key `idempotencyKey`, and every per-event scene found an unexpected entry. The replay scene stayed green, since it leaves no event. The source was restored before the commit.
+
+### Decisions made while implementing
+
+- **One private helper, `logPgAnswer`, builds every event.** It takes a fixed Korean sentence, the level, the event name, the `Trigger` and the payment, plus optional fields. Null fields are dropped, so `transactionKey` shows only when known. kotlin-logging's `payload` reaches Logback as SLF4J key-value pairs (`LogbackLoggerWrapper` / `addKeyValue`), which is what the tests read.
+- **The lookup events are left inside `retrieveTransaction`.** It is the one place both reconciles share. The unavailable event is logged before the rethrow, so the customer's path still answers the stored state, and the callback's path still turns it into `PG_UNAVAILABLE`. The adapter's lookup retry is inside the one call, so one reconcile leaves one event.
+- **`transactionKey` is the found transaction's on `found` and `accepted`, and otherwise the payment's if known.** `pgStatus` goes only on `accepted` and `found`, the events that received a transaction.
+- **`pg.lookup.several` carries no count.** The spec lists no such field. The old WARN's "PG 거래가 2개다" text is gone.
+- **`cause` is the exception's message, as the spec says.** The exceptions' KDoc warns that a parse error's message can hold part of the response body, so `cause` can too. The old WARN already did this. Issue 272's design section should state it.
+- **`OrderEventRecovererTest` now captures only `OrderEventRecovery`'s logger.** It read every INFO line in `com.loopers.application.order`, and the orders it prepares now leave `pg.create.accepted` there. Its KDoc already said it captured recovery's lines.
+- **Review changes.** Every lookup scene now asserts no unmatched PG request (`CODING_STANDARDS.md`, 테스트 › 단언). The unavailable scene split into the customer's and the PG's, so the callback's `PG_UNAVAILABLE` is asserted instead of swallowed. The amount check matches whole values. `Trigger.field` became `Trigger.value`. A `?.let` guard became a braced `if`. Not taken: an enum bundling each event's level, name and sentence. Seven call sites read clearly as they are.
