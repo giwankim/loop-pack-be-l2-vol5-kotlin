@@ -100,7 +100,7 @@ Not committed: deleting `count.set(null)` from the refresh's `catch`, so a faile
 
 ## Issue 270: a log event with the order's identifiers for every PG answer
 
-Recorded 2026-11-26 from the closing comment drafted for issue 270, before it was posted. The text below is the comment's.
+Recorded 2026-11-26 from [issue 270's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/270#issuecomment-7185332074). The text below is the comment's.
 
 Implemented as `5a86efa7`. `scripts/final-check --app commerce-api` on `5a86efa7`, a clean tree, started about 2026-11-26T07:07:49Z (its logs' creation time) with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 124 classes, 1234 tests (6 min 14 s), 0 failures, 0 errors, 0 skipped**. The first run on the commit before its amend failed two `OrderEventRecovererTest` scenes. See the decisions below.
 
