@@ -14,6 +14,7 @@ import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
 import com.loopers.support.IncidentPg
 import com.loopers.support.TestPg
+import com.loopers.support.logEvents
 import com.loopers.support.logEventsOf
 import com.loopers.support.test.BaseRealPortWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
@@ -40,10 +41,12 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.HexFormat
 import java.util.UUID
 
 /**
@@ -57,6 +60,9 @@ import java.util.UUID
  * - Diagnosis: three hypotheses for the 3 unresolved payments, written before the PG's list lookup that the test sends straight to
  *   the test PG. The lookup's status rejects "still processing", the order's log events reject "failed apply", and "lost response"
  *   is accepted. The lookups change no order, payment or product row.
+ * - Recovery: the unresolved payments in the database are the targets, frozen once they equal the 3 lost orders. Each is
+ *   recovered by the customer's reconcile endpoint as the owner, and the fault's same 10 orders are read again: all confirmed,
+ *   with no second create. Repeating the reconcile and the 알림 changes nothing, and another user is refused.
  *
  * Each phase reads its record fresh from the database, the test PG's request log, and one scrape of the management port, writes it
  * to the run's evidence directory ([IncidentEvidence]), and asserts on that record. Health and Prometheus are written as fetched.
@@ -101,6 +107,9 @@ class PaymentIncidentE2ETest(
 
         /** The PG contract's synthetic account, every PG request's `X-USER-ID`. The test PG's stubs match only this value. */
         private const val PG_USER_ID = "135135"
+
+        /** The files the fault phase writes. Recovery hashes them before it starts and checks the hashes at the end. */
+        private val FAULT_FILES = listOf("fault.json", "fault-health.json", "fault-prometheus.txt", "fault-log-events.json")
     }
 
     /** Field injection, not the constructor. The reason is on the same field in `OrderPaymentIntegrationTest`. */
@@ -134,8 +143,9 @@ class PaymentIncidentE2ETest(
     }
 
     @Test
-    fun `lost responses leave three payments unknown under health UP, a PG lookup and log events tell why, evidence is kept`() {
+    fun `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`() {
         val evidence = IncidentEvidence.start(objectMapper, Instant.now())
+        val ownerRowsAtStart = ownerRows()
         var phase = "baseline"
         var failure: Throwable? = null
         try {
@@ -146,6 +156,9 @@ class PaymentIncidentE2ETest(
 
             phase = "diagnosis"
             runDiagnosis(evidence, fault)
+
+            phase = "recovery"
+            runRecovery(evidence, baseline, fault, ownerRowsAtStart)
         } catch (exception: Throwable) {
             failure = exception
             throw exception
@@ -276,7 +289,7 @@ class PaymentIncidentE2ETest(
         )
         evidence.writeJson("hypotheses.json", hypotheses)
         val lost = fault.orders.filter { it.orderId in fault.lostOrderIds }
-        val rowsBefore = diagnosedRows(fault.lostOrderIds)
+        val rowsBefore = orderRows(fault.lostOrderIds)
 
         val diagnoses = lost.map { order ->
             val pgOrderId = checkNotNull(order.pgOrderId) { "Order ${order.orderId} has no PG order ID." }
@@ -299,7 +312,7 @@ class PaymentIncidentE2ETest(
                 judgements = Hypothesis.entries.map { it.judge(observation) },
             )
         }
-        val rowsAfter = diagnosedRows(fault.lostOrderIds)
+        val rowsAfter = orderRows(fault.lostOrderIds)
         evidence.writeJson(
             "verdict.json",
             VerdictRecord(
@@ -318,7 +331,7 @@ class PaymentIncidentE2ETest(
             assertThat(incidentPg.createCount(diagnosis.pgOrderId)).isOne()
         })
         assertThat(rowsBefore.mapValues { it.value.size }).isEqualTo(
-            mapOf("orders" to LOST_PLACES.size, "payment" to LOST_PLACES.size, "product" to 1),
+            mapOf("orders" to LOST_PLACES.size, "payment" to LOST_PLACES.size, "product" to 1, "order_event_outbox" to 0),
         )
         assertThat(rowsAfter).isEqualTo(rowsBefore)
         assertThat(incidentPg.createCount()).isEqualTo(fault.pgCreateCount)
@@ -326,18 +339,128 @@ class PaymentIncidentE2ETest(
     }
 
     /**
-     * The rows a diagnosis must leave as they are, read whole: the orders and payments of [orderIds], and the product, whose stock
-     * holds the orders' reservations.
+     * Recovers the fault's unresolved payments through the customer's reconcile endpoint and proves it on the fault's same 10
+     * orders. The targets are read from the unresolved payments in the database, asserted equal to the lost orders, and frozen
+     * before the first reconcile. Each target is reconciled once, as the owner, with response loss off: the reconcile looks the
+     * payment up by its PG order ID and applies the `SUCCESS` it finds. Nothing sends a create.
+     *
+     * Before the first reconcile the fault's files are hashed, and `recovery.json` holds the hashes, which must still match at the
+     * end: recovery does not rewrite the record of the incident.
+     *
+     * Then the repeats: a second reconcile and a second 알림 for every target, and another user's reconcile of one. A recovered
+     * order is confirmed, so neither the reconcile nor the 알림 looks it up (`OrderPaymentSaga.checkLookupNeeded`): they reach no
+     * TX B and leave no event, `result=unchanged` included. "Changes nothing" is therefore read as no new event, no PG request, and
+     * the orders, payments, product and outbox rows equal to what they were.
      */
-    private fun diagnosedRows(orderIds: List<Long>): Map<String, List<Map<String, Any?>>> {
+    private fun runRecovery(
+        evidence: IncidentEvidence,
+        baseline: PhaseRecord,
+        fault: PhaseRecord,
+        ownerRowsAtStart: Map<String, List<Map<String, Any?>>>,
+    ) {
+        val targets = unresolvedOrderIds().toList()
+        assertThat(targets).isEqualTo(fault.lostOrderIds)
+        assertThat(incidentPg.isResponseLossOn()).isFalse()
+        val faultFileSha256 = FAULT_FILES.associateWith { evidence.sha256(it) }
+        val createsBefore = incidentPg.createCount()
+
+        targets.forEach { orderId ->
+            val reconciled = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
+            reconciled.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+            reconciled.extractingPath("$.data.paymentStatus").isEqualTo("SUCCESS")
+        }
+
+        val record = observe(evidence, "recovery", fault.orderIds, targets, expectedUnknown = "0.0", faultFileSha256)
+
+        val pgTransactions = incidentPg.transactions().associateBy { it.pgOrderId }
+        assertThat(record.responseLossOn).isFalse()
+        assertThat(record.lostOrderIds).isEqualTo(fault.lostOrderIds)
+        assertThat(record.orders.map { it.orderId }).isEqualTo(fault.orderIds)
+        assertThat(record.orders).hasSize(ORDERS_PER_PHASE).allSatisfy({
+            val pgTransaction = pgTransactions.getValue(checkNotNull(it.pgOrderId))
+            assertThat(it.orderStatus).isEqualTo("CONFIRMED")
+            assertThat(it.paymentStatus).isEqualTo("SUCCESS")
+            assertThat(it.reservedQuantity).isZero()
+            assertThat(it.createCount).isOne()
+            assertThat(pgTransaction.status.name).isEqualTo("SUCCESS")
+            assertThat(it.transactionKey).isEqualTo(pgTransaction.transactionKey)
+        })
+        assertThat(record.orders.filter { it.orderId in targets }).allSatisfy({
+            // One by the diagnosis, one by the reconcile.
+            assertThat(it.listLookupCount).isEqualTo(2)
+        })
+        assertThat(record.unresolvedOrderIds).isEmpty()
+        assertThat(record.unresolvedGauge).isEqualTo(mapOf("UNKNOWN" to "0.0", "PENDING" to "0.0"))
+        assertThat(record.healthStatus).isEqualTo("UP")
+        assertThat(record.pgTransactionCount).isEqualTo(2 * ORDERS_PER_PHASE)
+        assertThat(record.pgCreateCount).isEqualTo(createsBefore)
+        assertThat(record.productStock).isEqualTo(STOCK - 2 * ORDERS_PER_PHASE)
+        assertThat(record.pgOrderIdsCreatedMoreThanOnce).isEmpty()
+        assertThat(record.unmatchedPgRequests).isZero()
+        assertThat(record.faultFileSha256).isEqualTo(faultFileSha256)
+        targets.forEach { orderId ->
+            val events = orderApplicationLogs.logEventsOf(orderId)
+            assertThat(events.map { it.name }).containsExactly(
+                "pg.create.outcome-unknown",
+                "pg.lookup.found",
+                "payment.apply.committed",
+            )
+            assertThat(events.drop(1)).allSatisfy({ assertThat(it.fields["trigger"]).isEqualTo("reconcile") })
+            assertThat(events.last().fields).containsEntry("result", "changed").containsEntry("from", "UNKNOWN")
+                .containsEntry("to", "SUCCESS")
+        }
+
+        val allOrderIds = baseline.orderIds + fault.orderIds
+        val rowsBeforeRepeats = orderRows(allOrderIds)
+        val eventsBeforeRepeats = orderApplicationLogs.logEvents()
+        val pgRequestsBeforeRepeats = incidentPg.requestCount()
+        targets.forEach { orderId ->
+            val reconciled = assertThat(requestReconcile(orderId, owner.id)).hasStatusOk().bodyJson()
+            reconciled.extractingPath("$.data.status").isEqualTo("CONFIRMED")
+            assertThat(requestCallback(orderId)).hasStatusOk()
+        }
+        val otherUser = prepareUser()
+        val refused = assertThat(requestReconcile(targets.first(), otherUser.id)).hasStatus(HttpStatus.NOT_FOUND).bodyJson()
+        refused.extractingPath("$.meta.errorCode").isEqualTo("ORDER_NOT_FOUND")
+
+        assertThat(orderRows(allOrderIds)).isEqualTo(rowsBeforeRepeats)
+        assertThat(orderApplicationLogs.logEvents()).isEqualTo(eventsBeforeRepeats)
+        assertThat(incidentPg.requestCount()).isEqualTo(pgRequestsBeforeRepeats)
+        assertThat(outboxRowCounts()).isEqualTo(allOrderIds.associateWith { 1 })
+        assertThat(ownerRows()).isEqualTo(ownerRowsAtStart)
+        assertThat(FAULT_FILES.associateWith { evidence.sha256(it) }).isEqualTo(record.faultFileSha256)
+    }
+
+    /**
+     * The rows that tell whether an order changed, read whole: the orders and payments of [orderIds], their outbox rows, and the
+     * product, whose stock holds the orders' reservations.
+     */
+    private fun orderRows(orderIds: List<Long>): Map<String, List<Map<String, Any?>>> {
         val placeholders = orderIds.joinToString(",") { "?" }
         val ids = orderIds.toTypedArray()
+        val outboxSql = "select * from order_event_outbox where order_id in ($placeholders) order by id"
 
         return mapOf(
             "orders" to jdbc.queryForList("select * from orders where id in ($placeholders) order by id", *ids),
             "payment" to jdbc.queryForList("select * from payment where order_id in ($placeholders) order by id", *ids),
             "product" to jdbc.queryForList("select * from product where id = ?", product.id),
+            "order_event_outbox" to jdbc.queryForList(outboxSql, *ids),
         )
+    }
+
+    /** The owner's point account and coupons, read whole. No order of the incident may touch them. */
+    private fun ownerRows(): Map<String, List<Map<String, Any?>>> {
+        return mapOf(
+            "point_account" to jdbc.queryForList("select * from point_account where user_id = ?", owner.id),
+            "coupon" to jdbc.queryForList("select * from coupon where user_id = ? order by id", owner.id),
+        )
+    }
+
+    /** The number of live outbox rows per order, for every order that has one. */
+    private fun outboxRowCounts(): Map<Long, Int> {
+        val sql = "select order_id, count(*) as row_count from order_event_outbox where deleted_at is null group by order_id"
+
+        return jdbc.query(sql) { rs, _ -> rs.getLong("order_id") to rs.getInt("row_count") }.toMap()
     }
 
     /**
@@ -365,6 +488,7 @@ class PaymentIncidentE2ETest(
         orderIds: List<Long>,
         lostOrderIds: List<Long>,
         expectedUnknown: String,
+        faultFileSha256: Map<String, String>? = null,
     ): PhaseRecord {
         var last: Scrape? = null
         await().atMost(SCRAPE_WAIT).untilAsserted {
@@ -388,6 +512,7 @@ class PaymentIncidentE2ETest(
             unmatchedPgRequests = incidentPg.unmatchedRequests().size,
             healthStatus = scraped.healthStatus,
             unresolvedGauge = scraped.gauge,
+            faultFileSha256 = faultFileSha256,
         )
         evidence.writeJson("$phase.json", record)
         evidence.writeText("$phase-health.json", scraped.health)
@@ -498,6 +623,11 @@ class PaymentIncidentE2ETest(
             .exchange()
     }
 
+    /** The customer's reconcile of [orderId], sent as [userId]. */
+    private fun requestReconcile(orderId: Long, userId: Long): MvcTestResult {
+        return mvc.post().uri("/api/v1/orders/$orderId/payment/reconcile").header(UserIdHeader.NAME, userId).exchange()
+    }
+
     /**
      * The PG's 알림 for [orderId]'s payment: the PG order ID read from the payment row, and the transaction the PG holds under it.
      * The status is `SUCCESS`, the transaction's as the PG holds it. Commerce reads only the PG order ID from the body and finds
@@ -540,6 +670,11 @@ private data class PhaseRecord(
     val healthStatus: String,
     /** The scraped `commerce_payment_unresolved` value by `status`, as Prometheus writes it, or `null` for a missing series. */
     val unresolvedGauge: Map<String, String?>,
+    /**
+     * Recovery's only: the SHA-256 of each fault file, taken before the first reconcile. Left out of the other phases' files, as
+     * the shared mapper leaves out every `null`.
+     */
+    val faultFileSha256: Map<String, String>? = null,
 )
 
 /**
@@ -697,6 +832,13 @@ private class IncidentEvidence private constructor(
     /** Writes [value] as indented JSON to a new file [name]. Fails if the file exists. */
     fun writeJson(name: String, value: Any) {
         writeText(name, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value))
+    }
+
+    /** The SHA-256 of the file [name] as it is now, in lowercase hex. Fails if the file does not exist. */
+    fun sha256(name: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(directory.resolve(name)))
+
+        return HexFormat.of().formatHex(digest)
     }
 }
 

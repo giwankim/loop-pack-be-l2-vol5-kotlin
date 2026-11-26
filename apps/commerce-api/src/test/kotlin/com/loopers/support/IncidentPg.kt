@@ -114,6 +114,11 @@ class IncidentPg(server: WireMockServer) {
         return testPg.listLookupCount(pgOrderId)
     }
 
+    /** Every request the PG received, whatever its method and path, matched or not. */
+    fun requestCount(): Int {
+        return testPg.requestCount()
+    }
+
     /** The requests that matched no stub, as [TestPg.unmatchedRequests]. */
     fun unmatchedRequests(): List<LoggedRequest> {
         return testPg.unmatchedRequests()
