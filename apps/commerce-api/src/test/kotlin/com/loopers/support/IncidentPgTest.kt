@@ -162,12 +162,38 @@ class IncidentPgTest(
         assertThat(incidentPg.pgOrderIdsCreatedMoreThanOnce()).containsExactly(retriedPgOrderId)
     }
 
+    /**
+     * The incident test reads the created PG order IDs in its `finally`, so a malformed create must not throw there and hide the
+     * phase's failure. The scene sends a create with no `orderId` to the test PG itself, since commerce always sends one.
+     */
+    @Test
+    fun `a create without a PG order ID is left out of the created ones, and is reported as unmatched`() {
+        val json = """
+            {"cardType":"${CARD.type}","cardNo":"${CARD.number}","amount":$AMOUNT,
+             "callbackUrl":"http://127.0.0.1:8080/api/v1/payments/callback"}
+        """
+
+        val response = sendCreateJsonToPg(json)
+
+        assertThat(response.statusCode()).isEqualTo(404)
+        assertThat(incidentPg.createdPgOrderIds()).isEmpty()
+        assertThat(incidentPg.pgOrderIdsCreatedMoreThanOnce()).isEmpty()
+        assertThat(incidentPg.createCount()).isOne()
+        assertThat(incidentPg.unmatchedRequests()).hasSize(1)
+    }
+
     /** The create commerce sent for [pgOrderId], sent again over HTTP to the test PG with the PG contract's headers. */
     private fun sendCreateToPg(pgOrderId: String): HttpResponse<String> {
         val json = """
             {"orderId":"$pgOrderId","cardType":"${CARD.type}","cardNo":"${CARD.number}","amount":$AMOUNT,
              "callbackUrl":"http://127.0.0.1:8080/api/v1/payments/callback"}
         """
+
+        return sendCreateJsonToPg(json)
+    }
+
+    /** A create carrying [json] as its body, sent over HTTP to the test PG with the PG contract's headers. */
+    private fun sendCreateJsonToPg(json: String): HttpResponse<String> {
         val request = HttpRequest.newBuilder(URI.create("${server.baseUrl()}/api/v1/payments"))
             .header("X-USER-ID", TestPg.PG_USER_ID)
             .header("Content-Type", "application/json")

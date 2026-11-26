@@ -192,7 +192,9 @@ class PaymentIncidentE2ETest(
         val orderIds = createOrders(ORDERS_PER_PHASE)
         orderIds.forEach { orderId ->
             incidentPg.registerNormal(nextPgOrderId(), amount = PRICE, card = CARD)
-            assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
+            // Pending, not unknown: both answer 202 and the 알림 finishes either, so only the status tells the PG accepted the create.
+            val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED).bodyJson()
+            body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
             assertThat(requestCallback(orderId)).hasStatusOk()
         }
 
@@ -234,8 +236,11 @@ class PaymentIncidentE2ETest(
 
         incidentPg.startResponseLoss()
         orderIds.forEach { orderId ->
-            assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
-            if (orderId !in lostOrderIds) {
+            val body = assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED).bodyJson()
+            if (orderId in lostOrderIds) {
+                body.extractingPath("$.data.paymentStatus").isEqualTo("UNKNOWN")
+            } else {
+                body.extractingPath("$.data.paymentStatus").isEqualTo("PENDING")
                 assertThat(requestCallback(orderId)).hasStatusOk()
             }
         }

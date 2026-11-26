@@ -164,9 +164,15 @@ class TestPg(
         ).size
     }
 
-    /** The body's `orderId` of every create the PG received, answered or not, one entry per create, in no particular order. */
+    /**
+     * The body's `orderId` of every create the PG received, answered or not, one entry per create, in no particular order.
+     * A create whose body carries no string `orderId` is left out rather than thrown on, so a caller in a `finally` cannot hide the
+     * failure it is cleaning up after. Such a create matches no stub, so [unmatchedRequests] reports it.
+     */
     fun createdPgOrderIds(): List<String> {
-        return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).map { JsonPath.read(it.bodyAsString, "$.orderId") }
+        return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).mapNotNull { request ->
+            runCatching { JsonPath.read<String>(request.bodyAsString, "$.orderId") }.getOrNull()
+        }
     }
 
     /**
