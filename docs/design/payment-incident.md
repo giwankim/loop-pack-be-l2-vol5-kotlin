@@ -356,7 +356,7 @@ scripts/final-check --app commerce-api
 
 | 이음매 | 클래스 | 장면 |
 | --- | --- | --- |
-| 사고 fixture | `IncidentPgTest` | 등록한 정상 주문이 `PENDING`으로 확정되고 알림으로 끝난다. 유실이 켜진 동안 등록한 잃을 주문이 결과 미확인으로 확정되고 생성 1, 목록 조회 0이다. 유실은 시작 전에 꺼져 있고 시작 뒤에 켜져 있으며 `finally`의 해제 뒤 잃을 주문의 생성이 답을 받는다. 두 번째 생성을 받은 PG 주문 번호를 돌려주고 한 번 받은 것은 돌려주지 않는다. 4개 |
+| 사고 fixture | `IncidentPgTest` | 등록한 정상 주문이 `PENDING`으로 확정되고 알림으로 끝난다. 유실이 켜진 동안 등록한 잃을 주문이 결과 미확인으로 확정되고 생성 1, 목록 조회 0이다. 유실은 시작 전에 꺼져 있고 시작 뒤에 켜져 있으며 `finally`의 해제 뒤 잃을 주문의 생성이 답을 받는다. 두 번째 생성을 받은 PG 주문 번호를 돌려주고 한 번 받은 것은 돌려주지 않는다. 4개. (2026-11-26 PR 280의 리뷰: `orderId` 없는 생성은 만든 PG 주문 번호에서 빠지고 stub을 비껴간 요청으로 남는다. 5개) |
 | 사고의 lifecycle | `PaymentIncidentE2ETest` | 3.2–3.4절. 1개 |
 | 로그 이벤트의 reader | `OrderPaymentLogEventTest` | 새 reader로 읽는다. 단언과 장면의 수(22)는 그대로다. 한 주문의 차례가 잡은 이벤트 전부와 같은지도 본다. 다른 주문의 이벤트나 `orderId` 없는 이벤트가 섞이면 붉다 |
 
@@ -374,6 +374,8 @@ scripts/final-check --app commerce-api
 | 잃은 주문 하나(첫째)의 PG 거래를 `PENDING`으로 든다 | `PaymentIncidentE2ETest`의 진단. 장애 구간은 지나간다(생성의 응답을 잃어 커머스가 조회하지 않는다). 조회가 `["PENDING"]`이라 A가 `ACCEPTED`, B가 `REJECTED`이고, `expected: REJECTED but was: ACCEPTED`로 A의 판정에서 붉다. `verdict.json`과 `"phase" : "diagnosis"`의 `failure.json`이 남는다 | 277 |
 | `stopResponseLoss`가 유실의 stub을 지우지 않는다 | `IncidentPgTest`의 스위치 장면. `expected: 200 but was: 202` | 275 |
 | `logEventsOf`의 `orderId` 거르기를 뒤집는다 | `OrderPaymentLogEventTest`의 22개 가운데 21개 | 275 |
+| (2026-11-26 PR 280의 리뷰) 기준 구간의 첫 주문을 잃을 주문으로 등록하고 응답 유실을 켠다 | `PaymentIncidentE2ETest`의 기준 구간. 확정의 응답에서 `expected: "PENDING" but was: "UNKNOWN"`. 그 전에는 202만 보아 알림이 결과 미확인도 성공으로 끝내 지나갔다. `"phase" : "baseline"`의 `failure.json`이 남는다 | PR 280 |
+| (2026-11-26 PR 280의 리뷰) `createdPgOrderIds`가 `orderId` 없는 생성에 던지게 되돌린다 | `IncidentPgTest`의 새 장면. `PathNotFoundException: No results for path: $['orderId']`. 사고 테스트의 `finally`가 이것을 부르므로, 던지면 단계의 실패를 가리고 `failure.json`을 쓰지 못한다 | PR 280 |
 
 ### 3.11 끝의 확인
 
@@ -385,6 +387,7 @@ scripts/final-check --app commerce-api
 - commerce-api는 126개 클래스, 1249개 테스트, 실패 0, 오류 0, 건너뜀 0이다(7 min 29 s). 1단계의 끝의 확인(2.9절)이 124개 클래스와 1244개 테스트였으므로, 이 단계가 2개 클래스(`IncidentPgTest` 4개, `PaymentIncidentE2ETest` 1개)와 5개 테스트를 더했다. 테스트 0개, 건너뜀, 연결 실패가 없다([과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 8절).
 - 이 실행의 사고 실행이 `20261126T120602Z-0c742bb1`이다.
 - (2026-11-26 명세 274의 닫는 리뷰: 리뷰의 고침 `3136770a`(사고 테스트가 주문 ID를 `prepareOrder`가 돌려준 주문에서 읽고, 알림의 요청 JSON을 `json`이라 부르고, PG 계약의 사용자 ID를 `TestPg`에서 함께 쓴다)와 `7902fb9f`(테스트 설정에서 잰 사고의 걸린 시간을 뺀다) 뒤에 `7902fb9f`의 깨끗한 트리에서 다시 돌렸다(13:51:41Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 126개 클래스, 1249개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 25 s). 고침은 테스트를 더하거나 빼지 않았다. 사고 실행은 `20261126T135338Z-47f59811`이고 3.5절이 저장소에 실은 것이다. `7902fb9f` 뒤로는 문서와 증거만 바뀌었다.)
+- (2026-11-26 PR 280의 리뷰: `201052bf`가 정상 주문의 확정이 처리 중으로 답하는지, 잃을 주문의 확정이 결과 미확인으로 답하는지 단언하고, `orderId` 없는 생성을 만든 PG 주문 번호에서 빼며 그 장면을 `IncidentPgTest`에 더했다(3.9절, 3.10절). `201052bf`의 깨끗한 트리에서 다시 돌렸다(14:25:10Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 126개 클래스, 1250개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 38 s). 장면 하나가 늘었다. 이 실행의 사고 실행 `20261126T142707Z-1ff555ca`는 파일 열두 개, `failure.json` 없음, 3.5절의 실행과 같은 값이다. 고침은 단언을 더하고 기록을 읽는 방식만 바꿔 파일의 내용은 같으므로, 3.5절의 실행을 그대로 둔다. 도는 동안 이 절과 3.9절, 3.10절을 작업 트리에 썼고, Gradle이 읽는 파일은 바뀌지 않았다. `201052bf` 뒤로는 문서만 바뀌었다.)
 - 이 단계는 commerce-streamer와 commerce-batch를 바꾸지 않았으므로 돌리지 않았다.
 - `a0429979`의 코드는 `68e86fac`(278)의 것이고, 그 뒤로는 문서와 증거만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 이 절을 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다.
 

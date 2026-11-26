@@ -218,7 +218,7 @@ The committed copy is in the [writing material](https://github.com/giwankim/loop
 
 ## Draft PR body
 
-The body of the PR from `feat/payment-incident` into `week10`, written at the spec's closing review (2026-11-26) in `/mattpocock-skills:pr`'s shape, with the final check on `7902fb9f` and the comment's link. It makes no timing, throughput or concurrency claim; none was measured under production settings.
+The body of the PR from `feat/payment-incident` into `week10` (PR 280), written at the spec's closing review (2026-11-26) and updated after the PR's review in `/mattpocock-skills:pr`'s shape, with the final check on `7902fb9f` and the comment's link. It makes no timing, throughput or concurrency claim; none was measured under production settings.
 
 ### Summary
 
@@ -256,6 +256,7 @@ PaymentIncidentE2ETest
 | Recovery (the same 11–20) | 0.0 | UP | none | 20 / 20 | 0 |
 
 - **Diagnosis:** every lookup finds `["SUCCESS"]` and each lost order's only event is `pg.create.outcome-unknown`, so A is rejected, B accepted, C rejected. No order, payment, product or outbox row changed.
+- **Normal confirms:** every normal order's confirm answers 202 with `PENDING` before its 알림, and each lost order's answers 202 with `UNKNOWN`.
 - **Recovery:** all ten `CONFIRMED`/`SUCCESS` with one create each, the lost three with two list lookups (the diagnosis's and the 대사's). A second 대사 and a repeated 알림 change no row and send no PG request; another user's 대사 is refused.
 
 | Red check (local, never committed) | Result |
@@ -266,12 +267,14 @@ PaymentIncidentE2ETest
 | One lost order's PG transaction held `PENDING` | The diagnosis: A `ACCEPTED`, `expected: REJECTED but was: ACCEPTED` |
 | `stopResponseLoss` leaves the loss stub | `IncidentPgTest`'s switch scene: `expected: 200 but was: 202` |
 | `logEventsOf`'s `orderId` filter inverted | 21 of `OrderPaymentLogEventTest`'s 22 scenes |
+| The first baseline order's create response lost (PR review) | The baseline's confirm: `expected: "PENDING" but was: "UNKNOWN"`; `failure.json` with `"phase" : "baseline"` |
+| `createdPgOrderIds` throwing on a create without `orderId` again (PR review) | `IncidentPgTest`'s new scene: `PathNotFoundException: No results for path: $['orderId']` |
 
-`scripts/final-check --app commerce-api` on `7902fb9f`, a clean tree, after the closing review's fixes, with ktlint passing and only documents and evidence changed since (6 min 25 s):
+`scripts/final-check --app commerce-api` on `201052bf`, a clean tree, after the closing review's and this PR's review fixes, with ktlint passing and only documents changed since (6 min 38 s). Its incident run `20261126T142707Z-1ff555ca` holds the same values as the committed one:
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
-| commerce-api | 126 (124 before) | 1249 (1244 before) | 0 |
+| commerce-api | 126 (124 before) | 1250 (1244 before) | 0 |
 
 ### Merge Danger
 
