@@ -50,8 +50,11 @@ class TestPg(
         /** 테스트 PG가 생성 전 거절([rejectsBeforeCreate])에만 싣는 code. 그것을 닮은 본문을 손으로 적는 테스트도 쓴다. */
         const val REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE"
 
-        /** PG 계약이 정한 합성 계정. 모든 요청의 `X-USER-ID`다. */
-        private const val USER_ID = "135135"
+        /**
+         * PG 계약이 정한 합성 계정. 모든 요청의 `X-USER-ID`다.
+         * Tests that send a request straight to the test PG send this header too, since the stubs match only this value.
+         */
+        const val PG_USER_ID = "135135"
 
         private const val PAYMENTS_PATH = "/api/v1/payments"
 
@@ -262,20 +265,20 @@ class TestPg(
     /** 거래 키나 query가 무엇이든 두 조회 모두. */
     private fun anyLookup(): MappingBuilder {
         return get(urlPathMatching(LOOKUP_PATHS))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     /** 거래 키 조회. WireMock은 경로를 디코딩하지 않고 견주므로, 경로의 거래 키를 URI builder처럼 인코딩해 맞춘다. */
     private fun retrieveRequest(transactionKey: String): MappingBuilder {
         return get(urlPathEqualTo("$PAYMENTS_PATH/${UriUtils.encodePathSegment(transactionKey, StandardCharsets.UTF_8)}"))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     /** 목록 조회. query의 `orderId`가 [pgOrderId]와 정확히 같아야 맞는다. WireMock은 query 값을 디코딩해 견준다. */
     private fun listRequest(pgOrderId: String): MappingBuilder {
         return get(urlPathEqualTo(PAYMENTS_PATH))
             .withQueryParam("orderId", equalTo(pgOrderId))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     private fun accepted(pgOrderId: String, amount: Long, transactionKey: String, pgStatus: String): ResponseDefinitionBuilder {
@@ -324,7 +327,7 @@ class TestPg(
         """
 
         return post(urlEqualTo(PAYMENTS_PATH))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
             .withRequestBody(equalToJson(json))
     }
 }

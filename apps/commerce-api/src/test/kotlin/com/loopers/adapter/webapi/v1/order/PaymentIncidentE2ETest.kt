@@ -66,8 +66,8 @@ import java.util.UUID
  *
  * Each phase reads its record fresh from the database, the test PG's request log, and one scrape of the management port, writes it
  * to the run's evidence directory ([IncidentEvidence]), and asserts on that record. Health and Prometheus are written as fetched.
- * No status is written into the commerce database: orders move only through [mvc]. Every identifier asserted or written is read
- * back from the database or the PG.
+ * No status is written into the commerce database: orders move only through [mvc]. Every identifier asserted or written comes from
+ * commerce or the PG: order IDs as the order creator returned the saved orders, the rest read back from the database or the PG.
  *
  * A failure anywhere in the phases writes `failure.json` and deletes nothing. The `finally` also releases response loss and checks
  * that no PG order ID received a second create. A failure before the run directory exists (`@BeforeEach`) has nowhere to write.
@@ -105,9 +105,6 @@ class PaymentIncidentE2ETest(
 
         private val GAUGE_STATUSES = listOf("UNKNOWN", "PENDING")
 
-        /** The PG contract's synthetic account, every PG request's `X-USER-ID`. The test PG's stubs match only this value. */
-        private const val PG_USER_ID = "135135"
-
         /** The files the fault phase writes. Recovery hashes them before it starts and checks the hashes at the end. */
         private val FAULT_FILES = phaseFiles("fault") + "fault-log-events.json"
 
@@ -134,7 +131,7 @@ class PaymentIncidentE2ETest(
     fun setUp() {
         databaseCleanUp.truncateAllTables()
         owner = prepareUser()
-        charge(POINT_BALANCE, owner)
+        charge(amount = POINT_BALANCE, user = owner)
         prepareCoupon(prepareCouponCampaign(), owner)
         prepareProduct(price = PRICE, stock = STOCK)
         orderApplicationLogs.start()
@@ -192,7 +189,7 @@ class PaymentIncidentE2ETest(
     /** 10 normal orders, each finished by its PG 알림. Returns the phase's record, which `baseline.json` holds. */
     private fun runBaseline(evidence: IncidentEvidence): PhaseRecord {
         assertThat(incidentPg.isResponseLossOn()).isFalse()
-        val orderIds = createOrders(ORDERS_PER_PHASE, existingOrderIds = emptyList())
+        val orderIds = createOrders(ORDERS_PER_PHASE)
         orderIds.forEach { orderId ->
             incidentPg.registerNormal(nextPgOrderId(), amount = PRICE, card = CARD)
             assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
@@ -224,7 +221,7 @@ class PaymentIncidentE2ETest(
      * registered before the loss starts. Returns the phase's record, which `fault.json` holds.
      */
     private fun runFault(evidence: IncidentEvidence, baseline: PhaseRecord): PhaseRecord {
-        val orderIds = createOrders(ORDERS_PER_PHASE, existingOrderIds = baseline.orderIds)
+        val orderIds = createOrders(ORDERS_PER_PHASE)
         val lostOrderIds = LOST_PLACES.map { orderIds[it - 1] }
         // The generator hands out PG order IDs in the order they were drawn, and confirmations run one by one in this order.
         orderIds.forEach { orderId ->
@@ -491,7 +488,7 @@ class PaymentIncidentE2ETest(
     private fun sendListLookupToPg(pgOrderId: String): HttpResponse<String> {
         val query = URLEncoder.encode(pgOrderId, StandardCharsets.UTF_8)
         val request = HttpRequest.newBuilder(URI.create("${server.baseUrl()}/api/v1/payments?orderId=$query"))
-            .header("X-USER-ID", PG_USER_ID)
+            .header("X-USER-ID", TestPg.PG_USER_ID)
             .GET()
             .build()
 
@@ -563,18 +560,11 @@ class PaymentIncidentE2ETest(
     }
 
     /**
-     * Creates [count] orders of one unit of the product for the owner, and returns their IDs as the database holds them: the
-     * owner's orders not in [existingOrderIds], in ID order.
+     * Creates [count] orders of one unit of the product for the owner, and returns their IDs in creation order. The order creator
+     * returns the saved order, so each ID is the database's own.
      */
-    private fun createOrders(count: Int, existingOrderIds: List<Long>): List<Long> {
-        repeat(count) { prepareOrder(owner, listOf(product), quantity = 1) }
-        val sql = "select id from orders where user_id = ? order by id"
-        val orderIds = jdbc.queryForList(sql, Long::class.javaObjectType, owner.id)
-            .filterNotNull()
-            .filterNot { it in existingOrderIds }
-        check(orderIds.size == count) { "Expected $count new orders, found $orderIds." }
-
-        return orderIds
+    private fun createOrders(count: Int): List<Long> {
+        return List(count) { prepareOrder(owner, listOf(product), quantity = 1).id }
     }
 
     /**
@@ -660,11 +650,11 @@ class PaymentIncidentE2ETest(
         val transaction = incidentPg.transactions().single { it.pgOrderId == pgOrderId }
 
         val transactionKey = transaction.transactionKey
-        val body = """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","status":"${transaction.status}"}"""
+        val json = """{"transactionKey":"$transactionKey","orderId":"$pgOrderId","status":"${transaction.status}"}"""
 
         return mvc.post().uri("/api/v1/payments/callback")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(body)
+            .content(json)
             .exchange()
     }
 }

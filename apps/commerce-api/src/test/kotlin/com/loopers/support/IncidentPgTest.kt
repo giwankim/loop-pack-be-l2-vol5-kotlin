@@ -169,7 +169,7 @@ class IncidentPgTest(
              "callbackUrl":"http://127.0.0.1:8080/api/v1/payments/callback"}
         """
         val request = HttpRequest.newBuilder(URI.create("${server.baseUrl()}/api/v1/payments"))
-            .header("X-USER-ID", "135135")
+            .header("X-USER-ID", TestPg.PG_USER_ID)
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(json))
             .build()
