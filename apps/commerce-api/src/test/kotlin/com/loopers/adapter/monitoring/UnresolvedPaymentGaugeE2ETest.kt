@@ -164,9 +164,15 @@ class UnresolvedPaymentGaugeE2ETest(
 
         awaitScraped(status = "UNKNOWN", value = "NaN")
         assertThat(scraped(status = "PENDING")).isEqualTo("NaN")
-        assertThat(monitoringLogs.list.filter { it.level == Level.WARN }).isNotEmpty().allSatisfy({
-            assertThat(it.throwableProxy.message).isEqualTo("The database is gone.")
-        })
+        // The refresh clears the count before it logs, so a scrape can see NaN before the WARN is appended. The failing ticks
+        // keep appending, so the list is copied under the appender's lock, which AppenderBase.doAppend holds.
+        await().atMost(SCRAPE_WAIT).untilAsserted {
+            val events = synchronized(monitoringLogs) { monitoringLogs.list.toList() }
+
+            assertThat(events.filter { it.level == Level.WARN }).isNotEmpty().allSatisfy({
+                assertThat(it.throwableProxy.message).isEqualTo("The database is gone.")
+            })
+        }
 
         every { countingService.countUnresolved() } answers { callOriginal() }
 
