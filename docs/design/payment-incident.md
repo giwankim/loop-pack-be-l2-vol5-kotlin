@@ -22,6 +22,7 @@
 | --- | --- |
 | [267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267) | 실제 포트의 테스트 기반 `BaseRealPortWebApiAdapterTest`와 `ManagementEndpointE2ETest`. 운영 코드는 없다. |
 | [268](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/268) | `PaymentFinder.countUnresolved`(결과 미확인과 처리 중의 수, ADR 0014의 예외)와 `IDX_PAYMENT_ON_STATUS`. 이주 SQL `docs/migrations/2026-11-26-payment-status-index.sql`. |
+| [269](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/269) | gauge `commerce.payment.unresolved`(`status`가 `UNKNOWN`, `PENDING`)의 구동 어댑터 `adapter/monitoring`의 `UnresolvedPaymentGauge`. 설정 `payment.unresolved-gauge.enabled`(`test`에서 끔)와 `refresh-interval`(10 s). `UnresolvedPaymentGaugeE2ETest`가 실제 scrape로 읽는다. |
 
 티켓마다 구현 중에 정한 것은 [글감](../research/week10-payment-observability-writing-material.md)에 있다.
 

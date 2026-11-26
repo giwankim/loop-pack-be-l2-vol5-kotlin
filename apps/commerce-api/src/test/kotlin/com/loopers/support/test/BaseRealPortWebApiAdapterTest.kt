@@ -17,8 +17,18 @@ import java.time.Duration
  * the management server was given. The management server answers on its own threads, so what it reads from the database sees
  * only committed rows: a scene that needs its writes counted leaves the test transaction like [BaseCommittingApplicationServiceTest].
  * The real port splits the context from [BaseWebApiAdapterTest]'s, one more context (ADR 0012).
+ *
+ * The `commerce.payment.unresolved` gauge, off under `test`, is on here with a short refresh interval, so a scene reads a changed
+ * count in the scraped text within a bounded wait. Its refresh runs on the scheduler thread and, like the management server, counts
+ * only committed rows.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = [
+        "payment.unresolved-gauge.enabled=true",
+        "payment.unresolved-gauge.refresh-interval=100ms",
+    ],
+)
 abstract class BaseRealPortWebApiAdapterTest : BaseWebApiAdapterTest() {
     companion object {
         /** Long enough for a busy JVM's first scrape. */
