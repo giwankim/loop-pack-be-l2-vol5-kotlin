@@ -35,7 +35,7 @@ Neither change below was committed.
 
 ## Issue 276: the baseline and fault phases of the payment incident, and their evidence
 
-Recorded 2026-11-26 from issue 276's closing comment. The text below is the comment's.
+Recorded 2026-11-26 from [issue 276's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/276#issuecomment-7190418946). The text below is the comment's.
 
 Implemented as `47b7c59f`, with review fixes in `49d9c328`, on top of `b58090a8`. `scripts/final-check --app commerce-api` on `49d9c328`, a clean tree, started 2026-11-26T10:51:32Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 21 s), 0 failures, 0 errors, 0 skipped**. That is one class and one test more than issue 275's run. No file under `src/main` changed since `b58090a8`. Only the writing material changed after `49d9c328`.
 
