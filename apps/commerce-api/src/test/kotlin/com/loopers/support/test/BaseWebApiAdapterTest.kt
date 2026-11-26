@@ -12,7 +12,8 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester
  * MockMvc는 요청을 테스트 스레드에서 처리하므로 물려받은 테스트 트랜잭션이 컨트롤러와 서비스까지 감싸고, 테스트마다 롤백으로 정리한다.
  * 요청마다 커밋된 결과를 다음 요청이 읽어야 하거나 요청이 다른 스레드의 트랜잭션과 엇갈려야 하는 클래스는
  * 클래스에 `@Transactional(propagation = NOT_SUPPORTED)`를 달아 빠지고 [com.loopers.support.DatabaseCleanUp]으로 되돌린다.
- * 실제 톰캣(RANDOM_PORT)을 띄우는 테스트는 요청이 서버의 스레드에서 돌아 이 롤백으로 정리할 수 없으므로 이 기반을 쓰지 않는다.
+ * 실제 톰캣(RANDOM_PORT)으로 보낸 요청은 서버의 스레드에서 돌아 이 롤백으로 정리할 수 없다. 그래서 실제 포트의 기반
+ * [BaseRealPortWebApiAdapterTest]도 애플리케이션 요청은 MockMvc로 보내고, management 포트의 읽기만 실제 HTTP로 한다.
  *
  * [AdminSecurityConfig]를 가져오는 까닭은 관리자 경계가 필요해서만이 아니다. Spring Security가 테스트 클래스패스에 있어서
  * `SecurityFilterChain` 빈이 하나도 없는 컨텍스트에는 Boot 기본 체인이 들어가 모든 경로에 인증을 요구한다(설계 5.10).
