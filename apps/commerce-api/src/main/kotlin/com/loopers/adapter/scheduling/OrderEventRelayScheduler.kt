@@ -10,7 +10,8 @@ import java.util.concurrent.TimeUnit
 /**
  * Runs the relay by itself on the one instance that turns it on (ADR 0035 rule 13). `order-events.relay.enabled` is a setting, not
  * ownership. It's off by default, on under `local` and off under `test`, where scenes run rounds by hand. The condition covers
- * `@EnableScheduling` too, so an instance with the relay off has no scheduling at all.
+ * `@EnableScheduling` too, so the relay brings no scheduling to an instance that turns it off. The unresolved-payment gauge enables
+ * scheduling on its own on every instance but `test`'s (spec 266); the relay's schedule still exists only where the relay is on.
  *
  * `fixedDelay` counts from the end of a round, and Boot's scheduler has one thread, so rounds never overlap. A round's exception reaches
  * Spring's error handler, which logs it and keeps the schedule: the next tick is the retry, and the rows it left come due with their leases.

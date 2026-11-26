@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.integration.kafka.OrderEventsProperties
 import com.loopers.application.order.OrderEventOutboxFactory
+import com.loopers.application.order.OrderEventRecovery
 import com.loopers.application.order.provided.OrderEventRecoveryResult.Outcome
 import com.loopers.application.order.required.OrderEventOutboxRepository
 import com.loopers.domain.order.Order
@@ -88,10 +89,13 @@ class OrderEventRecovererTest(
 
     private lateinit var orderEvents: TopicReader
 
-    /** Logs from the application's order package, where recovery logs each order. */
+    /**
+     * Logs from [OrderEventRecovery], where recovery logs each order. Only its logger: preparing a confirmed order goes through
+     * the PG, and the saga's `pg.*` events are INFO lines in the same package.
+     */
     private val orderApplicationLogs = ListAppender<ILoggingEvent>()
 
-    private val orderApplicationLogger = LoggerFactory.getLogger("com.loopers.application.order") as Logger
+    private val orderApplicationLogger = LoggerFactory.getLogger(OrderEventRecovery::class.java) as Logger
 
     @BeforeEach
     fun readTheTopicFromItsEnd() {

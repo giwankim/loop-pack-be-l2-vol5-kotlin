@@ -52,6 +52,13 @@ coupon-issue:
   # Opens issue admission once at startup. Unset it is false and admission stays closed; once closed, only a restart opens it.
   admission-open-on-startup: true
 
+# The commerce.payment.unresolved gauge (spec 266). Every instance counts and reports it, so it's on by default and off only under test,
+# where other scenes' SQL captures must see no background query. The interval counts from the end of the previous refresh.
+payment:
+  unresolved-gauge:
+    enabled: true
+    refresh-interval: 10s
+
 # PG 조회의 재시도와 서킷 브레이커(ADR 0030). 두 조회가 pg-lookup 하나를 나눠 쓰고, 생성은 감싸지 않는다. 재시도가 브레이커를 감싸므로
 # HTTP 시도 하나가 브레이커 표본 하나다. 값의 근거는 ADR 0030 규칙 6의 표에 있다. 조회 하나의 위 끝은 2 × (200 ms + 500 ms + 1 s) + 100 ms = 3.5 s다.
 resilience4j:
@@ -151,6 +158,11 @@ spring:
 # 시간 초과 장면이 오래 걸리지 않게 줄인다. 게이트웨이 테스트(*PaymentGatewayTest)는 이것을 덮어 운영의 1 s로 돈다(ADR 0022 규칙 6).
 pg:
   response-timeout: 200ms
+
+# No background count in the shared contexts. The real-port base turns the gauge on with a short interval.
+payment:
+  unresolved-gauge:
+    enabled: false
 
 ---
 spring:

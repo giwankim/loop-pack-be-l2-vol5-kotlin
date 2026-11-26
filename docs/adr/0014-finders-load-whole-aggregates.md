@@ -15,6 +15,9 @@ date: 2026-10-08
 저장소는 null을 돌려주고, 던지는 것은 application Service의 `find`다. 이것을 따라 규칙 넷을 둔다.
 
 1. **Finder의 `find`는 자기 애그리거트를 통째로 읽고, 없으면 던진다.** 저장소 메서드는 애그리거트 안의 연관을 `@EntityGraph`로 함께 읽는다. 그래서 트랜잭션이 끝난 뒤 지연 로딩할 것이 남지 않는다. provided 포트의 읽기가 null을 돌려줄 수 있으면 이름에 `…OrNull`을 붙인다.
+
+   > 2026-11-26 ([issue 268](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/268)) `PaymentFinder.countUnresolved`는 애그리거트가 아니라 결제 상태별로 센 수(`UnresolvedPaymentCount`)를 돌려준다. 센 수는 애그리거트를 읽은 것이 아니므로 이 규칙의 예외다. 끝나지 않은 결제의 gauge가 쓴다([결제 사고 설계](../design/payment-incident.md) 1단계).
+
 2. **`Info`는 응답이 여러 애그리거트를 합칠 때만 둔다.** 브랜드 이름과 좋아요 수를 싣는 `ProductInfo`가 그렇다. 쓰기 포트는 자기 애그리거트를 돌려준다. 예외는 `ProductRegister`다. 관리자 응답이 그 조합을 쓰므로 계속 `ProductInfo`를 돌려준다.
 3. **다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 둔다.** 브랜드 이름을 fetch join으로 읽는 `Product.brand`가 그렇다. 외래 키를 얻으려고만 연관을 두지는 않는다. 스칼라 식별자의 외래 키는 `scalar-foreign-keys.sql`이 만든다([ADR 0015](./0015-web-boundary-accepts-the-requester.md)).
 4. **저장소나 다른 슬라이스가 있어야 하는 사전 조건은 Validator가 본다.** provided 포트 `<X>Validator`를 `<X>ValidationService`가 구현한다. 첫 거절에서 `CoreException`을 던지고 멈추므로 HTTP 응답은 그대로다. 예외가 하나 있다. 유스케이스가 쓸 데이터를 만들어 내는 검사는 Modify Service에 남는다. 주문의 "주문할 수 있는 상품"이 그렇다. 도메인 규칙은 계속 엔티티에 있다.

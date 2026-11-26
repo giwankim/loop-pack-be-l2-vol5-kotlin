@@ -225,8 +225,11 @@ class OrderPaymentIntegrationTest(
 
     /**
      * 과제 6절의 장면 4. 생성은 PG에 닿았지만 응답을 잃었다. PG 거래가 생겼을 수도 있으므로 결제는 결과 미확인, 주문은 결제 중인 주문으로
-     * 남고 예약도 그대로다(ADR 0024 규칙 4). 그런 결제를 찾을 지표가 없으므로 주문 식별자를 담은 WARN을 한 줄 남긴다. 생성은 다시 보내지
-     * 않는다. 대사가 PG 주문 번호로 그 PG 거래를 찾아 결제를 끝내고, 생성은 1 그대로다(ADR 0024 규칙 3).
+     * 남고 예약도 그대로다(ADR 0024 규칙 4). 생성은 다시 보내지 않는다. 대사가 PG 주문 번호로 그 PG 거래를 찾아 결제를 끝내고, 생성은 1
+     * 그대로다(ADR 0024 규칙 3).
+     *
+     * The gauge `commerce.payment.unresolved` counts such payments, and the `orderId` of the WARN event `pg.create.outcome-unknown`
+     * names the order.
      */
     @Test
     fun `a lost create response leaves the payment unknown until a reconcile finds the transaction, without another create`() {
@@ -245,7 +248,9 @@ class OrderPaymentIntegrationTest(
         assertThat(pending.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(testPg.createCount()).isOne()
         assertThat(applicationLogs.list.filter { it.level == Level.WARN }).singleElement().satisfies({
-            assertThat(it.formattedMessage).contains("결과 미확인", "orderId=${order.id}")
+            assertThat(it.keyValuePairs.associate { pair -> pair.key to pair.value.toString() })
+                .containsEntry("event", "pg.create.outcome-unknown")
+                .containsEntry("orderId", order.id.toString())
         })
         inNewTransaction {
             val persisted = orderFinder.find(user.id, order.id)
@@ -889,7 +894,7 @@ class OrderPaymentIntegrationTest(
      */
     @ParameterizedTest
     @CsvSource(
-        "several transactions, PG 거래가 2개다",
+        "several transactions, PG 거래를 여럿 말해",
         "another PG order ID, reason=PG_ORDER_ID_MISMATCH",
         "another amount, reason=AMOUNT_MISMATCH",
     )
@@ -923,7 +928,12 @@ class OrderPaymentIntegrationTest(
 
         assertThat(stored.order.status).isEqualTo(OrderStatus.PAYMENT_PENDING)
         assertThat(stored.paymentStatus).isEqualTo(PaymentStatus.UNKNOWN)
-        assertThat(applicationLogs.list.filter { it.level == Level.WARN }).singleElement().satisfies({
+        // A mismatched transaction reaches TX B, whose conflicted `payment.apply.committed` is a second WARN that
+        // OrderPaymentLogEventTest asserts. This scene reads the warning that says what did not match.
+        val warnings = applicationLogs.list.filter { it.level == Level.WARN }.filterNot { logged ->
+            logged.keyValuePairs.orEmpty().any { it.key == "event" && it.value == "payment.apply.committed" }
+        }
+        assertThat(warnings).singleElement().satisfies({
             assertThat(it.formattedMessage).contains(warning)
         })
         assertThat(testPg.createCount()).isZero()

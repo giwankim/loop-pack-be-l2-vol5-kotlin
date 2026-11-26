@@ -32,9 +32,10 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
     ],
 )
 class HexagonalArchitectureTest {
-    // splearn's three layers, with its single adapter layer split in five so that the web, persistence, integration
-    // (outbound HTTP, ADR 0021), scheduling (ADR 0035) and startup (ADR 0036) adapters cannot reach each other. ApiControllerAdvice sits at the
-    // adapter root as in splearn, but it only answers web requests, so that one package belongs to the web adapter.
+    // splearn's three layers, with its single adapter layer split in six so that the web, persistence, integration
+    // (outbound HTTP, ADR 0021), scheduling (ADR 0035), startup (ADR 0036) and monitoring (spec 266) adapters cannot reach each other.
+    // ApiControllerAdvice sits at the adapter root as in splearn, but it only answers web requests, so that one package belongs to the
+    // web adapter.
     @ArchTest
     val dependenciesPointInward: ArchRule = layeredArchitecture()
         .consideringAllDependencies()
@@ -45,6 +46,7 @@ class HexagonalArchitectureTest {
         .layer("adapter.integration").definedBy("$ROOT.adapter.integration..")
         .layer("adapter.scheduling").definedBy("$ROOT.adapter.scheduling..")
         .layer("adapter.startup").definedBy("$ROOT.adapter.startup..")
+        .layer("adapter.monitoring").definedBy("$ROOT.adapter.monitoring..")
         .layer("support").definedBy("$ROOT.support..")
         .whereLayer("domain")
         .mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence", "adapter.integration")
@@ -55,12 +57,14 @@ class HexagonalArchitectureTest {
             "adapter.integration",
             "adapter.scheduling",
             "adapter.startup",
+            "adapter.monitoring",
         )
         .whereLayer("adapter.webapi").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.persistence").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.integration").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.scheduling").mayNotBeAccessedByAnyLayer()
         .whereLayer("adapter.startup").mayNotBeAccessedByAnyLayer()
+        .whereLayer("adapter.monitoring").mayNotBeAccessedByAnyLayer()
         .ensureAllClassesAreContainedInArchitectureIgnoring(ROOT)
 
     // A trigger starts what the application offers and decides nothing, so of this code base it sees only the provided ports. The layer
@@ -71,6 +75,10 @@ class HexagonalArchitectureTest {
 
     @ArchTest
     val startupReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.startup", "ADR 0036")
+
+    // The unresolved-payment gauge is driven by a schedule too: it asks a provided port how many, and Micrometer stays in this layer.
+    @ArchTest
+    val monitoringReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.monitoring", "spec 266")
 
     // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
     // likes while application.like calls application.product is two layers each looking one way, not a loop
