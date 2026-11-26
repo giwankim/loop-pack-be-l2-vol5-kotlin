@@ -163,3 +163,26 @@ Not committed: the `payment.apply.failed` log call guarded off. 3 of 21 scenes f
 - **One more cached context.** The `OrderPaymentSagaSteps` spy in `OrderPaymentLogEventTest`. `CODING_STANDARDS.md` has a dated note.
 - **The design doc's §1.2 gains rows for 270 and 271.** 270's was missing.
 - **Limits, for issue 272's section.** `payment.apply.failed` carries the exception, and a database message can quote values; the personal-data scene checks key-value pairs, not exception text. TX B only updates rows, so a duplicate-key message is unlikely. No scene reads the HTTP error of a failed TX B: the scenes pin the rethrown instance, and the controller advice is unchanged.
+
+## Issue 272: record step 1 and its final check in the design doc
+
+Recorded 2026-11-26 from [issue 272's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/272#issuecomment-7186188098). The text below is the comment's.
+
+Implemented as `38006365`, docs only. `scripts/final-check --app commerce-api` on `22d77d50`, a clean tree whose code is `81c7a44b`'s, started 2026-11-26T07:55:52Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 124 classes, 1244 tests (6 min 18 s), 0 failures, 0 errors, 0 skipped**. Only documents changed after `22d77d50`.
+
+### Acceptance criteria
+
+- [x] **`docs/design/payment-incident.md` has a step 1 section covering the metric, the count and its index, the gauge's switch, the nine log events and the real-port test base.** [§2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/38006365/docs/design/payment-incident.md#2-1단계-끝나지-않은-결제의-지표와-결제의-로그-이벤트): 2.1 (name, `status` label, source, 10 s `fixedDelay`, `NaN`, `max`, the switch and the scheduler thread), 2.2 (the native count, `IDX_PAYMENT_ON_STATUS`, the EXPLAIN plan), 2.3 (the nine events with level and fields), 2.4 (the real-port base).
+- [x] **The section states the limits.** 2.6: no age metric, no health indicator, no distributed tracing (identifiers only), `updated_at` as the status time and why it holds (`Payment.reconcile` sets the transaction key only when it moves the status), one scheduler thread shared with the relay, the count ignoring `deleted_at`, the ADR 0014 exception. It also carries the three limits the ticket closings left for this issue: `cause` can hold PG body text, `payment.apply.failed`'s exception text is unchecked for personal data, and no scene reads the HTTP error of a failed TX B.
+- [x] **The four red checks are recorded with the scene each one turned red.** 2.8, plus issue 267's exposure check as a fifth outside the spec.
+- [x] **The section lists what the next branches inherit.** 2.11: the real-port base, reading an order's path by `trigger` and the nine events (including how the two hypotheses split), and the remaining risks.
+- [x] **The final check is recorded with its commit, timings and test counts.** 2.9.
+- [x] **`scripts/check-doc-links` and `scripts/check-doc-notes` pass.** Both exit 0 under the pre-commit hook's `--warn-changed`. The three CHANGED lines are the skeleton's placeholders and its `### 2.1` heading, now §2.11; nothing linked to the old anchor.
+- [x] **The closing comment is appended to the writing material.**
+
+### Decisions made while implementing
+
+- **The section follows `weekly-ranking.md` §12's shape**: 고르지 않은 것, 한계, 장면, 붉은 확인, 끝의 확인, 명세와 다른 것, then what the next branches inherit. The status line and §1.1's status cell got dated notes rather than rewrites.
+- **2.10 lists five spec deviations** from the ticket closings: the fifth base, the gauge properties added in 269, the `deleted_at` red check losing only "Covering", the spy failing until `NaN` is scraped, and logging around the proxy call with `AppliedAnswer`.
+- **Review fixes.** 불일치 (on 충돌's Avoid list) became 충돌. The scheduler-thread limit had `max` backwards: `max` picks the largest value, not the freshest, so a lagging instance shows a stale higher count while payments resolve. §2.11 adds `pg.create.rejected` → `payment.apply.failed` as a failed apply.
+- **The final check's delta is against week 9's last count** (118 classes, 1208 tests): 6 classes and 36 tests.
