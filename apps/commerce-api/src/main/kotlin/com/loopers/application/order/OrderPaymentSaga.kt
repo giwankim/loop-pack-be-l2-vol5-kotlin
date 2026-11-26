@@ -68,11 +68,11 @@ class OrderPaymentSaga(
      *   주문이 되고 예약을 돌려준다.
      * - PG의 답을 모르면(`PgOutcomeUnknownException`) 저장된 상태를 다시 읽어 답한다. 대개 TX A가 저장한 결제 중인 주문과 결과 미확인
      *   결제이고, PG 호출 동안 대사가 결제를 끝냈으면 그 결과다. 실패가 아니며 예약은 그대로 남고, 생성은 다시 보내지 않는다(ADR 0024 규칙
-     *   3, 4). 결과는 대사가 조회로 안다. 그런 결제의 수는 gauge
-     *   `commerce.payment.unresolved`가 알리고, 어느 주문인지는 WARN 이벤트 `pg.create.outcome-unknown`이 남긴다.
+     *   3, 4). 결과는 대사가 조회로 안다.
      *
      * Every PG answer leaves one `pg.create.*` event with the trigger `confirm` ([logEvent]), and each TX B it goes to leaves one
-     * `payment.apply.*` event after it ([applyAndLog]). A replay calls no PG and leaves none.
+     * `payment.apply.*` event after it ([applyAndLog]). A replay calls no PG and leaves none. The gauge `commerce.payment.unresolved`
+     * counts the payments an unknown answer leaves, and the WARN event `pg.create.outcome-unknown` names their orders.
      *
      * 두 예외는 트랜잭션 밖에서 정확한 타입으로 잡는다. 넓게 잡으면 결과 미확인이 실패로 바뀔 수 있다.
      */
