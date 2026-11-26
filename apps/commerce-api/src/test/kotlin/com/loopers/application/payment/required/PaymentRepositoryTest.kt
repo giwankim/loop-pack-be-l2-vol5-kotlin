@@ -219,4 +219,20 @@ class PaymentRepositoryTest(
             "UK_PAYMENT_ON_PG_ORDER_ID:pg_order_id",
         )
     }
+
+    /**
+     * Beside the unique keys, the one index is on the status alone. The count of 끝나지 않은 결제 reads it alone: its plan is in
+     * [com.loopers.application.payment.provided.PaymentFinderTest], and `docs/migrations/2026-11-26-payment-status-index.sql` adds it.
+     */
+    @Test
+    fun `the only non-unique index is the status index on the status column alone`() {
+        val indexes = entityManager
+            .createNativeQuery(
+                "select concat(index_name, ':', seq_in_index, ':', column_name) from information_schema.statistics " +
+                    "where table_schema = database() and table_name = 'payment' and non_unique = 1",
+            )
+            .resultList
+
+        assertThat(indexes).containsExactly("IDX_PAYMENT_ON_STATUS:1:status")
+    }
 }

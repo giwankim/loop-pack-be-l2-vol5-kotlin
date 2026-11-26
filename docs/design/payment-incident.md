@@ -21,6 +21,7 @@
 | 티켓 | 만든 것 |
 | --- | --- |
 | [267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267) | 실제 포트의 테스트 기반 `BaseRealPortWebApiAdapterTest`와 `ManagementEndpointE2ETest`. 운영 코드는 없다. |
+| [268](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/268) | `PaymentFinder.countUnresolved`(결과 미확인과 처리 중의 수, ADR 0014의 예외)와 `IDX_PAYMENT_ON_STATUS`. 이주 SQL `docs/migrations/2026-11-26-payment-status-index.sql`. |
 
 티켓마다 구현 중에 정한 것은 [글감](../research/week10-payment-observability-writing-material.md)에 있다.
 

@@ -1,6 +1,7 @@
 package com.loopers.application.payment.required
 
 import com.loopers.domain.payment.Payment
+import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.Repository
 
 /**
@@ -18,4 +19,22 @@ interface PaymentRepository : Repository<Payment, Long> {
 
     /** PG의 알림이 가리키는 결제. `UK_PAYMENT_ON_PG_ORDER_ID`를 탄다(ADR 0029 규칙 3, ADR 0031 규칙 2). */
     fun findByPgOrderId(pgOrderId: String): Payment?
+
+    /**
+     * The number of payments in each of [statuses]. A status with no payment has no row. `IDX_PAYMENT_ON_STATUS` answers it alone.
+     *
+     * Native, because JPQL on [Payment] carries its `@SQLRestriction`, and `deleted_at` is not in the index. The count reads every row:
+     * nothing deletes a payment, so there is nothing to filter (payment-incident design §2). If payments can be deleted, revisit this.
+     */
+    @Query(
+        "select status, count(*) as payments from payment where status in (:statuses) group by status",
+        nativeQuery = true,
+    )
+    fun countByStatusIn(statuses: Collection<String>): List<PaymentStatusCount>
+}
+
+/** One row of [PaymentRepository.countByStatusIn]. [status] is a [com.loopers.domain.payment.PaymentStatus] name. */
+interface PaymentStatusCount {
+    val status: String
+    val payments: Long
 }
