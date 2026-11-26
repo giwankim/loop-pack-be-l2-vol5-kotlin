@@ -184,6 +184,7 @@ scripts/final-check --app commerce-api
 - commerce-api는 124개 클래스, 1244개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 18 s). 9주차의 마지막 확인([주간 랭킹 설계](./weekly-ranking.md) 12.8)이 118개 클래스와 1208개 테스트였으므로, 이 단계가 6개 클래스(2.7절의 새 클래스)와 36개 테스트를 더했다.
 - 이 단계는 commerce-streamer와 commerce-batch를 바꾸지 않았으므로 돌리지 않았다.
 - `22d77d50`의 코드는 `81c7a44b`의 것이고, 그 뒤로는 문서만 바뀌었다.
+- (2026-11-26 명세 266의 닫는 리뷰: 리뷰의 고침 `4a1183b5`(KDoc의 새 문장을 영어로)와 `c96fa48d`(saga의 로그 도우미가 `trigger`와 결제를 먼저 받는다) 뒤에 `c96fa48d`의 깨끗한 트리에서 다시 돌렸다(08:35:59Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 124개 클래스, 1244개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 1 s). 고침은 테스트를 더하거나 빼지 않았다. `c96fa48d` 뒤로는 문서만 바뀌었다.)
 
 ### 2.10 명세와 다른 것
 
@@ -202,6 +203,7 @@ scripts/final-check --app commerce-api
 - **실제 포트의 테스트 기반.** `BaseRealPortWebApiAdapterTest`. 사고 테스트는 이것을 이어 주입된 management 포트로 health와 Prometheus 원문을 가져온다. 요청은 `mvc`로 보내고, 세어야 할 쓰기는 테스트 트랜잭션 밖에서 커밋한다(2.4절). gauge는 이 기반에서 켜져 있고 주기는 100 ms다. 한 주문의 리허설(2.7절)이 그 하네스가 돈다는 것을 보였다.
 - **주문별 경로를 읽는 법.** 한 주문의 이벤트를 `orderId`(또는 `paymentId`, `pgOrderId`)로 걸러 차례대로 읽는다. `trigger`가 어느 길이 물었는지 말한다(확정, 고객의 대사, PG의 알림). 과제 4절의 두 가설은 이렇게 갈린다: `pg.create.outcome-unknown` 뒤에 반영 이벤트가 없으면 PG의 답을 잃은 것이고, `pg.create.accepted`나 `pg.lookup.found` 뒤에 `payment.apply.failed`가 있으면 받은 답을 반영하지 못한 것이다. 생성 전 거절의 반영도 TX B라서 `pg.create.rejected` 뒤의 `payment.apply.failed`도 반영의 실패다. 복구는 `trigger`가 `reconcile`인 `pg.lookup.found` 뒤의 `payment.apply.committed`(`result=changed`, `from=UNKNOWN`)로 보인다. key-value는 `test`의 console에 찍히지 않으므로 증거는 잡은 이벤트에서 읽는다(2.3절).
 - **남은 위험.** 분산 추적을 하지 않았다(로그의 식별자로만 잇는다). 나이 지표가 없다. scheduler 스레드 하나를 릴레이와 나눠 쓴다. 수는 `deleted_at`을 보지 않는다. `cause`와 실패한 반영의 예외 글은 내용을 검사하지 않는다. 모두 2.6절이다. 셋째 브랜치의 "기능별 검증 범위와 남은 위험"이 이것을 잇는다.
+- (2026-11-26 명세 266의 닫는 리뷰: **로그 이벤트를 saga 밖의 클래스로 옮기는 것은 미뤘다.** `trigger`와 결제가 도우미 넷을 함께 다니고, `OrderPaymentSaga`가 saga와 함께 이벤트의 필드도 만든다. 2단계가 이벤트를 어떻게 읽는지 본 뒤 정한다. 티켓은 없다.)
 
 ## 3. 2단계: 사고의 재현과 복구
 

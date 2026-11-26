@@ -186,3 +186,128 @@ Implemented as `38006365`, docs only. `scripts/final-check --app commerce-api` o
 - **2.10 lists five spec deviations** from the ticket closings: the fifth base, the gauge properties added in 269, the `deleted_at` red check losing only "Covering", the spy failing until `NaN` is scraped, and logging around the proxy call with `AppliedAnswer`.
 - **Review fixes.** 불일치 (on 충돌's Avoid list) became 충돌. The scheduler-thread limit had `max` backwards: `max` picks the largest value, not the freshest, so a lagging instance shows a stale higher count while payments resolve. §2.11 adds `pg.create.rejected` → `payment.apply.failed` as a failed apply.
 - **The final check's delta is against week 9's last count** (118 classes, 1208 tests): 6 classes and 36 tests.
+
+## Spec 266: the closing review
+
+Recorded 2026-11-26 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266#issuecomment-7186916095) of [spec 266](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266). The text is the comment's, with its blob URLs.
+
+Step 1 of week 10 is built, and its closing review is done. `scripts/final-check --app commerce-api` on `c96fa48d`, a clean tree, started 2026-11-26T08:35:59Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 124 classes, 1244 tests (6 min 1 s), 0 failures, 0 errors, 0 skipped**. Week 9's last check ended commerce-api at 118 classes and 1208 tests, so this step adds 6 classes and 36 tests. The review's fixes add and remove no test, so the counts match the run on `22d77d50` that issue 272 recorded. Only documents change after `c96fa48d`.
+
+Tickets 267–272 are closed, each with its own comment. [Design 1.2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md#12-1단계가-만든-것) lists what the step built and [design 2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md#2-1단계-끝나지-않은-결제의-지표와-결제의-로그-이벤트) holds the step. Production code changed in commerce-api only, and there is no ADR.
+
+### Where the implementation differs
+
+[Design 2.10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md#210-명세와-다른-것) has five rows, all from the tickets; this review added none. The ones that change what a reader would assume:
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| "넷째 테스트 기반" | The fifth. Four bases already existed | Issue 267 |
+| Adding `deleted_at IS NULL` makes the EXPLAIN scene red because the index alone can't answer | Red, but MySQL still picks `IDX_PAYMENT_ON_STATUS`; only "Covering" is lost, so the scene asserts `Covering index` | Issue 268 |
+| The spy fails the count once | The spy fails until the scene has scraped `NaN`, because at a 100 ms interval the next refresh can cover one failure before a scrape sees it | Issue 269 |
+| `payment.apply.failed` is logged, then the exception rethrown | Logged around the proxied TX B call, not inside TX B, so the two TX B entries now return `AppliedAnswer` | Issue 271 |
+
+**Now proven:** the gauge `commerce_payment_unresolved` is in the real Prometheus text on the injected management port, with both `status` series at 0; one order whose create response is lost moves `UNKNOWN` to 1 while health answers UP, and the customer's 대사 brings it back to 0 with one PG create; a pending payment shows under `PENDING`; a failed count shows `NaN` and the next success restores it; the count reads `IDX_PAYMENT_ON_STATUS` as a covering index; each of the nine log events carries its fields, level and `trigger`; a lost create response leaves `pg.create.outcome-unknown` with no `payment.apply.*` after it, and a failed apply leaves `payment.apply.failed` after `pg.create.accepted`, `pg.create.rejected` or `pg.lookup.found`, with the same exception rethrown.
+
+**Proven by a red check, not by a committed test:** issue 267's exposure check. Widening the exposure to `env` turned the 404 scene red, so the 404 comes from `monitoring.yml`'s list ([design 2.8](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md#28-붉은-확인)).
+
+**Not proven here:** the HTTP error of a failed TX B (the scenes pin the rethrown instance at the service; the controller advice is unchanged), the user ID by value in the no-personal-data scene (IDs restart at 1, so only its key is checked), the text of `cause` and of a failed apply's exception, distributed tracing, the gauge's lag on an instance whose relay shares the scheduler thread, and the migration SQL outside the test schema ([design 2.6](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md#26-한계)).
+
+### The closing review
+
+A two-axis review of `week10...feat/payment-observability` at `8ee05385` (18 commits, 31 files), with one reviewer on the standards and one on this spec. Standards found 1 soft breach of a documented rule and 7 possible smells. Spec found 3 partial requirements, 3 additions and no requirement implemented wrongly. Each was checked against the code and decided.
+
+#### What changed
+
+- **`4a1183b5`: the saga's new sentences are English.** The KDoc of `OrderPaymentSaga.confirm` and of the lost-response scene in `OrderPaymentIntegrationTest` each had one new Korean sentence about the gauge and the WARN event. Each is now its own English sentence, so no paragraph switches language halfway. Old Korean KDoc that the branch only reworded stays Korean.
+- **`c96fa48d`: every logging helper of the saga takes `trigger` and `payment` first.** `applyTransactionAndLog` took them last and `retrieveTransaction` took them reversed, while `applyAndLog` and `logEvent` took them in that order.
+
+#### Left as they were
+
+- **A separate class for the log events.** `trigger` and the payment travel together, and the saga builds the events' fields beside the saga itself. Deferred until step 2 shows how it reads the events; design 2.11 carries a dated note.
+- **`failRejectionTxBOnceAfterItsWrites` copies `failTxBOnceAfterItsWrites`** except for the stubbed entry. Each scene reads as one sentence; a shared helper would take the entry as a lambda.
+- **`"UNKNOWN"` and `"PENDING"` written out in the gauge.** They are the Prometheus label values dashboards and alerts match on; derived from the enum, a rename would silently rename the series.
+- **The unresolved statuses in three places** (the service's list, `UnresolvedPaymentCount`'s fields, the gauge's two series). A new unresolved status needs a new series and a spec change anyway.
+- **`payment.apply.failed`, next to the 실패 payment status.** The spec chose the name.
+- **The log appender's setup repeated in two new test classes,** as in about 11 existing ones. Moving it into `support/` would be a repo-wide refactor.
+- **The spec's three partial items** (the user ID checked by key, the failed TX B checked at the service, two more cached contexts than "하나") are already stated in design 2.4 and 2.6.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/research/week10-payment-observability-writing-material.md#spec-266-the-closing-review).
+
+## Draft PR body
+
+The body of the PR from `feat/payment-observability` into `week10`, written at the spec's closing review (2026-11-26) in `/mattpocock-skills:pr`'s shape, with the final check on `c96fa48d` and the comment's link. It makes no throughput or lag claim; none was measured.
+
+### Summary
+
+Week 10 step 1. While a payment's result is unknown, health still answers UP. This branch makes such payments visible from outside commerce-api: a gauge counts 끝나지 않은 결제 by status, and the payment saga leaves one log event, with the order's identifiers, for every PG answer and every TX B result. A test base on a real port fetches the real health and Prometheus responses.
+
+- **Spec:** issue 266, with tickets 267–272, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266#issuecomment-7186916095)
+- **Design:** [`docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/design/payment-incident.md) section 2: 2.1 the metric, 2.2 the count and its index, 2.3 the nine events, 2.4 the real-port base, 2.6 the limits, 2.8 the red checks, 2.10 what differs from the spec, 2.11 what steps 2 and 3 inherit
+- **Writing material:** [`docs/research/week10-payment-observability-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-observability/docs/research/week10-payment-observability-writing-material.md), which holds every ticket's closing comment
+- **Glossary:** 끝나지 않은 결제 (unresolved payment) in `CONTEXT.md`: a payment whose status is 결과 미확인 or 처리 중
+- **No ADR.** ADRs 0012 and 0014 got dated notes (the fifth test base; the count as a Finder exception).
+
+The gauge counts in the database, on a schedule, so the number holds across restarts and instances:
+
+```text
+UnresolvedPaymentGauge (adapter/monitoring, fixedDelay 10 s, off under `test`)
+  PaymentFinder.countUnresolved()
+    select status, count(*) … where status in ('UNKNOWN','PENDING') group by status   # covering IDX_PAYMENT_ON_STATUS
+  keep UnresolvedPaymentCount, or null on failure                                    # null scrapes as NaN, never 0
+GET /actuator/prometheus
+  commerce_payment_unresolved{status="UNKNOWN"} / {status="PENDING"}                 # every instance reports the same DB count: read with max
+```
+
+The saga's events, and how they tell the assignment's two hypotheses apart:
+
+```diff
+ confirm                                         trigger=confirm
+   PG create
++    accepted        → pg.create.accepted        → TX B → payment.apply.committed | payment.apply.failed
++    rejected        → pg.create.rejected        → TX B → payment.apply.committed | payment.apply.failed
++    outcome unknown → pg.create.outcome-unknown   (no TX B: the response was lost)
+ reconcile                                       trigger=reconcile | callback
+   PG lookup
++    found           → pg.lookup.found           → TX B → payment.apply.committed | payment.apply.failed
++    none | several | unavailable → pg.lookup.*
+```
+
+Every event carries `event`, `trigger`, `orderId`, `paymentId`, `pgOrderId`, plus the fields design 2.3 lists. None carries the user, the 멱등 키, the amount or the card. `payment.apply.failed` is logged around the proxied TX B call and rethrows the same exception, so responses are unchanged.
+
+### Evidence
+
+**Before:** nothing counted unresolved payments, the code had no business metric, and a rolled-back TX B left only a message and a stack trace with no order identifier. No test base started a real port, so no test fetched a real Actuator response.
+
+**After:** on real MySQL and the test PG, values read from the scraped Prometheus text and from captured log events' key-value pairs.
+
+- **The incident in one order** (`UnresolvedPaymentGaugeE2ETest`): confirm with a lost create response (202) → `commerce_payment_unresolved{status="UNKNOWN"} 1.0` while `/actuator/health` answers 200 UP → the customer's 대사 (200) → `0.0`. The PG saw one create.
+- **`NaN`, not 0, on a failed count**, and the next success restores `1.0` / `0.0`.
+- **The plan:** `Covering index range scan on payment using IDX_PAYMENT_ON_STATUS`; without the index, `Table scan on payment`.
+- **The two hypotheses** (`OrderPaymentLogEventTest`, 22 scenes): a lost response leaves `pg.create.outcome-unknown` and nothing after it; a failed apply leaves `pg.create.accepted` → `payment.apply.failed`, and the confirm throws the same `DataAccessResourceFailureException` instance.
+
+| Red check (local, never committed) | Result |
+| --- | --- |
+| `and deleted_at is null` in the count | The EXPLAIN scene: the plan keeps the index but loses `Covering` |
+| The refresh keeps the last value on failure | The `NaN` scene: `ConditionTimeoutException` after 10 s, still `1.0` |
+| `idempotencyKey` put in the payload | 11 of `OrderPaymentLogEventTest`'s 12 scenes |
+| The `payment.apply.failed` log call removed | 3 of 21: both failed-apply branches and the no-personal-data scene |
+| Exposure widened to `env` | `ManagementEndpointE2ETest`: `expected: 404 but was: 200` |
+
+`scripts/final-check --app commerce-api` on `c96fa48d`, a clean tree, with ktlint passing and only documents changed since:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 124 (118 before) | 1244 (1208 before) | 0 |
+
+### Merge Danger
+
+**Door:** two-way
+
+The one schema change is an added index (`docs/migrations/2026-11-26-payment-status-index.sql`, `ALGORITHM = INPLACE, LOCK = NONE`), which a `DROP INDEX` undoes. The gauge, its properties and the log events go away with a revert.
+
+**Blast Radius:** commerce-api
+
+- Every commerce-api instance outside `test` now runs scheduling and one count query every 10 s. Before, only an instance with the relay on had scheduled work. The relay and the gauge share Boot's single scheduler thread, so a long relay round delays the gauge (design 2.6).
+- Each PG answer now adds an INFO or WARN line, roughly two lines per confirmation.
+- TX B's two entries return `AppliedAnswer` instead of their old types. Only the saga calls them.
+- `cause` can carry part of a PG response body on a parse error, as the old WARN did.
