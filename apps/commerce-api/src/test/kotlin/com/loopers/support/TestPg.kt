@@ -18,7 +18,9 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.http.Fault
 import com.github.tomakehurst.wiremock.stubbing.Scenario
+import com.github.tomakehurst.wiremock.stubbing.StubMapping
 import com.github.tomakehurst.wiremock.verification.LoggedRequest
+import com.jayway.jsonpath.JsonPath
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
 import org.springframework.web.util.UriUtils
@@ -101,9 +103,16 @@ class TestPg(
     /**
      * 생성을 받아 PG 거래를 저장한 뒤 응답 없이 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청 본문을 다 읽은 뒤 끊는다
      * (wiremock-spring-boot 탐침 보고서 §3의 b).
+     *
+     * Returns the stub, so a caller that switches the loss off ([IncidentPg]) can remove it again.
      */
-    fun losesCreateResponse(pgOrderId: String, amount: Long, card: CreditCard) {
-        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    fun losesCreateResponse(pgOrderId: String, amount: Long, card: CreditCard): StubMapping {
+        return server.stubFor(createRequest(pgOrderId, amount, card).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    }
+
+    /** Removes [stub], one this class added, so the next request matches the stubs that remain. */
+    fun remove(stub: StubMapping) {
+        server.removeStub(stub)
     }
 
     /** 생성에 307로 답해 [REDIRECT_PATH]로 돌려보낸다. 따라간 요청은 [requestCount]에 더해진다. */
@@ -150,6 +159,11 @@ class TestPg(
         return server.findAll(
             postRequestedFor(urlEqualTo(PAYMENTS_PATH)).withRequestBody(matchingJsonPath("$.orderId", equalTo(pgOrderId))),
         ).size
+    }
+
+    /** The body's `orderId` of every create the PG received, answered or not, one entry per create, in no particular order. */
+    fun createdPgOrderIds(): List<String> {
+        return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).map { JsonPath.read(it.bodyAsString, "$.orderId") }
     }
 
     /**
@@ -230,6 +244,11 @@ class TestPg(
     /** PG가 받은 조회 수. 거래 키 조회와 목록 조회를 함께 세며, 헤더와 query가 무엇이든 센다. */
     fun lookupCount(): Int {
         return server.findAll(getRequestedFor(urlPathMatching(LOOKUP_PATHS))).size
+    }
+
+    /** The list lookups the PG received whose query `orderId` is the PG order ID [pgOrderId], whatever their headers. */
+    fun lookupCount(pgOrderId: String): Int {
+        return server.findAll(getRequestedFor(urlPathEqualTo(PAYMENTS_PATH)).withQueryParam("orderId", equalTo(pgOrderId))).size
     }
 
     /** PG가 받은 요청 가운데 어느 장면의 스텁과도 맞지 않은 것. 그 요청들은 WireMock의 404를 받았다. */
