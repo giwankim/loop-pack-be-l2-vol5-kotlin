@@ -32,3 +32,36 @@ Neither change below was committed.
 - **The reader keeps level and exception.** `LogEvent` holds the level, the key-value pairs as text and the exception logged with it. Without the level and the exception, `OrderPaymentLogEventTest` could not keep its assertions.
 - **The log event scenes are as strict as before.** They now read one order's sequence. The review saw that a stray event of another order, or one without `orderId`, would no longer fail a scene. A helper now checks that the order's sequence equals every captured event.
 - `CODING_STANDARDS.md` gains a dated note under the test PG's paragraph.
+
+## Issue 276: the baseline and fault phases of the payment incident, and their evidence
+
+Recorded 2026-11-26 from issue 276's closing comment. The text below is the comment's.
+
+Implemented as `47b7c59f`, with review fixes in `49d9c328`, on top of `b58090a8`. `scripts/final-check --app commerce-api` on `49d9c328`, a clean tree, started 2026-11-26T10:51:32Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 21 s), 0 failures, 0 errors, 0 skipped**. That is one class and one test more than issue 275's run. No file under `src/main` changed since `b58090a8`. Only the writing material changed after `49d9c328`.
+
+### Acceptance criteria
+
+- [x] **Baseline.** [`PaymentIncidentE2ETest`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/49d9c328/apps/commerce-api/src/test/kotlin/com/loopers/adapter/webapi/v1/order/PaymentIncidentE2ETest.kt), one `@Test` on `BaseRealPortWebApiAdapterTest`, outside the test transaction. Response loss is asserted off. 10 orders are confirmed through `mvc` (202 each, the create accepted as `PENDING`), and each one's PG 알림 is played right after its confirmation (200). `baseline.json` holds 10 orders `CONFIRMED`/`SUCCESS`, one create each, the scraped gauge `UNKNOWN 0.0` and `PENDING 0.0`, health `UP`, and 10 PG transactions.
+- [x] **Fault.** 10 other orders. All 10 PG transactions are registered before the loss starts: the 3rd, 6th and 9th, named by the order IDs read back from the database, as lost (`SUCCESS`), the rest as normal. `fault.json` holds 7 orders `CONFIRMED`/`SUCCESS`, and 3 `PAYMENT_PENDING`/`UNKNOWN` whose IDs equal the database's unresolved payments. It also holds the gauge `UNKNOWN 3.0` and `PENDING 0.0`, health `UP`, 20 PG transactions in all, product stock 0 (20 − 20, so the three reservations are held), and, for each of the three, one create and zero list lookups.
+- [x] **No status is written directly into the commerce database.** Orders are created through the order port and move only through `mvc` (confirm, PG 알림). The test's SQL is all `select`.
+- [x] **Every identifier asserted or written is read back.** Order IDs, idempotency keys, PG order IDs, transaction keys and statuses come from fresh reads of `orders`, `order_line_item` and `payment`. Create and lookup counts and the PG transaction count come from the test PG's request log. The PG 알림 reads its PG order ID from the payment row.
+- [x] **The assertions run on the same values that the files hold.** Each phase builds one record from those reads and one scrape of the management port, writes it, and asserts on that record. Health and Prometheus are written from the same scrape, as fetched.
+- [x] **Two runs write two directories.** The run directory is `build/payment-incident/<UTC start>-<random suffix>/`, made with `createDirectory`. Every file is written `CREATE_NEW`. The runs of this ticket left one directory each, for example `20261126T104612Z-cf2f4d4e` and `20261126T104650Z-d15d4b19`.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** See the run above. Its incident run is `20261126T105330Z-fe20fbb4`.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Red checks
+
+The change below was not committed.
+- The fault phase plays the PG 알림 of the first lost order as well. The gauge wait fails with `expected: {"PENDING"="0.0", "UNKNOWN"="3.0"} but was: {"PENDING"="0.0", "UNKNOWN"="2.0"}`. The run directory holds the baseline's three files and `failure.json` with `"phase" : "fault"` and the `ConditionTimeoutException`, and no fault file.
+
+### Decisions made while implementing
+
+- **PG order IDs are drawn in confirmation order.** `TestPgOrderIdGenerator` is a FIFO queue, and the fault's 10 IDs are all drawn and registered before the loss starts, as the spec asks for the lost orders' `SUCCESS` transactions. The confirmations then run one by one in the same order, so the n-th registration is the n-th payment.
+- **The scrape is retried, and the files hold the last one.** The gauge reaches the text one refresh later, so each phase scrapes health and Prometheus together until the gauge reads what the phase expects (10 s at most). The record, the assertions and both raw files come from that one scrape.
+- **A PG transaction is counted from the request log.** The review saw that counting the fixture's registered transactions would read 10 and 20 whatever commerce did. The count is the number of PG order IDs that received a create. Every create matched a stub, and the PG makes the transaction whether its answer is sent or lost.
+- **A lost order's transaction key is written as `null`.** The project's Jackson leaves `null` fields out, so the order record is `@JsonInclude(ALWAYS)`. The file shows that commerce never learned the key, not that the test forgot to write it.
+- **The reservation follows the order's status.** `reservedQuantity` is the line's quantity while the order is `PAYMENT_PENDING` (CONTEXT.md, 재고 예약). Product stock 0 is what shows the reservations were held and not released.
+- **`failure.json` carries the phase, the exception's class and message, and its stack trace.** The `finally` releases response loss and checks for a second create on any PG order ID. A second create fails the test on its own, or is added as suppressed to an earlier failure. A failure in `@BeforeEach`, before the run directory exists, has nowhere to write.
+- **The evidence writer stays in the test.** It has one user, so by the 도우미 rule it is a private class of `PaymentIncidentE2ETest`, not `com.loopers.support`. `IncidentPg` gains `createCount()` and `createdPgOrderIds()`. `CODING_STANDARDS.md` notes the class's constructor dependencies.
+- **Not yet asserted here.** `fault-log-events.json` holds the three orders' captured events (each a single `pg.create.outcome-unknown` with `cause` `NoHttpResponseException`). Judging them is issue 277's verdict.
