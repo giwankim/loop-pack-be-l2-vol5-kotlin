@@ -86,6 +86,11 @@ class IncidentPg(server: WireMockServer) {
         return transactions.toList()
     }
 
+    /** The PG order IDs that received at least one create, from the PG's request log, registered or not. */
+    fun createdPgOrderIds(): Set<String> {
+        return testPg.createdPgOrderIds().toSet()
+    }
+
     /** Every create the PG received, answered, lost or unmatched. */
     fun createCount(): Int {
         return testPg.createCount()

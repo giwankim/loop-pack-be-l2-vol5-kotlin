@@ -1,6 +1,7 @@
 package com.loopers.adapter.webapi.v1.order
 
 import ch.qos.logback.classic.Logger
+import com.fasterxml.jackson.annotation.JsonInclude
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
@@ -11,7 +12,6 @@ import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
-import com.loopers.support.IncidentEvidence
 import com.loopers.support.IncidentPg
 import com.loopers.support.TestPg
 import com.loopers.support.logEventsOf
@@ -31,8 +31,13 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.wiremock.spring.InjectWireMock
 import tools.jackson.databind.ObjectMapper
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -49,8 +54,8 @@ import java.util.UUID
  * No status is written into the commerce database: orders move only through [mvc]. Every identifier asserted or written is read
  * back from the database or the PG.
  *
- * A failure anywhere writes `failure.json` and deletes nothing. The `finally` also releases response loss and checks that no PG
- * order ID received a second create.
+ * A failure anywhere in the phases writes `failure.json` and deletes nothing. The `finally` also releases response loss and checks
+ * that no PG order ID received a second create. A failure before the run directory exists (`@BeforeEach`) has nowhere to write.
  *
  * Confirmations commit per request and the gauge counts committed rows, so the class leaves the test transaction and empties the
  * tables itself (`UnresolvedPaymentGaugeE2ETest`'s pattern).
@@ -141,7 +146,10 @@ class PaymentIncidentE2ETest(
             if (caught != null && duplicate != null) {
                 caught.addSuppressed(duplicate)
             }
-            (caught ?: duplicate)?.let { evidence.writeJson("failure.json", FailureRecord.of(phase, it)) }
+            val ended = caught ?: duplicate
+            if (ended != null) {
+                evidence.writeJson("failure.json", FailureRecord.of(phase, ended))
+            }
             if (caught == null && duplicate != null) {
                 throw duplicate
             }
@@ -151,7 +159,7 @@ class PaymentIncidentE2ETest(
     /** 10 normal orders, each finished by its PG 알림. Returns the phase's record, which `baseline.json` holds. */
     private fun runBaseline(evidence: IncidentEvidence): PhaseRecord {
         assertThat(incidentPg.isResponseLossOn()).isFalse()
-        val orderIds = createOrders(ORDERS_PER_PHASE, before = emptyList())
+        val orderIds = createOrders(ORDERS_PER_PHASE, existingOrderIds = emptyList())
         orderIds.forEach { orderId ->
             incidentPg.registerNormal(nextPgOrderId(), amount = PRICE, card = CARD)
             assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
@@ -183,7 +191,7 @@ class PaymentIncidentE2ETest(
      * registered before the loss starts. Returns the phase's record, which `fault.json` holds.
      */
     private fun runFault(evidence: IncidentEvidence, baseline: PhaseRecord): PhaseRecord {
-        val orderIds = createOrders(ORDERS_PER_PHASE, before = baseline.orderIds)
+        val orderIds = createOrders(ORDERS_PER_PHASE, existingOrderIds = baseline.orderIds)
         val lostOrderIds = LOST_PLACES.map { orderIds[it - 1] }
         // The generator hands out PG order IDs in the order they were drawn, and confirmations run one by one in this order.
         orderIds.forEach { orderId ->
@@ -262,7 +270,7 @@ class PaymentIncidentE2ETest(
             unresolvedOrderIds = unresolvedOrderIds(),
             orders = readOrders(orderIds),
             productStock = productStock(),
-            pgTransactionCount = incidentPg.transactions().size,
+            pgTransactionCount = incidentPg.createdPgOrderIds().size,
             pgCreateCount = incidentPg.createCount(),
             pgOrderIdsCreatedMoreThanOnce = incidentPg.pgOrderIdsCreatedMoreThanOnce().sorted(),
             unmatchedPgRequests = incidentPg.unmatchedRequests().size,
@@ -297,14 +305,14 @@ class PaymentIncidentE2ETest(
 
     /**
      * Creates [count] orders of one unit of the product for the owner, and returns their IDs as the database holds them: the
-     * owner's orders not in [before], in ID order.
+     * owner's orders not in [existingOrderIds], in ID order.
      */
-    private fun createOrders(count: Int, before: List<Long>): List<Long> {
+    private fun createOrders(count: Int, existingOrderIds: List<Long>): List<Long> {
         repeat(count) { prepareOrder(owner, listOf(product), quantity = 1) }
         val sql = "select id from orders where user_id = ? order by id"
         val orderIds = jdbc.queryForList(sql, Long::class.javaObjectType, owner.id)
             .filterNotNull()
-            .filterNot { it in before }
+            .filterNot { it in existingOrderIds }
         check(orderIds.size == count) { "Expected $count new orders, found $orderIds." }
 
         return orderIds
@@ -312,7 +320,8 @@ class PaymentIncidentE2ETest(
 
     /**
      * Each order's row with its one line item and its payment, read fresh. The reservation is the line's quantity while the order
-     * is payment pending (CONTEXT.md, 재고 예약): it was taken at the confirmation and is neither consumed nor released yet.
+     * is payment pending (CONTEXT.md, 재고 예약): it was taken at the confirmation and is neither consumed nor released yet. It
+     * follows from the order's status, so the record's product stock is what shows the reservations really held.
      */
     private fun readOrders(orderIds: List<Long>): List<OrderRecord> {
         val placeholders = orderIds.joinToString(",") { "?" }
@@ -379,7 +388,8 @@ class PaymentIncidentE2ETest(
 
     /**
      * The PG's 알림 for [orderId]'s payment: the PG order ID read from the payment row, and the transaction the PG holds under it.
-     * The status is `SUCCESS`, the transaction's as the PG holds it.
+     * The status is `SUCCESS`, the transaction's as the PG holds it. Commerce reads only the PG order ID from the body and finds
+     * the rest by its own lookup (ADR 0031).
      */
     private fun requestCallback(orderId: Long): MvcTestResult {
         val pgOrderId = jdbc.queryForObject("select pg_order_id from payment where order_id = ?", String::class.java, orderId)!!
@@ -406,7 +416,10 @@ private data class PhaseRecord(
     val unresolvedOrderIds: List<Long>,
     val orders: List<OrderRecord>,
     val productStock: Int,
-    /** The PG transactions the test PG holds. */
+    /**
+     * The PG transactions the test PG made, from its request log: one per PG order ID that received a create. Every create matched
+     * a stub (`unmatchedPgRequests` is 0), and the PG makes the transaction whether its answer is sent or lost.
+     */
     val pgTransactionCount: Int,
     /** The creates in the test PG's request log, answered or not. */
     val pgCreateCount: Int,
@@ -417,7 +430,11 @@ private data class PhaseRecord(
     val unresolvedGauge: Map<String, String?>,
 )
 
-/** One order as its phase observed it. */
+/**
+ * One order as its phase observed it. Every field is written, `null` included: a lost order's payment has no transaction key, and
+ * the file says so rather than leaving the field out.
+ */
+@JsonInclude(JsonInclude.Include.ALWAYS)
 private data class OrderRecord(
     val orderId: Long,
     val idempotencyKey: String?,
@@ -439,6 +456,42 @@ private data class Scrape(
     val prometheus: String,
     val gauge: Map<String, String?>,
 )
+
+/**
+ * The evidence directory of one run (spec 274, "증거"): `build/payment-incident/<run id>/` under the module, the test's working
+ * directory. The run ID is the start time in UTC and a random suffix, and the directory is created new, so two runs write two
+ * directories and a run never writes into another's. Every file is created new: writing a name twice fails instead of
+ * overwriting the first record. Nothing here deletes a file.
+ */
+private class IncidentEvidence private constructor(
+    private val directory: Path,
+    private val objectMapper: ObjectMapper,
+) {
+    companion object {
+        private val ROOT: Path = Path.of("build", "payment-incident")
+
+        private val RUN_ID_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+
+        /** Creates the run's directory. Fails if it already exists. */
+        fun start(objectMapper: ObjectMapper, startedAt: Instant): IncidentEvidence {
+            Files.createDirectories(ROOT)
+            val runId = "${RUN_ID_TIME.format(startedAt)}-${UUID.randomUUID().toString().take(8)}"
+            val directory = Files.createDirectory(ROOT.resolve(runId))
+
+            return IncidentEvidence(directory, objectMapper)
+        }
+    }
+
+    /** Writes [text] as it is to a new file [name]. Fails if the file exists. */
+    fun writeText(name: String, text: String) {
+        Files.writeString(directory.resolve(name), text, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+    }
+
+    /** Writes [value] as indented JSON to a new file [name]. Fails if the file exists. */
+    fun writeJson(name: String, value: Any) {
+        writeText(name, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value))
+    }
+}
 
 /** `failure.json`: the phase that was running and the exception that ended the run. */
 private data class FailureRecord(
