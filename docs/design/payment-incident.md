@@ -2,7 +2,7 @@
 
 10주차 과제의 설계 문서다. 브랜치마다 절 하나를 쓴다(`weekly-ranking.md`의 방식). 용어는 [`CONTEXT.md`](../../CONTEXT.md)를 따른다("끝나지 않은 결제", "결과 미확인", "처리 중", "대사"). 결정의 출처는 1단계가 [명세 266](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266)이다.
 
-상태: 2026-11-26 1단계(`feat/payment-observability`)를 인터뷰했다. 이 문서는 그 첫 티켓([issue 267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267))이 뼈대로 만들었고, 절의 내용은 단계를 구현한 뒤 쓴다. (2026-11-26 [issue 272](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/272): 1단계를 구현했고 2절에 썼다.)
+상태: 2026-11-26 1단계(`feat/payment-observability`)를 인터뷰했다. 이 문서는 그 첫 티켓([issue 267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267))이 뼈대로 만들었고, 절의 내용은 단계를 구현한 뒤 쓴다. (2026-11-26 [issue 272](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/272): 1단계를 구현했고 2절에 썼다.) (2026-11-26 [issue 279](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/279): 2단계를 [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274)로 인터뷰하고 구현했고 3절에 썼다.)
 
 ## 1. 근거와 범위
 
@@ -11,7 +11,7 @@
 | 단계 | 하는 것 | 브랜치 | 상태 |
 | --- | --- | --- | --- |
 | 1 | 끝나지 않은 결제의 수를 gauge로 알리고, PG의 답과 TX B의 결과를 주문별 로그 이벤트로 남긴다. 실제 포트의 테스트 기반. | `feat/payment-observability` | 인터뷰 끝남(2026-11-26). [명세 266](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266). 구현 끝남(2026-11-26, 2절) |
-| 2 | 사고의 재현(정상 10건과 장애 10건), 가설의 판정, 대사 API로 하는 복구, 증거 파일. | `feat/payment-incident` | 인터뷰 전 |
+| 2 | 사고의 재현(정상 10건과 장애 10건), 가설의 판정, 대사 API로 하는 복구, 증거 파일. | `feat/payment-incident` | 인터뷰 끝남(2026-11-26). [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274). 구현 끝남(2026-11-26, 3절) |
 | 3 | 아웃박스 → Kafka → 구매 활동 → 주간 랭킹의 후속 확인, `docs/runbook/week10.md`, 기능별 검증 범위와 남은 위험. | `feat/payment-incident-follow-on` | 인터뷰 전 |
 
 셋은 모두 `week10`으로 PR한다.
@@ -207,7 +207,213 @@ scripts/final-check --app commerce-api
 
 ## 3. 2단계: 사고의 재현과 복구
 
-(2단계를 인터뷰한 뒤 쓴다.)
+결정의 출처는 [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274)다(2026-11-26 인터뷰, 질문 28개). 과제의 몫은 [과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 1, 3, 4, 5, 7절이다: 정상과 장애의 구간, 같은 주문의 복구, 가설의 판정, 복구의 증명, 증거 파일. **운영 코드는 바뀌지 않았다.** 테스트, 증거, 문서뿐이다. ADR은 없다. 정한 것은 테스트의 구조와 증거의 배치이고 커밋 하나로 바꿀 수 있다. 용어집도 바꾸지 않았다. 사고, 기준 구간, 장애 구간, 복구는 테스트 실행의 말이라 이 문서에만 쓴다. 필요한 도메인 용어(결과 미확인, 끝나지 않은 결제, 대사, 알림)는 이미 있다.
+
+이 절의 **운영자**는 사고를 맡아 진단하고 복구하는 사람이다. 용어집의 관리자(관리자 API를 부르는 역할)가 아니다. 이 단계의 운영자는 관리자 API를 하나도 부르지 않는다(3.8절).
+
+### 3.1 2단계가 만든 것
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [275](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/275) | 사고 fixture `IncidentPg`(`com.loopers.support`)와 `IncidentPgTest`. 잡은 로그 이벤트를 읽는 `LogEvents.kt`(`logEvents()`, `logEventsOf(orderId)`)와, 그것으로 옮긴 `OrderPaymentLogEventTest`. `TestPg`는 상태 없는 그대로 읽기 넷을 얻었다. |
+| [276](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/276) | `PaymentIncidentE2ETest`의 `@Test` 하나와 그 기준 구간, 장애 구간, 증거의 디렉터리. |
+| [277](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/277) | 같은 `@Test`의 진단: 세 가설, 테스트가 PG에 직접 보내는 목록 조회, `hypotheses.json`과 `verdict.json`. |
+| [278](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/278) | 같은 `@Test`의 복구와 그 증명, 장애 구간의 파일의 SHA-256. |
+| [279](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/279) | 이 절, 저장소에 실은 증거(3.5절), 끝의 확인(3.11절). |
+
+다섯 티켓 모두 `src/main`의 파일을 바꾸지 않았다. 사고 테스트는 운영 코드의 틈을 드러내지 않았고, 그래서 이 명세 안에 새 티켓은 없다. 티켓마다 구현 중에 정한 것은 [2단계의 글감](../research/week10-payment-incident-writing-material.md)에 있다.
+
+### 3.2 사고의 한 lifecycle
+
+`PaymentIncidentE2ETest`(`adapter/webapi/v1/order`)의 `@Test` 하나가 기준 구간 → 장애 구간 → 관찰 → 진단 → 복구를 차례로 돈다. 같은 DB와 같은 PG 거래가 모든 단계를 잇는다. 이름은 `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`다.
+
+- **기반.** `BaseRealPortWebApiAdapterTest`(2.4절)를 잇고 `@EnableTestPg`를 단다. 확정이 요청마다 커밋해야 gauge가 그 행을 세므로 테스트 트랜잭션에서 빠지고(`Propagation.NOT_SUPPORTED`) 표를 스스로 비운다. `UnresolvedPaymentGaugeE2ETest`의 방식이다.
+- **준비.** 소유자 한 명, 상품 하나(가격 1,000, 재고 20). 소유자는 포인트 잔액 50,000과 발급된 미사용 쿠폰 하나를 가지고 시작하고, 20건 가운데 어느 주문도 그것을 쓰지 않는다. 주문은 주문 포트로 만들고(`prepareOrder`, 1개씩), 그 뒤로는 `mvc`로만 움직인다. 테스트는 결제나 주문의 상태를 DB에 쓰지 않고, 테스트의 SQL은 모두 `select`다.
+- **기준 구간.** 응답 유실이 꺼져 있다고 단언한다. 주문 10건을 차례로 확정한다(202. 생성이 `PENDING`으로 받아들여진다). 테스트가 그 주문의 확정 바로 뒤에 알림을 보내면(200), 커머스의 조회가 `SUCCESS`를 찾아 끝난다.
+- **장애 구간.** 다른 주문 10건이다. 장애 구간에서 3·6·9번째로 만든 주문을 DB에서 읽은 실제 주문 ID로 가리킨다. 10건의 PG 거래를 응답 유실을 켜기 전에 모두 등록한다. 셋은 잃을 주문(`registerLost`, PG 거래는 `SUCCESS`)이고 일곱은 정상 주문이다. 응답 유실을 켜고 10건을 차례로 확정한다. 일곱은 기준 구간처럼 알림으로 끝난다. 셋은 202, 결제 중인 주문, 결과 미확인으로 남는다. 테스트는 그 셋의 알림을 보내지 않는다.
+- **보류할 것은 그것뿐이다.** 테스트 PG는 스스로 알림을 보내지 않고 대사하는 scheduler도 없다. 장애 구간의 기록이 그것을 보인다: 세 PG 주문 번호에 커머스가 보낸 목록 조회가 0건이다.
+- **관찰.** 단계마다 같은 `observe`다. management 포트에서 health와 Prometheus를 한 번씩 받아, gauge가 그 단계의 값을 읽을 때까지(10 s까지) 되풀이한다. 바뀐 수는 갱신 한 번 뒤에야 원문에 닿는다. 마지막으로 받은 것에서 기록을 만들고, 기록과 두 원문을 파일로 쓰고, 그 기록에 단언한다.
+
+**사고 fixture `IncidentPg`.** `TestPg` 위의 테스트 지원 클래스다. `TestPg`는 WireMock의 stub 그대로 상태가 없다.
+
+- PG 거래 20건(PG 주문 번호, 거래 키, 금액, PG 상태)을 든다. 거래 키는 fixture가 `20261126:TR:incident-<n>`으로 만든다. PG 주문 번호는 있는 `TestPgOrderIdGenerator`가 차례대로 내주므로, 장애 구간은 10건을 모두 꺼내 등록한 뒤 같은 차례로 확정한다.
+- 응답 유실은 stub 위의 stub이다. 잃을 주문에는 받아들이는 stub(202, `SUCCESS`)이 있고, 유실이 켜진 동안 그 위에 `EMPTY_RESPONSE`의 stub이 하나 더 있다. 우선순위가 같으면 WireMock은 새 것을 고른다. `stopResponseLoss()`가 위의 것을 지우면 아래의 것이 다시 답한다. `isResponseLossOn()`이 켜져 있는지 답한다. 테스트의 `finally`가 언제나 끈다.
+- **두 번째 생성.** `pgOrderIdsCreatedMoreThanOnce()`가 요청 기록에서 생성을 두 번 이상 받은 PG 주문 번호를 읽는다. 등록한 주문이 아니어도 읽는다. 단계마다 기록에 싣고 비었다고 단언하며, `finally`가 다시 본다. 비지 않으면 그 자체로 테스트가 실패하고, 앞선 실패가 있으면 그것에 suppressed로 붙는다.
+- **PG 거래의 수는 요청 기록에서 센다.** 생성을 받은 PG 주문 번호의 수다. fixture에 등록한 수를 세면 커머스가 무엇을 했든 10과 20이다. 모든 생성이 stub에 맞았고(`unmatchedPgRequests` 0), PG는 답을 보내든 잃든 PG 거래를 만든다.
+
+### 3.3 세 가설과 판정
+
+예상은 진단 전에 적는다. 테스트가 enum `Hypothesis`에 고정하고, 첫 조회 전에 `hypotheses.json`으로 쓴다.
+
+| 가설 | 예상 | 판정 |
+| --- | --- | --- |
+| A. PG의 처리가 아직 끝나지 않았다 | PG의 목록 조회가 PG 거래를 `PENDING`으로 찾는다 | 기각. 조회는 셋 모두 `["SUCCESS"]`다 |
+| B. PG의 성공 응답을 잃었다 | 조회가 `SUCCESS`이고, 그 주문의 이벤트는 `pg.create.outcome-unknown` 하나뿐이다 | 채택. 셋 모두 이벤트가 `[pg.create.outcome-unknown]`이다 |
+| C. 성공 결과를 받았으나 반영하지 못했다 | 조회가 `SUCCESS`이고, 이벤트에 `pg.create.accepted` 뒤의 `payment.apply.failed`가 있다 | 기각. `pg.create.accepted`가 없다 |
+
+- **진단은 읽기만 한다.** 테스트가 운영자로서 테스트 PG에 직접 `GET /api/v1/payments?orderId=<PG 주문 번호>`를 보낸다(JDK `HttpClient`, PG 계약의 `X-USER-ID`). PG 주문 번호는 결제의 행에서 읽는다. 커머스의 endpoint는 하나도 부르지 않는다. 조회 앞뒤로 세 주문의 `orders`, `payment`, `order_event_outbox` 행과 상품의 행을 통째로 읽어 같다고 단언한다. 행의 수(3, 3, 0, 1)도 단언해, 빈 목록끼리 같은 것이 아님을 보인다.
+- **운영자의 조회는 수로 가린다.** 그 조회도 커머스의 조회와 같은 요청 기록에 남는다. 장애 구간이 세 PG 주문 번호의 목록 조회 0건을 단언했고, 진단은 그 뒤 정확히 1건을 단언한다. 그러니 그 1건은 운영자의 것이고 그 사이에 커머스는 조회하지 않았다. 생성 수(PG 주문 번호마다 1, 모두 20)와 stub을 비껴간 요청(0)도 그대로다.
+- **판정은 주문마다 단언한다.** A는 조회의 PG 상태로, C는 이벤트의 차례로 기각한다. 조회가 셋 모두 정확히 `SUCCESS`라는 것도 단언하므로, `SUCCESS`를 같이 예상하는 C는 이벤트의 차례로만 떨어질 수 있다.
+- **이벤트는 잡은 것에서 읽는다.** `orderApplicationLogs.logEventsOf(orderId)`다(2.3절. `test`의 console은 key-value를 찍지 않는다). 2.11절이 미룬 "로그 이벤트를 saga 밖으로 옮기는 것"은 이 reader로 정했다. `OrderPaymentSaga`의 로그는 그대로다.
+- **반영 실패의 대조 주문은 두지 않았다.** TX B가 실패하는 주문을 장애 구간에 넣으면 과제가 정한 장애 구간의 구성(성공 7, 결과 미확인 3)이 깨진다. 반영 실패의 모습(`pg.create.accepted` → `payment.apply.failed`)은 `OrderPaymentLogEventTest`가 고정한 것을 인용한다(2.7절).
+- `verdict.json`은 가설과 그 `writtenAt`을 다시 싣고, 주문마다 PG 주문 번호, 조회의 시각과 받은 본문 그대로, 관찰(조회의 PG 상태들과 이벤트의 이름들), 가설마다의 예상과 판정을 싣는다. 그 파일 하나로 읽힌다.
+
+### 3.4 복구와 그 증명
+
+- **대상은 DB에서 읽는다.** 끝나지 않은 결제(`payment.status in ('UNKNOWN', 'PENDING')`)의 주문 ID를 읽고, 장애 구간이 깬 셋과 같다고 단언한 뒤 고정한다. 응답 유실이 꺼져 있다고 단언한다.
+- **고객의 대사 API로 복구한다.** 대상마다 `POST /api/v1/orders/{orderId}/payment/reconcile`을 소유자의 `X-USER-ID`로 한 번 부른다(200, `CONFIRMED`, `SUCCESS`). 대사는 PG 주문 번호로 조회해 찾은 `SUCCESS`를 반영한다. 생성은 보내지 않는다. 알림 endpoint나 새 운영자 endpoint로 복구하지 않았다. 사고 중에 새 길을 믿지 않으려는 것이다.
+- 대상마다 이벤트는 `pg.create.outcome-unknown` → `pg.lookup.found` → `payment.apply.committed`이고, 뒤의 둘은 `trigger=reconcile`, 마지막은 `result=changed`, `from=UNKNOWN`, `to=SUCCESS`다. 2.11절이 말한 복구의 모습 그대로다.
+
+증명은 모두 복구 뒤에 새로 읽는다.
+
+| 증명 | 본 것 |
+| --- | --- |
+| 장애 구간의 같은 10건 | `recovery.json`의 주문 ID가 `fault.json`의 10건과 같다. 10건 모두 확정된 주문, 결제 성공, 예약 0. 결과 미확인 0. 결제마다 거래 키가 PG가 든 PG 거래의 것과 같고 그 PG 거래는 `SUCCESS`다. 기준 구간의 주문이나 새 주문으로 수를 채우지 않는다 |
+| PG 거래 | 요청 기록에서 센 PG 거래가 모두 20건 |
+| 두 번째 생성이 없다 | 20건의 PG 주문 번호마다 생성 수 1. 대사 앞뒤의 생성 수가 같다(증가 0). `pgOrderIdsCreatedMoreThanOnce` 빔, stub을 비껴간 요청 0. 대상마다 목록 조회 2(진단의 것과 대사의 것) |
+| 재고 | 상품 재고 0(20 − 20). 성공 때 더 줄지 않았고 되풀이 뒤에도 그대로다 |
+| 포인트와 쿠폰 | 소유자의 `point_account`와 `coupon` 행을 실행의 처음에 통째로 읽은 것과 끝에 읽은 것이 같다 |
+| 아웃박스 | 20건의 주문마다 살아 있는 `order_event_outbox` 행 하나. 되풀이 뒤에도 하나다. 릴레이는 꺼져 있고 이 단계는 아웃박스 행까지다 |
+| 되풀이 | 대상마다 두 번째 대사(200, `CONFIRMED`)와 되풀이한 알림(200). 20건의 주문·결제·상품·아웃박스 행, 잡은 이벤트, PG가 받은 요청 수가 모두 그대로다 |
+| 다른 사용자 | 다른 사용자의 대사는 404 `ORDER_NOT_FOUND`. 위의 "그대로"의 창 안이다 |
+| gauge와 health | 한 scrape에서 `UNKNOWN 0.0`, `PENDING 0.0`, health `UP` |
+| 장애 구간의 파일 | 첫 대사 전에 `fault.json`, `fault-health.json`, `fault-prometheus.txt`, `fault-log-events.json`의 SHA-256을 구해 `recovery.json`의 `faultFileSha256`에 싣는다. 끝에서 `recovery.json`을 디스크에서 다시 읽어 지금 구한 SHA-256과 견준다 |
+
+**되풀이는 `result=unchanged`를 남기지 않는다.** 복구한 주문은 확정된 주문이라, 고객의 대사도 알림도 `OrderPaymentSaga.checkLookupNeeded`에서 조회와 TX B 앞에 돌아온다. 이벤트가 하나도 없다. `unchanged`는 TX B까지 가서 결제를 그대로 둔 때의 것이다. 처리 중인 결제를 대사해 조회가 `PENDING`을 다시 찾은 때나, 다른 길이 먼저 반영한 결제를 TX B가 다시 읽은 때다. 확정된 주문의 대사와 알림은 TX B에 닿지 않는다. 그래서 "아무것도 바꾸지 않는다"는 새 이벤트 없음, PG 요청 없음, 같은 행으로 단언한다. 로그 한 줄보다 강하다. `unchanged` 이벤트 자체는 `OrderPaymentLogEventTest`가 고정한다(3.6절의 마지막 줄).
+
+### 3.5 증거
+
+실행마다 `apps/commerce-api/build/payment-incident/<run id>/`에 쓴다. run id는 UTC의 시작 시각과 무작위 접미사 여덟 글자(`20261126T114111Z-a052e207`의 꼴)다. 디렉터리는 `createDirectory`로 새로 만들고 모든 파일은 `CREATE_NEW`로 쓴다. 그래서 두 실행은 두 디렉터리이고, 같은 이름을 두 번 쓰면 덮어쓰지 않고 실패한다. 아무것도 지우지 않는다. 쓰는 일은 테스트 파일 안의 private 클래스 `IncidentEvidence`다. 쓰는 곳이 하나라 `com.loopers.support`에 두지 않았다.
+
+| 파일 | 내용 | 쓰는 때 |
+| --- | --- | --- |
+| `baseline.json`, `fault.json`, `recovery.json` | 단계의 기록: 시각, 응답 유실, 주문 집합, 잃은 주문, DB의 끝나지 않은 결제, 주문마다 주문 ID·멱등 키·PG 주문 번호·거래 키·주문 상태·결제 상태·예약 수량·생성 수·목록 조회 수, 상품 재고, PG 거래 수, 생성 수, 두 번 생성된 PG 주문 번호, stub을 비껴간 요청 수, health의 상태, gauge의 두 값. `recovery.json`만 `faultFileSha256`을 더 싣는다 | 단계의 관찰 |
+| `<phase>-health.json`, `<phase>-prometheus.txt` | 기록과 같은 scrape의 health와 Prometheus 원문, 받은 그대로 | 단계의 관찰 |
+| `fault-log-events.json` | 잃은 세 주문의 잡은 이벤트(level, key-value, 예외) | 장애 구간의 관찰 뒤 |
+| `hypotheses.json` | 가설과 예상, `writtenAt` | 첫 조회 전 |
+| `verdict.json` | 가설, 주문마다의 조회와 관찰과 판정(3.3절) | 진단 끝 |
+| `failure.json` | 실패한 단계, 예외의 클래스와 메시지, stack trace | 실패했을 때만, `finally` |
+
+- 잃은 주문의 거래 키는 `null`로 쓴다. 프로젝트의 Jackson은 `null` 필드를 빼므로 주문의 기록은 `@JsonInclude(ALWAYS)`다. 파일은 테스트가 적기를 잊은 것이 아니라 커머스가 그 키를 몰랐다고 말한다.
+- 예약 수량은 주문 상태에서 온다. 결제 중인 주문이면 품목의 수량이고 아니면 0이다(용어집의 재고 예약). 예약이 정말 남았다는 것은 상품 재고가 보인다.
+- **단언은 파일에 쓴 값에 한다.** 단계마다 기록 하나를 만들어 쓰고 그 기록에 단언한다. health와 Prometheus 원문은 기록의 gauge와 health를 읽은 그 scrape의 것이다. 파일이 있다는 것만으로는 아무것도 증명하지 않는다.
+- `@BeforeEach`에서 실패하면 디렉터리가 아직 없어 `failure.json`을 쓸 곳이 없다.
+
+**저장소에 실은 실행.** 끝의 확인(3.11절)의 사고 실행 `20261126T135338Z-47f59811`를 [`docs/evidence/week10/20261126T135338Z-47f59811/`](../evidence/week10/20261126T135338Z-47f59811/)에 통째로 실었다. 파일 열두 개이고, Prometheus 원문 셋도 줄이지 않았다. `failure.json`은 없다. 실행은 `7902fb9f`의 깨끗한 트리에서 돌린 끝의 확인의 것이다. (2026-11-26 명세 274의 닫는 리뷰: 리뷰가 사고 테스트를 고쳤으므로 issue 279가 실은 `a0429979`의 실행 `20261126T120602Z-0c742bb1`를 이 실행으로 바꿨다. 값은 같고 시각, PG 주문 번호, 해시만 다르다.)
+
+| 무엇 | 실은 실행의 값 |
+| --- | --- |
+| 주문 | 기준 구간 1–10, 장애 구간 11–20. 잃은 주문 13, 16, 19 |
+| 기준 구간 | 13:53:39.033Z. 10건 모두 확정된 주문, 결제 성공, 생성 1, 목록 조회 1(알림 뒤 커머스의 것). 상품 재고 10, PG 거래 10, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, 응답 유실 꺼짐 |
+| 장애 구간 | 13:53:39.565Z. 일곱은 기준 구간과 같다. 13, 16, 19는 결제 중인 주문, 결과 미확인, 예약 1, 생성 1, 목록 조회 0, 거래 키 `null`. DB의 끝나지 않은 결제도 13, 16, 19. 상품 재고 0, PG 거래 20, gauge `UNKNOWN 3.0`·`PENDING 0.0`, health `UP`, 응답 유실 켜짐. 세 주문의 이벤트는 저마다 `pg.create.outcome-unknown` 하나(WARN, `trigger=confirm`, `cause=NoHttpResponseException`) |
+| 진단 | 가설은 13:53:39.578Z에 썼고, 조회는 13:53:39.590Z, .593Z, .595Z다. 셋 모두 조회가 `["SUCCESS"]`, 이벤트가 `[pg.create.outcome-unknown]`이고 A 기각, B 채택, C 기각 |
+| 복구 | 13:53:39.788Z. 11–20 모두 확정된 주문, 결제 성공, 예약 0, 생성 1. 13, 16, 19는 목록 조회 2. 끝나지 않은 결제 없음. 상품 재고 0, PG 거래 20, 생성 20, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, 응답 유실 꺼짐. `faultFileSha256`의 `fault.json`은 `bb4fd0c2…`로 시작한다 |
+
+### 3.6 복구가 실패하는 경우
+
+복구가 성공하지 않는 경우는 새 장면을 두지 않았다. 대사가 PG 거래를 찾지 못하거나, 여럿을 찾거나, 맞지 않는 것을 찾거나, 조회할 수 없거나, 처리 중을 다시 찾으면 결제를 성공으로 바꾸지 않는다. 5주차와 1단계의 장면이 그것을 고정했다([결제 설계](./payments.md) 13.2, 14절).
+
+| 경우 | 고정한 장면 | 결제의 끝 |
+| --- | --- | --- |
+| 조회할 수 없다(503, 응답 한도를 넘긴 멈춤, 열린 브레이커) | `OrderPaymentIntegrationTest`의 `a reconcile whose lookup is unavailable answers the stored state and changes nothing`, `the PG's reconcile throws PG_UNAVAILABLE on an unavailable lookup while the customer's answers the stored state`, `the PG's reconcile throws PG_UNAVAILABLE on an open breaker without a lookup, the customer's answers stored state`. HTTP는 `OrderConfirmationApiTest`의 `reconciling while the PG lookup is unavailable returns 202 with the location and changes nothing` | 저장된 상태 그대로. 고객의 대사는 그것으로 답하고 알림은 `PG_UNAVAILABLE` |
+| PG 거래가 없다(0건) | `a restart before the create left keeps the payment unknown through a replay and an empty reconcile, without a create`(5주차의 장면 8), `lookups that find no transaction or several are not retried and never open the breaker` | 결과 미확인 그대로. 0건은 PG 거래가 없다는 증거가 아니다(ADR 0022 규칙 3) |
+| PG 거래가 여럿이다 | `a reconcile that finds several or mismatched transactions applies none and logs a warning`의 `several transactions`(장면 9) | 결과 미확인 그대로, WARN 한 줄 |
+| 금액이 다르다 | 같은 장면의 `another amount`(`reason=AMOUNT_MISMATCH`). 다른 PG 주문 번호(`PG_ORDER_ID_MISMATCH`)도 같은 장면이다 | 충돌. 결과 미확인 그대로, WARN 한 줄 |
+| 처리 중을 다시 찾는다 | `OrderPaymentLogEventTest`의 `a TX B that leaves the payment as it was leaves payment apply committed at INFO as unchanged`(1단계). 처리 중인 결제를 대사하자 조회가 `PENDING`을 찾고 `result=unchanged`다. 그 장면은 이벤트만 단언하고 결제의 행은 다시 읽지 않는다. 대사가 처리 중을 찾은 뒤의 행을 단언한 장면은 5주차에도 1단계에도 없다. 5주차의 장면 2는 받아들여진 `PENDING` 생성 뒤 결제 중인 주문으로 남는 것을 보지만, 그 장면의 대사는 성공을 찾는다 | 처리 중 그대로(이벤트의 `unchanged`에서 읽은 것) |
+
+대사는 어느 경우에도 생성을 보내지 않고 결제를 실패로 끝내지 않는다([결제 설계](./payments.md) 13.2). 그런 결제는 운영자가 PG에서 결과를 확인할 때까지 끝나지 않은 결제로 남고 gauge에 보인다.
+
+### 3.7 고르지 않은 것
+
+- **운영자의 대사 endpoint, 커머스의 진단 endpoint.** 사고 중에 새 길을 믿지 않는다. 그 대가가 3.8절의 첫 두 한계다.
+- **자동 대사 scheduler, 알림이나 대사를 보류하는 운영 스위치.** 보류는 테스트가 알림을 보내지 않는 것으로 충분했다(3.2절).
+- **TX B가 실패하는 대조 주문.** 장애 구간의 성공 7과 결과 미확인 3을 깬다(3.3절).
+- **`TestPg`에 상태를 넣는 것.** 상태는 사고 fixture가 든다. `TestPg`는 읽기만 얻었다(3.12절).
+- **단계마다의 `@Test`.** 단계가 같은 DB와 PG 거래를 이어야 한다. 선례는 `WeeklyRankingFlowTest`(한 `@Test`의 흐름)다.
+- **복구가 실패하는 경우의 새 장면.** 3.6절.
+- **부하, 동시 확정, 실제 PG.** 확정은 테스트 스레드에서 차례로 보낸다.
+- **ADR, 용어집의 새 말.** 3절의 머리.
+
+### 3.8 한계
+
+3단계의 runbook이 넘겨받는 한계 둘이 먼저다.
+
+- **운영자가 대사하려면 고객으로서 불러야 한다.** 대사 API는 요청자의 주문만 대사한다. 남의 주문은 404다([결제 설계](./payments.md) 13.1의 차례 2, 3.4절의 다른 사용자). 테스트의 운영자는 소유자의 `X-USER-ID`를 실어 부른다. 운영에서 그 헤더는 API 게이트웨이가 싣는 것이라(용어집의 요청자) 운영자가 고객의 식별자를 어떻게 얻고 싣는지는 이 단계가 정하지 않았다. 요청자가 필요 없는 길은 알림 endpoint인데, 이 단계는 복구에 쓰지 않았다.
+- **진단하려면 PG에 직접 닿아야 한다.** gauge는 몇 건인지만 말한다. 어느 주문인지는 DB의 끝나지 않은 결제에서, 왜인지는 PG의 목록 조회와 그 주문의 로그 이벤트에서 읽는다. 커머스는 PG의 답을 보여 주는 endpoint가 없으므로, 운영자는 PG 계약의 `X-USER-ID`로 PG에 직접 조회해야 한다. 로그의 key-value는 dev·qa·prd의 logstash JSON에만 있다(2.3절).
+
+나머지.
+
+- **알림을 보류한 PG다.** 진짜 PG라면 잃은 세 주문에도 알림을 보냈을 것이고, 커머스는 그것으로 대사했을 것이다(ADR 0031). 이 사고는 생성의 응답도 알림도 닿지 않은 경우다. 테스트 PG가 알림을 스스로 보내지 않는 것으로 그렇게 두었다.
+- **응답 유실은 한 꼴이다.** `EMPTY_RESPONSE`로 연결이 답 없이 끊기는 것(`cause` `NoHttpResponseException`)뿐이다. 응답 한도를 넘긴 멈춤과 5xx는 사고에서 돌리지 않았다. 그것도 `pg.create.outcome-unknown`을 남긴다는 것은 1단계의 장면이 본다(2.7절의 `HTTP 503`).
+- **가설 C는 좁다.** `pg.create.accepted` → `payment.apply.failed`만 본다. 2.11절은 `pg.lookup.found`와 `pg.create.rejected` 뒤의 `payment.apply.failed`도 반영의 실패로 말한다. 잃은 생성에는 그 길이 닿지 않으므로 이 사고의 판정은 같지만, 조회가 끼어 있는 사고라면 C를 넓혀야 한다.
+- **`result=unchanged`는 사고에서 나오지 않았다(3.4절).**
+- **대사가 처리 중을 다시 찾은 뒤의 결제의 행은 어느 장면도 단언하지 않는다(3.6절).** 이벤트의 `unchanged`가 그것을 말할 뿐이다.
+- **운영자의 조회는 커머스의 조회와 같은 요청 기록에 있다.** 수로만 가른다(3.3절).
+- **한 사용자, 한 상품, 차례로 확정한 20건이다.** 처리량이나 동시성에 대해서는 아무것도 말하지 않는다. 시각은 노트북의 Testcontainers MySQL에서 돈 테스트의 것이다.
+- **파일의 SHA-256은 테스트가 장애 구간의 기록을 다시 쓰지 않았다는 것만 보인다.** 저장소에 실은 뒤의 변경은 git이 본다.
+
+### 3.9 장면
+
+| 이음매 | 클래스 | 장면 |
+| --- | --- | --- |
+| 사고 fixture | `IncidentPgTest` | 등록한 정상 주문이 `PENDING`으로 확정되고 알림으로 끝난다. 유실이 켜진 동안 등록한 잃을 주문이 결과 미확인으로 확정되고 생성 1, 목록 조회 0이다. 유실은 시작 전에 꺼져 있고 시작 뒤에 켜져 있으며 `finally`의 해제 뒤 잃을 주문의 생성이 답을 받는다. 두 번째 생성을 받은 PG 주문 번호를 돌려주고 한 번 받은 것은 돌려주지 않는다. 4개. (2026-11-26 PR 280의 리뷰: `orderId` 없는 생성은 등록한 주문의 stub이 있어도 맞지 않아 stub을 비껴간 요청으로 남고, 만든 PG 주문 번호에서 빠진다. 같은 생성에 `orderId`를 실으면 받아들여진다. 5개) |
+| 사고의 lifecycle | `PaymentIncidentE2ETest` | 3.2–3.4절. 1개 |
+| 로그 이벤트의 reader | `OrderPaymentLogEventTest` | 새 reader로 읽는다. 단언과 장면의 수(22)는 그대로다. 한 주문의 차례가 잡은 이벤트 전부와 같은지도 본다. 다른 주문의 이벤트나 `orderId` 없는 이벤트가 섞이면 붉다 |
+
+있던 장면은 모두 그대로 지나간다. `TestPg`가 얻은 읽기는 `losesCreateResponse`가 돌려주는 `StubMapping`, `remove(stub)`, `createdPgOrderIds()`, `listLookupCount(pgOrderId)`다. 마지막 것은 거래 키의 조회까지 세는 `lookupCount()`와 이름을 갈랐다.
+
+### 3.10 붉은 확인
+
+커밋하지 않은 로컬 수정으로 돌리고 되돌렸다(2026-11-26). 명세 274가 정한 셋이 앞의 셋이다. 티켓마다의 기록은 [2단계의 글감](../research/week10-payment-incident-writing-material.md)에 있다.
+
+| 수정 | 붉어진 장면 | 티켓 |
+| --- | --- | --- |
+| 관찰 전에 잃은 주문 하나(첫째)의 알림도 보낸다 | `PaymentIncidentE2ETest`의 장애 구간. gauge를 기다리다 `expected: {"PENDING"="0.0", "UNKNOWN"="3.0"} but was: {"PENDING"="0.0", "UNKNOWN"="2.0"}`. 디렉터리에는 기준 구간의 세 파일과 `"phase" : "fault"`의 `failure.json`만 있고 장애 구간의 파일은 없다 | 276, 278 |
+| 첫 대상을 대사하지 않고 새 멱등 키로 다시 확정한다 | `PaymentIncidentE2ETest`의 복구. 명세의 예상과 달리 두 번째 생성의 확인은 붉지 않다. 커머스가 생성을 보내기 전에 `IDEMPOTENCY_KEY_MISMATCH`로 거절한다. 복구가 gauge에서 실패한다(`UNKNOWN 1.0`, `"phase" : "recovery"`). 두 번째 청구를 막는 것은 ADR 0024와 0025의 멱등 키이고 테스트가 아니다 | 278 |
+| 첫 대상의 생성을 테스트 PG에 `HttpClient`로 다시 보낸다(202) | `PaymentIncidentE2ETest`의 복구. 그 주문의 `createCount=2`로 실패하고, `finally`의 확인이 `PG order IDs that received more than one create: [<그 PG 주문 번호>]`로 suppressed에 붙는다. 두 번째 생성의 확인이 붉을 수 있다는 것은 이것이 보인다 | 278 |
+| 잃은 주문 하나(첫째)의 PG 거래를 `PENDING`으로 든다 | `PaymentIncidentE2ETest`의 진단. 장애 구간은 지나간다(생성의 응답을 잃어 커머스가 조회하지 않는다). 조회가 `["PENDING"]`이라 A가 `ACCEPTED`, B가 `REJECTED`이고, `expected: REJECTED but was: ACCEPTED`로 A의 판정에서 붉다. `verdict.json`과 `"phase" : "diagnosis"`의 `failure.json`이 남는다 | 277 |
+| `stopResponseLoss`가 유실의 stub을 지우지 않는다 | `IncidentPgTest`의 스위치 장면. `expected: 200 but was: 202` | 275 |
+| `logEventsOf`의 `orderId` 거르기를 뒤집는다 | `OrderPaymentLogEventTest`의 22개 가운데 21개 | 275 |
+| (2026-11-26 PR 280의 리뷰) 기준 구간의 첫 주문을 잃을 주문으로 등록하고 응답 유실을 켠다 | `PaymentIncidentE2ETest`의 기준 구간. 확정의 응답에서 `expected: "PENDING" but was: "UNKNOWN"`. 그 전에는 202만 보아 알림이 결과 미확인도 성공으로 끝내 지나갔다. `"phase" : "baseline"`의 `failure.json`이 남는다 | PR 280 |
+| (2026-11-26 PR 280의 리뷰) `createdPgOrderIds`가 `orderId` 없는 생성에 던지게 되돌린다 | `IncidentPgTest`의 새 장면. `PathNotFoundException: No results for path: $['orderId']`. 사고 테스트의 `finally`가 이것을 부르므로, 던지면 단계의 실패를 가리고 `failure.json`을 쓰지 못한다 | PR 280 |
+
+### 3.11 끝의 확인
+
+```
+scripts/final-check --app commerce-api
+```
+
+- 2026-11-26 `a0429979`의 깨끗한 트리에서 돌렸다(12:03:50Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다(1 s).
+- commerce-api는 126개 클래스, 1249개 테스트, 실패 0, 오류 0, 건너뜀 0이다(7 min 29 s). 1단계의 끝의 확인(2.9절)이 124개 클래스와 1244개 테스트였으므로, 이 단계가 2개 클래스(`IncidentPgTest` 4개, `PaymentIncidentE2ETest` 1개)와 5개 테스트를 더했다. 테스트 0개, 건너뜀, 연결 실패가 없다([과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 8절).
+- 이 실행의 사고 실행이 `20261126T120602Z-0c742bb1`이다.
+- (2026-11-26 명세 274의 닫는 리뷰: 리뷰의 고침 `3136770a`(사고 테스트가 주문 ID를 `prepareOrder`가 돌려준 주문에서 읽고, 알림의 요청 JSON을 `json`이라 부르고, PG 계약의 사용자 ID를 `TestPg`에서 함께 쓴다)와 `7902fb9f`(테스트 설정에서 잰 사고의 걸린 시간을 뺀다) 뒤에 `7902fb9f`의 깨끗한 트리에서 다시 돌렸다(13:51:41Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 126개 클래스, 1249개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 25 s). 고침은 테스트를 더하거나 빼지 않았다. 사고 실행은 `20261126T135338Z-47f59811`이고 3.5절이 저장소에 실은 것이다. `7902fb9f` 뒤로는 문서와 증거만 바뀌었다.)
+- (2026-11-26 PR 280의 리뷰: `201052bf`가 정상 주문의 확정이 처리 중으로 답하는지, 잃을 주문의 확정이 결과 미확인으로 답하는지 단언하고, `orderId` 없는 생성을 만든 PG 주문 번호에서 빼며 그 장면을 `IncidentPgTest`에 더했다(3.9절, 3.10절). `201052bf`의 깨끗한 트리에서 다시 돌렸다(14:25:10Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 126개 클래스, 1250개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 38 s). 장면 하나가 늘었다. 이 실행의 사고 실행 `20261126T142707Z-1ff555ca`는 파일 열두 개, `failure.json` 없음이다. 3.5절의 실행과 단언하는 값이 같고, 파일마다 다른 것은 시각(`observedAt`, `writtenAt`, `lookedUpAt`), PG 주문 번호, 그리고 그것들에서 오는 해시뿐이다. 고침은 단언을 더하고 기록을 읽는 방식만 바꿔 파일이 싣는 필드는 그대로이므로, 3.5절의 실행을 그대로 둔다. 도는 동안 이 절과 3.9절, 3.10절을 작업 트리에 썼고, Gradle이 읽는 파일은 바뀌지 않았다. `201052bf` 뒤로는 문서만 바뀌었다.) (같은 리뷰의 둘째 보고: `7ff6d2e4`가 `orderId` 없는 생성의 장면에 등록한 주문의 stub과, `orderId`를 실은 같은 생성이 받아들여지는 대조를 더했다(3.9절). `7ff6d2e4`의 깨끗한 트리에서 다시 돌렸다(14:40:17Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 126개 클래스, 1250개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 46 s). 사고 실행 `20261126T144218Z-9cea88b6`도 파일 열두 개, `failure.json` 없음이다. `7ff6d2e4` 뒤로는 문서만 바뀌었다.)
+- 이 단계는 commerce-streamer와 commerce-batch를 바꾸지 않았으므로 돌리지 않았다.
+- `a0429979`의 코드는 `68e86fac`(278)의 것이고, 그 뒤로는 문서와 증거만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 이 절을 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다.
+
+### 3.12 명세와 다른 것
+
+2026-11-26 구현을 마치고 명세 274와 견준 것이다.
+
+| 명세 | 구현 | 어디서 |
+| --- | --- | --- |
+| `TestPg`는 상태 없는 그대로 둔다 | 상태는 없지만 읽기 넷을 얻었다(3.9절) | 275 |
+| 어느 PG 주문 번호든 생성이 두 번 오면 fixture가 테스트를 실패시킨다 | fixture는 그 PG 주문 번호를 돌려주기만 한다(`pgOrderIdsCreatedMoreThanOnce`). 단계의 단언과 `finally`가 실패시킨다(3.2절) | 275, 276 |
+| PG 거래 20건 | 기록의 PG 거래 수는 요청 기록에서 센다. fixture의 수는 커머스가 무엇을 했든 20이다(3.2절) | 276 |
+| `failure.json`은 단계와 예외 | 예외의 클래스, 메시지, stack trace를 싣는다 | 276 |
+| 증거의 파일 목록 | `hypotheses.json`이 하나 더 있다. 파일은 새로 만들기만 하므로 `verdict.json`을 먼저 쓰고 뒤에 채울 수 없다(3.5절) | 277 |
+| 조회 앞뒤로 결제, 주문, 재고의 행이 같다 | 아웃박스의 행도 견준다. 잃은 세 주문에는 복구 전에 아웃박스 행이 0이다 | 278 |
+| 되풀이한 대사와 알림은 `result=unchanged` | 이벤트가 없다. 새 이벤트 없음, PG 요청 없음, 같은 행으로 단언한다(3.4절). 티켓의 말이 틀린 것이고 커머스의 틈이 아니라 새 티켓은 없다 | 278 |
+| 붉은 확인: 새 멱등 키의 확정으로 복구하면 두 번째 생성의 확인이 붉다 | 멱등 키가 생성 전에 거절해 붉지 않다. 생성을 PG에 직접 다시 보낸 확인을 더했다(3.10절) | 278 |
+| PG 거래 10건 모두 `SUCCESS` | fixture에서 읽는다. 여기서는 fixture가 PG다. 진짜 조회를 보내면 테스트가 단언하는 조회 수가 바뀐다. 커머스가 그 PG 거래를 반영했다는 증명은 같은 거래 키다 | 278 |
+
+### 3.13 3단계가 넘겨받는 것
+
+- **같은 `@Test`.** `PaymentIncidentE2ETest`의 메서드를 아웃박스 → Kafka → 구매 활동 → 주간 랭킹으로 늘린다. 이 단계는 주문마다 아웃박스 행 하나에서 멈췄고, 릴레이는 꺼져 있다.
+- **사고 fixture.** `IncidentPg`와 `LogEvents.kt`.
+- **증거의 디렉터리와 파일의 모양.** 3.5절. 새 단계는 같은 `IncidentEvidence`에 제 파일을 새로 만든다.
+- **한계 둘.** 운영자가 고객으로서 대사한다는 것, 진단에 PG에 직접 닿아야 한다는 것(3.8절). runbook이 여기서 시작한다.
+- **남은 위험.** 3.8절의 나머지와 2.6절. 기능별 검증 범위와 남은 위험이 이것을 잇는다.
 
 ## 4. 3단계: 후속 확인과 runbook
 

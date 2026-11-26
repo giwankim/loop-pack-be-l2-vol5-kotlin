@@ -18,7 +18,9 @@ import com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo
 import com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching
 import com.github.tomakehurst.wiremock.http.Fault
 import com.github.tomakehurst.wiremock.stubbing.Scenario
+import com.github.tomakehurst.wiremock.stubbing.StubMapping
 import com.github.tomakehurst.wiremock.verification.LoggedRequest
+import com.jayway.jsonpath.JsonPath
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgTransaction
 import org.springframework.web.util.UriUtils
@@ -48,8 +50,11 @@ class TestPg(
         /** 테스트 PG가 생성 전 거절([rejectsBeforeCreate])에만 싣는 code. 그것을 닮은 본문을 손으로 적는 테스트도 쓴다. */
         const val REJECTED_BEFORE_CREATE = "TEST_PG_REJECTED_BEFORE_CREATE"
 
-        /** PG 계약이 정한 합성 계정. 모든 요청의 `X-USER-ID`다. */
-        private const val USER_ID = "135135"
+        /**
+         * PG 계약이 정한 합성 계정. 모든 요청의 `X-USER-ID`다.
+         * Tests that send a request straight to the test PG send this header too, since the stubs match only this value.
+         */
+        const val PG_USER_ID = "135135"
 
         private const val PAYMENTS_PATH = "/api/v1/payments"
 
@@ -101,9 +106,16 @@ class TestPg(
     /**
      * 생성을 받아 PG 거래를 저장한 뒤 응답 없이 연결을 끊는다(`Fault.EMPTY_RESPONSE`). WireMock은 요청 본문을 다 읽은 뒤 끊는다
      * (wiremock-spring-boot 탐침 보고서 §3의 b).
+     *
+     * Returns the stub, so a caller that switches the loss off ([IncidentPg]) can remove it again.
      */
-    fun losesCreateResponse(pgOrderId: String, amount: Long, card: CreditCard) {
-        server.stubFor(createRequest(pgOrderId, amount, card).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    fun losesCreateResponse(pgOrderId: String, amount: Long, card: CreditCard): StubMapping {
+        return server.stubFor(createRequest(pgOrderId, amount, card).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)))
+    }
+
+    /** Removes [stub], one this class added, so the next request matches the stubs that remain. */
+    fun remove(stub: StubMapping) {
+        server.removeStub(stub)
     }
 
     /** 생성에 307로 답해 [REDIRECT_PATH]로 돌려보낸다. 따라간 요청은 [requestCount]에 더해진다. */
@@ -150,6 +162,17 @@ class TestPg(
         return server.findAll(
             postRequestedFor(urlEqualTo(PAYMENTS_PATH)).withRequestBody(matchingJsonPath("$.orderId", equalTo(pgOrderId))),
         ).size
+    }
+
+    /**
+     * The body's `orderId` of every create the PG received, answered or not, one entry per create, in no particular order.
+     * A create whose body carries no string `orderId` is left out rather than thrown on, so a caller in a `finally` cannot hide the
+     * failure it is cleaning up after. Such a create matches no stub, so [unmatchedRequests] reports it.
+     */
+    fun createdPgOrderIds(): List<String> {
+        return server.findAll(postRequestedFor(urlEqualTo(PAYMENTS_PATH))).mapNotNull { request ->
+            runCatching { JsonPath.read<String>(request.bodyAsString, "$.orderId") }.getOrNull()
+        }
     }
 
     /**
@@ -232,6 +255,14 @@ class TestPg(
         return server.findAll(getRequestedFor(urlPathMatching(LOOKUP_PATHS))).size
     }
 
+    /**
+     * The list lookups the PG received whose query `orderId` is the PG order ID [pgOrderId], whatever their headers. Unlike
+     * [lookupCount], it leaves out lookups by transaction key, which carry no PG order ID.
+     */
+    fun listLookupCount(pgOrderId: String): Int {
+        return server.findAll(getRequestedFor(urlPathEqualTo(PAYMENTS_PATH)).withQueryParam("orderId", equalTo(pgOrderId))).size
+    }
+
     /** PG가 받은 요청 가운데 어느 장면의 스텁과도 맞지 않은 것. 그 요청들은 WireMock의 404를 받았다. */
     fun unmatchedRequests(): List<LoggedRequest> {
         return server.findAllUnmatchedRequests()
@@ -240,20 +271,20 @@ class TestPg(
     /** 거래 키나 query가 무엇이든 두 조회 모두. */
     private fun anyLookup(): MappingBuilder {
         return get(urlPathMatching(LOOKUP_PATHS))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     /** 거래 키 조회. WireMock은 경로를 디코딩하지 않고 견주므로, 경로의 거래 키를 URI builder처럼 인코딩해 맞춘다. */
     private fun retrieveRequest(transactionKey: String): MappingBuilder {
         return get(urlPathEqualTo("$PAYMENTS_PATH/${UriUtils.encodePathSegment(transactionKey, StandardCharsets.UTF_8)}"))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     /** 목록 조회. query의 `orderId`가 [pgOrderId]와 정확히 같아야 맞는다. WireMock은 query 값을 디코딩해 견준다. */
     private fun listRequest(pgOrderId: String): MappingBuilder {
         return get(urlPathEqualTo(PAYMENTS_PATH))
             .withQueryParam("orderId", equalTo(pgOrderId))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
     }
 
     private fun accepted(pgOrderId: String, amount: Long, transactionKey: String, pgStatus: String): ResponseDefinitionBuilder {
@@ -302,7 +333,7 @@ class TestPg(
         """
 
         return post(urlEqualTo(PAYMENTS_PATH))
-            .withHeader("X-USER-ID", equalTo(USER_ID))
+            .withHeader("X-USER-ID", equalTo(PG_USER_ID))
             .withRequestBody(equalToJson(json))
     }
 }

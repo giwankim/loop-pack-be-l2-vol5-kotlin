@@ -2,7 +2,6 @@ package com.loopers.application.order.provided
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ThrowableProxy
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
@@ -16,9 +15,12 @@ import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.createPgTransaction
 import com.loopers.domain.payment.createPgTransactionOf
 import com.loopers.support.EnableTestPg
+import com.loopers.support.LogEvent
 import com.loopers.support.TestPg
 import com.loopers.support.failRejectionTxBOnceAfterItsWrites
 import com.loopers.support.failTxBOnceAfterItsWrites
+import com.loopers.support.logEvents
+import com.loopers.support.logEventsOf
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.test.BaseCommittingApplicationServiceTest
@@ -38,7 +40,9 @@ import org.wiremock.spring.InjectWireMock
 /**
  * The log events [com.loopers.application.order.OrderPaymentSaga] leaves for every PG answer (spec 266, "로그 이벤트"). Each scene
  * reads the captured events' key-value pairs, which the deployed profiles' logstash JSON carries as top-level fields. The `test`
- * console prints none of them, so no scene reads the formatted message.
+ * console prints none of them, so no scene reads the formatted message. Each scene has one order and reads that order's event
+ * sequence through `com.loopers.support`'s [logEventsOf], the reader the incident test shares (spec 274, story 22). The two scenes
+ * that look at every event (no personal data, no event on a replay) read [logEvents].
  */
 @EnableTestPg
 class OrderPaymentLogEventTest(
@@ -96,7 +100,7 @@ class OrderPaymentLogEventTest(
         val payment = committedPayment()
         assertThat(event("pg.create.accepted")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.create.accepted", "confirm", payment) +
                     mapOf("transactionKey" to TRANSACTION_KEY, "pgStatus" to "PENDING"),
             )
@@ -114,7 +118,7 @@ class OrderPaymentLogEventTest(
         val payment = committedPayment()
         assertThat(event("pg.create.rejected")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(identifiers("pg.create.rejected", "confirm", payment))
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(identifiers("pg.create.rejected", "confirm", payment))
         })
     }
 
@@ -142,7 +146,7 @@ class OrderPaymentLogEventTest(
         val payment = committedPayment()
         assertThat(event("pg.create.outcome-unknown")).satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.create.outcome-unknown", "confirm", payment) + mapOf("cause" to cause),
             )
         })
@@ -160,7 +164,7 @@ class OrderPaymentLogEventTest(
 
         assertThat(event("pg.lookup.found")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.lookup.found", trigger, payment) +
                     mapOf("transactionKey" to payment.transactionKey!!, "pgStatus" to "SUCCESS"),
             )
@@ -179,7 +183,7 @@ class OrderPaymentLogEventTest(
 
         assertThat(event("pg.lookup.none")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.lookup.none", "reconcile", payment) + mapOf("transactionKey" to payment.transactionKey!!),
             )
         })
@@ -200,7 +204,7 @@ class OrderPaymentLogEventTest(
 
         assertThat(event("pg.lookup.several")).satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.lookup.several", "reconcile", payment) + mapOf("transactionKey" to payment.transactionKey!!),
             )
         })
@@ -258,7 +262,7 @@ class OrderPaymentLogEventTest(
 
         assertThrows<DataAccessResourceFailureException> { orderPaymentReconciler.reconcile(order.id) }
 
-        val events = orderApplicationLogs.list.map { fields(it) }.filter { "event" in it }
+        val events = orderApplicationLogs.logEvents().map { it.fields }
         assertThat(events.map { it["event"] }).containsExactly(
             "pg.create.accepted",
             "payment.apply.committed",
@@ -291,7 +295,7 @@ class OrderPaymentLogEventTest(
         orderConfirmer.confirm(user.id, order.id, IDEMPOTENCY_KEY, request)
 
         assertThat(testPg.createCount()).isOne()
-        assertThat(orderApplicationLogs.list.map { fields(it) }).noneMatch { "event" in it }
+        assertThat(orderApplicationLogs.logEvents()).isEmpty()
     }
 
     /**
@@ -319,7 +323,7 @@ class OrderPaymentLogEventTest(
         assertThat(eventNames()).containsExactly("pg.create.accepted", "payment.apply.committed")
         assertThat(event("payment.apply.committed")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("payment.apply.committed", "confirm", payment) +
                     mapOf("transactionKey" to TRANSACTION_KEY, "result" to "changed", "from" to "UNKNOWN", "to" to status),
             )
@@ -339,7 +343,7 @@ class OrderPaymentLogEventTest(
         assertThat(eventNames()).containsExactly("pg.create.rejected", "payment.apply.committed")
         assertThat(event("payment.apply.committed")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("payment.apply.committed", "confirm", payment) +
                     mapOf("result" to "changed", "from" to "UNKNOWN", "to" to "FAILED"),
             )
@@ -359,7 +363,7 @@ class OrderPaymentLogEventTest(
         assertThat(eventNames()).containsExactly("pg.lookup.found", "payment.apply.committed")
         assertThat(event("payment.apply.committed")).satisfies({
             assertThat(it.level).isEqualTo(Level.INFO)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("payment.apply.committed", "reconcile", payment) +
                     mapOf("transactionKey" to payment.transactionKey!!, "result" to "unchanged"),
             )
@@ -384,7 +388,7 @@ class OrderPaymentLogEventTest(
         assertThat(eventNames()).containsExactly("pg.lookup.found", "payment.apply.committed")
         assertThat(event("payment.apply.committed")).satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("payment.apply.committed", "callback", payment) +
                     mapOf("transactionKey" to otherKey, "result" to "conflicted"),
             )
@@ -420,10 +424,10 @@ class OrderPaymentLogEventTest(
         assertThat(eventNames()).containsExactly("pg.create.accepted", "payment.apply.failed")
         assertThat(event("payment.apply.failed")).satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("payment.apply.failed", "confirm", payment) + mapOf("transactionKey" to TRANSACTION_KEY),
             )
-            assertThat((it.throwableProxy as ThrowableProxy).throwable).isSameAs(exception)
+            assertThat(it.throwable).isSameAs(exception)
         })
     }
 
@@ -440,7 +444,7 @@ class OrderPaymentLogEventTest(
         val payment = committedPayment()
         assertThat(payment.status).isEqualTo(PaymentStatus.UNKNOWN)
         assertThat(eventNames()).containsExactly("pg.create.rejected", "payment.apply.failed")
-        assertThat(fields(event("payment.apply.failed"))).containsExactlyInAnyOrderEntriesOf(
+        assertThat(event("payment.apply.failed").fields).containsExactlyInAnyOrderEntriesOf(
             identifiers("payment.apply.failed", "confirm", payment),
         )
     }
@@ -458,7 +462,7 @@ class OrderPaymentLogEventTest(
 
         assertThat(committedPayment().status).isEqualTo(PaymentStatus.PENDING)
         assertThat(eventNames()).containsExactly("pg.lookup.found", "payment.apply.failed")
-        assertThat(fields(event("payment.apply.failed"))).containsExactlyInAnyOrderEntriesOf(
+        assertThat(event("payment.apply.failed").fields).containsExactlyInAnyOrderEntriesOf(
             identifiers("payment.apply.failed", "reconcile", pending) + mapOf("transactionKey" to pending.transactionKey!!),
         )
         assertThat(testPg.unmatchedRequests()).isEmpty()
@@ -485,7 +489,7 @@ class OrderPaymentLogEventTest(
     private fun assertUnavailableEvent(trigger: String, payment: Payment) {
         assertThat(event("pg.lookup.unavailable")).satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(fields(it)).containsExactlyInAnyOrderEntriesOf(
+            assertThat(it.fields).containsExactlyInAnyOrderEntriesOf(
                 identifiers("pg.lookup.unavailable", trigger, payment) +
                     mapOf("transactionKey" to payment.transactionKey!!, "cause" to "HTTP 503"),
             )
@@ -506,19 +510,26 @@ class OrderPaymentLogEventTest(
         return inNewTransaction { paymentFinder.findByOrder(order.id) }
     }
 
-    /** The one captured event whose `event` field is [name]. */
-    private fun event(name: String): ILoggingEvent {
-        return orderApplicationLogs.list.single { fields(it)["event"] == name }
+    /** The one event of the scene's order whose name is [name]. */
+    private fun event(name: String): LogEvent {
+        return orderEvents().single { it.name == name }
     }
 
-    /** The `event` field of every captured event, in the order they were logged. */
+    /** The names of the scene's order's events, in the order they were logged. */
     private fun eventNames(): List<String> {
-        return orderApplicationLogs.list.mapNotNull { fields(it)["event"] }
+        return orderEvents().map { it.name }
     }
 
-    /** The event's key-value pairs, values as text. */
-    private fun fields(event: ILoggingEvent): Map<String, String> {
-        return event.keyValuePairs.orEmpty().associate { it.key to it.value.toString() }
+    /**
+     * The scene's order's event sequence. Every scene has one order, so it must be every captured event: an event of another
+     * order or one without an `orderId` fails the scene, as it did when the scenes read all events.
+     */
+    private fun orderEvents(): List<LogEvent> {
+        val events = orderApplicationLogs.logEventsOf(order.id)
+        val all = orderApplicationLogs.logEvents()
+        check(events == all) { "An event outside order ${order.id}: $all" }
+
+        return events
     }
 
     /** The fields every event carries. */
