@@ -293,7 +293,7 @@ Every event carries `event`, `trigger`, `orderId`, `paymentId`, `pgOrderId`, plu
 | The `payment.apply.failed` log call removed | 3 of 21: both failed-apply branches and the no-personal-data scene |
 | Exposure widened to `env` | `ManagementEndpointE2ETest`: `expected: 404 but was: 200` |
 
-`scripts/final-check --app commerce-api` on `c96fa48d`, a clean tree, with ktlint passing and only documents changed since:
+`scripts/final-check --app commerce-api` on `bf124279`, a clean tree, after the PR review's test fix, with ktlint passing and only documents changed since (6 min 11 s; the run on `c96fa48d` before the review had the same counts):
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
