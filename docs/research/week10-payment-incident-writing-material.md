@@ -270,7 +270,7 @@ PaymentIncidentE2ETest
 | The first baseline order's create response lost (PR review) | The baseline's confirm: `expected: "PENDING" but was: "UNKNOWN"`; `failure.json` with `"phase" : "baseline"` |
 | `createdPgOrderIds` throwing on a create without `orderId` again (PR review) | `IncidentPgTest`'s new scene: `PathNotFoundException: No results for path: $['orderId']` |
 
-`scripts/final-check --app commerce-api` on `201052bf`, a clean tree, after the closing review's and this PR's review fixes, with ktlint passing and only documents changed since (6 min 38 s). Its incident run `20261126T142707Z-1ff555ca` holds the same values as the committed one:
+`scripts/final-check --app commerce-api` on `7ff6d2e4`, a clean tree, after the closing review's and this PR's review fixes, with ktlint passing and only documents changed since (6 min 46 s). Its incident run `20261126T144218Z-9cea88b6` asserts the same values as the committed one; only timestamps, PG order IDs and hashes differ:
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
