@@ -98,7 +98,7 @@ The change below was not committed.
 
 ## Issue 278: recovering the three unresolved payments through the reconcile API, proven on the same ten orders
 
-Drafted 2026-11-26 as issue 278's closing comment. The text below is the comment's.
+Recorded 2026-11-26 from [issue 278's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/278#issuecomment-7191240350). The text below is the comment's.
 
 Implemented as `933e30ff`, with review fixes in `68e86fac`, on top of `9c45c8af`. `scripts/final-check --app commerce-api` on `68e86fac`, a clean tree, started 2026-11-26T11:39:19Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 126 classes, 1249 tests (6 min 16 s), 0 failures, 0 errors, 0 skipped**. Class and test counts are the same as issue 277's run: recovery extends the same `@Test`. Its incident run is `20261126T114111Z-a052e207`. No file under `src/main` changed since `9c45c8af`.
 
