@@ -68,7 +68,7 @@ This change was not committed: adding `and deleted_at is null` to the count. The
 
 ## Issue 269: the count as the gauge commerce.payment.unresolved over a real scrape
 
-Recorded 2026-11-26 from issue 269's closing comment. The text below is the comment's.
+Recorded 2026-11-26 from [issue 269's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/269#issuecomment-7184749772). The text below is the comment's.
 
 Implemented as `79a7c758`. `scripts/final-check --app commerce-api` on `79a7c758`, a clean tree, started 2026-11-26T06:09:40Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1222 tests (5 min 47 s), 0 failures, 0 errors, 0 skipped**.
 
