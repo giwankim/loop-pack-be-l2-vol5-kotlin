@@ -80,7 +80,7 @@ Neither change was committed. Each ran the class alone and was then reverted.
 
 ## Issue 289: the week 10 runbook and 운영자 in the glossary
 
-Recorded 2026-11-27 as the closing comment drafted for issue 289. The text below is the comment's.
+Recorded 2026-11-27 from [issue 289's closing comment](). The text below is the comment's.
 
 Implemented as `ff1003e1` on top of `c2ff3269`, on `feat/payment-incident-follow-on`. Docs only: no file under `src/main` or `src/test` changed, so no test ran. The pre-commit doc checks (`check-doc-links`, `check-doc-notes`) and ktlint passed.
 
