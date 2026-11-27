@@ -47,7 +47,7 @@ The change below was not committed.
 
 ## Issue 288: publishing the incident's week, and the follow-on evidence
 
-Recorded 2026-11-27 from issue 288's closing comment. The text below is the comment's.
+Recorded 2026-11-27 from [issue 288's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/288#issuecomment-7209765569). The text below is the comment's.
 
 Implemented as `90131aa2` on top of `43a1a253`, on `feat/payment-incident-follow-on`. `scripts/final-check --app commerce-api` on `90131aa2`, started 2026-11-27T04:15:49Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1248 tests (6 min 35 s), 0 failures, 0 errors, 0 skipped**. The tree's one uncommitted change was the 운영자 entry in `CONTEXT.md`, which issue 289 commits and no test reads. No file under `src/main` changed. The check's incident run is `20261127T041746Z-8cff87b2`, and the `@Test` took 14.4 s in it.
 
