@@ -646,7 +646,7 @@ class PaymentIncidentE2ETest(
                 assertThat(JsonPath.read<String>(writtenRanking, "$.data.snapshotId")).isEqualTo(SNAPSHOT_ID)
                 assertThat(rankingItemsOf(writtenRanking)).containsExactly("rank 1 product ${product.id} score 20")
                 assertThat(written.snapshots.map { it.describe() }).containsExactly(
-                    "$SNAPSHOT_ID period $PERIOD_START revision $REVISION inputs 20",
+                    "$SNAPSHOT_ID period $PERIOD_START revision $REVISION state FROZEN inputs 20",
                 )
                 assertThat(written.counts).isEqualTo(
                     FollowOnCounts(topicRecords = 21, outboxRows = 20, purchaseActivities = 20, processedConfirmations = 20),
@@ -1154,7 +1154,7 @@ private data class SnapshotRow(
     val inputChecksum: String,
 ) {
     fun describe(): String {
-        return "$snapshotId period $periodStart revision $revision inputs $inputCount"
+        return "$snapshotId period $periodStart revision $revision state $state inputs $inputCount"
     }
 }
 
