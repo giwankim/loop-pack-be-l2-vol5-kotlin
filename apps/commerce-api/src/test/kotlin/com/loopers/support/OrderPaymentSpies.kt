@@ -38,6 +38,20 @@ fun PaymentModifyService.pauseTheFirstTxBHoldingTheOrder(pause: Pause) {
 }
 
 /**
+ * TX A reserves the stock, starts the payment and saves the order, flushes them through [entityManager] and then throws once, as if
+ * the database failed before the commit, so the whole TX A rolls back and no create is sent. Later calls are the real ones. TX A's
+ * transaction is opened by the proxy the receiver is, so the stub goes on the spy it wraps.
+ */
+fun OrderPaymentSagaSteps.failTxAOnceAfterItsWrites(entityManager: EntityManager) {
+    val target = AopTestUtils.getUltimateTargetObject<OrderPaymentSagaSteps>(this)
+    every { target.startPayment(any(), any(), any()) } answers {
+        callOriginal()
+        entityManager.flush()
+        throw DataAccessResourceFailureException("The database failed before TX A committed.")
+    } andThenAnswer { callOriginal() }
+}
+
+/**
  * The TX B entry for a PG transaction changes the payment and the order, flushes them through [entityManager] and then throws
  * once, as if the database failed before the commit, so the whole TX B rolls back. Later calls are the real ones. TX B's
  * transaction is opened by the proxy the receiver is, so the stub goes on the spy it wraps.

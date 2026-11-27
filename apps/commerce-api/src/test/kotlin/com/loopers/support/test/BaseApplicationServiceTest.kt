@@ -11,6 +11,7 @@ import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.required.OrderRepository
+import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -27,6 +28,7 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.order.createOrderCreateRequest
 import com.loopers.domain.payment.CreditCard
+import com.loopers.domain.payment.Payment
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.Product
@@ -132,6 +134,9 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var orderRepository: OrderRepository
+
+    @Autowired
+    private lateinit var paymentRecorder: PaymentRecorder
 
     @Autowired
     private lateinit var couponCampaignRegister: CouponCampaignRegister
@@ -268,6 +273,22 @@ abstract class BaseApplicationServiceTest {
         orderRepository.save(order.apply { startPayment() })
     }
 
+    /**
+     * Starts [order]'s payment without a confirm: the order is saved payment pending as [startPaymentWithoutPayment] does, and
+     * [PaymentRecorder] starts its 결과 미확인 payment in a transaction of its own. No create is sent and the saga reports nothing,
+     * so the payment stands in for one that a restarted or another instance started (spec 281, story 25). The missing confirm is the
+     * bypass. The payment takes the next PG order ID, so the class needs `@EnableTestPg` and names one with [nextPgOrderId] first.
+     */
+    protected fun startPaymentWithoutConfirm(order: Order = this.order): Payment {
+        startPaymentWithoutPayment(order)
+
+        return paymentRecorder.start(
+            orderId = order.id,
+            idempotencyKey = UUID.randomUUID().toString(),
+            amount = order.totalAmount,
+        )
+    }
+
     protected fun prepareCouponCampaign(
         name: String? = null,
         discountAmount: Long? = null,
@@ -362,37 +383,13 @@ abstract class BaseApplicationServiceTest {
      * 확정은 트랜잭션 밖에서만 돌므로(ADR 0028 규칙 2) 테스트 트랜잭션에서 빠진 클래스만 부른다. 커밋하는 기반과 `NOT_SUPPORTED`를 단 MockMvc 클래스다.
      */
     protected fun confirmOrder(testPg: TestPg, order: Order = this.order, pgStatus: String = "SUCCESS"): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card ->
-            testPg.acceptsCreate(
-                pgOrderId = pgOrderId,
-                amount = amount,
-                card = card,
-                transactionKey = UUID.randomUUID().toString(),
-                pgStatus = pgStatus,
-            )
-        }
-    }
-
-    /**
-     * [confirmOrder] where [testPg] rejects the create before making a PG transaction, so the payment fails and the order is left
-     * payment failed. The same conditions as [confirmOrder].
-     */
-    protected fun confirmOrderRejectedBeforeCreate(testPg: TestPg, order: Order = this.order): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card -> testPg.rejectsBeforeCreate(pgOrderId, amount, card) }
-    }
-
-    /**
-     * [confirmOrder] where [testPg] loses the create's response, so the payment is left 결과 미확인 and the order payment pending.
-     * The same conditions as [confirmOrder].
-     */
-    protected fun confirmOrderLosingCreateResponse(testPg: TestPg, order: Order = this.order): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card -> testPg.losesCreateResponse(pgOrderId, amount, card) }
-    }
-
-    /** Confirms [order] after [stub] sets up the PG's answer to its create, for the next PG order ID, the order's amount and the card. */
-    private fun confirmOrderAnswered(order: Order, stub: (pgOrderId: String, amount: Long, card: CreditCard) -> Unit): OrderInfo {
         val request = createOrderConfirmRequest()
-        stub(nextPgOrderId(), order.totalAmount.amount.longValueExact(), request.toCreditCard())
+        acceptNextCreate(
+            testPg,
+            amount = order.totalAmount.amount.longValueExact(),
+            card = request.toCreditCard(),
+            pgStatus = pgStatus,
+        )
 
         return orderConfirmer.confirm(order.userId, order.id, idempotencyKey = UUID.randomUUID().toString(), request = request)
     }

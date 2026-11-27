@@ -1,10 +1,8 @@
 package com.loopers.application.payment
 
 import com.loopers.application.payment.provided.PaymentFinder
-import com.loopers.application.payment.provided.UnresolvedPaymentCount
 import com.loopers.application.payment.required.PaymentRepository
 import com.loopers.domain.payment.Payment
-import com.loopers.domain.payment.PaymentStatus
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import com.loopers.support.stereotype.ApplicationService
@@ -34,19 +32,5 @@ class PaymentQueryService(
 
     override fun findByPgOrderId(pgOrderId: String): Payment {
         return paymentRepository.findByPgOrderId(pgOrderId) ?: throw CoreException(ErrorType.PAYMENT_NOT_FOUND)
-    }
-
-    override fun countUnresolved(): UnresolvedPaymentCount {
-        val counts = paymentRepository.countByStatusIn(UNRESOLVED.map { it.name }).associate { it.status to it.payments }
-
-        return UnresolvedPaymentCount(
-            unknown = counts[PaymentStatus.UNKNOWN.name] ?: 0,
-            pending = counts[PaymentStatus.PENDING.name] ?: 0,
-        )
-    }
-
-    companion object {
-        /** The payment statuses of 끝나지 않은 결제, one per field of [UnresolvedPaymentCount]. */
-        private val UNRESOLVED = listOf(PaymentStatus.UNKNOWN, PaymentStatus.PENDING)
     }
 }

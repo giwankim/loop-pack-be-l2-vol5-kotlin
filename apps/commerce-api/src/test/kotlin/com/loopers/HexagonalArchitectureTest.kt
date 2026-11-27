@@ -33,7 +33,7 @@ private val GETTER_NAME = Regex("(get|is)[A-Z].*")
 )
 class HexagonalArchitectureTest {
     // splearn's three layers, with its single adapter layer split in six so that the web, persistence, integration
-    // (outbound HTTP, ADR 0021), scheduling (ADR 0035), startup (ADR 0036) and monitoring (spec 266) adapters cannot reach each other.
+    // (outbound HTTP, ADR 0021), scheduling (ADR 0035), startup (ADR 0036) and monitoring (spec 266, a driven adapter since spec 281) adapters cannot reach each other.
     // ApiControllerAdvice sits at the adapter root as in splearn, but it only answers web requests, so that one package belongs to the
     // web adapter.
     @ArchTest
@@ -49,7 +49,13 @@ class HexagonalArchitectureTest {
         .layer("adapter.monitoring").definedBy("$ROOT.adapter.monitoring..")
         .layer("support").definedBy("$ROOT.support..")
         .whereLayer("domain")
-        .mayOnlyBeAccessedByLayers("application", "adapter.webapi", "adapter.persistence", "adapter.integration")
+        .mayOnlyBeAccessedByLayers(
+            "application",
+            "adapter.webapi",
+            "adapter.persistence",
+            "adapter.integration",
+            "adapter.monitoring",
+        )
         .whereLayer("application")
         .mayOnlyBeAccessedByLayers(
             "adapter.webapi",
@@ -76,9 +82,16 @@ class HexagonalArchitectureTest {
     @ArchTest
     val startupReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.startup", "ADR 0036")
 
-    // The unresolved-payment gauge is driven by a schedule too: it asks a provided port how many, and Micrometer stays in this layer.
+    // The unresolved-payment gauge is a driven adapter: it implements a required port that the saga calls, and reads the domain's
+    // statuses it is told about. It calls nothing of the application, and Micrometer stays in this layer.
     @ArchTest
-    val monitoringReachesOnlyProvidedPorts: ArchRule = triggerReachesOnlyProvidedPorts("adapter.monitoring", "spec 266")
+    val monitoringReachesOnlyRequiredPorts: ArchRule = classes()
+        .that().resideInAPackage("$ROOT.adapter.monitoring..")
+        .should().onlyDependOnClassesThat(
+            resideOutsideOfPackage("$ROOT..")
+                .or(resideInAnyPackage("$ROOT.adapter.monitoring..", "$ROOT.application.order.required..", "$ROOT.domain..")),
+        )
+        .because("a listener implements a required port and calls no provided one (spec 281)")
 
     // Cycles are checked inside one layer at a time. adapter.persistence.product joining domain.like to sort by
     // likes while application.like calls application.product is two layers each looking one way, not a loop

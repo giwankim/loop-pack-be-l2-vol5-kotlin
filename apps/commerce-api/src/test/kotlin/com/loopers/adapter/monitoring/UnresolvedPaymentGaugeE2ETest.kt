@@ -1,13 +1,9 @@
 package com.loopers.adapter.monitoring
 
-import ch.qos.logback.classic.Level
-import ch.qos.logback.classic.Logger
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.core.read.ListAppender
 import com.github.tomakehurst.wiremock.WireMockServer
 import com.loopers.adapter.webapi.IdempotencyKeyHeader
 import com.loopers.adapter.webapi.UserIdHeader
-import com.loopers.application.payment.PaymentQueryService
+import com.loopers.application.order.OrderPaymentSagaSteps
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.payment.PgStatus
 import com.loopers.domain.payment.PgTransaction
@@ -16,34 +12,34 @@ import com.loopers.domain.user.User
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
 import com.loopers.support.TestPg
+import com.loopers.support.failTxAOnceAfterItsWrites
+import com.loopers.support.failTxBOnceAfterItsWrites
 import com.loopers.support.test.BaseRealPortWebApiAdapterTest
 import com.ninjasquad.springmockk.MockkSpyBean
-import io.mockk.every
 import org.assertj.core.api.Assertions.assertThat
-import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
-import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
-import org.springframework.test.util.AopTestUtils
 import org.springframework.test.web.servlet.assertj.MvcTestResult
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.wiremock.spring.InjectWireMock
-import java.time.Duration
 import java.util.UUID
 
 /**
  * The `commerce.payment.unresolved` gauge as a scraper reads it: the Prometheus text fetched over real HTTP from the injected
- * management port (spec 266, stories 1–7). No scene reads the gauge from a bean. Orders are confirmed and reconciled through
- * [mvc] against the test PG.
+ * management port (spec 281). No scene reads the gauge from a bean or counts calls to its port. Orders are confirmed and
+ * reconciled through [mvc] against the test PG.
  *
- * The gauge counts committed rows on the scheduler thread, so the class leaves the test transaction and empties the tables with
- * [DatabaseCleanUp] (`OrderConfirmationApiTest`'s pattern). A changed count reaches the text one refresh later, so a scene waits
- * for it within [SCRAPE_WAIT].
+ * The gauge is a number in the process's memory, so it outlives the rows [DatabaseCleanUp] empties between scenes. Every scene
+ * reads both series first and asserts how far they moved from that reading ([changeSince]). The number moves before the response
+ * returns, so no scene waits. Every scene but one resolves the payments it leaves unresolved and asserts that it leaves the
+ * gauge where it found it. The one is the payment this process never saw start, so in this class's context that scene begins at 0
+ * and goes below it, and a scene that left a residue would fail on its own last assertion first.
+ *
+ * Confirmations commit per request, so the class leaves the test transaction (`OrderConfirmationApiTest`'s pattern).
  */
 @EnableTestPg
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -54,10 +50,12 @@ class UnresolvedPaymentGaugeE2ETest(
         /** The card every confirmation sends. The number passes the Luhn check. The create stubs match this card. */
         private val CARD = CreditCard(type = "SAMSUNG", number = "4111-1111-1111-1111")
 
-        private const val TRANSACTION_KEY = "20261126:TR:gauge1"
+        private const val TRANSACTION_KEY = "20261127:TR:gauge1"
 
-        /** Many refresh intervals of the real-port base, so a scene never waits on a slow tick by chance. */
-        private val SCRAPE_WAIT: Duration = Duration.ofSeconds(10)
+        /** The gauge's `status` label values, the two unresolved payment statuses. */
+        private val STATUSES = listOf("UNKNOWN", "PENDING")
+
+        private val UNCHANGED = STATUSES.associateWith { 0.0 }
     }
 
     /** Field injection, not the constructor. The reason is on the same field in `OrderPaymentIntegrationTest`. */
@@ -66,28 +64,20 @@ class UnresolvedPaymentGaugeE2ETest(
 
     private val testPg by lazy { TestPg(server) }
 
-    /** Where the failed-count scene makes the gauge's count throw. Unstubbed, it is the real count. */
+    /** Where a scene makes TX A or TX B throw after its writes. Unstubbed, they are the real ones. */
     @MockkSpyBean
-    private lateinit var paymentQueryService: PaymentQueryService
+    private lateinit var orderPaymentSagaSteps: OrderPaymentSagaSteps
 
     private lateinit var owner: User
-
-    /** The gauge's WARN on a failed count, from the adapter's package logger. */
-    private val monitoringLogs = ListAppender<ILoggingEvent>()
-
-    private val monitoringLogger = LoggerFactory.getLogger("com.loopers.adapter.monitoring") as Logger
 
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
         owner = prepareUser()
-        monitoringLogs.start()
-        monitoringLogger.addAppender(monitoringLogs)
     }
 
     @AfterEach
     fun cleanUp() {
-        monitoringLogger.detachAppender(monitoringLogs)
         databaseCleanUp.truncateAllTables()
     }
 
@@ -103,100 +93,184 @@ class UnresolvedPaymentGaugeE2ETest(
             .contains("commerce_payment_unresolved{application=\"commerce-api\",status=\"UNKNOWN\"}")
             .contains("commerce_payment_unresolved{application=\"commerce-api\",status=\"PENDING\"}")
         assertThat(prometheus.body().lineSequence().single { it.startsWith("# HELP commerce_payment_unresolved ") })
-            .contains("unresolved payments", "one interval old", "max, not sum")
+            .contains("unresolved payments", "since this process started", "can be negative", "aggregate with sum")
     }
 
     /**
-     * The incident in one order (spec 266, story 27): the create's response is lost, so the payment is 결과 미확인 and the gauge
-     * says 1 while health says UP. The customer's reconcile finds the successful PG transaction and the gauge returns to 0.
-     * The create is never sent again.
+     * The incident in one order: the create's response is lost, so the payment is 결과 미확인 and the gauge says one more while
+     * health says UP. The customer's reconcile finds the successful PG transaction and takes it back. The create is never sent again.
      */
     @Test
-    fun `a lost create response shows one unknown payment while health is UP, and the reconcile that finds it returns it to 0`() {
+    fun `a lost create response adds one unknown payment while health is UP, and the reconcile that finds it takes it back`() {
+        val before = scrape()
         val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
         val pgOrderId = nextPgOrderId()
         testPg.losesCreateResponse(pgOrderId, amount = 2_000, card = CARD)
+
         assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
 
-        awaitScraped(status = "UNKNOWN", value = "1.0")
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to 1.0, "PENDING" to 0.0))
         val health = managementGet("/actuator/health")
         assertThat(health.statusCode()).isEqualTo(200)
         assertThat(health.body()).contains("\"status\":\"UP\"")
-        assertThat(scraped(status = "PENDING")).isEqualTo("0.0")
 
-        val succeeded = PgTransaction(
-            transactionKey = TRANSACTION_KEY,
-            pgOrderId = pgOrderId,
-            amount = Money(2_000),
-            status = PgStatus.SUCCESS,
-        )
-        testPg.hasTransactions(pgOrderId, succeeded)
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
         assertThat(requestReconcile(orderId)).hasStatusOk()
 
-        awaitScraped(status = "UNKNOWN", value = "0.0")
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
         assertThat(testPg.createCount()).isOne()
         assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
+    /**
+     * The payment moves from 결과 미확인 to 처리 중 within one confirm, so it moves between the series and the total grows by one. A
+     * reconcile that finds the PG still processing it is an unchanged TX B and moves nothing.
+     */
     @Test
-    fun `a payment whose accepted create is still pending at the PG shows as one pending payment`() {
+    fun `an accepted create still pending at the PG leaves unknown where it was and adds one pending payment`() {
+        val before = scrape()
         val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
-        testPg.acceptsCreate(nextPgOrderId(), amount = 2_000, card = CARD, transactionKey = TRANSACTION_KEY, pgStatus = "PENDING")
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(pgOrderId, amount = 2_000, card = CARD, transactionKey = TRANSACTION_KEY, pgStatus = "PENDING")
+
         assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
 
-        awaitScraped(status = "PENDING", value = "1.0")
-        assertThat(scraped(status = "UNKNOWN")).isEqualTo("0.0")
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to 0.0, "PENDING" to 1.0))
+
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.PENDING))
+        assertThat(requestReconcile(orderId)).hasStatus(HttpStatus.ACCEPTED)
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to 0.0, "PENDING" to 1.0))
+
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
+        assertThat(requestReconcile(orderId)).hasStatusOk()
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+    }
+
+    /** TX A's one more 결과 미확인 payment and the rejection's TX B taking it to 실패 cancel out: a rejection is no stuck work. */
+    @Test
+    fun `a create rejected before creation leaves both series where they started`() {
+        val before = scrape()
+        val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
+        testPg.rejectsBeforeCreate(nextPgOrderId(), amount = 2_000, card = CARD)
+
+        assertThat(requestConfirm(orderId)).hasStatusOk()
+
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+    }
+
+    /** A replay answers the stored state without TX A starting a payment (ADR 0024 rule 3), so a retrying client adds nothing. */
+    @Test
+    fun `a replayed confirm with the same idempotency key adds nothing`() {
+        val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
+        val pgOrderId = nextPgOrderId()
+        testPg.losesCreateResponse(pgOrderId, amount = 2_000, card = CARD)
+        val idempotencyKey = UUID.randomUUID().toString()
+        assertThat(requestConfirm(orderId, idempotencyKey)).hasStatus(HttpStatus.ACCEPTED)
+        val before = scrape()
+
+        assertThat(requestConfirm(orderId, idempotencyKey)).hasStatus(HttpStatus.ACCEPTED)
+
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.createCount()).isOne()
+
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
+        assertThat(requestReconcile(orderId)).hasStatusOk()
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to -1.0, "PENDING" to 0.0))
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     /**
-     * A count that can't be read is no value, never "0 unresolved" or the last count (spec 266, story 5). The count fails for as
-     * long as the scene needs to see `NaN`: one failure is overwritten by the next tick, a scrape might never catch it.
+     * A TX A that rolls back after writing the payment leaves no payment, so it leaves no number either: the number follows
+     * committed state only. The payment takes its PG order ID before the failure, so the scene names one, and the retry after the
+     * failure starts the payment for real and goes on to the create.
      */
     @Test
-    fun `a failed count turns both series to NaN with a WARN, and the next good count restores the values`() {
+    fun `a TX A that rolls back after starting the payment leaves both series where they started`() {
+        val before = scrape()
         val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
-        testPg.losesCreateResponse(nextPgOrderId(), amount = 2_000, card = CARD)
-        assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.ACCEPTED)
-        awaitScraped(status = "UNKNOWN", value = "1.0")
-        val countingService = AopTestUtils.getUltimateTargetObject<PaymentQueryService>(paymentQueryService)
+        nextPgOrderId()
+        orderPaymentSagaSteps.failTxAOnceAfterItsWrites(entityManager)
 
-        every { countingService.countUnresolved() } throws DataAccessResourceFailureException("The database is gone.")
+        assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
 
-        awaitScraped(status = "UNKNOWN", value = "NaN")
-        assertThat(scraped(status = "PENDING")).isEqualTo("NaN")
-        // The refresh clears the count before it logs, so a scrape can see NaN before the WARN is appended. The failing ticks
-        // keep appending, so the list is copied under the appender's lock, which AppenderBase.doAppend holds.
-        await().atMost(SCRAPE_WAIT).untilAsserted {
-            val events = synchronized(monitoringLogs) { monitoringLogs.list.toList() }
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.createCount()).isZero()
 
-            assertThat(events.filter { it.level == Level.WARN }).isNotEmpty().allSatisfy({
-                assertThat(it.throwableProxy.message).isEqualTo("The database is gone.")
-            })
+        testPg.rejectsBeforeCreate(nextPgOrderId(), amount = 2_000, card = CARD)
+        assertThat(requestConfirm(orderId)).hasStatusOk()
+        assertThat(testPg.createCount()).isOne()
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+    }
+
+    /**
+     * The PG accepted the create with a successful transaction, and TX B rolled back before applying it, so the payment is still
+     * 결과 미확인 and the number is where TX A left it. The customer's reconcile then applies the same transaction and takes it back.
+     */
+    @Test
+    fun `a TX B that rolls back leaves the number as TX A left it`() {
+        val before = scrape()
+        val orderId = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2).id
+        val pgOrderId = nextPgOrderId()
+        testPg.acceptsCreate(pgOrderId, amount = 2_000, card = CARD, transactionKey = TRANSACTION_KEY, pgStatus = "SUCCESS")
+        orderPaymentSagaSteps.failTxBOnceAfterItsWrites(entityManager)
+
+        assertThat(requestConfirm(orderId)).hasStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to 1.0, "PENDING" to 0.0))
+
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
+        assertThat(requestReconcile(orderId)).hasStatusOk()
+        assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+    }
+
+    /**
+     * A payment this process never saw start stands in for one a restarted instance or another instance started: it is prepared
+     * through the payment's provided port, not through a confirm, so the number never went up for it. Resolving it takes the
+     * number down by one. The scene starts at 0 (the class's KDoc says why), so the text must carry −1, not a number held at 0.
+     */
+    @Test
+    fun `reconciling an unknown payment this process never saw start takes unknown down by one`() {
+        val order = prepareOrder(owner, listOf(prepareProduct(price = 1_000, stock = 10)), quantity = 2)
+        val pgOrderId = nextPgOrderId()
+        startPaymentWithoutConfirm(order)
+        val before = scrape()
+
+        testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
+        assertThat(requestReconcile(order.id)).hasStatusOk()
+
+        assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to -1.0, "PENDING" to 0.0))
+        assertThat(testPg.unmatchedRequests()).isEmpty()
+    }
+
+    private fun transaction(pgOrderId: String, status: PgStatus): PgTransaction {
+        return PgTransaction(transactionKey = TRANSACTION_KEY, pgOrderId = pgOrderId, amount = Money(2_000), status = status)
+    }
+
+    /** How far each series moved from [before], scraped now. */
+    private fun changeSince(before: Map<String, Double>): Map<String, Double> {
+        val now = scrape()
+
+        return now.mapValues { (status, value) -> value - before.getValue(status) }
+    }
+
+    /** Both series of the gauge in the Prometheus text scraped now, by `status`. A missing series fails the scene. */
+    private fun scrape(): Map<String, Double> {
+        val lines = managementGet("/actuator/prometheus").body().lines()
+
+        return STATUSES.associateWith { status ->
+            val series = "commerce_payment_unresolved{application=\"commerce-api\",status=\"$status\"} "
+            val line = checkNotNull(lines.firstOrNull { it.startsWith(series) }) { "The $status series is missing." }
+
+            line.removePrefix(series).toDouble()
         }
-
-        every { countingService.countUnresolved() } answers { callOriginal() }
-
-        awaitScraped(status = "UNKNOWN", value = "1.0")
-        assertThat(scraped(status = "PENDING")).isEqualTo("0.0")
     }
 
-    /** Waits until the scraped value of [status]'s series is [value], as Prometheus writes it (`1.0`, `NaN`). */
-    private fun awaitScraped(status: String, value: String) {
-        await().atMost(SCRAPE_WAIT).until { scraped(status) == value }
-    }
-
-    /** The value of the gauge's [status] series in the Prometheus text scraped now, or `null` if the series is missing. */
-    private fun scraped(status: String): String? {
-        val series = "commerce_payment_unresolved{application=\"commerce-api\",status=\"$status\"} "
-        val line = managementGet("/actuator/prometheus").body().lineSequence().firstOrNull { it.startsWith(series) }
-
-        return line?.removePrefix(series)
-    }
-
-    private fun requestConfirm(orderId: Long): MvcTestResult {
+    private fun requestConfirm(orderId: Long, idempotencyKey: String = UUID.randomUUID().toString()): MvcTestResult {
         return mvc.post().uri("/api/v1/orders/$orderId/confirm")
             .header(UserIdHeader.NAME, owner.id)
-            .header(IdempotencyKeyHeader.NAME, UUID.randomUUID().toString())
+            .header(IdempotencyKeyHeader.NAME, idempotencyKey)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""{"cardType":"${CARD.type}","cardNo":"${CARD.number}"}""")
             .exchange()

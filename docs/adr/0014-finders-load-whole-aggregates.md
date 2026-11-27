@@ -17,6 +17,8 @@ date: 2026-10-08
 1. **Finder의 `find`는 자기 애그리거트를 통째로 읽고, 없으면 던진다.** 저장소 메서드는 애그리거트 안의 연관을 `@EntityGraph`로 함께 읽는다. 그래서 트랜잭션이 끝난 뒤 지연 로딩할 것이 남지 않는다. provided 포트의 읽기가 null을 돌려줄 수 있으면 이름에 `…OrNull`을 붙인다.
 
    > 2026-11-26 ([issue 268](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/268)) `PaymentFinder.countUnresolved`는 애그리거트가 아니라 결제 상태별로 센 수(`UnresolvedPaymentCount`)를 돌려준다. 센 수는 애그리거트를 읽은 것이 아니므로 이 규칙의 예외다. 끝나지 않은 결제의 gauge가 쓴다([결제 사고 설계](../design/payment-incident.md) 1단계).
+   >
+   > 2026-11-27 ([issue 283](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/283)) 위의 예외를 거둔다. gauge가 결제를 세지 않고 커밋된 상태 변화를 메모리에서 올리고 내리게 되어(명세 281) `countUnresolved`와 `UnresolvedPaymentCount`를 지웠다. `PaymentFinder`는 다시 결제만 돌려준다.
 
 2. **`Info`는 응답이 여러 애그리거트를 합칠 때만 둔다.** 브랜드 이름과 좋아요 수를 싣는 `ProductInfo`가 그렇다. 쓰기 포트는 자기 애그리거트를 돌려준다. 예외는 `ProductRegister`다. 관리자 응답이 그 조합을 쓰므로 계속 `ProductInfo`를 돌려준다.
 3. **다른 애그리거트로 가는 연관은 읽기가 실제로 건널 때만 둔다.** 브랜드 이름을 fetch join으로 읽는 `Product.brand`가 그렇다. 외래 키를 얻으려고만 연관을 두지는 않는다. 스칼라 식별자의 외래 키는 `scalar-foreign-keys.sql`이 만든다([ADR 0015](./0015-web-boundary-accepts-the-requester.md)).
