@@ -181,7 +181,7 @@ The committed copy is in the [writing material](https://github.com/giwankim/loop
 
 ## Draft PR body
 
-The body of the PR from `feat/payment-incident-follow-on` into `week10`, written at the spec's closing review (2026-11-27) in `/mattpocock-skills:pr`'s shape, with the final check on `f854f588` and the comment's link. It makes no timing, throughput or concurrency claim; none was measured under production settings.
+The body of the PR from `feat/payment-incident-follow-on` into `week10`, written at the spec's closing review (2026-11-27) in `/mattpocock-skills:pr`'s shape, with the final check on `f854f588` and the comment's link, and updated after the PR's review with the final check on `a55e8448`. It makes no timing, throughput or concurrency claim; none was measured under production settings.
 
 ### Summary
 
@@ -190,7 +190,7 @@ Week 10 step 3. The incident test no longer stops at the order row. After recove
 - **Spec:** issue 286, with tickets 287–290, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286#issuecomment-7210970334)
 - **Design:** [`docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md) section 4: 4.2 the follow-on, 4.3 the evidence, 4.4 the runbook, 4.5 the verification scope, 4.7 the limits, 4.9 the red checks, 4.11 what differs from the spec
 - **Runbook:** [`docs/runbook/week10.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/runbook/week10.md): unresolved payments while health is UP
-- **Evidence:** [`docs/evidence/week10/20261127T053810Z-324a6dcf/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident-follow-on/docs/evidence/week10/20261127T053810Z-324a6dcf), the final check's incident run, 17 files as written
+- **Evidence:** [`docs/evidence/week10/20261127T055722Z-c9dcca96/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident-follow-on/docs/evidence/week10/20261127T055722Z-c9dcca96), the final check's incident run, 17 files as written
 - **Writing material:** [`docs/research/week10-payment-incident-follow-on-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/research/week10-payment-incident-follow-on-writing-material.md), which holds every ticket's closing comment
 - **No production code changed, and no ADR.** Test code and documents only; `CONTEXT.md` gains 운영자.
 
@@ -224,13 +224,13 @@ PaymentIncidentE2ETest  (clock pinned: confirms 2026-09-08T10:00Z, recovery 2026
 - **What recovery proved still holds:** stock 0, one create per PG order ID, 20 PG transactions, the owner's points and coupons unchanged, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, and the fault files hash as `recovery.json` holds them.
 - **Red checks** (design 4.9): a relay that skips one recovered order's row fails on 19 purchase activities; a recovery pinned to the next week fails on score 17; bypassing the streamer's already-recorded check stops the consumer on the repeated event.
 
-`scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` on `f854f588`, a clean tree, after the closing review's fixes, with ktlint passing and only documents and evidence changed since:
+`scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` on `a55e8448`, a clean tree, after the closing review's fixes and this PR's review fixes, with ktlint passing and only documents and evidence changed since:
 
 | App | Classes | Tests | Failures, errors, skipped | Time |
 | --- | --- | --- | --- | --- |
-| commerce-batch | 9 | 65 | 0 | 27 s |
-| commerce-api | 123 | 1248 | 0 | 6 min 24 s |
-| commerce-streamer | 18 | 68 | 0 | 51 s |
+| commerce-batch | 9 | 65 | 0 | 28 s |
+| commerce-api | 123 | 1248 | 0 | 6 min 28 s |
+| commerce-streamer | 18 | 68 | 0 | 48 s |
 
 The counts are unchanged from the steps before: this step extends one `@Test`. All three apps run so that week 9's restart and late-revision scenes are not skipped. The table in design 4.5 lists, per feature, the classes that ran, what this run confirmed and what is unverified. It claims a controlled local incident and passing regressions, not deployment, real accounts or load.
 
