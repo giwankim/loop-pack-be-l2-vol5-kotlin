@@ -1,5 +1,5 @@
 {
-  "hypothesesWrittenAt" : "2026-11-27T01:44:59.686578Z",
+  "hypothesesWrittenAt" : "2026-11-27T05:57:22.953437Z",
   "hypotheses" : [ {
     "hypothesis" : "A",
     "statement" : "The PG is still processing the payment.",
@@ -15,9 +15,9 @@
   } ],
   "orders" : [ {
     "orderId" : 13,
-    "pgOrderId" : "65dc393a-4400-4773-ab96-02dc8a0262ab",
-    "lookedUpAt" : "2026-11-27T01:44:59.698572Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"65dc393a-4400-4773-ab96-02dc8a0262ab\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "7c45c7c0-e39a-4ee5-8451-1267831714c9",
+    "lookedUpAt" : "2026-11-27T05:57:22.961913Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"7c45c7c0-e39a-4ee5-8451-1267831714c9\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -37,9 +37,9 @@
     } ]
   }, {
     "orderId" : 16,
-    "pgOrderId" : "55724f3f-400c-473f-acd2-b9a2967cf030",
-    "lookedUpAt" : "2026-11-27T01:44:59.703580Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"55724f3f-400c-473f-acd2-b9a2967cf030\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "7cb36285-123e-406e-9a9d-e4facdabdf21",
+    "lookedUpAt" : "2026-11-27T05:57:22.965124Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"7cb36285-123e-406e-9a9d-e4facdabdf21\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -59,9 +59,9 @@
     } ]
   }, {
     "orderId" : 19,
-    "pgOrderId" : "46efe4d7-7eae-4cf6-aa89-4114c57d8883",
-    "lookedUpAt" : "2026-11-27T01:44:59.706525Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"46efe4d7-7eae-4cf6-aa89-4114c57d8883\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "a743d8d8-b82b-4bfc-a42d-caae8788ef4d",
+    "lookedUpAt" : "2026-11-27T05:57:22.967213Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"a743d8d8-b82b-4bfc-a42d-caae8788ef4d\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
