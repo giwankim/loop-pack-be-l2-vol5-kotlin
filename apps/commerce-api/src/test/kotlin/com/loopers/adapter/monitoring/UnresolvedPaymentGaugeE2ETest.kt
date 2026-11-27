@@ -144,6 +144,7 @@ class UnresolvedPaymentGaugeE2ETest(
         testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
         assertThat(requestReconcile(orderId)).hasStatusOk()
         assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     /** TX A's one more 결과 미확인 payment and the rejection's TX B taking it to 실패 cancel out: a rejection is no stuck work. */
@@ -176,6 +177,7 @@ class UnresolvedPaymentGaugeE2ETest(
         testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
         assertThat(requestReconcile(orderId)).hasStatusOk()
         assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to -1.0, "PENDING" to 0.0))
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     /**
@@ -220,6 +222,7 @@ class UnresolvedPaymentGaugeE2ETest(
         testPg.hasTransactions(pgOrderId, transaction(pgOrderId, PgStatus.SUCCESS))
         assertThat(requestReconcile(orderId)).hasStatusOk()
         assertThat(changeSince(before)).isEqualTo(UNCHANGED)
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     /**
@@ -238,6 +241,7 @@ class UnresolvedPaymentGaugeE2ETest(
         assertThat(requestReconcile(order.id)).hasStatusOk()
 
         assertThat(changeSince(before)).isEqualTo(mapOf("UNKNOWN" to -1.0, "PENDING" to 0.0))
+        assertThat(testPg.unmatchedRequests()).isEmpty()
     }
 
     private fun transaction(pgOrderId: String, status: PgStatus): PgTransaction {
