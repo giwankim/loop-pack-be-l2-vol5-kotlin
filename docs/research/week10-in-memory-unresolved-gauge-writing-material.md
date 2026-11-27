@@ -113,3 +113,126 @@ The spec said "결제의 요구 포트에 `PaymentStatusChangeListener`를 더�
 Ran `HexagonalArchitectureTest` (10), `UnresolvedPaymentGaugeE2ETest` (8) and `OrderPaymentLogEventTest` (22): 40 tests, 0 failures. The full final check was not re-run; behaviour is unchanged.
 
 Also from the review, kept as is: scene 7 asserts only the −1 change, not that the series started at 0, because pinning the start would make it order-dependent; the scene's KDoc and design 2.x already say so. The three duplication smells (the status list in three places, the scrape parsing in two tests, a third throw-once spy helper) were left alone.
+
+## Spec 281: the closing review
+
+Recorded 2026-11-27 from [spec 281's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281#issuecomment-7208126259). The text below is the comment's.
+
+The in-memory gauge is built, and its closing review is done. `scripts/final-check --app commerce-api` on `67a89f5f`, a clean tree, started 2026-11-27T02:18:34Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1248 tests (6 min 6 s), 0 failures, 0 errors, 0 skipped**. Step 2's final check ended at 126 classes and 1250 tests; issue 282 took one class and one scene out and added five scenes, and issue 283 took two classes out. The review's fix adds and removes no test, so the counts match the run on `4c65ad3f` that issue 284 recorded. Only documents change after `67a89f5f`.
+
+Tickets 282–284 are closed, each with its own comment. [Design 2](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/refactor/in-memory-unresolved-gauge/docs/design/payment-incident.md#2-1단계-끝나지-않은-결제의-지표와-결제의-로그-이벤트) describes the gauge as it is now, with one dated paragraph in 2.1 on what it replaced. There is no ADR.
+
+### The gauge, as the code has it
+
+| | Before (spec 266) | Now |
+| --- | --- | --- |
+| Source | A scheduled `countUnresolved()` on the payment rows, every 10 s | This process's memory, moved by the saga after each commit |
+| Before the first value | `NaN` | 0 for both series from startup |
+| Reading across instances | `max` | `sum(commerce_payment_unresolved)` |
+| Switch and properties | `payment.unresolved-gauge.enabled` (off in `test`), `refresh-interval` | None; registered in every profile |
+| Carried with it | `IDX_PAYMENT_ON_STATUS`, its EXPLAIN scene, the ADR 0014 exception, `@EnableScheduling` on the gauge | Removed; the index is dropped by `docs/migrations/2026-11-27-drop-payment-status-index.sql` |
+
+The new limits are in design 2.6: a restarted instance starts at 0, an instance can go negative, so the `sum` under-reports after a restart and the gap stays after those payments finish. Step 3's runbook takes the payment rows as the authority and the gauge as the alarm (2.11).
+
+The final check's incident run `20261127T022026Z-78422b9c` asserts the same values as the committed run `20261127T014458Z-e8a33044`: `UNKNOWN` 0.0, 3.0, 0.0 and `PENDING` 0.0 throughout, health UP. Only timestamps, PG order IDs and hashes differ, so the committed evidence stays.
+
+### Where the implementation differs
+
+[Design 2.10](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/refactor/in-memory-unresolved-gauge/docs/design/payment-incident.md#210-명세와-다른-것) has six rows for this spec. The ones that change what a reader would assume:
+
+| The spec said | What is there | How it was found |
+| --- | --- | --- |
+| "결제의 요구 포트에 `PaymentStatusChangeListener`를 더한다" | The port is in `application.order.required`. Its only caller is the order slice's saga, and ADR 0013 has the asking slice declare it | This review, [comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281#issuecomment-7207970609) |
+| Seven gauge scenes | Eight. A rolled-back TX A got its own scene so its red check had one to fail | Issue 282 |
+| The first ticket leaves the old query unused | Issue 282 took the refresh, its switch and the disabled-gauge test, because the port made them false | Issue 282 |
+
+**Not proven here:** the gauge across a restart or across instances (stated as limits, not run), a payment status written outside the saga (there is none today, 2.6), and the drop-index SQL on a schema outside the tests.
+
+### The closing review
+
+A two-axis review of `week10...refactor/in-memory-unresolved-gauge` at `b9ce7a65` (6 commits, 37 files), with one reviewer on the standards and one on this spec. Standards found 1 hard breach of a documented rule and 3 possible smells. Spec found 1 partial requirement, no scope creep and nothing implemented wrong; it traced every path that changes a payment's status and found each one reaches the port after its commit. `CODING_STANDARDS.md`'s 측정과 증거 found nothing: the branch adds no setting, and spec line 128's "구현하며 확인" holds because no other test shares `PaymentIncidentE2ETest`'s context.
+
+#### What changed
+
+- **`449b88a1`: the port moved to the order slice.** The saga reached into the payment slice's `required`, against ADR 0013. `monitoringReachesOnlyRequiredPorts` now lets the gauge reach only `application.order.required` and the domain. Rejected: having `PaymentModifyService` call the listener would keep the port in payment, but inside TX A and TX B, so a rolled-back TX B would still move the gauge (story 10).
+
+#### Left as they were
+
+- **Scene 7 asserts the change of −1, not that the series started at 0.** Pinning the start would make the scene depend on running first, which the no-reset, no-`@DirtiesContext` design avoids. Its KDoc and the design say so.
+- **The unresolved statuses are listed three times** (the adapter and two tests), **the scrape line is parsed in two tests**, and **`failTxAOnceAfterItsWrites` is a third throw-once spy helper.** Each copy is short, the two parsers return different types, and `CODING_STANDARDS.md` names the spy helpers one by one.
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/refactor/in-memory-unresolved-gauge/docs/research/week10-in-memory-unresolved-gauge-writing-material.md#spec-281-the-closing-review).
+
+## Draft PR body
+
+The body of the PR from `refactor/in-memory-unresolved-gauge` into `week10`, written at the spec's closing review (2026-11-27) in `/mattpocock-skills:pr`'s shape, with the final check on `67a89f5f` and the comment's link.
+
+### Summary
+
+Week 10, between steps 2 and 3. `commerce.payment.unresolved` no longer counts the payment rows on a schedule. The saga raises and lowers it in memory after each commit, through a required port, and Prometheus sums the instances.
+
+- **Spec:** issue 281, with tickets 282–284, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281#issuecomment-7208126259)
+- **Design:** [`docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/refactor/in-memory-unresolved-gauge/docs/design/payment-incident.md) section 2: 2.1 the gauge and what it replaced, 2.2 the two call sites, 2.6 the limits, 2.7 the scenes, 2.10 what differs from the spec, 2.11 what step 3 inherits
+- **Evidence:** [`docs/evidence/week10/20261127T014458Z-e8a33044/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/refactor/in-memory-unresolved-gauge/docs/evidence/week10/20261127T014458Z-e8a33044), step 2's incident re-recorded on this code
+- **Writing material:** [`docs/research/week10-in-memory-unresolved-gauge-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/refactor/in-memory-unresolved-gauge/docs/research/week10-in-memory-unresolved-gauge-writing-material.md)
+- **No ADR.** ADR 0014's exception for the count is withdrawn with a dated line.
+
+```diff
+ OrderPaymentSaga.confirm
+   TX A  startPayment
++  paymentStatusChangeListener.statusChanged(null, UNKNOWN)      # after TX A returns a new payment
+   PG create
+   applyAndLog                                                   # confirm, the customer's 대사, the PG 알림
+     TX B  applyTransaction / applyRejection
++    if Changed: paymentStatusChangeListener.statusChanged(from, to)   # after the commit
+
+ application/order/required/
++└── PaymentStatusChangeListener      # implemented by adapter.monitoring.UnresolvedPaymentGauge
+ application/payment/
+-├── provided/PaymentFinder.countUnresolved, UnresolvedPaymentCount
+-└── required/PaymentRepository's count query
+ adapter/monitoring/UnresolvedPaymentGauge
+-  @Scheduled refresh every 10 s, NaN before the first, @ConditionalOnProperty
++  one AtomicLong per unresolved status, 0 from startup
+ application.yml
+-  payment.unresolved-gauge.enabled, refresh-interval
+ payment table
+-  IDX_PAYMENT_ON_STATUS             # docs/migrations/2026-11-27-drop-payment-status-index.sql
+```
+
+### Evidence
+
+**Before:** the gauge was `NaN` until its first refresh, lagged commits by up to 10 s, read as `max` across instances, and needed a status index and a scheduler thread for one query.
+
+**After:** `UnresolvedPaymentGaugeE2ETest` reads the real `/actuator/prometheus` scrape in 8 scenes, each asserting the change from its own first reading:
+
+| Scene | `UNKNOWN` | `PENDING` |
+| --- | --- | --- |
+| The scrape holds both series, health UP | present | present |
+| Create's response lost, then the 대사 that finds it | +1, then back to 0 | 0 |
+| Create accepted, still pending at the PG (with an unchanged 대사) | 0 | +1 |
+| Rejected before create | 0 net (+1 then −1) | 0 |
+| A replayed confirm | no change | no change |
+| TX B rolled back | +1 stays | 0 |
+| TX A rolled back | no change | no change |
+| A payment this process never saw start, finished by 대사 | −1 | 0 |
+
+`PaymentIncidentE2ETest` still asserts the absolute `UNKNOWN` 0, 3, 0 and health UP; it no longer polls.
+
+`scripts/final-check --app commerce-api` on `67a89f5f`, a clean tree, after the closing review's fix, with ktlint passing and only documents changed since (6 min 6 s). Its incident run `20261127T022026Z-78422b9c` asserts the same values as the committed one:
+
+| App | Classes | Tests | Failures, errors, skipped |
+| --- | --- | --- | --- |
+| commerce-api | 123 (126 before) | 1248 (1250 before) | 0 |
+
+### Merge Danger
+
+**Door:** two-way
+
+A revert brings the scheduled count back. The drop-index SQL is a document, not run by the app; the index can be added again.
+
+**Blast Radius:** monitoring
+
+- The gauge's meaning changes: a dashboard or alert that reads it with `max` must switch to `sum`.
+- After a restart the `sum` under-reports by the payments unresolved at that moment, and the gap stays after they finish (design 2.6). Step 3's runbook takes the payment rows as the authority.
+- `@EnableScheduling` is back on the relay alone; an instance with the relay off schedules nothing.

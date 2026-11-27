@@ -211,6 +211,7 @@ scripts/final-check --app commerce-api
 - `22d77d50`의 코드는 `81c7a44b`의 것이고, 그 뒤로는 문서만 바뀌었다.
 - (2026-11-26 명세 266의 닫는 리뷰: 리뷰의 고침 `4a1183b5`(KDoc의 새 문장을 영어로)와 `c96fa48d`(saga의 로그 도우미가 `trigger`와 결제를 먼저 받는다) 뒤에 `c96fa48d`의 깨끗한 트리에서 다시 돌렸다(08:35:59Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 124개 클래스, 1244개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 1 s). 고침은 테스트를 더하거나 빼지 않았다. `c96fa48d` 뒤로는 문서만 바뀌었다.) (2026-11-26 PR 273의 리뷰: `ed21c9a4`가 gauge의 장면 하나가 WARN을 기다리게 고쳐 테스트가 바뀌었으므로, `bf124279`의 깨끗한 트리에서 다시 돌렸다(08:52:13Z 무렵 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 124개 클래스, 1244개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 11 s). `bf124279` 뒤로는 문서만 바뀌었다.)
 - (2026-11-27 명세 281: gauge를 메모리로 바꾼 브랜치의 끝의 확인이다. issue 284가 `4c65ad3f`의 깨끗한 트리에서 돌렸다(01:42:39Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 123개 클래스, 1248개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 57 s). 2단계의 마지막 확인(3.11절, 126개 클래스와 1250개 테스트)에서 issue 282가 gauge의 장면 하나와 클래스 하나(`UnresolvedPaymentGaugeDisabledTest`, 1개)를 걷고 gauge의 장면 다섯을 더했고(125개, 1253개), issue 283이 클래스 둘(`PaymentFinderTest` 3개, `UnresolvedPaymentGaugeEnabledPropertyTest` 2개)을 걷었다. 이 실행의 사고 실행 `20261127T014458Z-e8a33044`가 3.5절이 저장소에 실은 것이다. `4c65ad3f`의 코드는 `a4c0f519`의 것이고, 그 뒤로는 문서와 증거만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 이 문서를 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다. commerce-streamer와 commerce-batch는 바뀌지 않아 돌리지 않았다.)
+- (2026-11-27 명세 281의 닫는 리뷰: 리뷰의 고침 `449b88a1`(포트를 주문의 요구 포트로 옮겼다) 뒤에 `67a89f5f`의 깨끗한 트리에서 다시 돌렸다(02:18:34Z 시작, `BOOTSTRAP_SERVERS` 없음). ktlint가 통과했고(1 s), commerce-api는 123개 클래스, 1248개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 6 s). 고침은 테스트를 더하거나 빼지 않았다. 이 실행의 사고 실행 `20261127T022026Z-78422b9c`는 3.5절이 실은 실행과 같은 값(`UNKNOWN` 0, 3, 0, `PENDING` 0, health UP)을 단언하고 시각, PG 주문 번호, 해시만 달라 증거를 바꾸지 않았다. `67a89f5f` 뒤로는 문서만 바뀌었다.)
 
 ### 2.10 명세와 다른 것
 
@@ -225,6 +226,7 @@ scripts/final-check --app commerce-api
 | 장면 3은 처리 중인 생성이 `PENDING`을 1 올리는 것 | 아직 처리 중이라 말하는 대사(`Unchanged`)도 지난다. 그것이 없으면 `Changed`가 아닌 결과의 포트 호출을 잡는 장면이 없다(2.8절) | 282 |
 | 장면 7의 결제는 결제의 제공 포트로 준비한다 | 기반의 도우미 `startPaymentWithoutConfirm`이 준비한다. 장면이 `PaymentRecorder`를 직접 주입하는 것은 `CODING_STANDARDS.md`가 막는다 | 282 |
 | `PaymentFinderTest`의 세는 장면과 EXPLAIN 장면을 지운다 | 그 클래스의 장면은 그 셋뿐이라 클래스를 지웠고, 그 클래스만 부르던 기반의 도우미 둘(`confirmOrderRejectedBeforeCreate`, `confirmOrderLosingCreateResponse`)도 지웠다 | 283 |
+| 결제의 요구 포트에 `PaymentStatusChangeListener`를 더한다 | 주문의 요구 포트(`application.order.required`)에 있다. 부르는 쪽은 주문의 `OrderPaymentSaga`뿐이고, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)은 묻는 슬라이스가 제 `required`에 포트를 두게 한다(2.1절) | 닫는 리뷰 |
 
 ### 2.11 뒤 단계가 넘겨받는 것
 
