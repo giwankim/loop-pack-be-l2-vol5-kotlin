@@ -46,10 +46,10 @@ order by p.order_id;
 대상마다 PG에 직접 묻는다. 커머스에는 PG의 답을 보여 주는 endpoint가 없다.
 
 ```sh
-curl -s -H 'X-USER-ID: <PG 계약의 사용자 ID(pg.user-id)>' '<PG 주소>/api/v1/payments?orderId=<PG 주문 번호>'
+curl -s -w '\nHTTP %{http_code}\n' -H 'X-USER-ID: <PG 계약의 사용자 ID(pg.user-id)>' '<PG 주소>/api/v1/payments?orderId=<PG 주문 번호>'
 ```
 
-답은 PG 거래의 배열이고, 원소마다 `transactionKey`, `orderId`(PG 주문 번호), `amount`, `status`(PG 상태)를 싣는다. 읽기만 하는 조회다. PG 거래를 만들지 않는다.
+마지막 줄이 HTTP 상태다. 답은 PG 거래의 배열이고, 원소마다 `transactionKey`, `orderId`(PG 주문 번호), `amount`, `status`(PG 상태)를 싣는다. 읽기만 하는 조회다. PG 거래를 만들지 않는다.
 
 `runDiagnosis`가 돌렸다(`sendListLookupToPg`). 세 대상 모두 답이 `SUCCESS` 하나였고, 조회 앞뒤로 그 주문의 `orders`, `payment`, `order_event_outbox` 행과 상품의 행이 같았다.
 
@@ -80,10 +80,10 @@ dev·qa·prd의 logstash JSON 로그에서 최상위 필드 `orderId`(또는 `pg
 대상마다 한 번, 고객의 대사를 소유자의 식별자로 부른다.
 
 ```sh
-curl -s -X POST -H 'X-USER-ID: <대상의 user_id>' '<커머스 API 주소>/api/v1/orders/<주문 ID>/payment/reconcile'
+curl -s -w '\nHTTP %{http_code}\n' -X POST -H 'X-USER-ID: <대상의 user_id>' '<커머스 API 주소>/api/v1/orders/<주문 ID>/payment/reconcile'
 ```
 
-- 기대하는 답은 200이고 `data.status`가 `CONFIRMED`, `data.paymentStatus`가 `SUCCESS`다.
+- 마지막 줄이 HTTP 상태다. 기대하는 답은 200이고 `data.status`가 `CONFIRMED`, `data.paymentStatus`가 `SUCCESS`다.
 - 대사는 PG 주문 번호로 PG를 조회하고, 찾은 PG 거래와 결제를 견주어 맞으면 결제 상태를 앞으로 옮긴다. PG 거래를 만들지 않는다.
 - 200이 아니거나 `CONFIRMED`가 아니면 그 대상에서 멈추고 5절로 간다. 202는 주문이 아직 결제 중인 주문이라는 답이다. 대사가 PG를 조회할 수 없었거나, PG 거래를 찾지 못했거나 충돌만 얻었거나, PG가 아직 처리 중이라 말했다. 200이어도 `PAYMENT_FAILED`면 대사가 결제와 맞는 PG 거래의 실패를 확인한 것이다.
 - `X-USER-ID`가 소유자가 아니면 404 `ORDER_NOT_FOUND`다. 대사는 요청자의 주문만 대사한다.
@@ -165,14 +165,14 @@ order by order_id, product_id;
 ```
 
 - 주문의 품목마다 하나이고, `quantity`는 그 품목의 수량, `confirmed_at`은 6.1절의 주문의 `confirmed_at`이다.
-- 같은 주문의 행이 둘이 아니다. 주문 확정 이벤트가 다시 발행되거나 다시 전달되어도 commerce-streamer는 같은 사실을 다시 기록하지 않는다. 토픽의 record 수와 구매 활동의 수는 다르게 셀 수 있으니 구매 활동은 이 표에서 센다.
+- 같은 주문과 상품의 행이 둘이 아니다. 주문 확정 이벤트가 다시 발행되거나 다시 전달되어도 commerce-streamer는 같은 사실을 다시 기록하지 않는다. 토픽의 record 수와 구매 활동의 수는 다르게 셀 수 있으니 구매 활동은 이 표에서 센다.
 - 행이 없으면 6.3절의 행이 `PUBLISHED`인지 먼저 본다. `PUBLISHED`인데 구매 활동이 없으면 commerce-streamer가 그 주문 확정 이벤트에서 멈췄을 수 있다. 이 runbook 밖이다([구매 활동 설계](../design/purchase-activity.md)).
 
 `runFollowOn`이 같은 열을 같은 차례로 읽었다(`purchaseActivityRows`). 테스트는 주문 ID로 거르지 않고 표 전체를 읽으며, `confirmed_at`을 UTC의 글로 바꿔 읽는다. 20건의 주문마다 구매 활동 하나, 수량 1이었고, 복구한 세 주문의 `confirmed_at`은 복구의 시각이었다. 셋째로 복구한 주문의 주문 확정 이벤트를 두 번 발행해 토픽의 record는 21건이었지만, 구매 활동은 20건이었다. 그 주간 랭킹은 점수 20을 보였다.
 
 ## 7. 재진입
 
-멈춘 뒤에는, 그리고 6절이 대상 하나라도 끝나지 않았다고 말하면, 언제나 2.1절의 진단 질의부터 다시 시작한다.
+멈춘 뒤에는, 그리고 6.1절이나 6.2절이 대상 하나라도 끝나지 않았다고 말하면, 언제나 2.1절의 진단 질의부터 다시 시작한다. 결제가 끝난 주문은 2.1절의 목록에 다시 오지 않으므로, 6.3절이나 6.4절이 찾은 빈자리(아웃박스 행이나 구매 활동이 없다)는 재진입이 아니라 그 절이 적은 다음 걸음을 따른다.
 
 1. 2.1절을 다시 돌려 대상의 목록을 새로 고정한다. 앞의 목록을 이어 쓰지 않는다.
 2. 새 목록의 대상마다 2.2절과 2.3절, 3절의 전제를 다시 본다.
