@@ -219,7 +219,7 @@ Week 10, between steps 2 and 3. `commerce.payment.unresolved` no longer counts t
 
 `PaymentIncidentE2ETest` still asserts the absolute `UNKNOWN` 0, 3, 0 and health UP; it no longer polls.
 
-`scripts/final-check --app commerce-api` on `67a89f5f`, a clean tree, after the closing review's fix, with ktlint passing and only documents changed since (6 min 6 s). Its incident run `20261127T022026Z-78422b9c` asserts the same values as the committed one:
+`scripts/final-check --app commerce-api` on `5e030981`, a clean tree, after the closing review's fix and this PR's review fixes, with ktlint passing and only documents changed since (6 min 14 s). Its incident run `20261127T024133Z-c74c819f` asserts the same values as the committed one:
 
 | App | Classes | Tests | Failures, errors, skipped |
 | --- | --- | --- | --- |
@@ -234,5 +234,17 @@ A revert brings the scheduled count back. The drop-index SQL is a document, not 
 **Blast Radius:** monitoring
 
 - The gauge's meaning changes: a dashboard or alert that reads it with `max` must switch to `sum`.
-- After a restart the `sum` under-reports by the payments unresolved at that moment, and the gap stays after they finish (design 2.6). Step 3's runbook takes the payment rows as the authority.
+- A restart moves the `sum` by the value the restarted instance held, and the gap stays after the payments finish (design 2.6). A positive value makes it under-count. A negative one, from finishing payments another instance started, makes it over-count, so the alarm can fire with no unresolved payment. Step 3's runbook checks the payment rows first.
 - `@EnableScheduling` is back on the relay alone; an instance with the relay off schedules nothing.
+
+## PR 285: the review's replies
+
+Recorded 2026-11-27. Two Devin Review threads on PR 285; the replies below are as posted.
+
+### Restart can create phantom payment backlog (design 2.6)
+
+Right, and the design said only the half where the `sum` under-counts. A restart moves the `sum` by the value the restarted instance held: positive makes it under-count, negative (it finished payments another instance started) makes it over-count, and the starting instance's +1 stays, so the alarm can fire with no unresolved payment. `5e030981` states both directions in design 2.6, and 2.11 now tells step 3's runbook to check the payment rows first when the alarm fires; if there are none, the gap is a restart's. The gauge stays as it is: seeding from the DB would bring the count query back and inflate the `sum` per instance (design 2.1).
+
+### Unmatched lookup can pass gauge test
+
+Right. `CODING_STANDARDS.md` asks every test that sends lookups to the test PG to assert `unmatchedRequests()` is empty, and only the lost-response scene did. In the still-pending scene, an unmatched middle lookup gets WireMock's 404, the reconcile reads it as no transaction, and the 202 with an unchanged gauge passes for the wrong reason. `063f325e` adds the assertion to the four scenes that send lookups. Red check (local, not committed): with the scene's `PENDING` lookup stub removed, it now fails on `Expecting empty but was: [GET /api/v1/payments?orderId=…]`. The final check on `5e030981` passes with 123 classes and 1248 tests.
