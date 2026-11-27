@@ -129,3 +129,118 @@ Implemented as `1bce6675` on top of `d0dba7cc`, on `feat/payment-incident-follow
 - **The scope table lists representative classes, not all of them.** Each row has the classes that carry the feature plus the assignment's named ones. "Confirmed" is what those scenes asserted in this run; "unconfirmed" is what no scene ran.
 - **The old run's link became a GitHub tree link at `d0dba7cc`.** The relative link would have pointed at the deleted directory. `check-doc-notes` reports that §3.5 line as changed (a warning), with the status cell and the §4 placeholder.
 - **Found in review:** the follow-on file count (four → five), the test name's line length (164 → 168, ktlint counts the indent), and 보내다/나가다/재발행/중복 for relaying, which the glossary avoids (now 발행하다, 다시 발행하다). Left as found: 회차 for a relay round (as `order-outbox.md` uses it), and the timings as `scripts/final-check` reports them.
+
+## Spec 286: the closing review
+
+Recorded 2026-11-27 from the [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286#issuecomment-7210970334) of [spec 286](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286). The text is the comment's, with its blob URLs.
+
+Step 3 of week 10 is built, and its closing review is done. `scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` on `f854f588`, a clean tree, started 2026-11-27T05:35:50Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-batch 9 classes, 65 tests (27 s); commerce-api 123 classes, 1248 tests (6 min 24 s); commerce-streamer 18 classes, 68 tests (51 s); 0 failures, 0 errors, 0 skipped in all three**. The counts match the gauge branch's final check (commerce-api) and week 9's (commerce-batch, commerce-streamer): this step extends one `@Test` and adds no class or test. No streamer or batch process was left running. Only documents and evidence change after `f854f588`.
+
+Tickets 287–290 are closed, each with its own comment. [Design 4](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md#4-3단계-후속-확인과-runbook) holds the step, and the [runbook](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/runbook/week10.md) is new. No file under `src/main` changed in this spec, and there is no ADR.
+
+### The follow-on, as the committed run shows it
+
+The committed evidence is now this final check's incident run, [`docs/evidence/week10/20261127T053810Z-324a6dcf/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident-follow-on/docs/evidence/week10/20261127T053810Z-324a6dcf): 17 files, no `failure.json`, the four Prometheus texts untrimmed. It replaces issue 290's run `20261127T045326Z-5f278390`, because the review added an assertion to the incident test. The values are the same; only the timestamps, the PG order IDs and the hashes differ.
+
+| What | The committed run |
+| --- | --- |
+| Before the follow-on | Baseline orders 1–10 and fault orders 11–20 under a clock pinned to the week of 2026-09-07. 13, 16 and 19 lost the create's response and were recovered by the customer's 대사, as in step 2 |
+| Relay | One round claims all 20 outbox rows and stops after the broker's ack of the last, order 19's, before saving it. The next round sends it again. All 20 rows `PUBLISHED`, order 19's with 2 attempts |
+| Counts kept apart | 21 records on the topic, 20 outbox rows, 20 purchase activities, 20 processed order confirmations. The streamer logged `RECORDED` once per order and `ALREADY_RECORDED` for order 19 |
+| Purchase activities | One per order, quantity 1. `confirmed_at` is 2026-09-10T10:00Z for 13, 16 and 19 (the recovery) and 2026-09-08T10:00Z for the other 17 |
+| Ranking | `NOT_PUBLISHED` before the run. After it, snapshot `2026-09-07-r1` (revision 1, `FROZEN`, 20 inputs) is `PUBLISHED`, rank 1 product 1 score 20 |
+| Closing observation | Stock 0, 20 PG transactions and 20 creates, no unresolved payment, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, the owner's rows unchanged. The fault files still hash as `recovery.json` holds them (`fault.json` starts `ecb72ee0…`) |
+
+### Where the implementation differs
+
+[Design 4.11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md#411-명세와-다른-것) has four rows, all from the tickets; this review added none. The one that changes what a reader would assume: **the order sent twice is the third recovered one, not the first.** One round claims all 20 rows and saves them in claim order, so the shared spy helper, which throws on the first save, would end the round at order 1 and re-send all 20 (40 records). Only the last row saved can be left as the single repeat, so a stub inside the class throws on that row alone.
+
+**Not proven here:** an operator reconciling without carrying the customer's `X-USER-ID`, diagnosis without reaching the PG, any check of the runbook's text, the runbook's stop conditions, a payment left processing, 누락 복구 in the incident, re-sending the first or second recovered order, and anything about deployment, real accounts, load or throughput ([design 4.7](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md#47-한계), [4.5](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md#45-기능별-검증-범위와-남은-위험)).
+
+### The closing review
+
+A two-axis review of `week10...feat/payment-incident-follow-on` at `64e4977f` (12 commits, 23 files), with one reviewer on the standards and one on this spec. Standards found no breach of a documented rule, 4 wording and doc slips and 5 possible smells. Spec found 1 requirement implemented wrongly, 1 partial and no scope creep. Each was checked against the code and decided.
+
+#### What changed
+
+- **`d1561f37`: the follow-on hashes the fault files again after its last write.** It took the hash as an argument to `observe`, so before `observe` wrote `follow-on.json` and its scrape, and compared only that to `recovery.json`. Recovery hashes again after its assertions; the follow-on now does the same, so story 25's "at the very end" holds.
+- **`f854f588`: the runbook's stop conditions point at re-entry.** Two sentences in 5절 sent the operator to "6절", which is 복구 확인; re-entry is 7절.
+- **`f854f588`: the runbook says 다시 발행되거나 다시 전달되어도.** It said only 다시 전달되다, the broker's redelivery of the same record, but the gap between the topic's records and the purchase activities comes from republishing.
+- **`f854f588`: design 4 freezes a ranking period in the glossary's word**, 고정하다, where it said 얼리다, and 3.5 lists `follow-on.json` beside `recovery.json` as carrying the fault files' hashes.
+
+#### Left as they were
+
+- **"Re-delivered" in the writing material's copies of the 287 and 288 comments.** They are copies of posted comments; the code (`republishedOrderId`), the design and the runbook use the right word.
+- **`runFollowOn`'s length, and its closing block's likeness to recovery's.** Each phase asserts its own record and reads top to bottom as its acceptance criteria.
+- **`date_format(…, STORED_UTC)` in four queries.** The format is already one constant; the queries differ.
+- **`(evidence, baseline, fault, ownerRowsAtStart)` passed to two phases, and `observe`'s optional parts.** Two callers in one class, and each optional belongs to one phase.
+- **Strings for outbox statuses and streamer results.** They are the raw values the test reads from rows and log lines, as an outside observer would.
+- **`readFollowOn` and `written`.** The first is what the test read; the second is that record read back from `follow-on.json`, which the assertions use (story 24).
+
+The committed copy is in the [writing material](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/research/week10-payment-incident-follow-on-writing-material.md#spec-286-the-closing-review).
+
+## Draft PR body
+
+The body of the PR from `feat/payment-incident-follow-on` into `week10`, written at the spec's closing review (2026-11-27) in `/mattpocock-skills:pr`'s shape, with the final check on `f854f588` and the comment's link. It makes no timing, throughput or concurrency claim; none was measured under production settings.
+
+### Summary
+
+Week 10 step 3. The incident test no longer stops at the order row. After recovery, the same `@Test` relays the 20 orders' outbox rows to a real broker, the real commerce-streamer records their purchase activities, commerce-batch publishes the week, and the ranking API shows the product's score 20. One order is sent twice, so the topic's records and the purchase activities are counted apart. A runbook and a per-feature table of what was and was not verified take the result.
+
+- **Spec:** issue 286, with tickets 287–290, and its [closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286#issuecomment-7210970334)
+- **Design:** [`docs/design/payment-incident.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/design/payment-incident.md) section 4: 4.2 the follow-on, 4.3 the evidence, 4.4 the runbook, 4.5 the verification scope, 4.7 the limits, 4.9 the red checks, 4.11 what differs from the spec
+- **Runbook:** [`docs/runbook/week10.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/runbook/week10.md): unresolved payments while health is UP
+- **Evidence:** [`docs/evidence/week10/20261127T053810Z-324a6dcf/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/feat/payment-incident-follow-on/docs/evidence/week10/20261127T053810Z-324a6dcf), the final check's incident run, 17 files as written
+- **Writing material:** [`docs/research/week10-payment-incident-follow-on-writing-material.md`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/feat/payment-incident-follow-on/docs/research/week10-payment-incident-follow-on-writing-material.md), which holds every ticket's closing comment
+- **No production code changed, and no ADR.** Test code and documents only; `CONTEXT.md` gains 운영자.
+
+```text
+PaymentIncidentE2ETest  (clock pinned: confirms 2026-09-08T10:00Z, recovery 2026-09-10T10:00Z)
+  baseline · fault · diagnosis · recovery      as in step 2                         → baseline.json … recovery.json
++ follow-on
++   relay round 1   claims 20 rows, stops after the broker's ack of order 19, before its PUBLISHED
++   relay round 2   past the lease, sends order 19 again          → topic order-events-payment-incident: 21 records
++   commerce-streamer (bootJar)  RECORDED ×20, ALREADY_RECORDED ×1 → 20 purchase activities
++   ranking API     NOT_PUBLISHED                                 → follow-on-ranking-before-run.json
++   commerce-batch (bootJar)  weeklyRanking 2026-09-07 revision 1 → snapshot 2026-09-07-r1, 20 inputs
++   ranking API     PUBLISHED, rank 1 product 1 score 20          → follow-on-ranking.json
++   observe         stock, creates, PG transactions, owner's rows, gauge, health, fault-file hashes → follow-on.json, -health.json, -prometheus.txt
+```
+
+### Evidence
+
+**Before:** step 2 recovered three payments and stopped at one outbox row per order. Nothing showed the recovered orders reaching the purchase activities or the weekly ranking, the clock was unpinned so a run across Monday 00:00 UTC could split the week, and the topic's records and the purchase activities were both 20.
+
+**After:** from the committed run, values as the files hold them.
+
+| Count | Value |
+| --- | --- |
+| Records on the topic | 21 (20 distinct event IDs; order 19's twice) |
+| Outbox rows | 20, all `PUBLISHED`, order 19's with 2 attempts |
+| Purchase activities | 20, one per order, quantity 1; 13, 16, 19 at the recovery's `confirmed_at` |
+| Processed order confirmations | 20 |
+| Ranking | `NOT_PUBLISHED` → `PUBLISHED` `2026-09-07-r1`, rank 1 score 20, input count 20 |
+
+- **What recovery proved still holds:** stock 0, one create per PG order ID, 20 PG transactions, the owner's points and coupons unchanged, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, and the fault files hash as `recovery.json` holds them.
+- **Red checks** (design 4.9): a relay that skips one recovered order's row fails on 19 purchase activities; a recovery pinned to the next week fails on score 17; bypassing the streamer's already-recorded check stops the consumer on the repeated event.
+
+`scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer` on `f854f588`, a clean tree, after the closing review's fixes, with ktlint passing and only documents and evidence changed since:
+
+| App | Classes | Tests | Failures, errors, skipped | Time |
+| --- | --- | --- | --- | --- |
+| commerce-batch | 9 | 65 | 0 | 27 s |
+| commerce-api | 123 | 1248 | 0 | 6 min 24 s |
+| commerce-streamer | 18 | 68 | 0 | 51 s |
+
+The counts are unchanged from the steps before: this step extends one `@Test`. All three apps run so that week 9's restart and late-revision scenes are not skipped. The table in design 4.5 lists, per feature, the classes that ran, what this run confirmed and what is unverified. It claims a controlled local incident and passing regressions, not deployment, real accounts or load.
+
+### Merge Danger
+
+**Door:** two-way
+
+Test code, evidence and documents only. A revert removes the follow-on phase, the runbook and design section 4.
+
+**Blast Radius:** tests
+
+- `PaymentIncidentE2ETest` now starts commerce-streamer and commerce-batch from their bootJars and needs Kafka; it takes about 13 s in the final check.
+- The runbook is not checked by anything: a changed column or endpoint fails the test, not the runbook (design 4.7).

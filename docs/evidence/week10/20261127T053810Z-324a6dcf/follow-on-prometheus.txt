@@ -1,9 +1,9 @@
 # HELP application_ready_time_seconds Time taken for the application to be ready to service requests
 # TYPE application_ready_time_seconds gauge
-application_ready_time_seconds{application="commerce-api",main_application_class="com.loopers.adapter.webapi.v1.order.PaymentIncidentE2ETest"} 2.343
+application_ready_time_seconds{application="commerce-api",main_application_class="com.loopers.adapter.webapi.v1.order.PaymentIncidentE2ETest"} 2.194
 # HELP application_started_time_seconds Time taken to start the application
 # TYPE application_started_time_seconds gauge
-application_started_time_seconds{application="commerce-api",main_application_class="com.loopers.adapter.webapi.v1.order.PaymentIncidentE2ETest"} 2.33
+application_started_time_seconds{application="commerce-api",main_application_class="com.loopers.adapter.webapi.v1.order.PaymentIncidentE2ETest"} 2.177
 # HELP cache_gets_total The number of pending requests
 # TYPE cache_gets_total counter
 cache_gets_total{application="commerce-api",cache="product-list",cache_manager="cacheManager",name="product-list",result="hit"} 0.0
@@ -24,7 +24,7 @@ commerce_payment_unresolved{application="commerce-api",status="PENDING"} 0.0
 commerce_payment_unresolved{application="commerce-api",status="UNKNOWN"} 0.0
 # HELP disk_free_bytes Usable space for path
 # TYPE disk_free_bytes gauge
-disk_free_bytes{application="commerce-api",path="/Users/gwk/Development/learn/loopers/loop-pack-be-l2-vol5-kotlin/apps/commerce-api/."} 4.57602203648E11
+disk_free_bytes{application="commerce-api",path="/Users/gwk/Development/learn/loopers/loop-pack-be-l2-vol5-kotlin/apps/commerce-api/."} 4.57388183552E11
 # HELP disk_total_bytes Total space for path
 # TYPE disk_total_bytes gauge
 disk_total_bytes{application="commerce-api",path="/Users/gwk/Development/learn/loopers/loop-pack-be-l2-vol5-kotlin/apps/commerce-api/."} 9.9466258432E11
@@ -55,10 +55,10 @@ hikaricp_connections{application="commerce-api",pool="mysql-main-pool"} 5.0
 # HELP hikaricp_connections_acquire_seconds Connection acquire time
 # TYPE hikaricp_connections_acquire_seconds summary
 hikaricp_connections_acquire_seconds_count{application="commerce-api",pool="mysql-main-pool"} 298
-hikaricp_connections_acquire_seconds_sum{application="commerce-api",pool="mysql-main-pool"} 0.007
+hikaricp_connections_acquire_seconds_sum{application="commerce-api",pool="mysql-main-pool"} 0.011
 # HELP hikaricp_connections_acquire_seconds_max Connection acquire time
 # TYPE hikaricp_connections_acquire_seconds_max gauge
-hikaricp_connections_acquire_seconds_max{application="commerce-api",pool="mysql-main-pool"} 0.003
+hikaricp_connections_acquire_seconds_max{application="commerce-api",pool="mysql-main-pool"} 0.005
 # HELP hikaricp_connections_active Active connections
 # TYPE hikaricp_connections_active gauge
 hikaricp_connections_active{application="commerce-api",pool="mysql-main-pool"} 0.0
@@ -87,10 +87,10 @@ hikaricp_connections_timeout_total{application="commerce-api",pool="mysql-main-p
 # HELP hikaricp_connections_usage_seconds Connection usage time
 # TYPE hikaricp_connections_usage_seconds summary
 hikaricp_connections_usage_seconds_count{application="commerce-api",pool="mysql-main-pool"} 298
-hikaricp_connections_usage_seconds_sum{application="commerce-api",pool="mysql-main-pool"} 0.942
+hikaricp_connections_usage_seconds_sum{application="commerce-api",pool="mysql-main-pool"} 0.933
 # HELP hikaricp_connections_usage_seconds_max Connection usage time
 # TYPE hikaricp_connections_usage_seconds_max gauge
-hikaricp_connections_usage_seconds_max{application="commerce-api",pool="mysql-main-pool"} 0.087
+hikaricp_connections_usage_seconds_max{application="commerce-api",pool="mysql-main-pool"} 0.102
 # HELP http_client_requests_active_seconds  
 # TYPE http_client_requests_active_seconds summary
 http_client_requests_active_seconds_count{application="commerce-api",client_name="localhost",exception="none",method="GET",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments?orderId={pgOrderId}"} 0
@@ -104,16 +104,16 @@ http_client_requests_active_seconds_max{application="commerce-api",client_name="
 # HELP http_client_requests_seconds  
 # TYPE http_client_requests_seconds summary
 http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="ResourceAccessException",exception="ResourceAccessException",method="POST",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments"} 3
-http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="ResourceAccessException",exception="ResourceAccessException",method="POST",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments"} 0.005772999
+http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="ResourceAccessException",exception="ResourceAccessException",method="POST",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments"} 0.005736251
 http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/payments?orderId={pgOrderId}"} 20
-http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/payments?orderId={pgOrderId}"} 0.040331665
+http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/payments?orderId={pgOrderId}"} 0.039760544
 http_client_requests_seconds_count{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/payments"} 17
-http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/payments"} 0.053689127
+http_client_requests_seconds_sum{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/payments"} 0.052760289
 # HELP http_client_requests_seconds_max  
 # TYPE http_client_requests_seconds_max gauge
-http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="ResourceAccessException",exception="ResourceAccessException",method="POST",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments"} 0.00228225
-http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/payments?orderId={pgOrderId}"} 0.002620166
-http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/payments"} 0.011165709
+http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="ResourceAccessException",exception="ResourceAccessException",method="POST",outcome="UNKNOWN",status="CLIENT_ERROR",uri="/api/v1/payments"} 0.002170084
+http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/payments?orderId={pgOrderId}"} 0.003184958
+http_client_requests_seconds_max{application="commerce-api",client_name="localhost",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/payments"} 0.011474708
 # HELP http_server_requests_active_seconds  
 # TYPE http_server_requests_active_seconds histogram
 http_server_requests_active_seconds_bucket{application="commerce-api",exception="none",method="GET",outcome="SUCCESS",status="200",uri="UNKNOWN",le="120.0"} 0
@@ -204,7 +204,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.008388607"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.009786708"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.011184809"} 0
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.01258291"} 0
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.01258291"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.013981011"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.015379112"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.016777216"} 1
@@ -215,8 +215,8 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.044739241"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.050331646"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.055924051"} 1
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.061516456"} 1
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.067108864"} 1
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.061516456"} 2
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.067108864"} 2
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.089478485"} 2
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.111848106"} 2
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="0.134217727"} 2
@@ -258,7 +258,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="30.0"} 2
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly",le="+Inf"} 2
 http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly"} 2
-http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly"} 0.089574125
+http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly"} 0.070782749
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001048576"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001398101"} 0
@@ -270,7 +270,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.003495251"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.003844776"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.004194304"} 0
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.005592405"} 0
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.005592405"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.006990506"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.008388607"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.009786708"} 1
@@ -329,7 +329,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="30.0"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile",le="+Inf"} 1
 http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile"} 1
-http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.005874125
+http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.004332459
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001048576"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.001398101"} 0
@@ -341,13 +341,13 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.003495251"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.003844776"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.004194304"} 0
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.005592405"} 0
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.005592405"} 1
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.006990506"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.008388607"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.009786708"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.011184809"} 3
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.01258291"} 3
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.013981011"} 3
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.01258291"} 4
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.013981011"} 5
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.015379112"} 5
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.016777216"} 5
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="0.022369621"} 6
@@ -400,7 +400,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="30.0"} 6
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile",le="+Inf"} 6
 http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 6
-http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.066142541
+http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.059000872
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.001"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.001048576"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.001398101"} 0
@@ -411,19 +411,19 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.003145726"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.003495251"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.003844776"} 1
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.004194304"} 1
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.004194304"} 2
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.005592405"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.006990506"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.008388607"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.009786708"} 3
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.011184809"} 3
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.01258291"} 5
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.013981011"} 11
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.015379112"} 15
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.016777216"} 18
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.01258291"} 8
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.013981011"} 13
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.015379112"} 14
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.016777216"} 16
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.022369621"} 19
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.027962026"} 20
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.033554431"} 20
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.027962026"} 19
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.033554431"} 19
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.039146836"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.044739241"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="0.050331646"} 20
@@ -471,7 +471,7 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="30.0"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback",le="+Inf"} 20
 http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback"} 20
-http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback"} 0.266728085
+http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback"} 0.279581543
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.001"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.001048576"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.001398101"} 0
@@ -488,13 +488,13 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.008388607"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.009786708"} 0
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.011184809"} 0
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.01258291"} 2
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.013981011"} 2
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.015379112"} 8
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.01258291"} 3
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.013981011"} 7
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.015379112"} 10
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.016777216"} 14
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.022369621"} 17
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.027962026"} 19
-http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.033554431"} 19
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.022369621"} 16
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.027962026"} 18
+http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.033554431"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.039146836"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.044739241"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="0.050331646"} 20
@@ -542,14 +542,14 @@ http_server_requests_seconds_bucket{application="commerce-api",error="none",exce
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="30.0"} 20
 http_server_requests_seconds_bucket{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm",le="+Inf"} 20
 http_server_requests_seconds_count{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 20
-http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 0.345583126
+http_server_requests_seconds_sum{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 0.34207933
 # HELP http_server_requests_seconds_max  
 # TYPE http_server_requests_seconds_max gauge
-http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly"} 0.076853834
-http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.005874125
-http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.018788542
-http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback"} 0.023677125
-http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 0.034789375
+http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="GET",outcome="SUCCESS",status="200",uri="/api/v1/rankings/weekly"} 0.058239083
+http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="CLIENT_ERROR",status="404",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.004332459
+http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/orders/{orderId}/payment/reconcile"} 0.017579333
+http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="200",uri="/api/v1/payments/callback"} 0.03467825
+http_server_requests_seconds_max{application="commerce-api",error="none",exception="none",method="POST",outcome="SUCCESS",status="202",uri="/api/v1/orders/{orderId}/confirm"} 0.030954042
 # HELP jdbc_connections_active Current number of active connections that have been allocated from the data source.
 # TYPE jdbc_connections_active gauge
 jdbc_connections_active{application="commerce-api",name="mySqlMain"} 0.0
@@ -582,55 +582,55 @@ jvm_buffer_total_capacity_bytes{application="commerce-api",id="mapped"} 0.0
 jvm_buffer_total_capacity_bytes{application="commerce-api",id="mapped - 'non-volatile memory'"} 0.0
 # HELP jvm_classes_loaded_classes The number of classes that are currently loaded in the Java virtual machine
 # TYPE jvm_classes_loaded_classes gauge
-jvm_classes_loaded_classes{application="commerce-api"} 44342.0
+jvm_classes_loaded_classes{application="commerce-api"} 44374.0
 # HELP jvm_classes_loaded_count_classes_total The number of classes loaded in the Java virtual machine
 # TYPE jvm_classes_loaded_count_classes_total counter
-jvm_classes_loaded_count_classes_total{application="commerce-api"} 44363.0
+jvm_classes_loaded_count_classes_total{application="commerce-api"} 44395.0
 # HELP jvm_classes_unloaded_classes_total The number of classes unloaded in the Java virtual machine
 # TYPE jvm_classes_unloaded_classes_total counter
 jvm_classes_unloaded_classes_total{application="commerce-api"} 21.0
 # HELP jvm_compilation_time_ms_total The approximate accumulated elapsed time spent in compilation
 # TYPE jvm_compilation_time_ms_total counter
-jvm_compilation_time_ms_total{application="commerce-api",compiler="HotSpot 64-Bit Tiered Compilers"} 68661.0
+jvm_compilation_time_ms_total{application="commerce-api",compiler="HotSpot 64-Bit Tiered Compilers"} 69663.0
 # HELP jvm_gc_concurrent_phase_time_seconds Time spent in concurrent phase
 # TYPE jvm_gc_concurrent_phase_time_seconds summary
 jvm_gc_concurrent_phase_time_seconds_count{action="end of concurrent GC pause",application="commerce-api",cause="No GC",gc="G1 Concurrent GC"} 2
-jvm_gc_concurrent_phase_time_seconds_sum{action="end of concurrent GC pause",application="commerce-api",cause="No GC",gc="G1 Concurrent GC"} 0.022
+jvm_gc_concurrent_phase_time_seconds_sum{action="end of concurrent GC pause",application="commerce-api",cause="No GC",gc="G1 Concurrent GC"} 0.012
 # HELP jvm_gc_concurrent_phase_time_seconds_max Time spent in concurrent phase
 # TYPE jvm_gc_concurrent_phase_time_seconds_max gauge
-jvm_gc_concurrent_phase_time_seconds_max{action="end of concurrent GC pause",application="commerce-api",cause="No GC",gc="G1 Concurrent GC"} 0.022
+jvm_gc_concurrent_phase_time_seconds_max{action="end of concurrent GC pause",application="commerce-api",cause="No GC",gc="G1 Concurrent GC"} 0.012
 # HELP jvm_gc_live_data_size_bytes Size of long-lived heap memory pool after reclamation
 # TYPE jvm_gc_live_data_size_bytes gauge
-jvm_gc_live_data_size_bytes{application="commerce-api"} 0.0
+jvm_gc_live_data_size_bytes{application="commerce-api"} 3.79584512E8
 # HELP jvm_gc_max_data_size_bytes Max size of long-lived heap memory pool
 # TYPE jvm_gc_max_data_size_bytes gauge
 jvm_gc_max_data_size_bytes{application="commerce-api"} 1.073741824E9
 # HELP jvm_gc_memory_allocated_bytes_total Incremented for an increase in the size of the (young) heap memory pool after one GC to before the next
 # TYPE jvm_gc_memory_allocated_bytes_total counter
-jvm_gc_memory_allocated_bytes_total{application="commerce-api"} 2.36978176E8
+jvm_gc_memory_allocated_bytes_total{application="commerce-api"} 2.34881024E8
 # HELP jvm_gc_memory_promoted_bytes_total Count of positive increases in the size of the old generation memory pool before GC to after GC
 # TYPE jvm_gc_memory_promoted_bytes_total counter
-jvm_gc_memory_promoted_bytes_total{application="commerce-api"} 3535320.0
+jvm_gc_memory_promoted_bytes_total{application="commerce-api"} 2928848.0
 # HELP jvm_gc_overhead An approximation of the percent of CPU time used by GC activities over the last lookback period or since monitoring began, whichever is shorter, in the range [0..1]
 # TYPE jvm_gc_overhead gauge
-jvm_gc_overhead{application="commerce-api"} 0.0014824374140181712
+jvm_gc_overhead{application="commerce-api"} 3.8296932964571815E-4
 # HELP jvm_gc_pause_seconds Time spent in GC pause
 # TYPE jvm_gc_pause_seconds summary
 jvm_gc_pause_seconds_count{action="end of minor GC",application="commerce-api",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 1
-jvm_gc_pause_seconds_sum{action="end of minor GC",application="commerce-api",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.012
+jvm_gc_pause_seconds_sum{action="end of minor GC",application="commerce-api",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.005
 # HELP jvm_gc_pause_seconds_max Time spent in GC pause
 # TYPE jvm_gc_pause_seconds_max gauge
-jvm_gc_pause_seconds_max{action="end of minor GC",application="commerce-api",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.012
+jvm_gc_pause_seconds_max{action="end of minor GC",application="commerce-api",cause="G1 Evacuation Pause",gc="G1 Young Generation"} 0.005
 # HELP jvm_memory_committed_bytes The amount of memory in bytes that is committed for the Java virtual machine to use
 # TYPE jvm_memory_committed_bytes gauge
-jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Eden Space"} 2.28589568E8
-jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Old Gen"} 4.20478976E8
-jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Survivor Space"} 1.6777216E7
+jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Eden Space"} 2.2544384E8
+jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Old Gen"} 4.16284672E8
+jvm_memory_committed_bytes{application="commerce-api",area="heap",id="G1 Survivor Space"} 1.3631488E7
 jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-nmethods'"} 2555904.0
-jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6973824E7
-jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'profiled nmethods'"} 5.4198272E7
+jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6908288E7
+jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'profiled nmethods'"} 5.4001664E7
 jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="Compressed Class Space"} 3.3816576E7
-jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="Metaspace"} 2.85605888E8
+jvm_memory_committed_bytes{application="commerce-api",area="nonheap",id="Metaspace"} 2.85671424E8
 # HELP jvm_memory_max_bytes The maximum amount of memory in bytes that can be used for memory management
 # TYPE jvm_memory_max_bytes gauge
 jvm_memory_max_bytes{application="commerce-api",area="heap",id="G1 Eden Space"} -1.0
@@ -643,17 +643,17 @@ jvm_memory_max_bytes{application="commerce-api",area="nonheap",id="Compressed Cl
 jvm_memory_max_bytes{application="commerce-api",area="nonheap",id="Metaspace"} -1.0
 # HELP jvm_memory_usage_after_gc The percentage of long-lived heap pool used after the last GC event, in the range [0..1]
 # TYPE jvm_memory_usage_after_gc gauge
-jvm_memory_usage_after_gc{application="commerce-api",area="heap",pool="long-lived"} 0.356395922601223
+jvm_memory_usage_after_gc{application="commerce-api",area="heap",pool="long-lived"} 0.353515625
 # HELP jvm_memory_used_bytes The amount of used memory
 # TYPE jvm_memory_used_bytes gauge
-jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Eden Space"} 6.3963136E7
-jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Old Gen"} 3.82677208E8
-jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Survivor Space"} 1.6252928E7
-jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-nmethods'"} 2034496.0
-jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6907712E7
-jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'profiled nmethods'"} 5.393856E7
-jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="Compressed Class Space"} 3.2944112E7
-jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="Metaspace"} 2.83740808E8
+jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Eden Space"} 1.49946368E8
+jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Old Gen"} 3.79584512E8
+jvm_memory_used_bytes{application="commerce-api",area="heap",id="G1 Survivor Space"} 1.3631488E7
+jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-nmethods'"} 2035392.0
+jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'non-profiled nmethods'"} 1.6870976E7
+jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="CodeHeap 'profiled nmethods'"} 5.3751872E7
+jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="Compressed Class Space"} 3.295528E7
+jvm_memory_used_bytes{application="commerce-api",area="nonheap",id="Metaspace"} 2.83797232E8
 # HELP jvm_threads_daemon_threads The current number of live daemon threads
 # TYPE jvm_threads_daemon_threads gauge
 jvm_threads_daemon_threads{application="commerce-api"} 110.0
@@ -665,7 +665,7 @@ jvm_threads_live_threads{application="commerce-api"} 168.0
 jvm_threads_peak_threads{application="commerce-api"} 169.0
 # HELP jvm_threads_started_threads_total The total number of application threads started in the JVM
 # TYPE jvm_threads_started_threads_total counter
-jvm_threads_started_threads_total{application="commerce-api"} 1416.0
+jvm_threads_started_threads_total{application="commerce-api"} 1404.0
 # HELP jvm_threads_states_threads The current number of threads
 # TYPE jvm_threads_states_threads gauge
 jvm_threads_states_threads{application="commerce-api",state="blocked"} 0.0
@@ -683,22 +683,22 @@ logback_events_total{application="commerce-api",level="trace"} 0.0
 logback_events_total{application="commerce-api",level="warn"} 9.0
 # HELP process_cpu_time_ns_total The "cpu time" used by the Java Virtual Machine process
 # TYPE process_cpu_time_ns_total counter
-process_cpu_time_ns_total{application="commerce-api"} 1.45300787E11
+process_cpu_time_ns_total{application="commerce-api"} 1.44195321E11
 # HELP process_cpu_usage The "recent cpu usage" for the Java Virtual Machine process
 # TYPE process_cpu_usage gauge
-process_cpu_usage{application="commerce-api"} 0.010116055486562943
+process_cpu_usage{application="commerce-api"} 0.006344884656076707
 # HELP process_files_max_files The maximum file descriptor count
 # TYPE process_files_max_files gauge
 process_files_max_files{application="commerce-api"} 1048576.0
 # HELP process_files_open_files The open file descriptor count
 # TYPE process_files_open_files gauge
-process_files_open_files{application="commerce-api"} 603.0
+process_files_open_files{application="commerce-api"} 605.0
 # HELP process_start_time_seconds Start time of the process since unix epoch.
 # TYPE process_start_time_seconds gauge
-process_start_time_seconds{application="commerce-api"} 1.795755094169E9
+process_start_time_seconds{application="commerce-api"} 1.795757783852E9
 # HELP process_uptime_seconds The uptime of the Java virtual machine
 # TYPE process_uptime_seconds gauge
-process_uptime_seconds{application="commerce-api"} 126.307
+process_uptime_seconds{application="commerce-api"} 118.97
 # HELP resilience4j_circuitbreaker_buffered_calls The number of buffered successful calls stored in the ring buffer
 # TYPE resilience4j_circuitbreaker_buffered_calls gauge
 resilience4j_circuitbreaker_buffered_calls{application="commerce-api",kind="failed",name="pg-lookup"} 0.0
@@ -710,12 +710,12 @@ resilience4j_circuitbreaker_calls_seconds_sum{application="commerce-api",kind="f
 resilience4j_circuitbreaker_calls_seconds_count{application="commerce-api",kind="ignored",name="pg-lookup"} 0
 resilience4j_circuitbreaker_calls_seconds_sum{application="commerce-api",kind="ignored",name="pg-lookup"} 0.0
 resilience4j_circuitbreaker_calls_seconds_count{application="commerce-api",kind="successful",name="pg-lookup"} 20
-resilience4j_circuitbreaker_calls_seconds_sum{application="commerce-api",kind="successful",name="pg-lookup"} 0.045747711
+resilience4j_circuitbreaker_calls_seconds_sum{application="commerce-api",kind="successful",name="pg-lookup"} 0.045220916
 # HELP resilience4j_circuitbreaker_calls_seconds_max Total number of successful calls
 # TYPE resilience4j_circuitbreaker_calls_seconds_max gauge
 resilience4j_circuitbreaker_calls_seconds_max{application="commerce-api",kind="failed",name="pg-lookup"} 0.0
 resilience4j_circuitbreaker_calls_seconds_max{application="commerce-api",kind="ignored",name="pg-lookup"} 0.0
-resilience4j_circuitbreaker_calls_seconds_max{application="commerce-api",kind="successful",name="pg-lookup"} 0.002942375
+resilience4j_circuitbreaker_calls_seconds_max{application="commerce-api",kind="successful",name="pg-lookup"} 0.003704958
 # HELP resilience4j_circuitbreaker_failure_rate The failure rate of the circuit breaker
 # TYPE resilience4j_circuitbreaker_failure_rate gauge
 resilience4j_circuitbreaker_failure_rate{application="commerce-api",name="pg-lookup"} 0.0
@@ -746,130 +746,130 @@ resilience4j_retry_calls_total{application="commerce-api",kind="successful_witho
 # HELP spring_data_repository_invocations_seconds Duration of repository invocations
 # TYPE spring_data_repository_invocations_seconds summary
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="existsById",repository="UserRepository",state="SUCCESS"} 27
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="existsById",repository="UserRepository",state="SUCCESS"} 0.01215621
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="existsById",repository="UserRepository",state="SUCCESS"} 0.011820791
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="existsByName",repository="BrandRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="existsByName",repository="BrandRepository",state="SUCCESS"} 0.0012215
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="existsByName",repository="BrandRepository",state="SUCCESS"} 0.001165292
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findAllByIdIn",repository="ProductRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findAllByIdIn",repository="ProductRepository",state="SUCCESS"} 0.002180125
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findAllByIdIn",repository="ProductRepository",state="SUCCESS"} 0.002307917
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findByCampaignIdAndUserId",repository="CouponRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByCampaignIdAndUserId",repository="CouponRepository",state="SUCCESS"} 0.002017208
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByCampaignIdAndUserId",repository="CouponRepository",state="SUCCESS"} 0.001787667
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findById",repository="ProductRepository",state="SUCCESS"} 21
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findById",repository="ProductRepository",state="SUCCESS"} 0.010788538
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findById",repository="ProductRepository",state="SUCCESS"} 0.011776376
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findByIdempotencyKey",repository="PaymentRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByIdempotencyKey",repository="PaymentRepository",state="SUCCESS"} 0.010122957
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByIdempotencyKey",repository="PaymentRepository",state="SUCCESS"} 0.009749414
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findByOrderId",repository="PaymentRepository",state="SUCCESS"} 100
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByOrderId",repository="PaymentRepository",state="SUCCESS"} 0.089612076
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByOrderId",repository="PaymentRepository",state="SUCCESS"} 0.087121672
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findByPgOrderId",repository="PaymentRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByPgOrderId",repository="PaymentRepository",state="SUCCESS"} 0.009566377
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findByPgOrderId",repository="PaymentRepository",state="SUCCESS"} 0.011109919
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findDueForUpdate",repository="OrderEventOutboxRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findDueForUpdate",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.010051417
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findDueForUpdate",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.008325833
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForShareById",repository="BrandRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForShareById",repository="BrandRepository",state="SUCCESS"} 9.665E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForShareById",repository="BrandRepository",state="SUCCESS"} 9.83583E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForUpdateById",repository="CouponCampaignRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="CouponCampaignRepository",state="SUCCESS"} 0.001347917
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="CouponCampaignRepository",state="SUCCESS"} 0.001001417
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForUpdateById",repository="OrderEventOutboxRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.019813545
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.016415456
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForUpdateById",repository="ProductRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="ProductRepository",state="SUCCESS"} 0.010668251
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateById",repository="ProductRepository",state="SUCCESS"} 0.010401751
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForUpdateByUserId",repository="PointAccountRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateByUserId",repository="PointAccountRepository",state="SUCCESS"} 0.002710833
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateByUserId",repository="PointAccountRepository",state="SUCCESS"} 0.002673125
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findForUpdateWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 57
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.078943874
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findForUpdateWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.072590463
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findProductLikeCounts",repository="LikeRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findProductLikeCounts",repository="LikeRepository",state="SUCCESS"} 0.001735584
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findProductLikeCounts",repository="LikeRepository",state="SUCCESS"} 0.001731208
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findWithLineItemsById",repository="OrderRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findWithLineItemsById",repository="OrderRepository",state="SUCCESS"} 0.02227954
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findWithLineItemsById",repository="OrderRepository",state="SUCCESS"} 0.021797249
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="findWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 10
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.013061165
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="findWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.011047083
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="flush",repository="ProductListRevisionRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="flush",repository="ProductListRevisionRepository",state="SUCCESS"} 0.001385167
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="flush",repository="ProductListRevisionRepository",state="SUCCESS"} 0.001270375
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="raise",repository="ProductListRevisionRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="raise",repository="ProductListRevisionRepository",state="SUCCESS"} 0.00110525
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="raise",repository="ProductListRevisionRepository",state="SUCCESS"} 0.001150501
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="BrandRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="BrandRepository",state="SUCCESS"} 4.47083E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="BrandRepository",state="SUCCESS"} 3.80334E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="CouponCampaignRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="CouponCampaignRepository",state="SUCCESS"} 0.001063875
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="CouponCampaignRepository",state="SUCCESS"} 8.71583E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="CouponRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="CouponRepository",state="SUCCESS"} 6.17792E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="CouponRepository",state="SUCCESS"} 4.3875E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="OrderEventOutboxRepository",state="SUCCESS"} 40
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.013181832
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.012502164
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="OrderRepository",state="SUCCESS"} 77
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="OrderRepository",state="SUCCESS"} 0.02127271
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="OrderRepository",state="SUCCESS"} 0.023209333
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="PaymentRepository",state="SUCCESS"} 57
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="PaymentRepository",state="SUCCESS"} 0.011779997
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="PaymentRepository",state="SUCCESS"} 0.011375916
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="PointAccountRepository",state="SUCCESS"} 3
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="PointAccountRepository",state="SUCCESS"} 0.001102917
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="PointAccountRepository",state="SUCCESS"} 0.001175292
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="ProductRepository",state="SUCCESS"} 1
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="ProductRepository",state="SUCCESS"} 7.88208E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="ProductRepository",state="SUCCESS"} 7.30375E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="save",repository="UserRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="UserRepository",state="SUCCESS"} 0.00172675
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="save",repository="UserRepository",state="SUCCESS"} 0.001702459
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="saveAll",repository="OrderEventOutboxRepository",state="SUCCESS"} 2
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="saveAll",repository="OrderEventOutboxRepository",state="SUCCESS"} 4.34584E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="saveAll",repository="OrderEventOutboxRepository",state="SUCCESS"} 2.77917E-4
 spring_data_repository_invocations_seconds_count{application="commerce-api",exception="None",method="saveAll",repository="ProductRepository",state="SUCCESS"} 20
-spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="saveAll",repository="ProductRepository",state="SUCCESS"} 8.72164E-4
+spring_data_repository_invocations_seconds_sum{application="commerce-api",exception="None",method="saveAll",repository="ProductRepository",state="SUCCESS"} 8.55582E-4
 # HELP spring_data_repository_invocations_seconds_max Duration of repository invocations
 # TYPE spring_data_repository_invocations_seconds_max gauge
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="existsById",repository="UserRepository",state="SUCCESS"} 0.001011375
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="existsByName",repository="BrandRepository",state="SUCCESS"} 0.0012215
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findAllByIdIn",repository="ProductRepository",state="SUCCESS"} 0.002180125
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByCampaignIdAndUserId",repository="CouponRepository",state="SUCCESS"} 0.001581125
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findById",repository="ProductRepository",state="SUCCESS"} 8.86667E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByIdempotencyKey",repository="PaymentRepository",state="SUCCESS"} 0.001599708
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByOrderId",repository="PaymentRepository",state="SUCCESS"} 0.004070583
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByPgOrderId",repository="PaymentRepository",state="SUCCESS"} 0.001303917
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findDueForUpdate",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.00514175
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForShareById",repository="BrandRepository",state="SUCCESS"} 9.665E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="CouponCampaignRepository",state="SUCCESS"} 0.001347917
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.004698417
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="ProductRepository",state="SUCCESS"} 0.001278625
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateByUserId",repository="PointAccountRepository",state="SUCCESS"} 0.002710833
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.005685625
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findProductLikeCounts",repository="LikeRepository",state="SUCCESS"} 0.001735584
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findWithLineItemsById",repository="OrderRepository",state="SUCCESS"} 0.001921709
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.001598041
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="flush",repository="ProductListRevisionRepository",state="SUCCESS"} 0.001324167
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="raise",repository="ProductListRevisionRepository",state="SUCCESS"} 6.005E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="BrandRepository",state="SUCCESS"} 4.47083E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="CouponCampaignRepository",state="SUCCESS"} 0.001020708
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="CouponRepository",state="SUCCESS"} 6.17792E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.001020667
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="OrderRepository",state="SUCCESS"} 0.001839459
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="PaymentRepository",state="SUCCESS"} 6.19791E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="PointAccountRepository",state="SUCCESS"} 6.41375E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="ProductRepository",state="SUCCESS"} 7.88208E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="UserRepository",state="SUCCESS"} 0.001239458
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="saveAll",repository="OrderEventOutboxRepository",state="SUCCESS"} 2.20167E-4
-spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="saveAll",repository="ProductRepository",state="SUCCESS"} 5.5166E-5
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="existsById",repository="UserRepository",state="SUCCESS"} 0.001039792
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="existsByName",repository="BrandRepository",state="SUCCESS"} 0.001165292
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findAllByIdIn",repository="ProductRepository",state="SUCCESS"} 0.002307917
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByCampaignIdAndUserId",repository="CouponRepository",state="SUCCESS"} 0.001413834
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findById",repository="ProductRepository",state="SUCCESS"} 0.001488208
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByIdempotencyKey",repository="PaymentRepository",state="SUCCESS"} 0.00116
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByOrderId",repository="PaymentRepository",state="SUCCESS"} 0.002714875
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findByPgOrderId",repository="PaymentRepository",state="SUCCESS"} 0.001662875
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findDueForUpdate",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.005602916
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForShareById",repository="BrandRepository",state="SUCCESS"} 9.83583E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="CouponCampaignRepository",state="SUCCESS"} 0.001001417
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="OrderEventOutboxRepository",state="SUCCESS"} 0.005019333
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateById",repository="ProductRepository",state="SUCCESS"} 0.001221083
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateByUserId",repository="PointAccountRepository",state="SUCCESS"} 0.002673125
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findForUpdateWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.002185334
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findProductLikeCounts",repository="LikeRepository",state="SUCCESS"} 0.001731208
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findWithLineItemsById",repository="OrderRepository",state="SUCCESS"} 0.002070416
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="findWithLineItemsByIdAndUserId",repository="OrderRepository",state="SUCCESS"} 0.001558625
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="flush",repository="ProductListRevisionRepository",state="SUCCESS"} 0.001223209
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="raise",repository="ProductListRevisionRepository",state="SUCCESS"} 6.28959E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="BrandRepository",state="SUCCESS"} 3.80334E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="CouponCampaignRepository",state="SUCCESS"} 8.39125E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="CouponRepository",state="SUCCESS"} 4.3875E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="OrderEventOutboxRepository",state="SUCCESS"} 9.33209E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="OrderRepository",state="SUCCESS"} 0.002279916
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="PaymentRepository",state="SUCCESS"} 7.10833E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="PointAccountRepository",state="SUCCESS"} 6.25E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="ProductRepository",state="SUCCESS"} 7.30375E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="save",repository="UserRepository",state="SUCCESS"} 0.001192625
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="saveAll",repository="OrderEventOutboxRepository",state="SUCCESS"} 1.42917E-4
+spring_data_repository_invocations_seconds_max{application="commerce-api",exception="None",method="saveAll",repository="ProductRepository",state="SUCCESS"} 6.525E-5
 # HELP spring_kafka_template_seconds KafkaTemplate Timer
 # TYPE spring_kafka_template_seconds summary
 spring_kafka_template_seconds_count{application="commerce-api",exception="none",name="kafkaTemplate",result="success"} 21
-spring_kafka_template_seconds_sum{application="commerce-api",exception="none",name="kafkaTemplate",result="success"} 0.2172655
+spring_kafka_template_seconds_sum{application="commerce-api",exception="none",name="kafkaTemplate",result="success"} 0.200149582
 # HELP spring_kafka_template_seconds_max KafkaTemplate Timer
 # TYPE spring_kafka_template_seconds_max gauge
-spring_kafka_template_seconds_max{application="commerce-api",exception="none",name="kafkaTemplate",result="success"} 0.01675925
+spring_kafka_template_seconds_max{application="commerce-api",exception="none",name="kafkaTemplate",result="success"} 0.014001125
 # HELP spring_security_http_unsecured_requests_active_seconds  
 # TYPE spring_security_http_unsecured_requests_active_seconds summary
 spring_security_http_unsecured_requests_active_seconds_count{application="commerce-api"} 1
-spring_security_http_unsecured_requests_active_seconds_sum{application="commerce-api"} 0.0011995
+spring_security_http_unsecured_requests_active_seconds_sum{application="commerce-api"} 0.002343709
 # HELP spring_security_http_unsecured_requests_active_seconds_max  
 # TYPE spring_security_http_unsecured_requests_active_seconds_max gauge
-spring_security_http_unsecured_requests_active_seconds_max{application="commerce-api"} 0.001204084
+spring_security_http_unsecured_requests_active_seconds_max{application="commerce-api"} 0.002347459
 # HELP spring_security_http_unsecured_requests_seconds  
 # TYPE spring_security_http_unsecured_requests_seconds summary
 spring_security_http_unsecured_requests_seconds_count{application="commerce-api",error="none"} 56
-spring_security_http_unsecured_requests_seconds_sum{application="commerce-api",error="none"} 0.80329112
+spring_security_http_unsecured_requests_seconds_sum{application="commerce-api",error="none"} 0.78740971
 # HELP spring_security_http_unsecured_requests_seconds_max  
 # TYPE spring_security_http_unsecured_requests_seconds_max gauge
-spring_security_http_unsecured_requests_seconds_max{application="commerce-api",error="none"} 0.075889208
+spring_security_http_unsecured_requests_seconds_max{application="commerce-api",error="none"} 0.057732208
 # HELP system_cpu_count The number of processors available to the Java virtual machine
 # TYPE system_cpu_count gauge
 system_cpu_count{application="commerce-api"} 10.0
 # HELP system_cpu_usage The "recent cpu usage" of the system the application is running in
 # TYPE system_cpu_usage gauge
-system_cpu_usage{application="commerce-api"} 0.5306938455507644
+system_cpu_usage{application="commerce-api"} 0.3948973455888669
 # HELP system_load_average_1m The sum of the number of runnable entities queued to available processors and the number of runnable entities running on the available processors averaged over a period of time
 # TYPE system_load_average_1m gauge
-system_load_average_1m{application="commerce-api"} 5.25390625
+system_load_average_1m{application="commerce-api"} 4.42626953125
 # HELP tomcat_sessions_active_current_sessions  
 # TYPE tomcat_sessions_active_current_sessions gauge
 tomcat_sessions_active_current_sessions{application="commerce-api"} 0.0
