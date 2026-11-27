@@ -96,3 +96,20 @@ Implemented as `d275387e` on top of `4c65ad3f`. Documents and evidence only; no 
 - **Sections 1 and 3 got dated notes, section 2 a rewrite.** A new 1.3 lists tickets 282–284, and 1.1 has the branch as stage 1′. Section 3 keeps its text, with notes where the gauge changed it: 3.2 (no polling; absolute 0/3/0 because no other class shares that context), 3.6 and 3.8 (the count after a restart), 3.11 and 3.13 (pointers to 2.9 and 2.11).
 - **The old section 2's history moved behind a pinned link.** The AC leaves no room for the removed scenes, red checks 268/269 or the three spec-difference rows, so the dated paragraph links `blob/ddbe2bf1`. 2.8 now has issue 282's four red checks and 283's index flip beside step 1's two that still hold. 2.10 adds five rows for spec 281.
 - **Review.** Neither axis found a missing requirement. Fixed before the commit: 알림/알리다 named the port call, which `CONTEXT.md` avoids because 알림 is the PG callback; 조각 named the spec's slices, which `CODING_STANDARDS.md` keeps for `Slice` pages; a leftover clause in 2.4 said the management server reads committed rows; the scene table claimed the raw text carries `-1.0`, while the scene asserts only the change of −1.
+
+## Spec 281: the port moves to the order slice
+
+Recorded 2026-11-27 from [spec 281's review comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281#issuecomment-7207970609). The text below is the comment's.
+
+**Deviation from the spec: the port moved to the order slice.** `449b88a1` on top of `b9ce7a65`.
+
+The spec said "결제의 요구 포트에 `PaymentStatusChangeListener`를 더한다". The branch review (standards axis) found that this breaks [ADR 0013](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/449b88a1/docs/adr/0013-commerce-api-follows-splearn-hexagonal-structure.md): the slice that asks declares the port in its own `required`, and other slices are called only through their provided ports. The port's only caller is the order slice's `OrderPaymentSaga`, so the order slice was reaching into payment's `required`. Every earlier cross-slice port follows the rule (`brand.required.ProductDeleter`, `product.required.LikeCounter`).
+
+- `PaymentStatusChangeListener` now lives in `application.order.required`. Its KDoc says why: the saga is the only caller and the only code that knows the change committed.
+- `HexagonalArchitectureTest.monitoringReachesOnlyRequiredPorts` now lets `adapter.monitoring` reach only `application.order.required` and the domain.
+- [`payment-incident.md` 2.1](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/449b88a1/docs/design/payment-incident.md#21-지표): the port row and the layer-rule rows name the new package, with one dated note. The 1.3 row for ticket 282 is left as that ticket's record.
+- Rejected alternative: having `PaymentModifyService` call the listener would keep the port in payment. It would then run inside TX A and TX B, so a rolled-back TX B would still move the gauge (story 10).
+
+Ran `HexagonalArchitectureTest` (10), `UnresolvedPaymentGaugeE2ETest` (8) and `OrderPaymentLogEventTest` (22): 40 tests, 0 failures. The full final check was not re-run; behaviour is unchanged.
+
+Also from the review, kept as is: scene 7 asserts only the −1 change, not that the series started at 0, because pinning the start would make it order-dependent; the scene's KDoc and design 2.x already say so. The three duplication smells (the status list in three places, the scrape parsing in two tests, a third throw-once spy helper) were left alone.
