@@ -13,6 +13,7 @@ import com.loopers.application.order.OrderEventOutboxModifyService
 import com.loopers.application.order.provided.OrderEventRelayer
 import com.loopers.domain.payment.CreditCard
 import com.loopers.domain.user.User
+import com.loopers.support.CommerceBatchProcess
 import com.loopers.support.CommerceStreamerProcess
 import com.loopers.support.DatabaseCleanUp
 import com.loopers.support.EnableTestPg
@@ -20,6 +21,7 @@ import com.loopers.support.IncidentPg
 import com.loopers.support.TestClock
 import com.loopers.support.TestPg
 import com.loopers.support.TopicReader
+import com.loopers.support.WeeklyRankingBatchTables
 import com.loopers.support.logEvents
 import com.loopers.support.logEventsOf
 import com.loopers.support.test.BaseRealPortWebApiAdapterTest
@@ -61,6 +63,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.HexFormat
 import java.util.UUID
+import javax.sql.DataSource
 
 /**
  * The payment incident of the week 10 assignment as one lifecycle (spec 274): one `@Test` that later tickets extend, so the same
@@ -77,7 +80,9 @@ import java.util.UUID
  *   recovered by the customer's reconcile endpoint as the owner, and the fault's same 10 orders are read again: all confirmed,
  *   with no second create. Repeating the reconcile and the 알림 changes nothing, and another user is refused.
  * - Follow-on (spec 286): the relay sends the 20 orders' outbox rows to the class's own topic, one of them twice, and the real
- *   commerce-streamer records one purchase activity per order.
+ *   commerce-streamer records one purchase activity per order. The real commerce-batch then publishes revision 1 of the week,
+ *   and the ranking API, `NOT_PUBLISHED` before the run, shows the product at score 20: the baseline's 10, the fault's 7 and
+ *   the 3 recovered. The phase ends with the same observation as the others and reads again what recovery proved.
  *
  * The clock is pinned from the start to one finished week ([PERIOD_START]): the baseline and the fault confirm on its Tuesday, and
  * recovery reconciles on its Thursday, so the run cannot split across a Monday and the two times cannot be mistaken for each other.
@@ -108,6 +113,7 @@ class PaymentIncidentE2ETest(
     private val kafkaProperties: KafkaProperties,
     private val orderEventsProperties: OrderEventsProperties,
     private val environment: Environment,
+    private val dataSource: DataSource,
 ) : BaseRealPortWebApiAdapterTest() {
     companion object {
         const val TOPIC = "order-events-payment-incident"
@@ -116,6 +122,13 @@ class PaymentIncidentE2ETest(
 
         /** The ranking period the incident falls in: the UTC week from Monday 2026-09-07T00:00Z. */
         private val PERIOD_START: LocalDate = LocalDate.parse("2026-09-07")
+
+        /** The one revision the follow-on publishes for [PERIOD_START]. There is no revision 2. */
+        private const val SNAPSHOT_ID = "2026-09-07-r1"
+
+        private const val REVISION = 1L
+
+        private const val RANKING_ENDPOINT = "/api/v1/rankings/weekly"
 
         /** Where the clock stands while the baseline and the fault confirm: the Tuesday of [PERIOD_START]'s week. */
         private val CONFIRMED_AT: Instant = Instant.parse("2026-09-08T10:00:00Z")
@@ -189,6 +202,8 @@ class PaymentIncidentE2ETest(
     @BeforeEach
     fun setUp() {
         databaseCleanUp.truncateAllTables()
+        // The ranking's and Batch's tables as the batch creates them, whatever an earlier class left (`WeeklyRankingFlowTest`).
+        WeeklyRankingBatchTables.reset(dataSource)
         owner = prepareUser()
         charge(amount = POINT_BALANCE, user = owner)
         prepareCoupon(prepareCouponCampaign(), owner)
@@ -212,8 +227,10 @@ class PaymentIncidentE2ETest(
         }
     }
 
+    // The name is spec 286's, one sentence per phase, and no shorter sentence says all five; issue 288 keeps it whole.
+    @Suppress("ktlint:standard:max-line-length")
     @Test
-    fun `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once`() {
+    fun `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once, and the weekly ranking counts all twenty`() {
         val evidence = IncidentEvidence.start(objectMapper, Instant.now())
         var phase = "baseline"
         var failure: Throwable? = null
@@ -233,7 +250,7 @@ class PaymentIncidentE2ETest(
             runRecovery(evidence, baseline, fault, ownerRowsAtStart)
 
             phase = "follow-on"
-            runFollowOn(baseline, fault)
+            runFollowOn(evidence, baseline, fault, ownerRowsAtStart)
         } catch (exception: Throwable) {
             failure = exception
             throw exception
@@ -534,9 +551,23 @@ class PaymentIncidentE2ETest(
      * The broker then holds 21 records of 20 events, and the streamer records the repeat as already recorded, so the purchase
      * activities stay at 20: the records on the topic and the purchase activities are counted apart.
      *
-     * Every row is read with `select`. The test writes nothing to the streamer's tables.
+     * Then the week's ranking: the API is read before the run, commerce-batch runs `weeklyRanking` once from its bootJar for
+     * revision 1 of [PERIOD_START], and the API is read again. Each answer's body is written as received.
+     *
+     * The phase ends with [observe], as the others do, and its record carries [FollowOnRecord]: per order, the outbox row and the
+     * purchase activities, then the snapshot rows and the four counts kept apart. The assertions read that record and the bodies
+     * written. The purchase activities' count comes first and the ranking right after it, so a row the relay skips fails on 19
+     * and a recovery in another week fails on the score, before any check of a single row. Last, the record reads again what
+     * recovery proved: the stock, one create per PG order ID, the PG transactions, the owner's rows and the fault files' hashes.
+     *
+     * Every row is read with `select`. Past `setUp`'s reset, the test writes nothing to the streamer's or the ranking's tables.
      */
-    private fun runFollowOn(baseline: PhaseRecord, fault: PhaseRecord) {
+    private fun runFollowOn(
+        evidence: IncidentEvidence,
+        baseline: PhaseRecord,
+        fault: PhaseRecord,
+        ownerRowsAtStart: Map<String, List<Map<String, Any?>>>,
+    ) {
         val allOrderIds = baseline.orderIds + fault.orderIds
         val recoveredOrderIds = fault.lostOrderIds
         val republishedOrderId = recoveredOrderIds.last()
@@ -555,16 +586,77 @@ class PaymentIncidentE2ETest(
 
                 val records = stoppedRoundRecords + nextRoundRecords
                 val lines = startedStreamer.awaitRecordedLines(expected = records.size) { followOnRowsLine() }
-                val purchaseActivities = purchaseActivityRows()
                 val confirmations = processedConfirmationRows()
-                val outboxes = outboxRows()
                 val confirmedAts = orderConfirmedAts(allOrderIds)
+
+                val rankingBeforeRun = requestGetWeeklyRanking()
+                assertThat(rankingBeforeRun).hasStatusOk()
+                evidence.writeText("follow-on-ranking-before-run.json", bodyAsReceived(rankingBeforeRun))
+                CommerceBatchProcess.run(
+                    CommerceBatchProcess.Settings.of(environment),
+                    CommerceBatchProcess.WeeklyRankingParameters(PERIOD_START, SNAPSHOT_ID, REVISION),
+                )
+                val rankingAfterRun = requestGetWeeklyRanking()
+                assertThat(rankingAfterRun).hasStatusOk()
+                evidence.writeText("follow-on-ranking.json", bodyAsReceived(rankingAfterRun))
+
+                val outboxRows = outboxRows()
+                val outboxes = outboxRows.associateBy { it.orderId }
+                val purchaseActivityRows = purchaseActivityRows()
+                val readFollowOn = FollowOnRecord(
+                    orders = allOrderIds.sorted().map { orderId ->
+                        val outbox = outboxes[orderId]
+                        FollowOnOrderRecord(
+                            orderId = orderId,
+                            eventId = outbox?.eventId,
+                            outboxStatus = outbox?.status,
+                            outboxAttemptCount = outbox?.attemptCount,
+                            purchaseActivities = purchaseActivityRows.filter { it.orderId == orderId },
+                        )
+                    },
+                    snapshots = snapshotRows(),
+                    ownerRows = ownerRows(),
+                    counts = FollowOnCounts(
+                        topicRecords = records.size,
+                        outboxRows = outboxRows.size,
+                        purchaseActivities = purchaseActivityRows.size,
+                        processedConfirmations = confirmations.size,
+                    ),
+                )
+                val record = observe(
+                    evidence,
+                    "follow-on",
+                    allOrderIds,
+                    recoveredOrderIds,
+                    expectedUnknown = "0.0",
+                    faultFileSha256 = faultFileSha256(evidence),
+                    followOn = readFollowOn,
+                )
+                val written = checkNotNull(record.followOn)
+                val purchaseActivities = written.orders.flatMap { it.purchaseActivities }
+
+                assertThat(purchaseActivities).describedAs { followOnRowsLine() }.hasSize(allOrderIds.size)
+
+                val writtenRankingBeforeRun = evidence.read("follow-on-ranking-before-run.json")
+                assertThat(JsonPath.read<String>(writtenRankingBeforeRun, "$.data.status")).isEqualTo("NOT_PUBLISHED")
+                assertThat(JsonPath.read<Any?>(writtenRankingBeforeRun, "$.data.snapshotId")).isNull()
+                assertThat(rankingItemsOf(writtenRankingBeforeRun)).isEmpty()
+                val writtenRanking = evidence.read("follow-on-ranking.json")
+                assertThat(JsonPath.read<String>(writtenRanking, "$.data.status")).isEqualTo("PUBLISHED")
+                assertThat(JsonPath.read<String>(writtenRanking, "$.data.snapshotId")).isEqualTo(SNAPSHOT_ID)
+                assertThat(rankingItemsOf(writtenRanking)).containsExactly("rank 1 product ${product.id} score 20")
+                assertThat(written.snapshots.map { it.describe() }).containsExactly(
+                    "$SNAPSHOT_ID period $PERIOD_START revision $REVISION inputs 20",
+                )
+                assertThat(written.counts).isEqualTo(
+                    FollowOnCounts(topicRecords = 21, outboxRows = 20, purchaseActivities = 20, processedConfirmations = 20),
+                )
 
                 val expectedConfirmedAt = allOrderIds.associateWith { orderId ->
                     if (orderId in recoveredOrderIds) RECOVERED_AT else CONFIRMED_AT
                 }
                 val periodEnd = PERIOD_START.plusDays(7).atStartOfDay(ZoneOffset.UTC).toInstant()
-                assertThat(purchaseActivities).describedAs { followOnRowsLine() }.hasSize(allOrderIds.size)
+                assertThat(written.orders.map { it.purchaseActivities.size }).containsOnly(1)
                 assertThat(purchaseActivities.map { it.orderId }).containsExactlyElementsOf(allOrderIds.sorted())
                 assertThat(purchaseActivities).allSatisfy({
                     assertThat(it.productId).isEqualTo(product.id)
@@ -592,10 +684,10 @@ class PaymentIncidentE2ETest(
                 )
                 assertThat(outboxesAfterTheStop.filter { it.status == "PUBLISHED" }).hasSize(allOrderIds.size - 1)
                 assertThat(outboxRowCounts()).isEqualTo(allOrderIds.associateWith { 1 })
-                assertThat(outboxes).hasSize(allOrderIds.size).allSatisfy({
+                assertThat(written.orders).hasSize(allOrderIds.size).allSatisfy({
                     assertThat(it.eventId).isEqualTo(eventIdOf(it.orderId))
-                    assertThat(it.status).isEqualTo("PUBLISHED")
-                    assertThat(it.attemptCount).isEqualTo(if (it.orderId == republishedOrderId) 2 else 1)
+                    assertThat(it.outboxStatus).isEqualTo("PUBLISHED")
+                    assertThat(it.outboxAttemptCount).isEqualTo(if (it.orderId == republishedOrderId) 2 else 1)
                 })
 
                 val recordEventIds = records.map { eventIdOfRecord(it.value()) }
@@ -616,6 +708,27 @@ class PaymentIncidentE2ETest(
                     }
                     assertThat(resultsOf(lines, orderId)).describedAs("order $orderId").isEqualTo(expectedResults)
                 }
+
+                val pgTransactions = incidentPg.transactions().associateBy { it.pgOrderId }
+                assertThat(record.orders.map { it.orderId }).isEqualTo(allOrderIds)
+                assertThat(record.orders).hasSize(2 * ORDERS_PER_PHASE).allSatisfy({
+                    assertThat(it.orderStatus).isEqualTo("CONFIRMED")
+                    assertThat(it.paymentStatus).isEqualTo("SUCCESS")
+                    assertThat(it.reservedQuantity).isZero()
+                    assertThat(it.createCount).isOne()
+                    assertThat(it.transactionKey).isEqualTo(pgTransactions.getValue(checkNotNull(it.pgOrderId)).transactionKey)
+                })
+                assertThat(record.unresolvedOrderIds).isEmpty()
+                assertThat(record.unresolvedGauge).isEqualTo(mapOf("UNKNOWN" to "0.0", "PENDING" to "0.0"))
+                assertThat(record.healthStatus).isEqualTo("UP")
+                assertThat(record.pgTransactionCount).isEqualTo(2 * ORDERS_PER_PHASE)
+                assertThat(record.pgCreateCount).isEqualTo(2 * ORDERS_PER_PHASE)
+                assertThat(record.productStock).isZero()
+                assertThat(record.pgOrderIdsCreatedMoreThanOnce).isEmpty()
+                assertThat(record.unmatchedPgRequests).isZero()
+                assertThat(written.ownerRows).isEqualTo(ownerRowsAtStart)
+                val recoverySha256: Map<String, String> = JsonPath.read(evidence.read("recovery.json"), "$.faultFileSha256")
+                assertThat(record.faultFileSha256).isEqualTo(recoverySha256)
             }
         } finally {
             startedStreamer.terminate()
@@ -704,6 +817,41 @@ class PaymentIncidentE2ETest(
         }
     }
 
+    /** Every snapshot the batch left, in revision order. Only the batch writes the table. */
+    private fun snapshotRows(): List<SnapshotRow> {
+        val sql = "select snapshot_id, period_start, revision, state, date_format(frozen_at, '$STORED_UTC') as frozen_at, " +
+            "input_count, input_checksum from weekly_ranking_snapshot order by revision"
+
+        return jdbc.query(sql) { rs, _ ->
+            SnapshotRow(
+                snapshotId = rs.getString("snapshot_id"),
+                periodStart = rs.getString("period_start"),
+                revision = rs.getLong("revision"),
+                state = rs.getString("state"),
+                frozenAt = rs.getString("frozen_at"),
+                inputCount = rs.getLong("input_count"),
+                inputChecksum = rs.getString("input_checksum"),
+            )
+        }
+    }
+
+    /** The customer's weekly ranking of [PERIOD_START]. */
+    private fun requestGetWeeklyRanking(): MvcTestResult {
+        return mvc.get().uri(RANKING_ENDPOINT).param("periodStart", PERIOD_START.toString()).exchange()
+    }
+
+    /** The response's body as the API sent it: the API writes UTF-8 JSON, whatever charset the response names. */
+    private fun bodyAsReceived(result: MvcTestResult): String {
+        return result.response.getContentAsString(StandardCharsets.UTF_8)
+    }
+
+    /** The ranking's items in a written body, one line each, in the body's order. */
+    private fun rankingItemsOf(body: String): List<String> {
+        return objectMapper.readTree(body)["data"]["items"].asIterable().map { item ->
+            "rank ${item["rank"].asInt()} product ${item["product"]["id"].asLong()} score ${item["score"].asLong()}"
+        }
+    }
+
     /** Each order's `confirmed_at` as stored, by order ID. */
     private fun orderConfirmedAts(orderIds: List<Long>): Map<Long, Instant> {
         val placeholders = orderIds.joinToString(",") { "?" }
@@ -783,6 +931,7 @@ class PaymentIncidentE2ETest(
         lostOrderIds: List<Long>,
         expectedUnknown: String,
         faultFileSha256: Map<String, String>? = null,
+        followOn: FollowOnRecord? = null,
     ): PhaseRecord {
         val scraped = scrape()
         assertThat(scraped.gauge).isEqualTo(mapOf("UNKNOWN" to expectedUnknown, "PENDING" to "0.0"))
@@ -802,6 +951,7 @@ class PaymentIncidentE2ETest(
             healthStatus = scraped.healthStatus,
             unresolvedGauge = scraped.gauge,
             faultFileSha256 = faultFileSha256,
+            followOn = followOn,
         )
         val (recordFile, healthFile, prometheusFile) = phaseFiles(phase)
         evidence.writeJson(recordFile, record)
@@ -954,11 +1104,58 @@ private data class PhaseRecord(
     /** The scraped `commerce_payment_unresolved` value by `status`, as Prometheus writes it, or `null` for a missing series. */
     val unresolvedGauge: Map<String, String?>,
     /**
-     * Recovery's only: the SHA-256 of each fault file, taken before the first reconcile. Left out of the other phases' files, as
-     * the shared mapper leaves out every `null`.
+     * Recovery's and the follow-on's: the SHA-256 of each fault file, taken before the first reconcile and again at the end. Left
+     * out of the other phases' files, as the shared mapper leaves out every `null`.
      */
     val faultFileSha256: Map<String, String>? = null,
+    /** The follow-on's only: what the relay, the streamer and the batch left. Left out of the other phases' files. */
+    val followOn: FollowOnRecord? = null,
 )
+
+/** What the follow-on read after the relay, the streamer and the batch, as `follow-on.json` holds it. */
+private data class FollowOnRecord(
+    val orders: List<FollowOnOrderRecord>,
+    val snapshots: List<SnapshotRow>,
+    /** The owner's point account and coupons, read whole at the end, to equal the run's first reading. */
+    val ownerRows: Map<String, List<Map<String, Any?>>>,
+    val counts: FollowOnCounts,
+)
+
+/**
+ * One order past recovery: its outbox row and the purchase activities the streamer recorded for it. Every field is written,
+ * `null` included, so an order without an outbox row says so.
+ */
+@JsonInclude(JsonInclude.Include.ALWAYS)
+private data class FollowOnOrderRecord(
+    val orderId: Long,
+    val eventId: String?,
+    val outboxStatus: String?,
+    val outboxAttemptCount: Int?,
+    val purchaseActivities: List<PurchaseActivityRow>,
+)
+
+/** The four counts the follow-on keeps apart: a publish retry is a record on the topic, not a purchase. */
+private data class FollowOnCounts(
+    val topicRecords: Int,
+    val outboxRows: Int,
+    val purchaseActivities: Int,
+    val processedConfirmations: Int,
+)
+
+/** One row of commerce-batch's `weekly_ranking_snapshot`. */
+private data class SnapshotRow(
+    val snapshotId: String,
+    val periodStart: String,
+    val revision: Long,
+    val state: String,
+    val frozenAt: String,
+    val inputCount: Long,
+    val inputChecksum: String,
+) {
+    fun describe(): String {
+        return "$snapshotId period $periodStart revision $revision inputs $inputCount"
+    }
+}
 
 /**
  * One order as its phase observed it. Every field is written, `null` included: a lost order's payment has no transaction key, and
