@@ -47,3 +47,29 @@ The first run of the TX A check passed, which exposed a scene green for the wron
 - **Taken from issue 283 because this ticket forces them:** the gauge's `@Scheduled` refresh, its `@EnableScheduling`, `@ConditionalOnProperty`, `NaN` and the failed-count WARN ("registered in every profile", "no longer reads the scheduled count", "the `NaN` scene is gone"); the relay KDoc's sentence about the gauge's scheduling, which became false; and `UnresolvedPaymentGaugeDisabledTest`, which asserted the gauge absent under `test`. Issue 283 is left with the count, its Finder method and value type, the index, the two properties (in `application.yml` and the real-port base), `UnresolvedPaymentGaugeEnabledPropertyTest` and ADR 0014's line. The KDocs of the base and the property test say the properties no longer do anything.
 - **Review fixes before the commit.** The scene first injected `PaymentRecorder` to prepare the payment, which `CODING_STANDARDS.md` forbids (§Fixture, §도우미), so the base got `startPaymentWithoutConfirm`, named for its bypass. Three passages of `CODING_STANDARDS.md` still described the scheduled gauge and got dated notes. `PaymentIncidentE2ETest`'s comments spoke of a refresh.
 - **The gauge's context is one more cached context,** as before: the real-port base, `@EnableTestPg` and the `OrderPaymentSagaSteps` spy in place of the `PaymentQueryService` spy.
+
+## Issue 283: remove the scheduled count of unresolved payments, its index and its properties
+
+Recorded 2026-11-27 from [issue 283's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/283#issuecomment-7207486136). The text below is the comment's.
+
+Implemented as `a4c0f519` on top of `8ae899fd`. `scripts/final-check --app commerce-api` on `a4c0f519`, a clean tree, started 2026-11-27T01:29:52Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1248 tests (6 min 22 s), 0 failures, 0 errors, 0 skipped**. Against issue 282's run (125 classes, 1253 tests) the difference is the deleted classes: `PaymentFinderTest` (3 tests) and `UnresolvedPaymentGaugeEnabledPropertyTest` (2).
+
+### Acceptance criteria
+
+- [x] **No production code or configuration mentions the count, its value type, the two properties or the index.** `PaymentFinder.countUnresolved`, its implementation in `PaymentQueryService`, `UnresolvedPaymentCount`, `PaymentRepository.countByStatusIn` and its row type `PaymentStatusCount` are gone. The `payment.unresolved-gauge.*` documents are gone from `application.yml`'s default and `test` sections. `git grep` finds none of them under `apps/`.
+- [x] **The count scenes and the EXPLAIN scene, `UnresolvedPaymentGaugeDisabledTest` and `UnresolvedPaymentGaugeEnabledPropertyTest` are deleted.** `PaymentFinderTest` held only those three scenes, so the class went. `UnresolvedPaymentGaugeDisabledTest` already went in issue 282.
+- [x] **A context without the relay registers no scheduled task.** `@EnableScheduling` is on `OrderEventRelayScheduler` alone (the gauge's went in issue 282), and its KDoc no longer mentions the gauge. The four `OrderEventRelay*Test` classes are unchanged and pass.
+- [x] **The schema Hibernate creates under test has no index on the payment status.** `PaymentRepositoryTest`'s index scene now reads `the payment table has no non-unique index`. It was flipped first and failed with `Expecting empty but was: ["IDX_PAYMENT_ON_STATUS:1:status"]`, then passed once the entity's `@Table` lost the index.
+- [x] **The drop-index SQL file exists beside the file that added it.** `docs/migrations/2026-11-27-drop-payment-status-index.sql` (`ALTER TABLE payment DROP INDEX IDX_PAYMENT_ON_STATUS, ALGORITHM = INPLACE, LOCK = NONE`); `2026-11-26-payment-status-index.sql` stays.
+- [x] **ADR 0014 carries the dated withdrawal line.** A 2026-11-27 line under the 2026-11-26 memo, which stays.
+- [x] **The gauge scenes and `PaymentIncidentE2ETest` pass unchanged.** Neither file is in the diff.
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** The run above.
+- [x] **The closing comment is appended to the writing material.** This comment.
+
+### Decisions made while implementing
+
+- **Two test-base helpers went with `PaymentFinderTest`.** `confirmOrderRejectedBeforeCreate` and `confirmOrderLosingCreateResponse` came in with the count (PR 273) for its one-payment-per-status preparation, and nothing else called them. `confirmOrder` is back to its body before PR 273. `TestPg.rejectsBeforeCreate` and `losesCreateResponse` stay: many scenes call them.
+- **The real-port base sets no property now.** Its KDoc says instead that the gauge moves only after a commit, which is why its scenes leave the test transaction.
+- **`CODING_STANDARDS.md`:** the bullet on the gauge's property test went, with a dated note on the relay's trigger-test bullet, whose shape it copied. Dated notes record `PaymentFinderTest`'s removal where it was named as a `JdbcTemplate` user and as the helpers' first caller, and the properties' removal in the real-port base's bullet.
+- **Left for issue 284:** `docs/design/payment-incident.md` still describes the scheduled count, the index, the switch and `PaymentFinderTest` as current; the rewrite of its section 2 and the evidence rerun are that ticket's.
+- **Review.** Standards and spec reviews found no hard violation or missing requirement. Fixed before the commit: the index scene's KDoc said the foreign key had an index of its own (it reuses `UK_PAYMENT_ON_ORDER_ID`), and the real-port base's KDoc still spoke of "writes counted".
