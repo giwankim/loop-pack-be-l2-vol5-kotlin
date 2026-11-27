@@ -248,3 +248,11 @@ Right, and the design said only the half where the `sum` under-counts. A restart
 ### Unmatched lookup can pass gauge test
 
 Right. `CODING_STANDARDS.md` asks every test that sends lookups to the test PG to assert `unmatchedRequests()` is empty, and only the lost-response scene did. In the still-pending scene, an unmatched middle lookup gets WireMock's 404, the reconcile reads it as no transaction, and the 202 with an unchanged gauge passes for the wrong reason. `063f325e` adds the assertion to the four scenes that send lookups. Red check (local, not committed): with the scene's `PENDING` lookup stub removed, it now fails on `Expecting empty but was: [GET /api/v1/payments?orderId=…]`. The final check on `5e030981` passes with 123 classes and 1248 tests.
+
+### The correction on spec 281
+
+Recorded 2026-11-27 from [spec 281's follow-up comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281#issuecomment-7208444134). The text below is the comment's.
+
+**Correction (2026-11-27, [PR 285's review](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/285#discussion_r4715179869)).** The closing comment says a restart makes the `sum` under-count. A restart moves the `sum` by the value the restarted instance held: a positive value makes it under-count, and a negative one (the instance finished payments another instance started) makes it over-count, so the alarm can fire with no unresolved payment. [Design 2.6 and 2.11](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/blob/5e030981/docs/design/payment-incident.md#26-한계) state both directions, and step 3's runbook checks the payment rows first when the alarm fires (`5e030981`).
+
+The same review found four gauge scenes that send PG lookups without asserting `unmatchedRequests()` is empty, as `CODING_STANDARDS.md` asks; `063f325e` adds it. `scripts/final-check --app commerce-api` on `5e030981`: 123 classes, 1248 tests, 0 failures (6 min 14 s).
