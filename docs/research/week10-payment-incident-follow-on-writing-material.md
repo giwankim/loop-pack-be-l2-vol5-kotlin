@@ -4,7 +4,7 @@ Material for the technical writing quest, not the write-up itself. Each section 
 
 ## Issue 287: relaying the incident's twenty outbox rows under a pinned clock, and one purchase activity per order
 
-Recorded 2026-11-27 from issue 287's closing comment. The text below is the comment's.
+Recorded 2026-11-27 from [issue 287's closing comment](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/287#issuecomment-7209476967). The text below is the comment's.
 
 Implemented as `fe1a525e` on top of `c4054768`, on `feat/payment-incident-follow-on`. `scripts/final-check --app commerce-api` on `fe1a525e`, started 2026-11-27T03:51:30Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1248 tests (6 min 28 s), 0 failures, 0 errors, 0 skipped**. The tree's one uncommitted change was the 운영자 entry in `CONTEXT.md`, which issue 289 commits and no test reads. No file under `src/main` changed since `c4054768`. The check's incident run is `20261127T035326Z-59776a3c`.
 
