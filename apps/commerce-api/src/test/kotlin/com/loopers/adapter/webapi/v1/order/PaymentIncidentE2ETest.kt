@@ -729,6 +729,7 @@ class PaymentIncidentE2ETest(
                 assertThat(written.ownerRows).isEqualTo(ownerRowsAtStart)
                 val recoverySha256: Map<String, String> = JsonPath.read(evidence.read("recovery.json"), "$.faultFileSha256")
                 assertThat(record.faultFileSha256).isEqualTo(recoverySha256)
+                assertThat(faultFileSha256(evidence)).isEqualTo(recoverySha256)
             }
         } finally {
             startedStreamer.terminate()
