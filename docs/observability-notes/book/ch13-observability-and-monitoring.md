@@ -10,8 +10,8 @@ Started: 2026-11-26 · Finished:
   - **Logs**: what happened, as discrete events with a timestamp. Detailed, expensive to store and search. (13.1)
   - **Metrics**: how much and how often, as numbers sampled over time. Cheap, good for alerts and trends, but no detail about a single request. (13.3)
   - **Traces**: where the time went for one request, as a tree of spans across services. (13.4)
-- **Health** is a fourth, simpler signal: a yes/no answer for the platform. **Liveness** = restart me if this fails; **readiness** = stop sending me traffic if this fails. (13.2)
-- **Each signal has the same pipeline**: the app *exposes* it → something *collects* it → a backend *stores* it → Grafana *queries* it.
+- **Health** is a fourth, simpler signal: a yes/no answer for the platform. **Liveness** = restart me if this fails; **readiness** = stop sending me traffic if this fails. The platform's probe reads the Actuator response and acts on it directly: no collector, no storage, no Grafana. (13.2)
+- **The three telemetry signals share one pipeline** (health does not): the app *exposes* it → something *collects* it → a backend *stores* it → Grafana *queries* it.
 
   | Signal | App side | Collector | Storage | Query |
   |---|---|---|---|---|
@@ -24,7 +24,7 @@ Started: 2026-11-26 · Finished:
 - **Micrometer** is to metrics what SLF4J is to logging: a vendor-neutral facade. Code records a counter, gauge, or timer; a registry translates it into Prometheus' format.
 - **Metric types**: a **counter** only goes up (requests served), a **gauge** goes up and down (queue size right now), a **timer** records count and duration (latency).
 - **Labels (tags)** split one metric into several series, such as `status="UNKNOWN"`. Every distinct label value is a separate time series, so labels must have few possible values: never a user ID or order ID.
-- **Correlation** ties the signals together: a trace ID written into every log line lets me jump from a slow trace to its logs, and from an alert on a metric to an example trace.
+- **Correlation** ties the signals together: a trace ID written into every log line lets me jump from a slow trace to its logs and back. A metric carries no trace ID of its own: getting from an alert on a metric to an example trace needs an **exemplar**, a trace ID attached to a metric sample.
 
 ## Running notes
 <!-- One heading per book section, filled in while reading -->
