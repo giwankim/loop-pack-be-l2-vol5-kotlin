@@ -7,7 +7,7 @@ import org.springframework.mock.env.MockEnvironment
 
 /**
  * What the real `application.yml` says the gauge's properties are under each profile, read the way the application reads them,
- * without starting a context. Every instance reports the gauge, so it is on everywhere but `test`.
+ * without starting a context. The gauge no longer reads them (spec 281): they belong to the scheduled count and go with it.
  */
 class UnresolvedPaymentGaugeEnabledPropertyTest {
     @Test

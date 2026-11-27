@@ -14,6 +14,7 @@ import com.loopers.application.payment.provided.PgOutcomeUnknownException
 import com.loopers.application.payment.provided.PgRejectedException
 import com.loopers.application.payment.provided.PgTransactionClient
 import com.loopers.application.payment.provided.PgUnavailableException
+import com.loopers.application.payment.required.PaymentStatusChangeListener
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.payment.Payment
@@ -54,6 +55,7 @@ class OrderPaymentSaga(
     private val paymentFinder: PaymentFinder,
     private val paymentValidator: PaymentValidator,
     private val pgTransactionClient: PgTransactionClient,
+    private val paymentStatusChangeListener: PaymentStatusChangeListener,
 ) : OrderConfirmer, OrderPaymentReconciler {
     /**
      * 키의 형식은 TX A를 열기 전에 본다. 웹 경계도 보지만 이 포트는 웹을 거치지 않고도 불린다(카탈로그 설계 5.25). `utf8mb4_bin`은 PAD
@@ -71,8 +73,10 @@ class OrderPaymentSaga(
      *   3, 4). 결과는 대사가 조회로 안다.
      *
      * Every PG answer leaves one `pg.create.*` event with the trigger `confirm` ([logEvent]), and each TX B it goes to leaves one
-     * `payment.apply.*` event after it ([applyAndLog]). A replay calls no PG and leaves none. The gauge `commerce.payment.unresolved`
-     * counts the payments an unknown answer leaves, and the WARN event `pg.create.outcome-unknown` names their orders.
+     * `payment.apply.*` event after it ([applyAndLog]). A replay calls no PG and leaves none. Once TX A has returned a new payment
+     * its status goes to [PaymentStatusChangeListener] (`null` to 결과 미확인), and a TX B that changes it reports the change in
+     * [applyAndLog]. A replay and a TX A that rolls back report nothing. The gauge `commerce.payment.unresolved` that listens counts
+     * the payments an unknown answer leaves, and the WARN event `pg.create.outcome-unknown` names their orders.
      *
      * 두 예외는 트랜잭션 밖에서 정확한 타입으로 잡는다. 넓게 잡으면 결과 미확인이 실패로 바뀔 수 있다.
      */
@@ -81,6 +85,7 @@ class OrderPaymentSaga(
 
         val started = startPaymentOrRejectUsedKey(userId, orderId, idempotencyKey)
         val payment = started.payment ?: return started.info
+        paymentStatusChangeListener.statusChanged(from = null, to = payment.status)
 
         val pgTransaction = try {
             pgTransactionClient.create(payment, request.toCreditCard())
@@ -255,6 +260,9 @@ class OrderPaymentSaga(
      * answer conflicted with the payment. When TX B throws it has rolled back: `payment.apply.failed` at WARN carries the exception,
      * and the same exception is rethrown, so the answer is what it was without the event. The catch is wide because it only observes:
      * nothing is turned into another answer, unlike the exact catches around the PG calls.
+     *
+     * After the event a committed `Changed` result goes to [PaymentStatusChangeListener], and no other result does (the port's
+     * KDoc says why). Confirm, the customer's 대사 and the PG's 알림 all apply through here, so the three paths report alike.
      */
     private fun applyAndLog(
         trigger: Trigger,
@@ -280,6 +288,10 @@ class OrderPaymentSaga(
         val result = applied.result
         val level = if (result is ReconcileResult.Conflicted) Level.WARN else Level.INFO
         logEvent(level, "payment.apply.committed", "TX B가 PG의 답을 반영하고 커밋했다.", trigger, payment, fields + resultFields(result))
+
+        if (result is ReconcileResult.Changed) {
+            paymentStatusChangeListener.statusChanged(from = result.from, to = result.to)
+        }
 
         return applied.info
     }

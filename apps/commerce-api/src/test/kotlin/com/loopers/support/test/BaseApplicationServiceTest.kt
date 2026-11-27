@@ -11,6 +11,7 @@ import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderCreator
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.required.OrderRepository
+import com.loopers.application.payment.provided.PaymentRecorder
 import com.loopers.application.point.provided.PointCharger
 import com.loopers.application.point.required.PointAccountRepository
 import com.loopers.application.product.provided.ProductRegister
@@ -27,6 +28,7 @@ import com.loopers.domain.order.Order
 import com.loopers.domain.order.createOrderConfirmRequest
 import com.loopers.domain.order.createOrderCreateRequest
 import com.loopers.domain.payment.CreditCard
+import com.loopers.domain.payment.Payment
 import com.loopers.domain.point.PointAccount
 import com.loopers.domain.point.createPointChargeRequest
 import com.loopers.domain.product.Product
@@ -132,6 +134,9 @@ abstract class BaseApplicationServiceTest {
 
     @Autowired
     private lateinit var orderRepository: OrderRepository
+
+    @Autowired
+    private lateinit var paymentRecorder: PaymentRecorder
 
     @Autowired
     private lateinit var couponCampaignRegister: CouponCampaignRegister
@@ -266,6 +271,22 @@ abstract class BaseApplicationServiceTest {
      */
     protected fun startPaymentWithoutPayment(order: Order = this.order) {
         orderRepository.save(order.apply { startPayment() })
+    }
+
+    /**
+     * Starts [order]'s payment without a confirm: the order is saved payment pending as [startPaymentWithoutPayment] does, and
+     * [PaymentRecorder] starts its 결과 미확인 payment in a transaction of its own. No create is sent and the saga reports nothing,
+     * so the payment stands in for one that a restarted or another instance started (spec 281, story 25). The missing confirm is the
+     * bypass. The payment takes the next PG order ID, so the class needs `@EnableTestPg` and names one with [nextPgOrderId] first.
+     */
+    protected fun startPaymentWithoutConfirm(order: Order = this.order): Payment {
+        startPaymentWithoutPayment(order)
+
+        return paymentRecorder.start(
+            orderId = order.id,
+            idempotencyKey = UUID.randomUUID().toString(),
+            amount = order.totalAmount,
+        )
     }
 
     protected fun prepareCouponCampaign(

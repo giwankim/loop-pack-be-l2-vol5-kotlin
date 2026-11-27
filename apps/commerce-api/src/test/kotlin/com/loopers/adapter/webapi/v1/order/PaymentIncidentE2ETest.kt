@@ -18,7 +18,6 @@ import com.loopers.support.logEvents
 import com.loopers.support.logEventsOf
 import com.loopers.support.test.BaseRealPortWebApiAdapterTest
 import org.assertj.core.api.Assertions.assertThat
-import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,7 +41,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
-import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -72,8 +70,9 @@ import java.util.UUID
  * A failure anywhere in the phases writes `failure.json` and deletes nothing. The `finally` also releases response loss and checks
  * that no PG order ID received a second create. A failure before the run directory exists (`@BeforeEach`) has nowhere to write.
  *
- * Confirmations commit per request and the gauge counts committed rows, so the class leaves the test transaction and empties the
- * tables itself (`UnresolvedPaymentGaugeE2ETest`'s pattern).
+ * Confirmations commit per request, so the class leaves the test transaction and empties the tables itself
+ * (`UnresolvedPaymentGaugeE2ETest`'s pattern). The gauge is a number in memory that only this class's confirmations and reconciles
+ * move in its context, and the fault's orders are all resolved within the one test, so the phases assert its absolute values.
  */
 @EnableTestPg
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -99,9 +98,6 @@ class PaymentIncidentE2ETest(
 
         /** The owner's starting point balance. No order uses it. */
         private const val POINT_BALANCE = 50_000L
-
-        /** Many refresh intervals of the real-port base, so a phase never waits on a slow tick by chance. */
-        private val SCRAPE_WAIT: Duration = Duration.ofSeconds(10)
 
         private val GAUGE_STATUSES = listOf("UNKNOWN", "PENDING")
 
@@ -501,9 +497,9 @@ class PaymentIncidentE2ETest(
     }
 
     /**
-     * Reads the phase's record and writes `<phase>.json`, `<phase>-health.json` and `<phase>-prometheus.txt`. The scrape is
-     * repeated until the gauge's `UNKNOWN` series reads [expectedUnknown] and `PENDING` reads `0.0`, since a changed count reaches
-     * the text one refresh later. The files hold the last scrape, the one the record's gauge and health come from.
+     * Reads the phase's record and writes `<phase>.json`, `<phase>-health.json` and `<phase>-prometheus.txt`. One scrape must read
+     * the gauge's `UNKNOWN` series as [expectedUnknown] and `PENDING` as `0.0`: the gauge moves before a response returns, so there
+     * is nothing to wait for. The files hold that scrape, the one the record's gauge and health come from.
      */
     private fun observe(
         evidence: IncidentEvidence,
@@ -513,13 +509,8 @@ class PaymentIncidentE2ETest(
         expectedUnknown: String,
         faultFileSha256: Map<String, String>? = null,
     ): PhaseRecord {
-        var last: Scrape? = null
-        await().atMost(SCRAPE_WAIT).untilAsserted {
-            val current = scrape()
-            last = current
-            assertThat(current.gauge).isEqualTo(mapOf("UNKNOWN" to expectedUnknown, "PENDING" to "0.0"))
-        }
-        val scraped = checkNotNull(last)
+        val scraped = scrape()
+        assertThat(scraped.gauge).isEqualTo(mapOf("UNKNOWN" to expectedUnknown, "PENDING" to "0.0"))
         val record = PhaseRecord(
             phase = phase,
             observedAt = Instant.now().toString(),

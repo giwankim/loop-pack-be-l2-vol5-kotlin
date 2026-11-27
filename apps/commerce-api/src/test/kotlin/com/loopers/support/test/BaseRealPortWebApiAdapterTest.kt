@@ -18,9 +18,8 @@ import java.time.Duration
  * only committed rows: a scene that needs its writes counted leaves the test transaction like [BaseCommittingApplicationServiceTest].
  * The real port splits the context from [BaseWebApiAdapterTest]'s, one more context (ADR 0012).
  *
- * The `commerce.payment.unresolved` gauge, off under `test`, is on here with a short refresh interval, so a scene reads a changed
- * count in the scraped text within a bounded wait. Its refresh runs on the scheduler thread and, like the management server, counts
- * only committed rows.
+ * The two `payment.unresolved-gauge.*` properties belong to the scheduled count of spec 266. The `commerce.payment.unresolved`
+ * gauge no longer reads it and is registered in every profile (spec 281), so they change nothing here and go with the count.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
