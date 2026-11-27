@@ -44,3 +44,36 @@ The change below was not committed.
 - **`PERIOD_START` is already in the class.** The purchase activities are asserted inside its week. Issue 288 uses it for the batch run.
 - **Left for issue 288:** the batch run, the ranking API, `follow-on.json`, the closing observation, the `@Test` rename, and the `@BeforeEach` that resets the ranking tables.
 - **`CODING_STANDARDS.md` gains two dated notes for issue 287.** One covers the spy and `@TestPropertySource` on a `BaseRealPortWebApiAdapterTest` subclass. The other covers the five new constructor dependencies. The streamer helpers stay copied from `WeeklyRankingFlowTest`, for the reason the issue 262 note gives.
+
+## Issue 288: publishing the incident's week, and the follow-on evidence
+
+Recorded 2026-11-27 from issue 288's closing comment. The text below is the comment's.
+
+Implemented as `90131aa2` on top of `43a1a253`, on `feat/payment-incident-follow-on`. `scripts/final-check --app commerce-api` on `90131aa2`, started 2026-11-27T04:15:49Z with `BOOTSTRAP_SERVERS` unset: ktlint passed, **commerce-api 123 classes, 1248 tests (6 min 35 s), 0 failures, 0 errors, 0 skipped**. The tree's one uncommitted change was the 운영자 entry in `CONTEXT.md`, which issue 289 commits and no test reads. No file under `src/main` changed. The check's incident run is `20261127T041746Z-8cff87b2`, and the `@Test` took 14.4 s in it.
+
+### Acceptance criteria
+
+- [x] **Before the run the ranking API answers `NOT_PUBLISHED` with no items.** The body is written as received to `follow-on-ranking-before-run.json`, and the assertions read that file: status `NOT_PUBLISHED`, `snapshotId` null, no items.
+- [x] **After the run it answers `PUBLISHED`, snapshot `2026-09-07-r1`, one item: rank 1, the product, score 20.** commerce-batch runs once from its bootJar (`CommerceBatchProcess`): `periodStart=2026-09-07`, snapshot `2026-09-07-r1`, revision 1. The body is written to `follow-on-ranking.json` and asserted from it.
+- [x] **The snapshot row's `input_count` is 20.** `follow-on.json` holds every `weekly_ranking_snapshot` row. There is exactly one: revision 1, `FROZEN`, inputs 20, with its freeze time and checksum. No revision 2.
+- [x] **`follow-on.json` carries the per-order rows, the snapshot row and the four counts.** It is the phase's `observe` record with a `followOn` part. Per order, that part holds the event ID, the outbox status and attempts, and the purchase activity rows (a list, so a duplicate would show). It also holds the snapshot rows, the owner's rows, and the counts: topic records 21, outbox rows 20, purchase activities 20, processed confirmations 20. The assertions read the record that was written.
+- [x] **The closing observation reads health `UP` and gauge `UNKNOWN 0.0`, `PENDING 0.0` from one scrape.** It is the same `observe` the other phases use. It writes `follow-on-health.json` and `follow-on-prometheus.txt`.
+- [x] **Read again at the end: recovery's invariants hold.** The record shows stock 0, create count 1 for each of the 20 PG 주문 번호, and 20 PG transactions (20 creates, none twice, no unmatched request). It shows every order `CONFIRMED`/`SUCCESS` with the PG's transaction key. The owner's point and coupon rows equal the run's first reading. The fault files' SHA-256 equal the hashes in `recovery.json`.
+- [x] **A failure in this phase writes `failure.json` with `"phase" : "follow-on"`.** Both red checks below wrote it.
+- [x] **Red checks, recorded below.**
+- [x] **`scripts/final-check --app commerce-api` passes, with no skipped tests.** See the run above.
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Red checks
+
+Neither change was committed. Each ran the class alone and was then reverted.
+- **Recovery pinned in the next week** (`RECOVERED_AT` = 2026-09-15T10:00Z). The phase fails at `Expecting actual: ["rank 1 product 1 score 17"] to contain exactly: ["rank 1 product 1 score 20"]`. The written body shows score 17. The ranking assertions come right after the purchase-activity count, ahead of the per-row checks. Otherwise the week bound on `confirmedAt` would have failed first, and the score would never be seen.
+- **commerce-streamer's already-recorded check bypassed** (`findByEventId` made to find nothing, and the streamer's bootJar rebuilt by the test task). The re-delivered event of order 19 reaches the "same order under another event ID" branch. The conflict stops the consumer (ADR 0033), so no second purchase activity is written. The phase fails at `Waited 30 s for 21 recorded order confirmed events. State: 20 recorded`, with partition 1 at 9 of 10 records read.
+
+### Decisions made while implementing
+
+- **The follow-on's record is `observe`'s record with a `followOn` part.** `observe` already writes `<phase>.json`. A second file under that name would fail create-new, so the follow-on's fields ride on `PhaseRecord`. `faultFileSha256` works the same way, and the shared mapper leaves out the `null`s, so the earlier phases' files are unchanged.
+- **The ranking bodies are asserted from the written files.** Only the status is asserted on the result. The issue and spec 274's evidence rule ask for assertions on what was written. `CODING_STANDARDS.md` records this as a dated exception to the `bodyJson()` rule. The bodies are decoded as UTF-8, the API's encoding, whatever charset the response names.
+- **The `@Test` keeps the spec's name, and ktlint's line length is suppressed on that function alone.** The name makes a 164-character line. The user chose the suppression over a shorter name. It is the only ktlint suppression in the repo, noted in `CODING_STANDARDS.md`.
+- **`DataSource` is a new constructor dependency, for `WeeklyRankingBatchTables.reset` in `@BeforeEach`.** The ranking's request helper and the snapshot SQL repeat `WeeklyRankingFlowTest`'s and are not moved, for issue 262's reason (a different base class). Both are noted in `CODING_STANDARDS.md`.
+- **Left as found in review:** the closing assertions repeat recovery's block in shape. Each phase asserts its own record, as the earlier phases do.
