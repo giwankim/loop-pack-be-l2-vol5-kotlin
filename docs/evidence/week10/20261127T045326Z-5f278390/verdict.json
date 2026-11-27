@@ -1,5 +1,5 @@
 {
-  "hypothesesWrittenAt" : "2026-11-27T01:44:59.686578Z",
+  "hypothesesWrittenAt" : "2026-11-27T04:53:27.522464Z",
   "hypotheses" : [ {
     "hypothesis" : "A",
     "statement" : "The PG is still processing the payment.",
@@ -15,9 +15,9 @@
   } ],
   "orders" : [ {
     "orderId" : 13,
-    "pgOrderId" : "65dc393a-4400-4773-ab96-02dc8a0262ab",
-    "lookedUpAt" : "2026-11-27T01:44:59.698572Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"65dc393a-4400-4773-ab96-02dc8a0262ab\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "4ab9e3d4-d736-4424-ae4b-5f66898a4b3b",
+    "lookedUpAt" : "2026-11-27T04:53:27.531178Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-13\",\"orderId\":\"4ab9e3d4-d736-4424-ae4b-5f66898a4b3b\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -37,9 +37,9 @@
     } ]
   }, {
     "orderId" : 16,
-    "pgOrderId" : "55724f3f-400c-473f-acd2-b9a2967cf030",
-    "lookedUpAt" : "2026-11-27T01:44:59.703580Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"55724f3f-400c-473f-acd2-b9a2967cf030\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "0a4d866f-aa8c-454d-b230-005858c7cdd5",
+    "lookedUpAt" : "2026-11-27T04:53:27.534507Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-16\",\"orderId\":\"0a4d866f-aa8c-454d-b230-005858c7cdd5\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]
@@ -59,9 +59,9 @@
     } ]
   }, {
     "orderId" : 19,
-    "pgOrderId" : "46efe4d7-7eae-4cf6-aa89-4114c57d8883",
-    "lookedUpAt" : "2026-11-27T01:44:59.706525Z",
-    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"46efe4d7-7eae-4cf6-aa89-4114c57d8883\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
+    "pgOrderId" : "96f28509-bb8f-4ee0-a11f-0215c5c04fc2",
+    "lookedUpAt" : "2026-11-27T04:53:27.536679Z",
+    "lookupBody" : "[{\"transactionKey\":\"20261126:TR:incident-19\",\"orderId\":\"96f28509-bb8f-4ee0-a11f-0215c5c04fc2\",\"amount\":1000,\"status\":\"SUCCESS\"}]",
     "observed" : {
       "lookupStatuses" : [ "SUCCESS" ],
       "events" : [ "pg.create.outcome-unknown" ]

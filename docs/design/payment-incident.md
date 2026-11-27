@@ -2,7 +2,7 @@
 
 10주차 과제의 설계 문서다. 브랜치마다 절 하나를 쓴다(`weekly-ranking.md`의 방식). 용어는 [`CONTEXT.md`](../../CONTEXT.md)를 따른다("끝나지 않은 결제", "결과 미확인", "처리 중", "대사"). 결정의 출처는 1단계가 [명세 266](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266)이다.
 
-상태: 2026-11-26 1단계(`feat/payment-observability`)를 인터뷰했다. 이 문서는 그 첫 티켓([issue 267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267))이 뼈대로 만들었고, 절의 내용은 단계를 구현한 뒤 쓴다. (2026-11-26 [issue 272](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/272): 1단계를 구현했고 2절에 썼다.) (2026-11-26 [issue 279](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/279): 2단계를 [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274)로 인터뷰하고 구현했고 3절에 썼다.) (2026-11-27 [issue 284](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/284): 1단계의 gauge를 메모리에서 올리고 내리도록 [명세 281](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281)로 다시 인터뷰하고 구현했고, 2절을 지금의 gauge로 다시 썼고 3절의 증거를 다시 돌렸다.)
+상태: 2026-11-26 1단계(`feat/payment-observability`)를 인터뷰했다. 이 문서는 그 첫 티켓([issue 267](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/267))이 뼈대로 만들었고, 절의 내용은 단계를 구현한 뒤 쓴다. (2026-11-26 [issue 272](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/272): 1단계를 구현했고 2절에 썼다.) (2026-11-26 [issue 279](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/279): 2단계를 [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274)로 인터뷰하고 구현했고 3절에 썼다.) (2026-11-27 [issue 284](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/284): 1단계의 gauge를 메모리에서 올리고 내리도록 [명세 281](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281)로 다시 인터뷰하고 구현했고, 2절을 지금의 gauge로 다시 썼고 3절의 증거를 다시 돌렸다.) (2026-11-27 [issue 290](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/290): 3단계를 [명세 286](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286)으로 인터뷰하고 구현했고 4절에 썼다. 저장소에 실은 증거는 이제 4.3절의 실행이다.)
 
 ## 1. 근거와 범위
 
@@ -13,7 +13,7 @@
 | 1 | 끝나지 않은 결제의 수를 gauge로 알리고, PG의 답과 TX B의 결과를 주문별 로그 이벤트로 남긴다. 실제 포트의 테스트 기반. | `feat/payment-observability` | 인터뷰 끝남(2026-11-26). [명세 266](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/266). 구현 끝남(2026-11-26, 2절) |
 | 2 | 사고의 재현(정상 10건과 장애 10건), 가설의 판정, 대사 API로 하는 복구, 증거 파일. | `feat/payment-incident` | 인터뷰 끝남(2026-11-26). [명세 274](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/274). 구현 끝남(2026-11-26, 3절) |
 | 1′ | 1단계의 gauge를 DB에서 세지 않고 메모리에서 올리고 내린다. 세는 질의, 결제 상태의 인덱스, 두 설정을 걷고, 2단계의 증거를 다시 돌린다. 3단계보다 먼저다. | `refactor/in-memory-unresolved-gauge` | 인터뷰 끝남(2026-11-27). [명세 281](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/281). 구현 끝남(2026-11-27, 1.3절, 2절) |
-| 3 | 아웃박스 → Kafka → 구매 활동 → 주간 랭킹의 후속 확인, `docs/runbook/week10.md`, 기능별 검증 범위와 남은 위험. | `feat/payment-incident-follow-on` | 인터뷰 전 |
+| 3 | 아웃박스 → Kafka → 구매 활동 → 주간 랭킹의 후속 확인, `docs/runbook/week10.md`, 기능별 검증 범위와 남은 위험. | `feat/payment-incident-follow-on` | 인터뷰 끝남(2026-11-27). [명세 286](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286). 구현 끝남(2026-11-27, 4절) |
 
 셋은 모두 `week10`으로 PR한다.
 
@@ -331,7 +331,7 @@ scripts/final-check --app commerce-api
 - **단언은 파일에 쓴 값에 한다.** 단계마다 기록 하나를 만들어 쓰고 그 기록에 단언한다. health와 Prometheus 원문은 기록의 gauge와 health를 읽은 그 scrape의 것이다. 파일이 있다는 것만으로는 아무것도 증명하지 않는다.
 - `@BeforeEach`에서 실패하면 디렉터리가 아직 없어 `failure.json`을 쓸 곳이 없다.
 
-**저장소에 실은 실행.** gauge를 메모리로 바꾼 브랜치의 끝의 확인(2.9절의 2026-11-27 확인)의 사고 실행 `20261127T014458Z-e8a33044`를 [`docs/evidence/week10/20261127T014458Z-e8a33044/`](../evidence/week10/20261127T014458Z-e8a33044/)에 통째로 실었다. 파일 열두 개이고, Prometheus 원문 셋도 줄이지 않았다. `failure.json`은 없다. 실행은 `4c65ad3f`의 깨끗한 트리에서 돌린 끝의 확인의 것이고, 그 코드는 `a4c0f519`(issue 283)의 것이다. 원문의 `# HELP`는 지금의 설명(2.1절)이다. 2단계가 실었던 실행 `20261126T135338Z-47f59811`(`7902fb9f`의 코드, 걷은 gauge)은 지웠다. 그 실행은 git의 기록에 있다. 단언하는 값은 같고, 시각, PG 주문 번호, `# HELP`, 해시가 다르다. (2026-11-26 명세 274의 닫는 리뷰가 issue 279의 실행 `20261126T120602Z-0c742bb1`를 그 실행으로 바꾼 적이 있다.)
+**저장소에 실은 실행.** gauge를 메모리로 바꾼 브랜치의 끝의 확인(2.9절의 2026-11-27 확인)의 사고 실행 `20261127T014458Z-e8a33044`를 [`docs/evidence/week10/20261127T014458Z-e8a33044/`](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/tree/d0dba7cc/docs/evidence/week10/20261127T014458Z-e8a33044)에 통째로 실었다. 파일 열두 개이고, Prometheus 원문 셋도 줄이지 않았다. `failure.json`은 없다. 실행은 `4c65ad3f`의 깨끗한 트리에서 돌린 끝의 확인의 것이고, 그 코드는 `a4c0f519`(issue 283)의 것이다. 원문의 `# HELP`는 지금의 설명(2.1절)이다. 2단계가 실었던 실행 `20261126T135338Z-47f59811`(`7902fb9f`의 코드, 걷은 gauge)은 지웠다. 그 실행은 git의 기록에 있다. 단언하는 값은 같고, 시각, PG 주문 번호, `# HELP`, 해시가 다르다. (2026-11-26 명세 274의 닫는 리뷰가 issue 279의 실행 `20261126T120602Z-0c742bb1`를 그 실행으로 바꾼 적이 있다.) (2026-11-27 issue 290: 저장소에 실은 실행은 이제 3단계의 끝의 확인(4.10절)의 `20261127T045326Z-5f278390`이고 후속 단계의 파일 다섯을 더 싣는다(4.3절). 이 절이 말한 `20261127T014458Z-e8a33044`는 지웠고, 위의 링크는 그것을 지우기 전의 커밋 `d0dba7cc`를 가리킨다. 아래 표의 값은 그 실행의 것이다. 새 실행도 주문 ID와 앞의 네 단계가 단언하는 값은 같고 시각, PG 주문 번호, 해시가 다르다.)
 
 | 무엇 | 실은 실행의 값 |
 | --- | --- |
@@ -449,4 +449,177 @@ scripts/final-check --app commerce-api
 
 ## 4. 3단계: 후속 확인과 runbook
 
-(3단계를 인터뷰한 뒤 쓴다.)
+결정의 출처는 [명세 286](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/286)이다(2026-11-27 인터뷰, 질문 21개). 과제의 몫은 [과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 6, 7, 8절이다: 복구한 주문의 후속 업무, 둘째 것 가운데 runbook, 기능별 검증 범위와 끝의 확인. **운영 코드는 바뀌지 않았다.** 테스트, 증거, runbook, 문서뿐이다. ADR은 없다. 정한 것은 테스트의 구조와 문서이고 커밋 하나로 바꿀 수 있다. 용어집은 운영자 하나를 더했고 관리자의 Avoid에서 뺐다(3절의 머리).
+
+### 4.1 3단계가 만든 것
+
+| 티켓 | 만든 것 |
+| --- | --- |
+| [287](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/287) | `PaymentIncidentE2ETest`의 고정한 시계, 후속 단계의 중계(복구한 주문 하나를 두 번 발행한다), commerce-streamer의 구매 활동 20건. 클래스의 토픽 `order-events-payment-incident`와 consumer group. |
+| [288](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/288) | 같은 단계의 주간 job 실행과 랭킹 API의 확인, `follow-on.json`과 랭킹의 본문, 닫는 관찰, `@Test`의 새 이름, 랭킹의 표를 새로 만드는 `@BeforeEach`. |
+| [289](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/289) | [`docs/runbook/week10.md`](../runbook/week10.md)와 [용어집](../../CONTEXT.md)의 운영자. |
+| [290](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/issues/290) | 이 절, 기능별 검증 범위(4.5절), 세 앱의 끝의 확인(4.10절), 저장소에 실은 증거(4.3절). |
+
+네 티켓 모두 `src/main`의 파일을 바꾸지 않았다. 사고 테스트는 운영 코드의 틈을 드러내지 않았고, 그래서 이 명세 안에 새 티켓은 없다. 티켓마다 구현 중에 정한 것은 [3단계의 글감](../research/week10-payment-incident-follow-on-writing-material.md)에 있다.
+
+### 4.2 후속 단계
+
+`@Test`는 하나 그대로이고 복구 뒤에 `runFollowOn`을 돈다. 앞의 네 단계의 단언은 바뀌지 않았다. 이름은 `lost responses leave three payments unknown under health UP, a PG lookup tells why, reconcile recovers them once, and the weekly ranking counts all twenty`다. 이름이 만드는 168자의 줄(들여쓰기 포함) 때문에 그 함수 하나에만 ktlint의 줄 길이를 끈다(저장소의 유일한 suppression, `CODING_STANDARDS.md`의 날짜 메모).
+
+**시계.** 테스트가 처음부터 `TestClock`을 고정한다. 랭킹 기간은 2026-09-07(월)부터의 한 주다.
+
+| 때 | 시각 | 그때 하는 것 |
+| --- | --- | --- |
+| `CONFIRMED_AT` | 2026-09-08T10:00Z(화) | 기준 구간과 장애 구간의 확정, 알림 |
+| `RECOVERED_AT` | 2026-09-10T10:00Z(목) | 고객의 대사로 하는 복구 |
+| `REPEATED_AT` | 복구 + 1 s | 복구의 되풀이(두 번째 대사와 알림). 되풀이가 주문을 다시 확정하면 다른 `confirmed_at`을 쓰게 되어 두 단언이 본다 |
+| `RELAYED_AT` | 복구 + 5 s | 중계의 첫 회차 |
+| `PAST_THE_LEASE` | 중계 + 61 s | 멈춘 회차의 lease가 지난 뒤의 둘째 회차 |
+
+고정을 먼저 하고 테스트를 그대로 돌리자 지나갔다(287). 명세가 준비한 물러설 길(실제 시계와 행에서 구한 랭킹 기간)은 쓰지 않았다. 증거의 시각(`observedAt` 따위)은 실제 시계다.
+
+**중계와 토픽.** 테스트가 컨텍스트의 `OrderEventRelayer`에서 `publishDueEvents()`를 부른다. `order-events.relay.enabled`는 끈 그대로다. 클래스는 `@TestPropertySource`로 제 토픽을 쓰고, consumer group은 commerce-streamer에 넘기는 상수다(`OutboxDeliveryE2ETest`의 방식). 다른 클래스의 record가 이 클래스의 streamer에 닿지 않는다.
+
+- `RELAYED_AT`의 한 회차가 20건을 모두 가져간다(`CLAIM_BATCH_SIZE` 20, `nextAttemptAt, id`의 차례). 09-08에 확정한 17건이 먼저이고 09-10에 복구한 셋이 뒤다.
+- 그 회차는 마지막 행, **복구한 셋째 주문**의 broker 확인 뒤, 발행됨으로 표시하기 전에 멈춘다. 그 행만 던지는 클래스 안의 stub이다. 19건은 `PUBLISHED`(시도 1), 그 한 건은 `PENDING`(시도 1)이다.
+- `PAST_THE_LEASE`의 둘째 회차가 그 한 건을 다시 발행한다. 20건 모두 `PUBLISHED`이고 그 한 건만 시도 2다.
+
+**commerce-streamer.** 후속 단계에서만 bootJar로 시작하고(`CommerceStreamerProcess`), 그 단계의 `finally`와 `@AfterEach`(표를 비우기 전, `try` 안)에서 끝낸다. 테스트는 토픽에서 읽은 record의 수만큼 streamer의 전달을 기다린 뒤, streamer가 쓴 표를 `select`로만 읽는다. 구매 활동의 단언이 토픽의 단언보다 앞이다. 빠진 행이 기다림의 시간 초과가 아니라 업무의 수(19)로 붉게 하려는 것이다.
+
+**주간 랭킹.** `@BeforeEach`가 랭킹의 표와 Batch의 표를 새로 만든다(`WeeklyRankingBatchTables.reset`). 랭킹 API를 읽고, commerce-batch를 bootJar로 한 번 돌리고(`CommerceBatchProcess`, `periodStart=2026-09-07`, 스냅샷 `2026-09-07-r1`, 차수 1), 다시 읽는다. 차수 2는 없다. 늦은 차수와 chunk 재시작은 9주차의 장면에 두고 끝의 확인이 그것을 돌린다(4.5절).
+
+**단언.** 모두 쓴 기록에서 읽는다(3.5절의 규칙).
+
+| 본 것 | 값 |
+| --- | --- |
+| 아웃박스 | 20건의 주문마다 행 하나, 모두 `PUBLISHED`. 두 번 발행한 주문만 시도 2 |
+| 따로 세는 네 수 | 토픽의 record 21(서로 다른 이벤트 ID 20, 두 번 온 것은 복구한 셋째 주문의 것), 아웃박스 행 20, 구매 활동 20, 처리한 주문 확정 20 |
+| 구매 활동 | 주문마다 하나, 그 상품, 수량 1. 기준 구간 10, 장애 구간 10. `confirmed_at`은 주문의 것이고 그 주 안이다. 복구한 세 주문은 주문 ID로 하나씩, `confirmed_at`은 `RECOVERED_AT` |
+| 주문의 `confirmed_at` | 복구한 셋은 `RECOVERED_AT`, 나머지 17은 `CONFIRMED_AT`. 되풀이한 대사와 알림 뒤에도 그대로다 |
+| 랭킹 API, 실행 전 | `NOT_PUBLISHED`, `snapshotId` 없음, 항목 없음 |
+| 랭킹 API, 실행 뒤 | `PUBLISHED`, `2026-09-07-r1`, 항목 하나: 1위, 그 상품, 점수 20 |
+| 스냅샷 | `weekly_ranking_snapshot`의 행 하나: 차수 1, `FROZEN`, `input_count` 20 |
+| 닫는 관찰 | 같은 `observe`. health `UP`, gauge `UNKNOWN 0.0`·`PENDING 0.0` |
+| 다시 읽은 복구의 증명 | 상품 재고 0, PG 주문 번호마다 생성 수 1, PG 거래 20(두 번 생성된 것 없음, stub을 비껴간 요청 0), 20건 모두 확정된 주문·결제 성공과 PG의 거래 키, 소유자의 포인트와 쿠폰의 행이 실행의 처음과 같다, 장애 구간의 파일의 SHA-256이 `recovery.json`의 것과 같다 |
+
+### 4.3 증거
+
+쓰는 곳과 규칙은 3.5절 그대로다. 후속 단계가 같은 실행의 디렉터리에 파일 다섯을 더한다.
+
+| 파일 | 내용 | 쓰는 때 |
+| --- | --- | --- |
+| `follow-on.json` | `observe`의 단계 기록(3.5절의 필드)에 `followOn`을 더한 것: 주문마다 이벤트 ID, 아웃박스의 상태와 시도 수, 구매 활동의 행(목록이라 두 번 기록된 행이 있으면 보인다), 스냅샷의 행, 소유자의 행, 네 수 | 후속 단계의 관찰 |
+| `follow-on-ranking-before-run.json` | job 전의 랭킹 API 본문, 받은 그대로(UTF-8) | job 전 |
+| `follow-on-ranking.json` | job 뒤의 랭킹 API 본문, 받은 그대로 | job 뒤 |
+| `follow-on-health.json`, `follow-on-prometheus.txt` | 기록과 같은 scrape의 원문 | 후속 단계의 관찰 |
+
+**저장소에 실은 실행.** 이 단계의 끝의 확인(4.10절)의 사고 실행 `20261127T045326Z-5f278390`을 [`docs/evidence/week10/20261127T045326Z-5f278390/`](../evidence/week10/20261127T045326Z-5f278390/)에 통째로 실었다. 파일 열일곱 개(3.5절의 열두 개와 위의 다섯)이고 Prometheus 원문 넷도 줄이지 않았다. `failure.json`은 없다. 앞서 실었던 `20261127T014458Z-e8a33044`(3.5절)는 지웠다. 그 실행은 git의 기록에 있다.
+
+| 무엇 | 실은 실행의 값 |
+| --- | --- |
+| 주문 | 기준 구간 1–10, 장애 구간 11–20. 잃은 주문 13, 16, 19 |
+| 기준 구간 | 04:53:27.074Z. 10건 모두 확정된 주문, 결제 성공. 상품 재고 10, PG 거래 10, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`, 응답 유실 꺼짐 |
+| 장애 구간 | 04:53:27.511Z. 13, 16, 19가 결과 미확인이고 DB의 끝나지 않은 결제도 그 셋. 상품 재고 0, PG 거래 20, gauge `UNKNOWN 3.0`·`PENDING 0.0`, health `UP`, 응답 유실 켜짐 |
+| 진단 | 가설은 04:53:27.522Z에 썼고, 조회는 .531Z, .534Z, .536Z다. A 기각, B 채택, C 기각 |
+| 복구 | 04:53:27.612Z. 끝나지 않은 결제 없음, 상품 재고 0, PG 거래 20, 생성 20, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP`. `faultFileSha256`의 `fault.json`은 `8658352a…`로 시작한다 |
+| 후속 | 04:53:40.459Z. 아웃박스 20건 모두 `PUBLISHED`, 주문 19만 시도 2. record 21, 아웃박스 행 20, 구매 활동 20, 처리한 주문 확정 20. 구매 활동의 `confirmed_at`은 13, 16, 19가 2026-09-10T10:00Z, 나머지 17이 2026-09-08T10:00Z. 스냅샷 `2026-09-07-r1`(차수 1, `FROZEN`, 입력 20, `frozen_at` 04:53:40.238Z). 랭킹은 실행 전 `NOT_PUBLISHED`, 실행 뒤 `PUBLISHED`, 1위 상품 1 점수 20. 상품 재고 0, 생성 20, gauge `UNKNOWN 0.0`·`PENDING 0.0`, health `UP` |
+
+### 4.4 runbook
+
+[`docs/runbook/week10.md`](../runbook/week10.md)는 한국어이고 증상 하나를 다룬다: health가 `UP`인 동안 끝나지 않은 결제가 남는다. 절은 과제의 여섯(증상, 진단 질의, 조치 전제, 중단 조건, 복구 확인, 재진입)에 복구와 한계를 더한 여덟이다.
+
+- **DB가 근거이고 gauge는 경보다.** 2.11절의 "3단계에 남기는 말" 그대로다. 경보 `sum(commerce_payment_unresolved)`가 울리면 먼저 결제의 행에 보내는 `select`로 끝나지 않은 결제가 정말 있는지 본다.
+- **명령은 placeholder와 함께 싣고, 명령마다 사고 테스트가 그것을 어디까지 돌렸는지 적는다.** 테스트는 셸을 부르지 않는다. 같은 질의와 요청을 JDBC와 HTTP 클라이언트로 보내고, 어떤 것은 runbook의 것보다 좁거나 넓다. host와 자격 증명은 없다.
+- **DB에 쓰는 SQL과 다시 결제하는 명령이 없다.** 결제를 바꾸는 명령은 고객의 대사 하나다. PG가 실패를 말해도 손으로 반영하지 않는다.
+- 아웃박스 행이 없는 복구한 주문의 다음 걸음은 누락 복구의 시작 속성 `order-events.recovery.order-ids`다. 사고 테스트는 행을 빠뜨리지 않으므로 그 속성은 7주차의 `OrderEventRecoveryRunnerTest`가 고정한 것을 인용한다.
+
+### 4.5 기능별 검증 범위와 남은 위험
+
+[과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 8절의 표다. "돌린 클래스"는 이 단계의 끝의 확인(4.10절)이 돌린 것 가운데 그 기능을 맡은 것이고, 모두 지나갔다. 클래스를 모두 적지 않는다. 기능을 대표하는 것과 과제가 이름으로 든 것(`OrderPaymentIntegrationTest`, `CouponIssueIntegrationTest`, `WeeklyRankingJobRestartTest`)이다. "확인한 것"은 그 클래스의 장면이 이 실행에서 단언한 것이고, "확인하지 못한 것"은 어느 장면도 돌리지 않은 것이다. 이 단계는 새 회귀 테스트를 쓰지 않았다. 이 단계가 바꾼 것은 마지막 줄뿐이다.
+
+| 기능 | 돌린 클래스 | 이번 실행이 확인한 것 | 확인하지 못한 것 |
+| --- | --- | --- | --- |
+| 카탈로그와 관리자 | commerce-api: `BrandAdminApiTest`, `BrandApiTest`, `ProductAdminApiTest`, `ProductApiTest`, `LikeApiTest`, `OrderAdminApiTest`, `CouponCampaignAdminApiTest`, `ProductCacheTest`, `ProductCacheRedisFailureTest`, `ProductCacheDatabaseFailureApiTest`, `ProductQueryPerformanceApiTest`, `LockFailureApiTest` | 브랜드·상품·좋아요의 API와 관리자가 아닌 요청의 403. 관리자의 쓰기가 커밋한 뒤 상품 목록 캐시가 새 값을 보이는 것, Redis가 멈추거나 느릴 때 목록이 DB에서 한도 안에 답하는 것. 시드 위에서 `(brand_id, price, id DESC)` 인덱스를 보이지 않게 해도 같은 첫 페이지인 것, 페이지마다 SQL 셋. 잠금을 기다리다 넘긴 쓰기의 409 | 운영 규모의 데이터와 그 위의 실행 계획(시드는 로컬의 것이다). Redis의 cluster와 장애 조치. 동시 부하 아래의 캐시 적중률. 관리자는 요청자 헤더의 사용자 역할(`ADMIN`)로만 가린다. 그 헤더를 싣는 게이트웨이의 인증은 범위 밖이다 |
+| 포인트·주문·PG | commerce-api: `OrderPaymentIntegrationTest`, `OrderConfirmationApiTest`, `OrderConfirmerConcurrencyTest`, `PointChargerConcurrencyTest`, `LostUpdateControlTest`, `PaymentGatewayTest`, `ConnectTimeoutPaymentGatewayTest`, `ExhaustedPoolPaymentGatewayTest`, `UnresolvedPaymentGaugeE2ETest`, `OrderPaymentLogEventTest` | 확정이 PG에 생성 한 번을 보내고, 잃은 응답이 결제를 결과 미확인으로 두며 대사가 생성 없이 끝내는 것. 조회 재시도와 조회의 circuit breaker(열림, 60 s의 기다림, 다시 닫힘), 그동안 health `UP`. 같은 답의 두 반영이 주문과 재고를 한 번 바꾸는 것. 다섯 개 재고에 동시 확정 여덟이 다섯 건만 확정되는 것, 포인트의 동시 충전. gauge가 커밋한 뒤 움직이는 것, PG의 답마다의 로그 이벤트 | 실제 PG(모두 WireMock의 stub이다). 여러 인스턴스의 gauge `sum`과 재시작 뒤의 차이(2.6절). 운영의 네트워크에서 잰 시간 한도. 부하 |
+| 이벤트와 아웃박스 | commerce-api: `OrderEventOutboxTest`, `OrderEventOutboxAtomicityTest`, `OrderEventOutboxClaimTest`, `OrderEventRelayerTest`, `OrderEventRelayFailedSendTest`, `OrderEventRelaySchedulerTest`, `OutboxDeliveryE2ETest`, `OrderEventRecoveryE2ETest`, `OrderEventRecoveryRunnerTest`. commerce-streamer: `OrderEventsListenerTest`, `OrderEventsListenerFailureTest`, `OrderEventsListenerStopTest`, `RedeliveryAfterCommitTest`, `KeyPartitioningTest` | 아웃박스 행이 확정과 함께 커밋되고 함께 되돌아가는 것. 두 회차의 claim이 겹치지 않는 것, 행마다의 실패와 20번째 실패의 막힌 이벤트. broker의 확인 뒤 다시 발행한 주문이 streamer에 두 번 닿고 구매 활동을 한 번 남기는 것. 처리할 수 없는 record에서 consumer가 멈추고 offset을 커밋하지 않는 것. 6주차의 두 경우를 재시작의 누락 복구가 복구하는 것 | broker 여럿의 cluster(로컬은 broker 하나다). broker의 재시작이 행을 실패로 만드는 것은 받아들였다(7주차). 중계를 두 인스턴스에서 켠 경우. 지연과 처리량 |
+| 쿠폰 | commerce-api: `CouponIssueIntegrationTest`, `CouponIssueSlotsIntegrationTest`, `CouponIssueAdmissionTest`, `CouponIssueAdmissionClosingTest`, `CouponIssueAdmissionApiTest`, `CouponIssueRedisFailureApiTest`, `CouponIssueAdmissionStartupRunnerTest`, `CouponApiTest` | 첫 발급이 캠페인 행을 잠그고 쿠폰 하나를 커밋하는 것, 되풀이한 요청이 같은 쿠폰으로 답하는 것. 다섯 장의 캠페인에 동시 발급 여덟이 다섯 장과 소진 거절 셋인 것. Redis Set의 처리 자리와 그 Lua, 자리를 놓는 것. Redis가 멈추거나 느릴 때 새 사용자는 503이고 보유자는 같은 쿠폰을 받는 것, 시작 속성으로만 다시 여는 것 | Redis의 cluster와 장애 조치. 여러 인스턴스가 처리 자리를 나눠 쓰는 것(장면은 한 프로세스다). 실제 트래픽의 몰림 |
+| 주간 랭킹 | commerce-batch: `WeeklyRankingFreezeTest`, `WeeklyRankingScoreTest`, `WeeklyRankingPublishTest`, `WeeklyRankingJobRestartTest`, `WeeklyRankingLatePurchaseTest`, `SnapshotInputDigestTest`. commerce-api: `WeeklyRankingApiTest`, `WeeklyRankingFinderTest`, `WeeklyRankingFlowTest`, `CommerceBatchProcessRunTest` | 스냅샷을 얼리고, 점수를 매기고, 게시하는 것. 실패한 chunk에서 재시작한 실행이 과제의 기대 랭킹의 checksum에 닿는 것, 게시의 쓰기에서 실패한 실행의 재시작. 늦은 구매가 뒤 차수로만 랭킹에 닿는 것. HTTP로 이은 흐름에서 다시 발행한 이벤트가 한 번 세어지는 것 | job을 누가 언제 시작하는가(테스트가 시작한다). 운영 규모의 구매 활동. commerce-batch는 랭킹 기간이 끝났는지 보지 않는다 |
+| 이번 사고 | commerce-api: `PaymentIncidentE2ETest`, `IncidentPgTest`, `ManagementEndpointE2ETest` | 기준 구간 10건과 장애 구간 10건, 잃은 응답 셋이 health `UP` 아래 `UNKNOWN 3.0`으로 남는 것, 세 가설의 판정, 고객의 대사로 같은 셋을 생성 없이 복구하는 것. 복구한 주문이 중계, Kafka, 구매 활동을 지나 그 주의 랭킹에 점수 20으로 닿는 것, 두 번 발행한 한 건이 record 21과 구매 활동 20으로 갈리는 것(4.2절) | 한 꼴의 사고뿐이다(4.7절). 실제 PG의 알림. runbook의 명령 자체는 아무도 돌리지 않았다. 운영자가 고객의 식별자를 싣는 길 |
+
+이 표는 로컬에서 통제한 사고 하나와 관련 회귀가 지나갔다는 것을 말할 뿐이다. **운영 배포, 실제 계정, 부하, 모든 장애의 검증을 말하지 않는다.** 모든 장면은 노트북의 Testcontainers(MySQL, Redis, Kafka broker 하나)와 WireMock의 PG에서 돌았다.
+
+### 4.6 고르지 않은 것
+
+- **운영자의 대사 endpoint, 커머스의 진단 endpoint, 자동 대사 scheduler.** 3.7절 그대로다. 그 대가가 runbook의 첫 두 한계다.
+- **중계, commerce-streamer, commerce-batch의 새 지표나 로그.** 후속 단계는 그것들이 쓴 행을 읽는다.
+- **`order-events.relay.enabled`를 켜는 것.** scheduler가 앞 단계에서 기준 구간의 행을 발행해 3.4절의 "행이 그대로다"를 깬다.
+- **복구 전에 17건만 발행해 점수 17을 먼저 보이는 것.** 다음 주에 고정한 붉은 확인이 17을 보인다(4.9절).
+- **차수 2, 늦은 구매, chunk 재시작의 새 장면.** 9주차의 장면이 있고 끝의 확인이 돌린다.
+- **새 회귀 테스트.** 4.5절의 표는 있던 장면에서 읽는다.
+- **runbook의 글을 자동으로 확인하는 것.** 4.7절의 한계다.
+
+### 4.7 한계
+
+runbook이 적는 한계가 먼저다([runbook](../runbook/week10.md) 8절).
+
+- **운영자는 고객으로서 대사하고, 그것이 운영자였다는 기록은 남지 않는다.** 로그 이벤트의 `trigger`도 고객의 것과 같은 `reconcile`이다(3.8절).
+- **진단하려면 PG에 직접 닿아야 한다.** 운영자는 PG의 주소와 PG 계약의 사용자 ID를 알아야 하고, 로그의 key-value는 logstash JSON에만 있다(3.8절).
+- **runbook의 글을 자동으로 확인하는 것이 없다.** 열이나 endpoint가 바뀌면 테스트는 따라 바뀌어도 runbook은 그대로일 수 있다.
+- **사고 테스트는 한 꼴의 사고만 돌렸다.** 생성의 응답을 잃은 결과 미확인 셋이고 PG 거래는 모두 `SUCCESS`였다. runbook의 중단 조건의 경우들, 처리 중으로 남은 결제, 누락 복구는 사고 테스트에서 돌리지 않았다.
+
+고정한 시계가 바꾼 것.
+
+- **시계를 따르는 것은 commerce-api가 주입받는 `Clock`뿐이다.** 주문의 `confirmed_at`, 구매 활동의 `confirmed_at`(이벤트가 싣는 것), 아웃박스의 `next_attempt_at`과 lease가 그것을 따른다. `BaseEntity`의 `created_at`·`updated_at`은 `Instant.now()`라 실제 시각이다. 그래서 실은 증거의 행은 `created_at`(2026-11-27)이 `confirmed_at`(2026-09)보다 늦다. runbook의 진단 질의가 상태 시각으로 읽는 결제의 `updated_at`(2.6절)도 테스트에서는 실제 시각이다.
+- **commerce-streamer와 commerce-batch는 자식 프로세스라 실제 시계다.** 스냅샷의 `frozen_at`과 게시의 시각은 2026-11-27이다. commerce-batch는 기간이 끝났는지 보지 않으므로 지난 주의 기간을 그대로 얼린다.
+- **테스트 PG의 시각과 증거의 시각(`observedAt` 따위)도 실제 시계다.** 장애와 복구는 업무 시각으로 이틀이 떨어져 있지만, 증거의 시각으로는 1 s 안팎이다.
+- **복구의 되풀이가 1 s 뒤로 옮겨 갔다.** 3.4절의 되풀이는 이제 `REPEATED_AT`에 돈다. 되풀이가 주문을 다시 확정하면 다른 시각을 쓰게 하려는 것이다.
+
+나머지.
+
+- **두 번 발행한 것은 복구한 셋째 주문이다.** 회차가 마지막에 저장하는 행만 두 번 발행할 수 있다(4.11절). 첫째나 둘째 복구 주문을 다시 발행하는 것은 보지 않았다. 6주차와 7주차의 장면(`OrderEventsListenerTest`, `OutboxDeliveryE2ETest`)이 순서와 관계없이 같은 이벤트를 한 번 세는 것을 본다.
+- **streamer는 파티션 사이의 차례를 지키지 않는다.** 그래서 테스트는 구매 활동의 차례가 아니라 주문마다의 결과를 단언한다.
+- **랭킹은 상품 하나다.** 순위의 차례(점수, 상품 ID)는 9주차의 장면이 본다.
+- 3.8절의 나머지(알림을 보류한 PG, 응답 유실의 한 꼴, 좁은 가설 C, 한 사용자와 한 상품)는 그대로다.
+
+### 4.8 장면
+
+| 이음매 | 클래스 | 장면 |
+| --- | --- | --- |
+| 사고의 lifecycle과 후속 | `PaymentIncidentE2ETest` | 3.2–3.4절과 4.2절. 1개 |
+
+다른 클래스는 바뀌지 않았고 모두 그대로 지나간다(4.10절). `CommerceStreamerProcess`, `CommerceBatchProcess`, `WeeklyRankingBatchTables`, `TopicReader`, `TestClock`은 있던 것을 그대로 쓴다. 중계를 멈추는 stub은 이 클래스 안에 있다. 한 클래스만 쓰는 stub은 그 클래스에 둔다(`CODING_STANDARDS.md`).
+
+### 4.9 붉은 확인
+
+커밋하지 않은 로컬 수정으로 돌리고 되돌렸다(2026-11-27). 명세 286이 정한 셋이다. 셋 모두 `"phase" : "follow-on"`의 `failure.json`을 남겼다. 기록은 [3단계의 글감](../research/week10-payment-incident-follow-on-writing-material.md)에 있다.
+
+| 수정 | 붉어진 장면 | 티켓 |
+| --- | --- | --- |
+| 중계가 복구한 첫 주문의 행을 건너뛴다(모든 claim에서 빼는 임시 stub) | `PaymentIncidentE2ETest`의 후속 단계. 구매 활동에서 `Expected size: 20 but was: 19`. 실패와 함께 찍힌 행에서 주문 13은 시도 2 뒤에도 `PENDING`이고 구매 활동에 없다 | 287 |
+| 복구를 다음 주에 고정한다(`RECOVERED_AT` = 2026-09-15T10:00Z) | 같은 단계. `Expecting actual: ["rank 1 product 1 score 17"] to contain exactly: ["rank 1 product 1 score 20"]`. 쓴 본문도 점수 17이다. 랭킹의 단언이 행마다의 확인보다 앞에 있어서 점수가 보인다. 뒤에 있으면 `confirmedAt`의 주의 경계가 먼저 붉다 | 288 |
+| commerce-streamer의 "이미 기록함" 확인을 비껴간다(`findByEventId`가 아무것도 찾지 않게 하고, 테스트 task가 bootJar를 다시 만든다) | 같은 단계. 다시 온 주문 19의 이벤트가 "같은 주문의 다른 이벤트 ID" 갈래에 닿고, 충돌이 consumer를 멈춘다(ADR 0033). 두 번째 구매 활동은 쓰지 않는다. `Waited 30 s for 21 recorded order confirmed events. State: 20 recorded`, 파티션 1은 10건 가운데 9건을 읽었다. 명세의 두 예상 가운데 "consumer가 멈춘다" 쪽이다 | 288 |
+
+### 4.10 끝의 확인
+
+```
+scripts/final-check --app commerce-batch --app commerce-api --app commerce-streamer
+```
+
+- 2026-11-27 `d0dba7cc`의 깨끗한 트리에서 돌렸다(04:51:01Z 시작). 셸에 `BOOTSTRAP_SERVERS`는 없었다. ktlint가 통과했다(1 s).
+- commerce-batch는 9개 클래스, 65개 테스트, 실패 0, 오류 0, 건너뜀 0이다(29 s). 9주차의 마지막 확인([주간 랭킹 설계](./weekly-ranking.md) 14.10)과 같은 수다. `WeeklyRankingJobRestartTest`는 12개다.
+- commerce-api는 123개 클래스, 1248개 테스트, 실패 0, 오류 0, 건너뜀 0이다(6 min 34 s). gauge를 바꾼 브랜치의 마지막 확인(2.9절)과 같은 수다. 이 단계는 `PaymentIncidentE2ETest`의 `@Test` 하나를 늘렸을 뿐 클래스도 테스트도 더하지 않았다. 사고의 `@Test`는 이 실행에서 14.6 s, `WeeklyRankingFlowTest`의 한 장면은 14.9 s였다. 4.5절의 이름 있는 클래스: `OrderPaymentIntegrationTest` 63개, `CouponIssueIntegrationTest` 12개, `OutboxDeliveryE2ETest` 2개, `OrderEventRecoveryE2ETest` 1개.
+- commerce-streamer는 18개 클래스, 68개 테스트, 실패 0, 오류 0, 건너뜀 0이다(50 s). 9주차의 마지막 확인과 같은 수다. 이 브랜치는 commerce-streamer와 commerce-batch의 파일을 바꾸지 않았다. 사고 테스트가 두 bootJar를 자식 프로세스로 돌리고, 9주차의 재시작과 늦은 차수의 장면을 건너뛰지 않으려고 셋을 모두 돌렸다.
+- 세 앱 모두 테스트가 0개가 아니고, 건너뛴 것이 없으며, `check`가 종료 코드 0으로 끝났다([과제](https://app.notion.com/p/10-41e5f76d26548008a94ce9d57c7f67d4) 8절). 실행 뒤 `pgrep -fl "commerce-(batch|streamer)"`가 찾은 것이 없었다.
+- 이 실행의 사고 실행 `20261127T045326Z-5f278390`이 4.3절이 저장소에 실은 것이다.
+- `d0dba7cc`의 코드는 `90131aa2`(288)의 것이고, 그 뒤로는 문서만 바뀌었다. 확인은 깨끗한 트리에서 시작했고, 도는 동안 이 절을 작업 트리에 썼다. Gradle이 읽는 파일은 바뀌지 않았다.
+
+### 4.11 명세와 다른 것
+
+2026-11-27 구현을 마치고 명세 286과 견준 것이다.
+
+| 명세 | 구현 | 어디서 |
+| --- | --- | --- |
+| 복구한 주문 가운데 첫째의 이벤트를 두 번 발행한다. 있는 spy 도우미 `stopRelayAfterBrokerAckBeforeMarkingPublished`로 멈춘다 | 셋째의 것이다. 한 회차가 20건을 모두 가져가고 저장은 claim의 차례이므로, 공유 도우미가 던지는 첫 저장(기준 구간의 주문 1)에서 회차가 끝나면 20건 모두가 다시 발행되어 record가 40이다. 마지막에 저장하는 행만 한 건으로 남길 수 있다. 그 행만 던지는 클래스 안의 stub을 썼다. 사용자가 두 대안(던지지 않고 저장 하나를 잃는 것, 공유 도우미로 40건)보다 이것을 골랐다 | 287 |
+| `follow-on.json`은 주문마다의 행, 스냅샷의 행, 네 수 | 그것들을 `followOn`에 담은 `observe`의 단계 기록이다. `observe`가 이미 `<phase>.json`을 쓰므로 같은 이름의 둘째 파일은 `CREATE_NEW`에 실패한다. 단계 기록의 필드(health, gauge, 재고, 생성 수 따위)가 함께 실린다 | 288 |
+| runbook이 적는 한계 셋 | 넷이다. 사고 테스트가 한 꼴의 사고만 돌렸다는 것을 더했다(4.7절) | 289 |
+| 조치 전제 3(PG의 조회가 금액이 맞는 `SUCCESS` 하나를 보인다)을 테스트가 돌린다 | 진단은 조회의 PG 상태만 단언한다. 금액과 PG 주문 번호가 맞는다는 것은 충돌 없이 반영한 복구의 대사에서 읽는다. runbook이 그렇게 적는다 | 289 |

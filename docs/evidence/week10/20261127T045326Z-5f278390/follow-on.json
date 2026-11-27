@@ -1,0 +1,482 @@
+{
+  "phase" : "follow-on",
+  "observedAt" : "2026-11-27T04:53:40.459463Z",
+  "responseLossOn" : false,
+  "orderIds" : [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 ],
+  "lostOrderIds" : [ 13, 16, 19 ],
+  "unresolvedOrderIds" : [ ],
+  "orders" : [ {
+    "orderId" : 1,
+    "idempotencyKey" : "8ba238f0-04cc-46ac-bf6e-a8cb392e8122",
+    "pgOrderId" : "0673d76b-26de-4983-9800-2a8703bc222c",
+    "transactionKey" : "20261126:TR:incident-1",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 2,
+    "idempotencyKey" : "48e72501-0ba9-42e9-b345-4fcefe32bfaa",
+    "pgOrderId" : "82a52ab6-d523-4c3e-81c2-4a4a752f8549",
+    "transactionKey" : "20261126:TR:incident-2",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 3,
+    "idempotencyKey" : "72da9d4a-de0f-4012-a9fb-8143dd92397c",
+    "pgOrderId" : "a1055f64-004b-4cd7-8bef-ed958807116a",
+    "transactionKey" : "20261126:TR:incident-3",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 4,
+    "idempotencyKey" : "6f436b6b-f197-4a0b-95ac-2c63db068a51",
+    "pgOrderId" : "75ca2220-0b53-4565-9965-3a0aec0d8227",
+    "transactionKey" : "20261126:TR:incident-4",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 5,
+    "idempotencyKey" : "8a4ef8dc-0146-431a-9a2a-43ade61d2b68",
+    "pgOrderId" : "552fa985-a6ef-44a2-a75a-ee58052aa7bd",
+    "transactionKey" : "20261126:TR:incident-5",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 6,
+    "idempotencyKey" : "8f187c3a-69cf-405d-ba0b-9c96d27d3e2c",
+    "pgOrderId" : "f6d26ec2-3d0c-4189-8e0e-abe27da8993e",
+    "transactionKey" : "20261126:TR:incident-6",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 7,
+    "idempotencyKey" : "68400116-5fdf-4060-b558-8b423b8c87a2",
+    "pgOrderId" : "dc9e03f8-7d90-491d-b94c-3c49f00a0eba",
+    "transactionKey" : "20261126:TR:incident-7",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 8,
+    "idempotencyKey" : "305652a1-5287-4cf7-82ce-d19993018912",
+    "pgOrderId" : "2d99a569-3bfd-4a77-ba85-05713651289f",
+    "transactionKey" : "20261126:TR:incident-8",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 9,
+    "idempotencyKey" : "4de01465-d614-4e52-a12e-29297e2f8d3c",
+    "pgOrderId" : "709e5eb9-6209-432b-a5b3-4f5bc645bbe3",
+    "transactionKey" : "20261126:TR:incident-9",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 10,
+    "idempotencyKey" : "1cc2046c-5fa1-49f9-b19c-051659414108",
+    "pgOrderId" : "bf726e07-a7b5-4455-b876-b3004e9f46c7",
+    "transactionKey" : "20261126:TR:incident-10",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 11,
+    "idempotencyKey" : "5772b2a3-5bb2-4573-b238-6449094aaa92",
+    "pgOrderId" : "3ef5837b-513b-4334-af8e-bab8406d9bfa",
+    "transactionKey" : "20261126:TR:incident-11",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 12,
+    "idempotencyKey" : "31ab830c-1a1f-4e70-9c84-8c8e5c292ec8",
+    "pgOrderId" : "daa66029-6d8c-434a-9a6b-a4fc3774af90",
+    "transactionKey" : "20261126:TR:incident-12",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 13,
+    "idempotencyKey" : "42f7d46e-73d5-4558-992a-f191df9480ad",
+    "pgOrderId" : "4ab9e3d4-d736-4424-ae4b-5f66898a4b3b",
+    "transactionKey" : "20261126:TR:incident-13",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 2
+  }, {
+    "orderId" : 14,
+    "idempotencyKey" : "a6f06f03-631f-4e76-977f-aad8df67737c",
+    "pgOrderId" : "dbbc3860-d0d4-47e9-87cc-3d4dae8297ac",
+    "transactionKey" : "20261126:TR:incident-14",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 15,
+    "idempotencyKey" : "692a934f-3561-48db-822f-ac1127154227",
+    "pgOrderId" : "94028626-264a-46e8-8a2d-87569d16685a",
+    "transactionKey" : "20261126:TR:incident-15",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 16,
+    "idempotencyKey" : "19974f03-220f-46a7-91f9-dc1dbee9fe53",
+    "pgOrderId" : "0a4d866f-aa8c-454d-b230-005858c7cdd5",
+    "transactionKey" : "20261126:TR:incident-16",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 2
+  }, {
+    "orderId" : 17,
+    "idempotencyKey" : "0f2f0686-0473-42eb-b686-d245a263d253",
+    "pgOrderId" : "778fef95-e3d3-438d-a24d-7a3d477ed1b4",
+    "transactionKey" : "20261126:TR:incident-17",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 18,
+    "idempotencyKey" : "36e06c77-ffab-4578-bfcd-2d3bbf05519b",
+    "pgOrderId" : "a4fb6be8-9364-44d5-98cd-4f2ed9a3bd45",
+    "transactionKey" : "20261126:TR:incident-18",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  }, {
+    "orderId" : 19,
+    "idempotencyKey" : "bdab8d85-1cca-47ea-a2b7-d2e1ee13ca6b",
+    "pgOrderId" : "96f28509-bb8f-4ee0-a11f-0215c5c04fc2",
+    "transactionKey" : "20261126:TR:incident-19",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 2
+  }, {
+    "orderId" : 20,
+    "idempotencyKey" : "478c28d0-061a-47ea-a005-e09104205047",
+    "pgOrderId" : "a3510c36-2d37-4526-a262-f95e8892c907",
+    "transactionKey" : "20261126:TR:incident-20",
+    "orderStatus" : "CONFIRMED",
+    "paymentStatus" : "SUCCESS",
+    "reservedQuantity" : 0,
+    "createCount" : 1,
+    "listLookupCount" : 1
+  } ],
+  "productStock" : 0,
+  "pgTransactionCount" : 20,
+  "pgCreateCount" : 20,
+  "pgOrderIdsCreatedMoreThanOnce" : [ ],
+  "unmatchedPgRequests" : 0,
+  "healthStatus" : "UP",
+  "unresolvedGauge" : {
+    "UNKNOWN" : "0.0",
+    "PENDING" : "0.0"
+  },
+  "faultFileSha256" : {
+    "fault.json" : "8658352acdc6f9ccad01af09bdce2afaec7ad423c30f25ae8a9e8599a53a81c3",
+    "fault-health.json" : "5c0922f0595f37057ff52e5e4afc8d36c6c415bc2493c75b47eaa0e193ca1607",
+    "fault-prometheus.txt" : "e7983aff098d23531fc05e0c5b1ee4c0fce573c96f748a83b0ab5bb9bad75d1c",
+    "fault-log-events.json" : "7cd8220fc5d9306f9d6985105675bfdc3afaac395b108343045acf79ee193d44"
+  },
+  "followOn" : {
+    "orders" : [ {
+      "orderId" : 1,
+      "eventId" : "order-confirmed:v1:1",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 1,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 2,
+      "eventId" : "order-confirmed:v1:2",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 2,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 3,
+      "eventId" : "order-confirmed:v1:3",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 3,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 4,
+      "eventId" : "order-confirmed:v1:4",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 4,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 5,
+      "eventId" : "order-confirmed:v1:5",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 5,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 6,
+      "eventId" : "order-confirmed:v1:6",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 6,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 7,
+      "eventId" : "order-confirmed:v1:7",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 7,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 8,
+      "eventId" : "order-confirmed:v1:8",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 8,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 9,
+      "eventId" : "order-confirmed:v1:9",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 9,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 10,
+      "eventId" : "order-confirmed:v1:10",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 10,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 11,
+      "eventId" : "order-confirmed:v1:11",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 11,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 12,
+      "eventId" : "order-confirmed:v1:12",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 12,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 13,
+      "eventId" : "order-confirmed:v1:13",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 13,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-10T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 14,
+      "eventId" : "order-confirmed:v1:14",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 14,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 15,
+      "eventId" : "order-confirmed:v1:15",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 15,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 16,
+      "eventId" : "order-confirmed:v1:16",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 16,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-10T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 17,
+      "eventId" : "order-confirmed:v1:17",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 17,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 18,
+      "eventId" : "order-confirmed:v1:18",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 18,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 19,
+      "eventId" : "order-confirmed:v1:19",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 2,
+      "purchaseActivities" : [ {
+        "orderId" : 19,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-10T10:00:00Z"
+      } ]
+    }, {
+      "orderId" : 20,
+      "eventId" : "order-confirmed:v1:20",
+      "outboxStatus" : "PUBLISHED",
+      "outboxAttemptCount" : 1,
+      "purchaseActivities" : [ {
+        "orderId" : 20,
+        "productId" : 1,
+        "quantity" : 1,
+        "confirmedAt" : "2026-09-08T10:00:00Z"
+      } ]
+    } ],
+    "snapshots" : [ {
+      "snapshotId" : "2026-09-07-r1",
+      "periodStart" : "2026-09-07",
+      "revision" : 1,
+      "state" : "FROZEN",
+      "frozenAt" : "2026-11-27T04:53:40.238558Z",
+      "inputCount" : 20,
+      "inputChecksum" : "f0281aef64278df26d511fb8710f6f7a22ee7a6c267ea5635bf5fdf8b03f5f62"
+    } ],
+    "ownerRows" : {
+      "point_account" : [ {
+        "balance" : 50000,
+        "created_at" : "2026-11-27T04:53:26.632351",
+        "id" : 1,
+        "updated_at" : "2026-11-27T04:53:26.643507",
+        "user_id" : 1
+      } ],
+      "coupon" : [ {
+        "discount_amount" : 943987,
+        "campaign_id" : 1,
+        "created_at" : "2026-11-27T04:53:26.65678",
+        "id" : 1,
+        "issued_at" : "2026-11-27T04:53:26.656639",
+        "updated_at" : "2026-11-27T04:53:26.65678",
+        "user_id" : 1,
+        "campaign_name" : "WCMNSYDFZMDMAMCLUXWVNFCNYFIUJSMPPSLVRKATPUARVEXZCGAMCEBHSCGBNSNNJGDYNLLYLMSOMHODKX"
+      } ]
+    },
+    "counts" : {
+      "topicRecords" : 21,
+      "outboxRows" : 20,
+      "purchaseActivities" : 20,
+      "processedConfirmations" : 20
+    }
+  }
+}
