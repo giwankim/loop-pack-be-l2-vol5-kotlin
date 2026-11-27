@@ -8,7 +8,6 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.SQLRestriction
@@ -20,9 +19,6 @@ import org.hibernate.annotations.SQLRestriction
  * Payment is its own aggregate and refers to its order by ID only (ADR 0021). Unique constraints allow at most one payment per
  * order, one per idempotency key, and one per PG order ID. The PG order ID is not derived from the order ID, so its uniqueness
  * no longer follows from the order's, and step 3's callback finds payments by it (ADR 0029 rule 3).
- *
- * `IDX_PAYMENT_ON_STATUS` lets the count of 끝나지 않은 결제 by status read the index alone. That count runs on a schedule for the
- * life of the app, on a table that only grows (payment-incident design §2).
  *
  * Without a JPA association, `scalar-foreign-keys.sql` adds the order foreign key `FK_PAYMENT_ON_ORDER_ID` (ADR 0014).
  * Hibernate drops tables in alphabetical order and leaves keys it does not map in place, so `orders` would go before `payment`
@@ -45,7 +41,6 @@ import org.hibernate.annotations.SQLRestriction
         UniqueConstraint(name = "UK_PAYMENT_ON_IDEMPOTENCY_KEY", columnNames = ["idempotency_key"]),
         UniqueConstraint(name = "UK_PAYMENT_ON_PG_ORDER_ID", columnNames = ["pg_order_id"]),
     ],
-    indexes = [Index(name = "IDX_PAYMENT_ON_STATUS", columnList = "status")],
 )
 @SQLRestriction("deleted_at is null")
 class Payment private constructor(

@@ -383,37 +383,13 @@ abstract class BaseApplicationServiceTest {
      * 확정은 트랜잭션 밖에서만 돌므로(ADR 0028 규칙 2) 테스트 트랜잭션에서 빠진 클래스만 부른다. 커밋하는 기반과 `NOT_SUPPORTED`를 단 MockMvc 클래스다.
      */
     protected fun confirmOrder(testPg: TestPg, order: Order = this.order, pgStatus: String = "SUCCESS"): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card ->
-            testPg.acceptsCreate(
-                pgOrderId = pgOrderId,
-                amount = amount,
-                card = card,
-                transactionKey = UUID.randomUUID().toString(),
-                pgStatus = pgStatus,
-            )
-        }
-    }
-
-    /**
-     * [confirmOrder] where [testPg] rejects the create before making a PG transaction, so the payment fails and the order is left
-     * payment failed. The same conditions as [confirmOrder].
-     */
-    protected fun confirmOrderRejectedBeforeCreate(testPg: TestPg, order: Order = this.order): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card -> testPg.rejectsBeforeCreate(pgOrderId, amount, card) }
-    }
-
-    /**
-     * [confirmOrder] where [testPg] loses the create's response, so the payment is left 결과 미확인 and the order payment pending.
-     * The same conditions as [confirmOrder].
-     */
-    protected fun confirmOrderLosingCreateResponse(testPg: TestPg, order: Order = this.order): OrderInfo {
-        return confirmOrderAnswered(order) { pgOrderId, amount, card -> testPg.losesCreateResponse(pgOrderId, amount, card) }
-    }
-
-    /** Confirms [order] after [stub] sets up the PG's answer to its create, for the next PG order ID, the order's amount and the card. */
-    private fun confirmOrderAnswered(order: Order, stub: (pgOrderId: String, amount: Long, card: CreditCard) -> Unit): OrderInfo {
         val request = createOrderConfirmRequest()
-        stub(nextPgOrderId(), order.totalAmount.amount.longValueExact(), request.toCreditCard())
+        acceptNextCreate(
+            testPg,
+            amount = order.totalAmount.amount.longValueExact(),
+            card = request.toCreditCard(),
+            pgStatus = pgStatus,
+        )
 
         return orderConfirmer.confirm(order.userId, order.id, idempotencyKey = UUID.randomUUID().toString(), request = request)
     }

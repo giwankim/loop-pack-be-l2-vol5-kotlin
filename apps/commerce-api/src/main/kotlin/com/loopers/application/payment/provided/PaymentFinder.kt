@@ -22,10 +22,4 @@ interface PaymentFinder {
      * 불일치가 아니라 PG가 모르는 번호를 보낸 것이다. PG 주문 번호는 UUID라 404가 알려 주는 것이 없다(ADR 0031 규칙 2).
      */
     fun findByPgOrderId(pgOrderId: String): Payment
-
-    /**
-     * The count of 끝나지 않은 결제 by payment status, for the `commerce.payment.unresolved` gauge. A stated exception to ADR 0014:
-     * a count reads no aggregate, so it returns a small value rather than payments (payment-incident design §2).
-     */
-    fun countUnresolved(): UnresolvedPaymentCount
 }

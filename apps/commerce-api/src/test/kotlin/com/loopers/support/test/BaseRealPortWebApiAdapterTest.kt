@@ -15,19 +15,11 @@ import java.time.Duration
  *
  * With `RANDOM_PORT` Boot sets the management port to 0 as well, so no test needs 8081 to be free. [managementPort] is the port
  * the management server was given. The management server answers on its own threads, so what it reads from the database sees
- * only committed rows: a scene that needs its writes counted leaves the test transaction like [BaseCommittingApplicationServiceTest].
+ * only committed rows, and the `commerce.payment.unresolved` gauge moves only after a commit (spec 281): a scene that reads either
+ * leaves the test transaction like [BaseCommittingApplicationServiceTest].
  * The real port splits the context from [BaseWebApiAdapterTest]'s, one more context (ADR 0012).
- *
- * The two `payment.unresolved-gauge.*` properties belong to the scheduled count of spec 266. The `commerce.payment.unresolved`
- * gauge no longer reads it and is registered in every profile (spec 281), so they change nothing here and go with the count.
  */
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = [
-        "payment.unresolved-gauge.enabled=true",
-        "payment.unresolved-gauge.refresh-interval=100ms",
-    ],
-)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 abstract class BaseRealPortWebApiAdapterTest : BaseWebApiAdapterTest() {
     companion object {
         /** Long enough for a busy JVM's first scrape. */
