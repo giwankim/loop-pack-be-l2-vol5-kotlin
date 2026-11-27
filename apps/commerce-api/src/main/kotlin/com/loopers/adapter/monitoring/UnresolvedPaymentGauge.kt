@@ -1,6 +1,6 @@
 package com.loopers.adapter.monitoring
 
-import com.loopers.application.payment.required.PaymentStatusChangeListener
+import com.loopers.application.order.required.PaymentStatusChangeListener
 import com.loopers.domain.payment.PaymentStatus
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry

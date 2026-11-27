@@ -7,6 +7,7 @@ import com.loopers.application.order.provided.OrderConfirmer
 import com.loopers.application.order.provided.OrderFinder
 import com.loopers.application.order.provided.OrderInfo
 import com.loopers.application.order.provided.OrderPaymentReconciler
+import com.loopers.application.order.required.PaymentStatusChangeListener
 import com.loopers.application.payment.provided.MultiplePgTransactionsException
 import com.loopers.application.payment.provided.PaymentFinder
 import com.loopers.application.payment.provided.PaymentValidator
@@ -14,7 +15,6 @@ import com.loopers.application.payment.provided.PgOutcomeUnknownException
 import com.loopers.application.payment.provided.PgRejectedException
 import com.loopers.application.payment.provided.PgTransactionClient
 import com.loopers.application.payment.provided.PgUnavailableException
-import com.loopers.application.payment.required.PaymentStatusChangeListener
 import com.loopers.domain.order.Order
 import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.payment.Payment

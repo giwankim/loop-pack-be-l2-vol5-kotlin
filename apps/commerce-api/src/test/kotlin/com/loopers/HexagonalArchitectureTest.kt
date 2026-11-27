@@ -89,7 +89,7 @@ class HexagonalArchitectureTest {
         .that().resideInAPackage("$ROOT.adapter.monitoring..")
         .should().onlyDependOnClassesThat(
             resideOutsideOfPackage("$ROOT..")
-                .or(resideInAnyPackage("$ROOT.adapter.monitoring..", "$ROOT.application.payment.required..", "$ROOT.domain..")),
+                .or(resideInAnyPackage("$ROOT.adapter.monitoring..", "$ROOT.application.order.required..", "$ROOT.domain..")),
         )
         .because("a listener implements a required port and calls no provided one (spec 281)")
 

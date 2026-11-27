@@ -66,8 +66,8 @@ health는 바꾸지 않았다. 사고 동안 UP이라고 답하는 것이 과제
 
 | 부분 | 클래스 | 하는 것 |
 | --- | --- | --- |
-| 피구동 어댑터 | `adapter.monitoring.UnresolvedPaymentGauge` | 요구 포트를 구현하고 두 시계열을 Micrometer에 등록한다. Micrometer는 어댑터 층에만 있다. `HexagonalArchitectureTest`의 여섯째 어댑터 층 `adapter.monitoring`은 도메인(`PaymentStatus`)과 `application.payment.required`에만 닿고, 다른 어댑터 층은 그것에 닿지 못한다 |
-| 요구 포트 | `application.payment.required.PaymentStatusChangeListener` | `statusChanged(from: PaymentStatus?, to: PaymentStatus)` 하나. `from`이 `null`이면 새 결제다. 결제 상태가 바뀌어 커밋했다는 것만 말하고 gauge를 모른다. 구현이 메모리의 수만 바꾸고 던지지 않으므로 부르는 쪽은 잡지 않는다 |
+| 피구동 어댑터 | `adapter.monitoring.UnresolvedPaymentGauge` | 요구 포트를 구현하고 두 시계열을 Micrometer에 등록한다. Micrometer는 어댑터 층에만 있다. `HexagonalArchitectureTest`의 여섯째 어댑터 층 `adapter.monitoring`은 도메인(`PaymentStatus`)과 `application.order.required`에만 닿고, 다른 어댑터 층은 그것에 닿지 못한다 |
+| 요구 포트 | `application.order.required.PaymentStatusChangeListener` | `statusChanged(from: PaymentStatus?, to: PaymentStatus)` 하나. `from`이 `null`이면 새 결제다. 결제 상태가 바뀌어 커밋했다는 것만 말하고 gauge를 모른다. 구현이 메모리의 수만 바꾸고 던지지 않으므로 부르는 쪽은 잡지 않는다. (2026-11-27, spec 281의 검토: 결제의 요구 포트에서 주문의 요구 포트로 옮겼다. 부르는 쪽은 주문의 `OrderPaymentSaga`뿐이고, [ADR 0013](../adr/0013-commerce-api-follows-splearn-hexagonal-structure.md)은 묻는 슬라이스가 제 `required`에 포트를 두고 다른 슬라이스의 `required`를 부르지 않게 한다. 커밋을 아는 것도 트랜잭션 밖의 saga뿐이다.) |
 
 ### 2.2 부르는 곳
 
@@ -152,7 +152,7 @@ health는 바꾸지 않았다. 사고 동안 UP이라고 답하는 것이 과제
 | --- | --- | --- |
 | management 포트의 실제 HTTP | `ManagementEndpointE2ETest` | health가 UP이고 Prometheus 원문에 있던 지표(`jvm_memory_used_bytes`, `resilience4j_circuitbreaker_state`)가 있다. `env`와 `heapdump`가 404다. 2개 |
 | 실제 scrape의 gauge | `UnresolvedPaymentGaugeE2ETest` | 아래. 8개 |
-| 층의 규칙 | `HexagonalArchitectureTest` | `adapter.monitoring`이 도메인과 `application.payment.required`에만 닿고, 다른 어댑터 층이 그것에 닿지 않는다. 있던 규칙을 고쳤다 |
+| 층의 규칙 | `HexagonalArchitectureTest` | `adapter.monitoring`이 도메인과 `application.order.required`에만 닿고, 다른 어댑터 층이 그것에 닿지 않는다. 있던 규칙을 고쳤다 |
 | 인덱스가 없다 | `PaymentRepositoryTest` | `the payment table has no non-unique index`. 결제의 표에 유일하지 않은 인덱스가 없다. 있던 장면을 뒤집었다. 1개 |
 | 로그 이벤트 | `OrderPaymentLogEventTest` | 아래. 메서드 18개, 매개변수를 펼쳐 22개 |
 
