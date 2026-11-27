@@ -244,3 +244,37 @@ Test code, evidence and documents only. A revert removes the follow-on phase, th
 
 - `PaymentIncidentE2ETest` now starts commerce-streamer and commerce-batch from their bootJars and needs Kafka; it takes about 13 s in the final check.
 - The runbook is not checked by anything: a changed column or endpoint fails the test, not the runbook (design 4.7).
+
+## PR 291: the review's replies
+
+Recorded 2026-11-27. Five Devin Review threads on PR 291 (Codex found no issue); the replies below are as posted. Four were fixed in `3d02f9df` and `a55e8448`, one was left as it was.
+
+### Re-entry drops pending follow-up orders
+
+[Reply](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/291#discussion_r4716203746).
+
+Right. 7절 sent every unfinished target back to 2.1절, but 2.1절 lists only unresolved payments, so an order whose payment finished and whose outbox row or purchase activity is missing never comes back. `a55e8448` limits re-entry to what 6.1절 and 6.2절 find. A gap that 6.3절 or 6.4절 finds follows that section's own next step: 누락 복구 for a missing outbox row, the purchase-activity design for a published event with no activity.
+
+### Valid purchase rows look duplicated
+
+[Reply](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/291#discussion_r4716203882).
+
+Right. `purchase_activity` is one row per order and product, and the line above already says one per item. `a55e8448` makes it "같은 주문과 상품의 행이 둘이 아니다". The incident's orders have one item each, so the test's one row per order is unchanged.
+
+### HTTP status hidden during recovery
+
+[Reply](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/291#discussion_r4716204037).
+
+Right. 4절 branches on 200, 202 and 404, and stop condition 1 on a lookup that is not 200, but `curl -s` printed only the body. `a55e8448` adds `-w '\nHTTP %{http_code}\n'` to the PG lookup (2.2절) and the reconcile (4절), and says the last line is the status. Both stay read-only.
+
+### Snapshot state recorded without assertion
+
+[Reply](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/291#discussion_r4716204198).
+
+Right. Design 4.2 lists `FROZEN` among the assertions, but `SnapshotRow.describe()` left `state` out, so `follow-on.json` carried it unchecked. `3d02f9df` adds the state to the description and the expected line is now `2026-09-07-r1 period 2026-09-07 revision 1 state FROZEN inputs 20`. `FROZEN` is the only state commerce-batch writes (the publication row says what a period shows), so this pins the snapshot row's shape rather than a new behaviour. The final check on `a55e8448` passes with 123 classes and 1248 tests in commerce-api, and its incident run `20261127T055722Z-c9dcca96` is now the committed evidence.
+
+### Relay exception binding rule missed
+
+[Reply](https://github.com/giwankim/loop-pack-be-l2-vol5-kotlin/pull/291#discussion_r4716204362).
+
+Leaving this one. The rule is about naming: a thrown exception the test keeps is held in `exception`. It does not ask a test to keep one it never reads. Here the throw only stops the relay round; the assertions that follow read the outbox rows and the topic. The repo has other unbound `assertThrows` calls, among them the same relay stop in `WeeklyRankingFlowTest`, and binding it would leave an unused variable.
