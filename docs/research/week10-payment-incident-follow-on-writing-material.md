@@ -77,3 +77,32 @@ Neither change was committed. Each ran the class alone and was then reverted.
 - **The `@Test` keeps the spec's name, and ktlint's line length is suppressed on that function alone.** The name makes a 164-character line. The user chose the suppression over a shorter name. It is the only ktlint suppression in the repo, noted in `CODING_STANDARDS.md`.
 - **`DataSource` is a new constructor dependency, for `WeeklyRankingBatchTables.reset` in `@BeforeEach`.** The ranking's request helper and the snapshot SQL repeat `WeeklyRankingFlowTest`'s and are not moved, for issue 262's reason (a different base class). Both are noted in `CODING_STANDARDS.md`.
 - **Left as found in review:** the closing assertions repeat recovery's block in shape. Each phase asserts its own record, as the earlier phases do.
+
+## Issue 289: the week 10 runbook and 운영자 in the glossary
+
+Recorded 2026-11-27 as the closing comment drafted for issue 289. The text below is the comment's.
+
+Implemented as `ff1003e1` on top of `c2ff3269`, on `feat/payment-incident-follow-on`. Docs only: no file under `src/main` or `src/test` changed, so no test ran. The pre-commit doc checks (`check-doc-links`, `check-doc-notes`) and ktlint passed.
+
+### Acceptance criteria
+
+- [x] **증상 names the alarm and says health stays `UP`.** §1: `sum(commerce_payment_unresolved)` staying above 0, health `UP` by design, with the per-instance `curl` for health and the Prometheus lines (`runFault`'s `UNKNOWN 3.0` under `UP`).
+- [x] **진단 질의.** §2.1 is the `select` of unresolved payments joined to `orders` for `user_id`, with `pg_order_id`, amount, status, transaction key and `updated_at`. §2.2 is the PG list lookup `curl` with the PG contract's `X-USER-ID` as a placeholder. §2.3 says the log events are read from the logstash JSON by `orderId`, with a table of what each event order means. The section opens with the DB as the authority and the gauge as the alarm, and says what a restart does to `sum`.
+- [x] **조치 전제.** §3 lists the three: the cause has stopped, the target list was read from the DB and frozen, and the PG shows one matching `SUCCESS`.
+- [x] **중단 조건.** §5 lists the spec's six conditions. The operator changes nothing and asks the PG, including when the PG reports a failure: no SQL ends the payment or releases the stock reservation.
+- [x] **Recovery is the customer's reconcile `curl` with the owner's ID, once per target.** §4, with what 200/`CONFIRMED`, 202, 200/`PAYMENT_FAILED` and 404 mean.
+- [x] **복구 확인.** §6 covers the order and payment rows, no added create (the PG lookup still shows one transaction, and no `pg.create.*` after the reconcile), the outbox row, and the purchase activity. It names `order-events.recovery.order-ids` for a missing outbox row.
+- [x] **재진입.** §7 restarts from §2.1, refreezes the list, repeats only for targets still unresolved, and cites `runRecovery`'s repeat window (recovery + 1 s: second reconcile and 알림, rows, events and PG requests unchanged, another user 404).
+- [x] **No SQL that writes and no command that creates a PG transaction.** Every SQL is a `select`. The only command that changes a payment is the reconcile.
+- [x] **The stated limits.** §8: the operator reconciles as the customer and nothing records it was them; diagnosis needs direct PG access; the text is not machine-checked. A fourth limit says the incident test ran one kind of incident only.
+- [x] **Every domain word follows `CONTEXT.md`, its Avoid lists included.** 중계 (not 릴레이), 발행하다, 주문 확정 이벤트, 삭제되지 않은, 기록하다.
+- [x] **The pre-commit doc checks pass.**
+- [x] **The closing comment is appended to the writing material.** This section.
+
+### Decisions made while implementing
+
+- **Each command says how far the test ran it.** The test does not shell out. It sends the same queries and requests through JDBC and HTTP clients, and some of its queries are narrower or wider than the runbook's: `unresolvedOrderIds` selects only `order_id`, `outboxRowCounts` counts all 20 orders without an `order_id` filter, and `purchaseActivityRows` reads the whole table. The runbook says which part the test exercised rather than "the same query".
+- **Precondition 3 is half asserted by the test.** `runDiagnosis` asserts the lookup's status only. The amount and PG 주문 번호 matching is read from `runRecovery`'s reconcile, which applied the transaction without a conflict. The runbook says so.
+- **누락 복구 is cited from week 7.** The incident test never misses an outbox row, so the start-up property is pinned by `OrderEventRecoveryRunnerTest`, and the runbook gives the `java -jar … --order-events.recovery.order-ids=` form.
+- **The runbook links 운영자 to the glossary instead of defining it again.** Design §3 gets two dated lines: its local definition now points at the glossary, and the runbook uses 사고 and 복구, the assignment's section words, without adding them to the glossary.
+- **Found in review:** an Avoid word (살아 있는 for a not-deleted row), a false "every phase ends with `observe`" (diagnosis doesn't), two "same query" claims, and a bare 이벤트 for 주문 확정 이벤트. All fixed before the commit.
